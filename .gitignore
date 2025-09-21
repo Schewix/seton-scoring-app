@@ -1,0 +1,15 @@
+# Node / Expo
+node_modules/
+.expo/
+dist/
+build/
+*.log
+.env
+.env.*
+.expo-shared/
+*.tmp
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
