@@ -36,7 +36,7 @@ export default function App() {
       </View>
 
       <View style={{ flex: 1 }}>
-        <ScanAndScoreScreen />
+        <ScanAndScoreScreen judge={judge} onJudgeChange={setJudge} />
       </View>
 
       <LastScoresList />
