@@ -7,6 +7,7 @@ Mobilní aplikace pro zapisování bodů na stanovištích (QR sken hlídek), s 
 - Sken **QR kódu** hlídky (payload: `seton://p/<patrol_code>`).
 - Zápis **bodů** a **čekací doby** (minuty) pro dané stanoviště.
 - Automatické **hodnocení terčového úseku** (multiple-choice test) se správnými odpověďmi pro každou kategorii.
+- Offline fronta zápisů, která se synchronizuje po obnovení připojení.
 - Uložení online do **Supabase** tabulek `station_passages` a `station_scores`.
 - Jednoduchý **výpis posledních záznamů** pro stanoviště.
 - **Realtime** aktualizace hlídek (z Sheets → Supabase → appka).
@@ -42,6 +43,7 @@ Mobilní aplikace pro zapisování bodů na stanovištích (QR sken hlídek), s 
 
 4. **Supabase**: spusť SQL ze složky `supabase/sql/` (nejdřív `schema.sql`, pak `views.sql`, poté případně `rls.sql`).
    - Nově jsou k dispozici tabulky `station_category_answers` (správné odpovědi dle kategorie) a `station_quiz_responses` (uložené záznamy odpovědí).
+   - Přístupová politika očekává, že JWT tokeny pro rozhodčí ponesou `event_id` a `station_id` (jako textové hodnoty UUID).
 
 5. **Google Sheets**: ve složce `google-sheets/` je `AppsScript.gs` – vlož jej do *Apps Script* projektu v sešitu s 8 listy. V *Script properties* nastav:
    - `SUPABASE_URL`
@@ -61,5 +63,17 @@ seton://p/<patrol_code>
 - V mobilní appce (horní panel) nastav pro každou kategorii 12 správných odpovědí terčového testu (`A/B/C/D`).
 - Při skenování hlídky lze zapnout automatiku „Vyhodnotit terčový úsek“ a jen zapsat zvolené odpovědi.
 - Appka sama spočítá body, uloží je do `station_scores` a také uloží detail (`station_quiz_responses`).
+
+## Známá omezení
+
+- Offline režim řeší pouze zápis stanovištních záznamů; načítání dat stále vyžaduje připojení.
+- Poslední záznamy mají ruční refresh; realtime subscribe je stále TODO.
+- Pro ostrý provoz je nutné zajistit, aby JWT tokeny nesly `event_id` a `station_id` a odpovídaly definovaným RLS politikám.
+
+## Next Steps
+
+1. Nasadit Supabase realtime posluchače pro automatické obnovování seznamu posledních záznamů.
+2. Přidat detailní report terčových odpovědí (např. export pro výsledkovou kancelář).
+3. Zvážit základní integrační test (např. přes Detox) pro klíčový flow sken → hodnocení → uložení.
 
 **Pozn.:** kód je minimální funkční základ – přizpůsob si vzhled, navigaci a validace dle potřeb.

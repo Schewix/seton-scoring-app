@@ -10,16 +10,37 @@ import {
   TouchableOpacity,
   ActivityIndicator
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BarCodeScanner } from 'expo-barcode-scanner';
 import { supabase } from '../supabase';
 import Constants from 'expo-constants';
 
 const extra = Constants.expoConfig?.extra || {};
 const CATEGORIES = ['N', 'M', 'S', 'R'];
+const PENDING_QUEUE_KEY = 'pending_station_submissions_v1';
 
 const parseAnswerLetters = (value = '') => (value.match(/[A-D]/gi) || []).map((l) => l.toUpperCase());
 const formatAnswersForInput = (stored = '') => parseAnswerLetters(stored).join(' ');
 const packAnswersForStorage = (value = '') => parseAnswerLetters(value).join('');
+
+async function readPendingSubmissions() {
+  try {
+    const raw = await AsyncStorage.getItem(PENDING_QUEUE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+async function persistPendingSubmissions(items) {
+  if (!items.length) {
+    await AsyncStorage.removeItem(PENDING_QUEUE_KEY);
+    return;
+  }
+  await AsyncStorage.setItem(PENDING_QUEUE_KEY, JSON.stringify(items));
+}
 
 export default function ScanAndScoreScreen({ judge = '', onJudgeChange = () => {} }) {
   const eventId = extra.EXPO_PUBLIC_EVENT_ID;
@@ -44,12 +65,139 @@ export default function ScanAndScoreScreen({ judge = '', onJudgeChange = () => {
   const [autoScore, setAutoScore] = useState({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
   const autoScoringManuallySet = useRef(false);
 
+  const [pendingCount, setPendingCount] = useState(0);
+  const [syncingPending, setSyncingPending] = useState(false);
+  const syncingPendingRef = useRef(false);
+
   useEffect(() => {
     (async () => {
       const { status } = await BarCodeScanner.requestPermissionsAsync();
       setHasPermission(status === 'granted');
     })();
   }, []);
+
+  const enqueuePendingSubmission = useCallback(async (submission) => {
+    const current = await readPendingSubmissions();
+    const next = [...current, submission];
+    await persistPendingSubmissions(next);
+    setPendingCount(next.length);
+  }, []);
+
+  const processPendingSubmissions = useCallback(async () => {
+    if (!eventId || !stationId) return;
+    if (syncingPendingRef.current) return;
+    const queue = await readPendingSubmissions();
+    if (!queue.length) {
+      setPendingCount(0);
+      return;
+    }
+
+    syncingPendingRef.current = true;
+    setSyncingPending(true);
+    const remaining = [];
+    let flushedAny = false;
+    let shouldNotify = false;
+
+    try {
+      for (const submission of queue) {
+        if (submission.event_id !== eventId || submission.station_id !== stationId) {
+          remaining.push(submission);
+          continue;
+        }
+
+        const passageRes = await supabase
+          .from('station_passages')
+          .upsert(
+            {
+              event_id: submission.event_id,
+              patrol_id: submission.patrol_id,
+              station_id: submission.station_id,
+              arrived_at: submission.arrived_at,
+              wait_minutes: submission.wait_minutes
+            },
+            { onConflict: 'event_id,patrol_id,station_id' }
+          );
+
+        if (passageRes.error) {
+          remaining.push(submission);
+          continue;
+        }
+
+        const scoreRes = await supabase
+          .from('station_scores')
+          .upsert(
+            {
+              event_id: submission.event_id,
+              patrol_id: submission.patrol_id,
+              station_id: submission.station_id,
+              points: submission.points,
+              judge: submission.judge,
+              note: submission.note
+            },
+            { onConflict: 'event_id,patrol_id,station_id' }
+          );
+
+        if (scoreRes.error) {
+          remaining.push(submission);
+          continue;
+        }
+
+        if (submission.useTargetScoring && submission.normalizedAnswers) {
+          const quizRes = await supabase
+            .from('station_quiz_responses')
+            .upsert(
+              {
+                event_id: submission.event_id,
+                patrol_id: submission.patrol_id,
+                station_id: submission.station_id,
+                category: submission.category,
+                answers: submission.normalizedAnswers,
+                correct_count: submission.points
+              },
+              { onConflict: 'event_id,station_id,patrol_id' }
+            );
+          if (quizRes.error) {
+            remaining.push(submission);
+            continue;
+          }
+        } else if (submission.shouldDeleteQuiz) {
+          const deleteRes = await supabase
+            .from('station_quiz_responses')
+            .delete()
+            .match({
+              event_id: submission.event_id,
+              station_id: submission.station_id,
+              patrol_id: submission.patrol_id
+            });
+          if (deleteRes.error) {
+            remaining.push(submission);
+            continue;
+          }
+        }
+
+        flushedAny = true;
+      }
+      shouldNotify = flushedAny && remaining.length === 0;
+    } finally {
+      await persistPendingSubmissions(remaining);
+      setPendingCount(remaining.length);
+      if (shouldNotify) {
+        Alert.alert('Offline záznamy odeslány', 'Všechny čekající záznamy byly synchronizovány.');
+      }
+      syncingPendingRef.current = false;
+      setSyncingPending(false);
+    }
+  }, [eventId, stationId]);
+
+  useEffect(() => {
+    (async () => {
+      const queue = await readPendingSubmissions();
+      if (queue.length) {
+        setPendingCount(queue.length);
+        await processPendingSubmissions();
+      }
+    })();
+  }, [processPendingSubmissions]);
 
   const loadCategoryAnswers = useCallback(async () => {
     if (!eventId || !stationId) return;
@@ -80,6 +228,19 @@ export default function ScanAndScoreScreen({ judge = '', onJudgeChange = () => {
   useEffect(() => {
     loadCategoryAnswers();
   }, [loadCategoryAnswers]);
+
+  const resetForm = useCallback(() => {
+    setScanned(false);
+    setPatrol(null);
+    setPoints('');
+    setWait('0');
+    setNote('');
+    setAnswersInput('');
+    setAnswersError('');
+    setUseTargetScoring(false);
+    setAutoScore({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
+    autoScoringManuallySet.current = false;
+  }, []);
 
   const onScan = async ({ data }) => {
     setScanned(true);
@@ -258,79 +419,134 @@ export default function ScanAndScoreScreen({ judge = '', onJudgeChange = () => {
       pts = autoScore.correct;
       normalizedAnswers = autoScore.normalizedGiven;
     } else {
+      if (!points.trim()) {
+        Alert.alert('Chyba', 'Body jsou povinné.');
+        return;
+      }
       const parsedPoints = parseInt(points, 10);
       if (Number.isNaN(parsedPoints)) {
         Alert.alert('Chyba', 'Body musí být celé číslo.');
         return;
       }
+      if (parsedPoints < -12 || parsedPoints > 12) {
+        Alert.alert('Chyba', 'Body musí být v rozsahu -12 až 12.');
+        return;
+      }
       pts = parsedPoints;
     }
 
-    const w = parseInt(wait, 10) || 0;
-    const now = new Date().toISOString();
-    await supabase.from('station_passages').upsert(
-      {
-        event_id: eventId,
-        patrol_id: patrol.id,
-        station_id: stationId,
-        arrived_at: now,
-        wait_minutes: w
-      },
-      { onConflict: 'event_id,patrol_id,station_id' }
-    );
-
-    const { error } = await supabase.from('station_scores').upsert(
-      {
-        event_id: eventId,
-        patrol_id: patrol.id,
-        station_id: stationId,
-        points: pts,
-        judge,
-        note
-      },
-      { onConflict: 'event_id,patrol_id,station_id' }
-    );
-
-    if (error) {
-      Alert.alert('Nepovedlo se uložit', String(error.message));
+    const waitValue = wait.trim() === '' ? 0 : parseInt(wait, 10);
+    if (Number.isNaN(waitValue) || waitValue < 0) {
+      Alert.alert('Chyba', 'Čekací doba musí být nezáporné číslo.');
       return;
     }
+    const w = waitValue;
+    const now = new Date().toISOString();
 
-    if (useTargetScoring && normalizedAnswers !== null) {
-      const { error: quizError } = await supabase.from('station_quiz_responses').upsert(
+    const submission = {
+      event_id: eventId,
+      station_id: stationId,
+      patrol_id: patrol.id,
+      category: patrol.category,
+      arrived_at: now,
+      wait_minutes: w,
+      points: pts,
+      judge,
+      note,
+      useTargetScoring,
+      normalizedAnswers,
+      shouldDeleteQuiz: !useTargetScoring
+    };
+
+    const passageRes = await supabase
+      .from('station_passages')
+      .upsert(
         {
           event_id: eventId,
           patrol_id: patrol.id,
           station_id: stationId,
-          category: patrol.category,
-          answers: normalizedAnswers,
-          correct_count: pts
+          arrived_at: now,
+          wait_minutes: w
         },
-        { onConflict: 'event_id,station_id,patrol_id' }
+        { onConflict: 'event_id,patrol_id,station_id' }
       );
-      if (quizError) {
-        Alert.alert('Nepovedlo se uložit odpovědi', String(quizError.message));
+
+    if (passageRes.error) {
+      await enqueuePendingSubmission(submission);
+      Alert.alert(
+        'Offline uložení',
+        `Nepodařilo se uložit průchod hlídky (${passageRes.error.message}). Záznam byl uložen do fronty.`
+      );
+      resetForm();
+      return;
+    }
+
+    const scoreRes = await supabase
+      .from('station_scores')
+      .upsert(
+        {
+          event_id: eventId,
+          patrol_id: patrol.id,
+          station_id: stationId,
+          points: pts,
+          judge,
+          note
+        },
+        { onConflict: 'event_id,patrol_id,station_id' }
+      );
+
+    if (scoreRes.error) {
+      await enqueuePendingSubmission(submission);
+      Alert.alert(
+        'Offline uložení',
+        `Nepodařilo se uložit body (${scoreRes.error.message}). Záznam byl uložen do fronty.`
+      );
+      resetForm();
+      return;
+    }
+
+    if (useTargetScoring && normalizedAnswers !== null) {
+      const quizRes = await supabase
+        .from('station_quiz_responses')
+        .upsert(
+          {
+            event_id: eventId,
+            patrol_id: patrol.id,
+            station_id: stationId,
+            category: patrol.category,
+            answers: normalizedAnswers,
+            correct_count: pts
+          },
+          { onConflict: 'event_id,station_id,patrol_id' }
+        );
+      if (quizRes.error) {
+        await enqueuePendingSubmission(submission);
+        Alert.alert(
+          'Offline uložení',
+          `Nepodařilo se uložit odpovědi (${quizRes.error.message}). Záznam byl uložen do fronty.`
+        );
+        resetForm();
+        return;
+      }
+    } else {
+      const deleteRes = await supabase
+        .from('station_quiz_responses')
+        .delete()
+        .match({ event_id: eventId, station_id: stationId, patrol_id: patrol.id });
+      if (deleteRes.error) {
+        await enqueuePendingSubmission(submission);
+        Alert.alert(
+          'Offline uložení',
+          `Nepodařilo se odstranit odpovědi (${deleteRes.error.message}). Záznam byl uložen do fronty.`
+        );
+        resetForm();
         return;
       }
     }
 
-    if (!useTargetScoring) {
-      await supabase
-        .from('station_quiz_responses')
-        .delete()
-        .match({ event_id: eventId, station_id: stationId, patrol_id: patrol.id });
-    }
-
     Alert.alert('Uloženo', `${patrol.team_name}: ${pts} b`);
-    setScanned(false);
-    setPatrol(null);
-    setPoints('');
-    setWait('0');
-    setNote('');
-    setAnswersInput('');
-    setAnswersError('');
-    setUseTargetScoring(false);
-    autoScoringManuallySet.current = false;
+    resetForm();
+    processPendingSubmissions();
   };
 
   if (hasPermission === null) return <Text>Žádám oprávnění ke kameře…</Text>;
@@ -346,6 +562,20 @@ export default function ScanAndScoreScreen({ judge = '', onJudgeChange = () => {
           <Text style={styles.answersTitle}>Správné odpovědi (12 otázek)</Text>
           <Text style={styles.answersToggle}>{showAnswersEditor ? '▴' : '▾'}</Text>
         </TouchableOpacity>
+        {pendingCount > 0 ? (
+          <View style={styles.pendingBanner}>
+            <Text style={styles.pendingText}>
+              Čeká na odeslání: {pendingCount} {syncingPending ? '(synchronizuji…)' : ''}
+            </Text>
+            <View style={styles.pendingActions}>
+              <Button
+                title="Odeslat nyní"
+                onPress={processPendingSubmissions}
+                disabled={syncingPending}
+              />
+            </View>
+          </View>
+        ) : null}
         {answersLoading ? (
           <View style={styles.answersLoader}>
             <ActivityIndicator />
@@ -427,7 +657,7 @@ export default function ScanAndScoreScreen({ judge = '', onJudgeChange = () => {
             ) : (
               <TextInput
                 style={styles.input}
-                placeholder="Body (0–12; u T −12..12)"
+                placeholder="Body (-12 až 12)"
                 keyboardType="number-pad"
                 value={points}
                 onChangeText={setPoints}
@@ -475,6 +705,16 @@ const styles = StyleSheet.create({
   },
   answersTitle: { fontWeight: '700', fontSize: 16 },
   answersToggle: { fontSize: 18 },
+  pendingBanner: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#fff7e6',
+    borderColor: '#ffd591',
+    borderWidth: 1
+  },
+  pendingText: { fontSize: 12, color: '#8a6d3b', marginBottom: 6 },
+  pendingActions: { alignSelf: 'flex-start' },
   answersLoader: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   answersLoaderText: { marginLeft: 8, opacity: 0.7 },
   answersSummary: { marginTop: 8 },
