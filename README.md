@@ -75,5 +75,3 @@ seton://p/<patrol_code>
 1. Nasadit Supabase realtime posluchače pro automatické obnovování seznamu posledních záznamů.
 2. Přidat detailní report terčových odpovědí (např. export pro výsledkovou kancelář).
 3. Zvážit základní integrační test (např. přes Detox) pro klíčový flow sken → hodnocení → uložení.
-
-**Pozn.:** kód je minimální funkční základ – přizpůsob si vzhled, navigaci a validace dle potřeb.
