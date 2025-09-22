@@ -17,8 +17,9 @@ export default {
     extra: {
       EXPO_PUBLIC_SUPABASE_URL: "https://vdkbdnxkpeeqxnruwiah.supabase.co",
       EXPO_PUBLIC_SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZka2JkbnhrcGVlcXhucnV3aWFoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODUyMjAxNSwiZXhwIjoyMDc0MDk4MDE1fQ.IBjUr4baAwMOh0Bp9w1byZLclFkFF57NpMTqVy7pdJU",
-      EXPO_PUBLIC_EVENT_ID: "00000000-0000-0000-0000-000000000000",
-      EXPO_PUBLIC_STATION_ID: "00000000-0000-0000-0000-000000000001"
-    }
+      EXPO_PUBLIC_EVENT_ID: "192b9c16-0747-4b62-949b-2bd5ec1c7730",
+      EXPO_PUBLIC_STATION_ID: "cca45c48-f2d2-4feb-9e23-052ffcc697df"
+    },
+    plugins: ["expo-barcode-scanner"]
   }
 }
