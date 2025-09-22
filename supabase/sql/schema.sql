@@ -35,6 +35,10 @@ create table if not exists stations (
   name text not null
 );
 
+do $$ begin
+  alter table stations add constraint stations_event_code_key unique (event_id, code);
+exception when duplicate_object then null; end $$;
+
 create table if not exists station_passages (
   id uuid primary key default gen_random_uuid(),
   event_id uuid not null references events(id) on delete cascade,
