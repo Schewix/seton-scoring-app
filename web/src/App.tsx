@@ -110,9 +110,9 @@ function App() {
   const [savingAnswers, setSavingAnswers] = useState(false);
   const [autoScore, setAutoScore] = useState({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
   const [alerts, setAlerts] = useState<string[]>([]);
-<<<<<<< HEAD
-  const [answersEditorOpen, setAnswersEditorOpen] = useState(false);
+  const [showAnswersEditor, setShowAnswersEditor] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const autoScoringManuallySet = useRef(false);
 
   const updateQueueState = useCallback((items: PendingSubmission[]) => {
     setPendingCount(items.length);
@@ -121,10 +121,6 @@ function App() {
       setShowPendingDetails(false);
     }
   }, []);
-=======
-  const [showAnswersEditor, setShowAnswersEditor] = useState(false);
-  const autoScoringManuallySet = useRef(false);
->>>>>>> main
 
   const pushAlert = useCallback((message: string) => {
     setAlerts((prev) => [...prev, message]);
@@ -279,12 +275,8 @@ function App() {
     setAutoScore({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
     setUseTargetScoring(false);
     setScanActive(true);
-<<<<<<< HEAD
-  }, []);
-=======
     autoScoringManuallySet.current = false;
-  };
->>>>>>> main
+  }, []);
 
   const fetchPatrol = useCallback(
     async (patrolCode: string) => {
@@ -308,6 +300,7 @@ function App() {
       setAnswersError('');
       setScanActive(false);
       setManualCode('');
+      autoScoringManuallySet.current = false;
 
       const stored = categoryAnswers[data.category] || '';
       const total = parseAnswerLetters(stored).length;
@@ -317,7 +310,6 @@ function App() {
     [categoryAnswers, pushAlert]
   );
 
-<<<<<<< HEAD
   const handleScanResult = useCallback(
     async (text: string) => {
       const match = text.match(/seton:\/\/p\/(.+)$/);
@@ -329,14 +321,6 @@ function App() {
     },
     [fetchPatrol, pushAlert]
   );
-=======
-    autoScoringManuallySet.current = false;
-    const stored = categoryAnswers[data.category] || '';
-    const total = parseAnswerLetters(stored).length;
-    setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
-    setUseTargetScoring(Boolean(stored));
-  }, [categoryAnswers, pushAlert]);
->>>>>>> main
 
   useEffect(() => {
     if (!patrol) {
@@ -581,15 +565,31 @@ function App() {
     () => (patrol ? parseAnswerLetters(categoryAnswers[patrol.category] || '').length : 0),
     [patrol, categoryAnswers]
   );
-<<<<<<< HEAD
-
   const heroBadges = useMemo(
     () => [
-      `Event: ${eventId.slice(0, 8)}…`,
-      `Stanoviště: ${stationId.slice(0, 8)}…`,
+      `Event: ${shortId(eventId)}`,
+      `Stanoviště: ${shortId(stationId)}`,
       pendingCount ? `Offline fronta: ${pendingCount}` : 'Offline fronta prázdná',
     ],
     [pendingCount]
+  );
+
+  const answersSummary = useMemo(
+    () =>
+      ANSWER_CATEGORIES.reduce(
+        (acc, cat) => {
+          const letters = parseAnswerLetters(categoryAnswers[cat] || '');
+          acc[cat] = { letters, count: letters.length };
+          return acc;
+        },
+        {} as Record<CategoryKey, { letters: string[]; count: number }>
+      ),
+    [categoryAnswers]
+  );
+
+  const hasAnyAnswers = useMemo(
+    () => ANSWER_CATEGORIES.some((cat) => answersSummary[cat].count > 0),
+    [answersSummary]
   );
 
   return (
@@ -603,31 +603,6 @@ function App() {
             <h1>Uzlování – stanoviště</h1>
             <p>Webová podpora rozhodčích s QR skenerem, automatickým hodnocením a offline frontou.</p>
           </div>
-=======
-  const answersSummary = useMemo(
-    () =>
-      ANSWER_CATEGORIES.reduce(
-        (acc, cat) => {
-          const letters = parseAnswerLetters(categoryAnswers[cat] || '');
-          acc[cat] = { letters, count: letters.length };
-          return acc;
-        },
-        {} as Record<CategoryKey, { letters: string[]; count: number }>
-      ),
-    [categoryAnswers]
-  );
-  const hasAnyAnswers = useMemo(() => ANSWER_CATEGORIES.some((cat) => answersSummary[cat].count > 0), [answersSummary]);
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div>
-          <h1>Seton – Stanoviště</h1>
-          <p>
-            Event: <code title={eventId}>{shortId(eventId)}</code>
-            {' • '}Stanoviště: <code title={stationId}>{shortId(stationId)}</code>
-          </p>
->>>>>>> main
         </div>
         <div className="hero-meta">
           {heroBadges.map((badge) => (
@@ -642,7 +617,6 @@ function App() {
         </div>
       </header>
 
-<<<<<<< HEAD
       <main className="content">
         {alerts.length ? (
           <div className="alerts">
@@ -660,101 +634,79 @@ function App() {
               <h2>Správné odpovědi</h2>
               <p className="card-subtitle">Každá kategorie musí mít 12 odpovědí (A–D).</p>
             </div>
-            <button type="button" className="ghost" onClick={() => setAnswersEditorOpen((prev) => !prev)}>
-              {answersEditorOpen ? 'Zobrazit přehled' : 'Upravit odpovědi'}
-            </button>
-          </header>
-          {loadingAnswers ? <p>Načítám…</p> : null}
-          {!answersEditorOpen ? (
-            <div className="answers-summary">
-              {ANSWER_CATEGORIES.map((cat) => {
-                const stored = categoryAnswers[cat];
-                const letters = parseAnswerLetters(stored || '');
-                return (
-                  <div key={cat} className="answers-summary-row">
-                    <span className="answers-tag">{cat}</span>
-                    <span className="answers-value">
-                      {letters.length ? `${letters.length} • ${letters.join(' ')}` : 'Nenastaveno'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="answers-editor">
-=======
-      <main className="layout">
-        <section className="card">
-          <header className="card-header">
-            <h2>Správné odpovědi (12 otázek)</h2>
             <div className="card-actions">
-              <button className="secondary" onClick={() => setShowAnswersEditor((prev) => !prev)}>
-                {showAnswersEditor ? 'Skrýt editor' : 'Upravit odpovědi'}
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => setShowAnswersEditor((prev) => !prev)}
+              >
+                {showAnswersEditor ? 'Zobrazit přehled' : 'Upravit odpovědi'}
               </button>
-              <button className="secondary" onClick={loadCategoryAnswers} disabled={loadingAnswers}>
+              <button
+                type="button"
+                className="ghost"
+                onClick={loadCategoryAnswers}
+                disabled={loadingAnswers}
+              >
                 {loadingAnswers ? 'Načítám…' : 'Obnovit'}
               </button>
             </div>
           </header>
           {showAnswersEditor ? (
-            <>
+            <div className="answers-editor">
               <p className="card-hint">Zadej 12 odpovědí (A/B/C/D) pro každou kategorii.</p>
->>>>>>> main
               <div className="answers-grid">
                 {ANSWER_CATEGORIES.map((cat) => (
                   <label key={cat} className="answers-field">
                     <span>{cat}</span>
                     <input
                       value={answersForm[cat]}
-<<<<<<< HEAD
                       onChange={(event) =>
                         setAnswersForm((prev) => ({ ...prev, [cat]: event.target.value.toUpperCase() }))
                       }
                       placeholder="např. A B C D …"
-=======
-                      onChange={(e) =>
-                        setAnswersForm((prev) => ({ ...prev, [cat]: e.target.value.toUpperCase() }))
-                      }
-                      placeholder="např. A B C D ..."
->>>>>>> main
                     />
                   </label>
                 ))}
               </div>
-<<<<<<< HEAD
               <div className="answers-actions">
-                <button type="button" className="primary" onClick={saveCategoryAnswers} disabled={savingAnswers}>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={saveCategoryAnswers}
+                  disabled={savingAnswers}
+                >
                   {savingAnswers ? 'Ukládám…' : 'Uložit správné odpovědi'}
                 </button>
-                <button type="button" className="ghost" onClick={loadCategoryAnswers} disabled={loadingAnswers}>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={loadCategoryAnswers}
+                  disabled={loadingAnswers}
+                >
                   Znovu načíst
                 </button>
               </div>
-=======
-              <button onClick={saveCategoryAnswers} disabled={savingAnswers}>
-                {savingAnswers ? 'Ukládám…' : 'Uložit správné odpovědi'}
-              </button>
-            </>
+            </div>
           ) : (
             <div className="answers-summary">
               {ANSWER_CATEGORIES.map((cat) => {
                 const summary = answersSummary[cat];
                 return (
                   <div key={cat} className="answers-summary-row">
-                    <span className="answers-summary-label">{cat}</span>
-                    <span className={summary.count ? 'answers-summary-value' : 'answers-summary-empty'}>
-                      {summary.count ? `${summary.count} • ${summary.letters.join(' ')}` : 'nenastaveno'}
+                    <span className="answers-tag">{cat}</span>
+                    <span className="answers-value">
+                      {summary.count ? `${summary.count} • ${summary.letters.join(' ')}` : 'Nenastaveno'}
                     </span>
                   </div>
                 );
               })}
-              {!hasAnyAnswers && !loadingAnswers ? (
-                <p className="answers-summary-note">Správné odpovědi zatím nejsou nastavené.</p>
-              ) : null}
-              {loadingAnswers ? <p className="answers-summary-note">Načítám…</p> : null}
->>>>>>> main
             </div>
           )}
+          {!showAnswersEditor && !hasAnyAnswers && !loadingAnswers ? (
+            <p className="card-hint">Správné odpovědi zatím nejsou nastavené.</p>
+          ) : null}
+          {!showAnswersEditor && loadingAnswers ? <p className="card-hint">Načítám…</p> : null}
         </section>
 
         <section className="card scanner-card">
@@ -831,14 +783,10 @@ function App() {
                 <input
                   type="checkbox"
                   checked={useTargetScoring}
-<<<<<<< HEAD
-                  onChange={(event) => setUseTargetScoring(event.target.checked)}
-=======
-                  onChange={(e) => {
+                  onChange={(event) => {
                     autoScoringManuallySet.current = true;
-                    setUseTargetScoring(e.target.checked);
+                    setUseTargetScoring(event.target.checked);
                   }}
->>>>>>> main
                 />
                 <span>Vyhodnotit terčový úsek</span>
               </label>
@@ -876,13 +824,16 @@ function App() {
           )}
           {pendingCount > 0 ? (
             <div className="pending-banner">
-<<<<<<< HEAD
               <div className="pending-banner-main">
                 <div>
                   Čeká na odeslání: {pendingCount} {syncing ? '(synchronizuji…)' : ''}
                 </div>
                 <div className="pending-banner-actions">
-                  <button type="button" className="ghost" onClick={() => setShowPendingDetails((prev) => !prev)}>
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => setShowPendingDetails((prev) => !prev)}
+                  >
                     {showPendingDetails ? 'Skrýt frontu' : 'Zobrazit frontu'}
                   </button>
                   <button type="button" onClick={syncQueue} disabled={syncing}>
@@ -947,12 +898,6 @@ function App() {
                   )}
                 </div>
               ) : null}
-=======
-              <p>Čeká na odeslání: {pendingCount}{syncing ? ' (synchronizuji…)' : ''}</p>
-              <button onClick={syncQueue} disabled={syncing}>
-                {syncing ? 'Synchronizuji…' : 'Odeslat nyní'}
-              </button>
->>>>>>> main
             </div>
           ) : null}
         </section>
