@@ -284,6 +284,79 @@ describe('station workflow', () => {
     expect(storedQueue).toBeNull();
   });
 
+  it('queues target quiz response when Supabase quiz upsert fails', async () => {
+    supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Terčové stanoviště' }));
+    supabaseMock.__setMock(
+      'station_category_answers',
+      () => createSelectResult([{ category: 'N', correct_answers: 'ABCDABCDABCD' }])
+    );
+
+    const passagesUpsert = vi.fn().mockResolvedValue({ error: null });
+    supabaseMock.__setMock('station_passages', () => ({
+      upsert: passagesUpsert,
+    }));
+
+    const scoresUpsert = vi.fn().mockResolvedValue({ error: null });
+    supabaseMock.__setMock('station_scores', () => {
+      const base = supabaseMock.__getDefault('station_scores') as Record<string, unknown>;
+      return {
+        ...base,
+        upsert: scoresUpsert,
+      };
+    });
+
+    const quizUpsert = vi.fn().mockResolvedValue({ error: new Error('Offline failure') });
+    supabaseMock.__setMock('station_quiz_responses', () => {
+      const base = supabaseMock.__getDefault('station_quiz_responses') as Record<string, unknown>;
+      return {
+        ...base,
+        upsert: quizUpsert,
+      };
+    });
+
+    const { default: App } = await import('../App');
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await screen.findByText('Správné odpovědi');
+
+    await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
+    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+
+    await screen.findAllByText(/Vlci/);
+
+    await user.type(screen.getByPlaceholderText('Jméno'), 'Ivana');
+
+    const answersInput = await screen.findByLabelText('Odpovědi hlídky (12)');
+    await user.type(answersInput, 'A B C D A B C D A B C D');
+
+    await screen.findByText('Správně: 12 / 12');
+
+    await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
+
+    await screen.findByText('Offline: odpovědi uložené do fronty.');
+    await screen.findByText(/Čeká na odeslání: 1/);
+
+    expect(passagesUpsert).toHaveBeenCalledTimes(1);
+    expect(scoresUpsert).toHaveBeenCalledTimes(1);
+    expect(quizUpsert).toHaveBeenCalledTimes(1);
+
+    const storedQueue = (await localforage.getItem(QUEUE_KEY)) as unknown[] | null;
+    expect(storedQueue).not.toBeNull();
+    expect(storedQueue).toHaveLength(1);
+
+    const [queued] = storedQueue!;
+    expect(queued).toMatchObject({
+      useTargetScoring: true,
+      normalizedAnswers: 'ABCDABCDABCD',
+      shouldDeleteQuiz: false,
+      judge: 'Ivana',
+      points: 12,
+    });
+  });
+
   it('synchronizes pending queue when connectivity is restored', async () => {
     const pendingItem = {
       event_id: 'event-test',
@@ -358,6 +431,75 @@ describe('station workflow', () => {
       event_id: 'event-test',
       station_id: 'station-test',
       patrol_id: 'patrol-queued',
+    });
+
+    const storedQueue = await localforage.getItem(QUEUE_KEY);
+    expect(storedQueue).toBeNull();
+  });
+
+  it('uploads queued target quiz responses during synchronization', async () => {
+    const pendingItem = {
+      event_id: 'event-test',
+      station_id: 'station-test',
+      patrol_id: 'patrol-target',
+      category: 'N',
+      arrived_at: new Date('2024-02-01T09:15:00Z').toISOString(),
+      wait_minutes: 0,
+      points: 11,
+      judge: 'Roman',
+      note: 'Terč offline',
+      useTargetScoring: true,
+      normalizedAnswers: 'ABCDABCDABCD',
+      shouldDeleteQuiz: false,
+      patrol_code: 'N-77',
+      team_name: 'Ještěrky',
+      sex: 'F',
+    };
+
+    await localforage.setItem(QUEUE_KEY, [pendingItem]);
+
+    const passagesUpsert = vi.fn().mockResolvedValue({ error: null });
+    supabaseMock.__setMock('station_passages', () => ({
+      upsert: passagesUpsert,
+    }));
+
+    const scoresUpsert = vi.fn().mockResolvedValue({ error: null });
+    supabaseMock.__setMock('station_scores', () => {
+      const base = supabaseMock.__getDefault('station_scores') as Record<string, unknown>;
+      return {
+        ...base,
+        upsert: scoresUpsert,
+      };
+    });
+
+    const quizUpsert = vi.fn().mockResolvedValue({ error: null });
+    supabaseMock.__setMock('station_quiz_responses', () => {
+      const base = supabaseMock.__getDefault('station_quiz_responses') as Record<string, unknown>;
+      return {
+        ...base,
+        upsert: quizUpsert,
+      };
+    });
+
+    const { default: App } = await import('../App');
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await screen.findByText(/Synchronizováno 1 záznamů\./);
+
+    expect(passagesUpsert).toHaveBeenCalledTimes(1);
+    expect(scoresUpsert).toHaveBeenCalledTimes(1);
+    expect(quizUpsert).toHaveBeenCalledTimes(1);
+
+    const [quizPayload] = quizUpsert.mock.calls.at(-1)!;
+    expect(quizPayload).toMatchObject({
+      event_id: 'event-test',
+      station_id: 'station-test',
+      patrol_id: 'patrol-target',
+      answers: 'ABCDABCDABCD',
+      correct_count: 11,
+      category: 'N',
     });
 
     const storedQueue = await localforage.getItem(QUEUE_KEY);
