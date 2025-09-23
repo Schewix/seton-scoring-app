@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 
 const eventId = import.meta.env.VITE_EVENT_ID as string | undefined;
@@ -31,13 +32,21 @@ function parseAnswerLetters(value?: string | null) {
   return (value?.match(/[A-D]/gi) || []).map((l) => l.toUpperCase());
 }
 
+interface LoadOptions {
+  skipLoader?: boolean;
+}
+
 export function LastScoresList() {
   const [rows, setRows] = useState<ScoreRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const refreshTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const load = useCallback(async ({ skipLoader = false }: LoadOptions = {}) => {
+    if (!skipLoader) {
+      setLoading(true);
+    }
     const [scoresRes, quizRes] = await Promise.all([
       supabase
         .from('station_scores')
@@ -71,15 +80,58 @@ export function LastScoresList() {
     }));
 
     setRows(merged);
-  }, []);
+  }, [eventId, stationId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  const scheduleRealtimeRefresh = useCallback(() => {
+    if (refreshTimeout.current) {
+      clearTimeout(refreshTimeout.current);
+    }
+    refreshTimeout.current = setTimeout(() => {
+      load({ skipLoader: true });
+    }, 250);
+  }, [load]);
+
+  useEffect(() => {
+    const handleScopedRefresh = (
+      payload: RealtimePostgresChangesPayload<{ event_id?: string; station_id?: string }>
+    ) => {
+      const record = payload.new ?? payload.old;
+      if (record?.event_id !== eventId || record?.station_id !== stationId) {
+        return;
+      }
+      scheduleRealtimeRefresh();
+    };
+
+    const channel = supabase
+      .channel(`station-scores-${eventId}-${stationId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'station_scores' },
+        handleScopedRefresh
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'station_quiz_responses' },
+        handleScopedRefresh
+      )
+      .subscribe();
+
+    return () => {
+      if (refreshTimeout.current) {
+        clearTimeout(refreshTimeout.current);
+        refreshTimeout.current = null;
+      }
+      supabase.removeChannel(channel);
+    };
+  }, [scheduleRealtimeRefresh, eventId, stationId]);
+
   const handleRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await load({ skipLoader: true });
     setRefreshing(false);
   };
 
