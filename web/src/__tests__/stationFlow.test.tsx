@@ -59,17 +59,25 @@ vi.mock('../supabaseClient', () => {
         };
       case 'stations':
         return {
-          select: () => ({
-            eq: () => ({
+          select: () => {
+            const listResult = Promise.resolve({
+              data: [{ id: 'station-test', code: 'X', name: 'Testovací stanoviště' }],
+              error: null,
+            });
+            const maybeSingleResult = Promise.resolve({
+              data: { code: 'X', name: 'Testovací stanoviště' },
+              error: null,
+            });
+            return {
               eq: () => ({
-                maybeSingle: () =>
-                  Promise.resolve({
-                    data: { code: 'X', name: 'Testovací stanoviště' },
-                    error: null,
-                  }),
+                eq: () => ({
+                  maybeSingle: () => maybeSingleResult,
+                }),
+                order: () => listResult,
               }),
-            }),
-          }),
+              order: () => listResult,
+            };
+          },
         };
       case 'station_passages':
         return {
@@ -149,16 +157,24 @@ interface SupabaseTestClient {
 
 const supabaseMock = supabase as unknown as SupabaseTestClient;
 
-const QUEUE_KEY = 'web_pending_station_submissions_v1';
+const QUEUE_KEY = 'web_pending_station_submissions_v1_station-test';
 
 function createMaybeSingleResult<T>(data: T, error: unknown = null) {
+  const row = {
+    id: 'station-test',
+    code: (data as unknown as { code?: string }).code ?? 'X',
+    name: (data as unknown as { name?: string | null }).name ?? null,
+  };
+  const listResult = Promise.resolve({ data: [row], error: null });
   return {
     select: () => ({
       eq: () => ({
         eq: () => ({
           maybeSingle: () => Promise.resolve({ data, error }),
         }),
+        order: () => listResult,
       }),
+      order: () => listResult,
     }),
   };
 }
