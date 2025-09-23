@@ -1,7 +1,13 @@
 -- Results view (sum points, sum without 'T', pure time)
 create or replace view results as
 select
-  p.event_id, p.id as patrol_id, p.team_name, p.category, p.sex,
+  p.event_id,
+  p.id as patrol_id,
+  p.patrol_code,
+  p.team_name,
+  p.category,
+  p.sex,
+  p.note as patrol_members,
   sum(s.points) as total_points,
   sum(case when st.code <> 'T' then s.points else 0 end) as points_no_T,
   (
@@ -14,7 +20,16 @@ left join station_scores s on s.patrol_id=p.id and s.event_id=p.event_id
 left join stations st on st.id = s.station_id
 left join timings t on t.event_id=p.event_id and t.patrol_id=p.id
 where p.active is true
-group by p.event_id, p.id, p.team_name, p.category, p.sex, t.start_time, t.finish_time;
+group by
+  p.event_id,
+  p.id,
+  p.patrol_code,
+  p.team_name,
+  p.category,
+  p.sex,
+  p.note,
+  t.start_time,
+  t.finish_time;
 
 -- Ranking per (category, sex)
 create or replace view results_ranked as

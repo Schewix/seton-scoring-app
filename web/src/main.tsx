@@ -1,10 +1,30 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
 import './index.css';
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
+
+const params = new URLSearchParams(window.location.search);
+const view = params.get('view');
+
+function render(element: React.ReactNode) {
+  root.render(<React.StrictMode>{element}</React.StrictMode>);
+}
+
+if (view === 'scoreboard') {
+  import('./scoreboard/ScoreboardApp')
+    .then(({ default: ScoreboardApp }) => {
+      render(<ScoreboardApp />);
+    })
+    .catch((error) => {
+      console.error('Failed to load scoreboard view', error);
+    });
+} else {
+  import('./App')
+    .then(({ default: App }) => {
+      render(<App />);
+    })
+    .catch((error) => {
+      console.error('Failed to load scoring app', error);
+    });
+}
