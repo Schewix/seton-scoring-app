@@ -36,13 +36,20 @@ body {
 }
 
 .hero-logo {
-  width: 88px;
-  height: 88px;
+  width: 96px;
+  height: 96px;
   border-radius: 28px;
   background: rgba(255, 255, 255, 0.12);
   display: grid;
   place-items: center;
-  font-size: 42px;
+  padding: 12px;
+  box-shadow: 0 18px 34px rgba(15, 118, 110, 0.28);
+}
+
+.hero-logo img {
+  width: 100%;
+  height: auto;
+  display: block;
 }
 
 .hero h1 {

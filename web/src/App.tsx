@@ -5,6 +5,8 @@ import LastScoresList from './components/LastScoresList';
 import TargetAnswersReport from './components/TargetAnswersReport';
 import { supabase } from './supabaseClient';
 import './App.css';
+import setonLogo from './assets/seton-logo.png';
+
 
 interface Patrol {
   id: string;
@@ -699,10 +701,9 @@ function App() {
   const heroBadges = useMemo(
     () => [
       `Event: ${shortId(eventId)}`,
-      `Stanoviště: ${
-        stationMeta?.code
-          ? `${stationMeta.code}${stationMeta.name ? ` • ${stationMeta.name}` : ''}`
-          : shortId(stationId)
+      `Stanoviště: ${stationMeta?.code
+        ? `${stationMeta.code}${stationMeta.name ? ` • ${stationMeta.name}` : ''}`
+        : shortId(stationId)
       }`,
       pendingCount ? `Offline fronta: ${pendingCount}` : 'Offline fronta prázdná',
     ],
@@ -735,11 +736,11 @@ function App() {
     <div className="app-shell">
       <header className="hero">
         <div className="hero-brand">
-          <div className="hero-logo" aria-hidden>
-            <span>🪢</span>
+          <div className="hero-logo">
+            <img src={setonLogo} alt="Logo Setonův závod" />
           </div>
           <div>
-            <h1>Uzlování – stanoviště</h1>
+            <h1>Setonův závod - stanoviště</h1>
             <p>Webová podpora rozhodčích s QR skenerem, automatickým hodnocením a offline frontou.</p>
           </div>
         </div>
