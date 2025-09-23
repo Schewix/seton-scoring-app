@@ -1,0 +1,270 @@
+:root {
+  color-scheme: light;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #f5f5f5;
+  color: #1f2933;
+}
+
+body {
+  margin: 0;
+  background: #f5f5f5;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  padding: 16px 24px;
+  background: #1f2933;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.topbar code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alert {
+  background: #2563eb;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.3);
+}
+
+.layout {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.card h2 {
+  margin: 0;
+}
+
+button {
+  cursor: pointer;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+}
+
+button:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+button.secondary {
+  background: #e2e8f0;
+  color: #1f2933;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+input,
+textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.answers-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.answers-field span {
+  font-size: 12px;
+  color: #475569;
+}
+
+.switch-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.scanner-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.qr-scanner {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #0f172a;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.qr-scanner video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.qr-error {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  background: rgba(220, 38, 38, 0.9);
+  color: #fff;
+  padding: 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.manual-entry {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.manual-entry input {
+  min-width: 180px;
+}
+
+.form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.patrol-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pending-banner {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.score-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.score-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.score-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.score-detail {
+  font-size: 15px;
+}
+
+.score-note {
+  font-style: italic;
+  color: #475569;
+}
+
+.score-quiz {
+  font-size: 13px;
+  color: #1d4ed8;
+}
+
+.auto-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.error-text {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .layout {
+    padding: 16px;
+  }
+
+  .manual-entry {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
