@@ -2,13 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { unwrapRelation } from './utils';
 
-const eventId = import.meta.env.VITE_EVENT_ID as string | undefined;
-const stationId = import.meta.env.VITE_STATION_ID as string | undefined;
-
-if (!eventId || !stationId) {
-  throw new Error('Missing VITE_EVENT_ID or VITE_STATION_ID environment variable.');
-}
-
 interface TargetRow {
   patrol_id: string;
   correct_count: number;
@@ -42,7 +35,12 @@ function mapTargetRows(rows: TargetRowRecord[] = []): TargetRow[] {
   }));
 }
 
-export default function TargetAnswersReport() {
+interface TargetAnswersReportProps {
+  eventId: string;
+  stationId: string;
+}
+
+export default function TargetAnswersReport({ eventId, stationId }: TargetAnswersReportProps) {
   const [rows, setRows] = useState<TargetRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
