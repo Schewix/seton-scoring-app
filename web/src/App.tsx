@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import localforage from 'localforage';
-import { QRScanner } from './components/QRScanner';
+import QRScanner from './components/QRScanner';
 import LastScoresList from './components/LastScoresList';
+import TargetAnswersReport from './components/TargetAnswersReport';
 import { supabase } from './supabaseClient';
 import './App.css';
 
@@ -10,6 +11,7 @@ interface Patrol {
   team_name: string;
   category: string;
   sex: string;
+  patrol_code: string;
 }
 
 interface PendingSubmission {
@@ -26,6 +28,8 @@ interface PendingSubmission {
   normalizedAnswers: string | null;
   shouldDeleteQuiz: boolean;
   patrol_code: string;
+  team_name?: string;
+  sex?: string;
 }
 
 const ANSWER_CATEGORIES = ['N', 'M', 'S', 'R'] as const;
@@ -33,12 +37,15 @@ type CategoryKey = (typeof ANSWER_CATEGORIES)[number];
 const QUEUE_KEY = 'web_pending_station_submissions_v1';
 const JUDGE_KEY = 'judge_name';
 
-const eventId = import.meta.env.VITE_EVENT_ID as string | undefined;
-const stationId = import.meta.env.VITE_STATION_ID as string | undefined;
+const rawEventId = import.meta.env.VITE_EVENT_ID as string | undefined;
+const rawStationId = import.meta.env.VITE_STATION_ID as string | undefined;
 
-if (!eventId || !stationId) {
+if (!rawEventId || !rawStationId) {
   throw new Error('Missing VITE_EVENT_ID or VITE_STATION_ID environment variables.');
 }
+
+const eventId = rawEventId;
+const stationId = rawStationId;
 
 localforage.config({
   name: 'seton-web',
@@ -69,6 +76,10 @@ async function writeQueue(items: PendingSubmission[]) {
   }
 }
 
+function formatTime(value: string) {
+  return new Date(value).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+}
+
 function App() {
   const [judge, setJudge] = useState('');
   const [patrol, setPatrol] = useState<Patrol | null>(null);
@@ -86,6 +97,8 @@ function App() {
     R: '',
   });
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingItems, setPendingItems] = useState<PendingSubmission[]>([]);
+  const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [scanActive, setScanActive] = useState(true);
@@ -93,12 +106,22 @@ function App() {
   const [savingAnswers, setSavingAnswers] = useState(false);
   const [autoScore, setAutoScore] = useState({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
   const [alerts, setAlerts] = useState<string[]>([]);
+  const [answersEditorOpen, setAnswersEditorOpen] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+
+  const updateQueueState = useCallback((items: PendingSubmission[]) => {
+    setPendingCount(items.length);
+    setPendingItems(items);
+    if (items.length === 0) {
+      setShowPendingDetails(false);
+    }
+  }, []);
 
   const pushAlert = useCallback((message: string) => {
     setAlerts((prev) => [...prev, message]);
     setTimeout(() => {
       setAlerts((prev) => prev.slice(1));
-    }, 4000);
+    }, 4500);
   }, []);
 
   useEffect(() => {
@@ -127,14 +150,16 @@ function App() {
     }
 
     const map: Record<string, string> = {};
-    const form = { ...answersForm };
+    const form: Record<CategoryKey, string> = { N: '', M: '', S: '', R: '' };
     (data || []).forEach((row) => {
       map[row.category] = row.correct_answers;
-      form[row.category as keyof typeof form] = formatAnswersForInput(row.correct_answers);
+      if (ANSWER_CATEGORIES.includes(row.category as CategoryKey)) {
+        form[row.category as CategoryKey] = formatAnswersForInput(row.correct_answers);
+      }
     });
     setCategoryAnswers(map);
     setAnswersForm(form);
-  }, [answersForm, pushAlert]);
+  }, [pushAlert]);
 
   useEffect(() => {
     loadCategoryAnswers();
@@ -142,9 +167,8 @@ function App() {
 
   const syncQueue = useCallback(async () => {
     const queue = await readQueue();
-    setPendingCount(queue.length);
-    if (!queue.length) return;
-    if (syncing) return;
+    updateQueueState(queue);
+    if (!queue.length || syncing) return;
 
     setSyncing(true);
     const remaining: PendingSubmission[] = [];
@@ -220,13 +244,14 @@ function App() {
     }
 
     await writeQueue(remaining);
-    setPendingCount(remaining.length);
+    updateQueueState(remaining);
     setSyncing(false);
 
     if (flushed) {
       pushAlert(`Synchronizováno ${flushed} záznamů.`);
+      setLastSavedAt(new Date().toISOString());
     }
-  }, [pushAlert, syncing]);
+  }, [pushAlert, syncing, updateQueueState]);
 
   useEffect(() => {
     syncQueue();
@@ -235,7 +260,7 @@ function App() {
     return () => window.removeEventListener('online', onOnline);
   }, [syncQueue]);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setPatrol(null);
     setPoints('');
     setWait('0');
@@ -245,43 +270,50 @@ function App() {
     setAutoScore({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
     setUseTargetScoring(false);
     setScanActive(true);
-  };
+  }, []);
 
-  const handleScanResult = async (text: string) => {
-    const match = text.match(/seton:\/\/p\/(.+)$/);
-    if (!match) {
-      pushAlert('Neplatný QR kód. Očekávám seton://p/<code>');
-      return;
-    }
-    await fetchPatrol(match[1]);
-  };
+  const fetchPatrol = useCallback(
+    async (patrolCode: string) => {
+      const { data, error } = await supabase
+        .from('patrols')
+        .select('id, team_name, category, sex, patrol_code')
+        .eq('event_id', eventId)
+        .eq('patrol_code', patrolCode)
+        .maybeSingle();
 
-  const fetchPatrol = useCallback(async (patrolCode: string) => {
-    const { data, error } = await supabase
-      .from('patrols')
-      .select('id, team_name, category, sex')
-      .eq('event_id', eventId)
-      .eq('patrol_code', patrolCode)
-      .maybeSingle();
+      if (error || !data) {
+        pushAlert('Hlídka nenalezena.');
+        return;
+      }
 
-    if (error || !data) {
-      pushAlert('Hlídka nenalezena.');
-      return;
-    }
+      setPatrol({ ...data });
+      setPoints('');
+      setWait('0');
+      setNote('');
+      setAnswersInput('');
+      setAnswersError('');
+      setScanActive(false);
+      setManualCode('');
 
-    setPatrol({ ...data });
-    setPoints('');
-    setWait('0');
-    setNote('');
-    setAnswersInput('');
-    setAnswersError('');
-    setScanActive(false);
+      const stored = categoryAnswers[data.category] || '';
+      const total = parseAnswerLetters(stored).length;
+      setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
+      setUseTargetScoring(Boolean(stored));
+    },
+    [categoryAnswers, pushAlert]
+  );
 
-    const stored = categoryAnswers[data.category] || '';
-    const total = parseAnswerLetters(stored).length;
-    setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
-    setUseTargetScoring(Boolean(stored));
-  }, [categoryAnswers, pushAlert]);
+  const handleScanResult = useCallback(
+    async (text: string) => {
+      const match = text.match(/seton:\/\/p\/(.+)$/);
+      if (!match) {
+        pushAlert('Neplatný QR kód. Očekávám seton://p/<code>');
+        return;
+      }
+      await fetchPatrol(match[1]);
+    },
+    [fetchPatrol, pushAlert]
+  );
 
   useEffect(() => {
     if (!patrol || !useTargetScoring) {
@@ -313,7 +345,7 @@ function App() {
 
   const saveCategoryAnswers = useCallback(async () => {
     setSavingAnswers(true);
-    const updates = [] as { event_id: string; station_id: string; category: string; correct_answers: string }[];
+    const updates: { event_id: string; station_id: string; category: string; correct_answers: string }[] = [];
     const deletions: string[] = [];
 
     for (const cat of ANSWER_CATEGORIES) {
@@ -408,10 +440,21 @@ function App() {
       useTargetScoring,
       normalizedAnswers,
       shouldDeleteQuiz: !useTargetScoring,
-      patrol_code: '',
+      patrol_code: patrol.patrol_code,
+      team_name: patrol.team_name,
+      sex: patrol.sex,
     };
 
     const queueBefore = await readQueue();
+    const queueWithSubmission = [...queueBefore, submission];
+    const handleOfflineFallback = async (message: string) => {
+      await writeQueue(queueWithSubmission);
+      updateQueueState(queueWithSubmission);
+      setShowPendingDetails(true);
+      pushAlert(message);
+      setLastSavedAt(now);
+      resetForm();
+    };
 
     const passageRes = await supabase
       .from('station_passages')
@@ -427,10 +470,7 @@ function App() {
       );
 
     if (passageRes.error) {
-      await writeQueue([...queueBefore, submission]);
-      setPendingCount(queueBefore.length + 1);
-      pushAlert('Offline: průchod uložen do fronty.');
-      resetForm();
+      await handleOfflineFallback('Offline: průchod uložen do fronty.');
       return;
     }
 
@@ -449,10 +489,7 @@ function App() {
       );
 
     if (scoreRes.error) {
-      await writeQueue([...queueBefore, submission]);
-      setPendingCount(queueBefore.length + 1);
-      pushAlert('Offline: body uložené do fronty.');
-      resetForm();
+      await handleOfflineFallback('Offline: body uložené do fronty.');
       return;
     }
 
@@ -471,10 +508,7 @@ function App() {
           { onConflict: 'event_id,station_id,patrol_id' }
         );
       if (quizRes.error) {
-        await writeQueue([...queueBefore, submission]);
-        setPendingCount(queueBefore.length + 1);
-        pushAlert('Offline: odpovědi uložené do fronty.');
-        resetForm();
+        await handleOfflineFallback('Offline: odpovědi uložené do fronty.');
         return;
       }
     } else {
@@ -483,83 +517,183 @@ function App() {
         .delete()
         .match({ event_id: eventId, station_id: stationId, patrol_id: patrol.id });
       if (deleteRes.error) {
-        await writeQueue([...queueBefore, submission]);
-        setPendingCount(queueBefore.length + 1);
-        pushAlert('Offline: odstranění odpovědí čeká ve frontě.');
-        resetForm();
+        await handleOfflineFallback('Offline: odstranění odpovědí čeká ve frontě.');
         return;
       }
     }
 
     pushAlert(`Uloženo: ${patrol.team_name} (${scorePoints} b)`);
+    setLastSavedAt(now);
     resetForm();
     syncQueue();
-  }, [autoScore, judge, note, patrol, points, wait, useTargetScoring, syncQueue, pushAlert]);
+  }, [
+    autoScore,
+    judge,
+    note,
+    patrol,
+    points,
+    wait,
+    useTargetScoring,
+    syncQueue,
+    pushAlert,
+    resetForm,
+    updateQueueState,
+  ]);
 
-  const totalAnswers = useMemo(() => (patrol ? parseAnswerLetters(categoryAnswers[patrol.category] || '').length : 0), [patrol, categoryAnswers]);
+  const totalAnswers = useMemo(
+    () => (patrol ? parseAnswerLetters(categoryAnswers[patrol.category] || '').length : 0),
+    [patrol, categoryAnswers]
+  );
+
+  const heroBadges = useMemo(
+    () => [
+      `Event: ${eventId.slice(0, 8)}…`,
+      `Stanoviště: ${stationId.slice(0, 8)}…`,
+      pendingCount ? `Offline fronta: ${pendingCount}` : 'Offline fronta prázdná',
+    ],
+    [pendingCount]
+  );
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <div>
-          <h1>Seton – Stanoviště</h1>
-          <p>
-            Event: <code>{eventId}</code>
-            {' • '}Stanoviště: <code>{stationId}</code>
-          </p>
+      <header className="hero">
+        <div className="hero-brand">
+          <div className="hero-logo" aria-hidden>
+            <span>🪢</span>
+          </div>
+          <div>
+            <h1>Uzlování – stanoviště</h1>
+            <p>Webová podpora rozhodčích s QR skenerem, automatickým hodnocením a offline frontou.</p>
+          </div>
         </div>
-        <div className="alerts">
-          {alerts.map((msg, idx) => (
-            <div key={idx} className="alert">
-              {msg}
-            </div>
+        <div className="hero-meta">
+          {heroBadges.map((badge) => (
+            <span key={badge} className="meta-pill">
+              {badge}
+            </span>
           ))}
+          {lastSavedAt ? (
+            <span className="meta-pill subtle">Poslední záznam: {formatTime(lastSavedAt)}</span>
+          ) : null}
+          {syncing ? <span className="meta-pill subtle">Synchronizuji frontu…</span> : null}
         </div>
       </header>
 
-      <main className="layout">
-        <section className="card">
-          <h2>Správné odpovědi (12 otázek)</h2>
-          {loadingAnswers ? <p>Načítám…</p> : null}
-          <div className="answers-grid">
-            {ANSWER_CATEGORIES.map((cat) => (
-              <label key={cat} className="answers-field">
-                <span>{cat}</span>
-                <input
-                  value={answersForm[cat]}
-                  onChange={(e) =>
-                    setAnswersForm((prev) => ({ ...prev, [cat]: e.target.value.toUpperCase() }))
-                  }
-                  placeholder="např. A B C D ..."
-                />
-              </label>
+      <main className="content">
+        {alerts.length ? (
+          <div className="alerts">
+            {alerts.map((msg, idx) => (
+              <div key={idx} className="alert">
+                {msg}
+              </div>
             ))}
           </div>
-          <button onClick={saveCategoryAnswers} disabled={savingAnswers}>
-            {savingAnswers ? 'Ukládám…' : 'Uložit správné odpovědi'}
-          </button>
+        ) : null}
+
+        <section className="card answers-card">
+          <header className="card-header">
+            <div>
+              <h2>Správné odpovědi</h2>
+              <p className="card-subtitle">Každá kategorie musí mít 12 odpovědí (A–D).</p>
+            </div>
+            <button type="button" className="ghost" onClick={() => setAnswersEditorOpen((prev) => !prev)}>
+              {answersEditorOpen ? 'Zobrazit přehled' : 'Upravit odpovědi'}
+            </button>
+          </header>
+          {loadingAnswers ? <p>Načítám…</p> : null}
+          {!answersEditorOpen ? (
+            <div className="answers-summary">
+              {ANSWER_CATEGORIES.map((cat) => {
+                const stored = categoryAnswers[cat];
+                const letters = parseAnswerLetters(stored || '');
+                return (
+                  <div key={cat} className="answers-summary-row">
+                    <span className="answers-tag">{cat}</span>
+                    <span className="answers-value">
+                      {letters.length ? `${letters.length} • ${letters.join(' ')}` : 'Nenastaveno'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="answers-editor">
+              <div className="answers-grid">
+                {ANSWER_CATEGORIES.map((cat) => (
+                  <label key={cat} className="answers-field">
+                    <span>{cat}</span>
+                    <input
+                      value={answersForm[cat]}
+                      onChange={(event) =>
+                        setAnswersForm((prev) => ({ ...prev, [cat]: event.target.value.toUpperCase() }))
+                      }
+                      placeholder="např. A B C D …"
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="answers-actions">
+                <button type="button" className="primary" onClick={saveCategoryAnswers} disabled={savingAnswers}>
+                  {savingAnswers ? 'Ukládám…' : 'Uložit správné odpovědi'}
+                </button>
+                <button type="button" className="ghost" onClick={loadCategoryAnswers} disabled={loadingAnswers}>
+                  Znovu načíst
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
-        <section className="card">
-          <h2>Skener hlídek</h2>
+        <section className="card scanner-card">
+          <div className="scanner-icon" aria-hidden>
+            <span>📷</span>
+          </div>
+          <div className="scanner-copy">
+            <h2>Skener hlídek</h2>
+            <p>Naskenuj QR kód nebo zadej kód ručně. Po načtení se formulář otevře automaticky.</p>
+          </div>
           <div className="scanner-wrapper">
             <QRScanner active={scanActive} onResult={handleScanResult} onError={(err) => console.error(err)} />
             <div className="manual-entry">
               <label>
-                Ruční kód:
+                Ruční kód
                 <input
                   value={manualCode}
-                  onChange={(e) => setManualCode(e.target.value)}
+                  onChange={(event) => setManualCode(event.target.value)}
                   placeholder="např. NH-15"
                 />
               </label>
-              <button onClick={() => manualCode.trim() && fetchPatrol(manualCode.trim())}>Načíst hlídku</button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => manualCode.trim() && fetchPatrol(manualCode.trim())}
+              >
+                Načíst hlídku
+              </button>
             </div>
+            {patrol ? (
+              <div className="scanner-preview">
+                <strong>{patrol.team_name}</strong>
+                <span>
+                  {patrol.category}/{patrol.sex}
+                </span>
+              </div>
+            ) : (
+              <p className="scanner-placeholder">Nejprve naskenuj QR kód hlídky.</p>
+            )}
           </div>
         </section>
 
-        <section className="card">
-          <h2>Formulář stanoviště</h2>
+        <section className="card form-card">
+          <header className="card-header">
+            <div>
+              <h2>Stanovištní formulář</h2>
+              <p className="card-subtitle">Vyplň body, čekací dobu, poznámku a potvrď uložení.</p>
+            </div>
+            <button type="button" className="ghost" onClick={resetForm}>
+              Vymazat
+            </button>
+          </header>
           {patrol ? (
             <div className="form-grid">
               <div className="patrol-meta">
@@ -570,67 +704,134 @@ function App() {
               </div>
               <label>
                 Rozhodčí
-                <input value={judge} onChange={(e) => setJudge(e.target.value)} placeholder="Jméno" />
+                <input value={judge} onChange={(event) => setJudge(event.target.value)} placeholder="Jméno" />
               </label>
               <label>
                 Čekací doba (minuty)
-                <input value={wait} onChange={(e) => setWait(e.target.value)} type="number" min={0} />
+                <input value={wait} onChange={(event) => setWait(event.target.value)} type="number" min={0} />
               </label>
               <label>
                 Poznámka
-                <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} />
+                <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} />
               </label>
-
               <label className="switch-field">
                 <input
                   type="checkbox"
                   checked={useTargetScoring}
-                  onChange={(e) => setUseTargetScoring(e.target.checked)}
+                  onChange={(event) => setUseTargetScoring(event.target.checked)}
                 />
                 <span>Vyhodnotit terčový úsek</span>
               </label>
-
               {useTargetScoring ? (
                 <div className="auto-section">
                   <label>
-                    Odpovědi hlídky ({totalAnswers || '–'}):
+                    Odpovědi hlídky ({totalAnswers || '–'})
                     <input
                       value={answersInput}
-                      onChange={(e) => setAnswersInput(e.target.value.toUpperCase())}
-                      placeholder="např. A B C D ..."
+                      onChange={(event) => setAnswersInput(event.target.value.toUpperCase())}
+                      placeholder="např. A B C D …"
                     />
                   </label>
-                  <p>
-                    Správně: {autoScore.correct} / {autoScore.total}
-                  </p>
+                  <p className="auto-score">Správně: {autoScore.correct} / {autoScore.total}</p>
                   {answersError ? <p className="error-text">{answersError}</p> : null}
                 </div>
               ) : (
                 <label>
                   Body (-12 až 12)
-                  <input value={points} onChange={(e) => setPoints(e.target.value)} type="number" min={-12} max={12} />
+                  <input
+                    value={points}
+                    onChange={(event) => setPoints(event.target.value)}
+                    type="number"
+                    min={-12}
+                    max={12}
+                  />
                 </label>
               )}
-
-              <button onClick={handleSave}>Uložit</button>
-              <button className="secondary" onClick={resetForm}>
-                Zrušit
+              <button type="button" className="primary" onClick={handleSave}>
+                Uložit záznam
               </button>
             </div>
           ) : (
-            <p>Nejprve naskenuj hlídku.</p>
+            <p className="form-placeholder">Nejprve naskenuj hlídku a otevři formulář.</p>
           )}
           {pendingCount > 0 ? (
             <div className="pending-banner">
-              <p>Čeká na odeslání: {pendingCount}</p>
-              <button onClick={syncQueue} disabled={syncing}>
-                {syncing ? 'Synchronizuji…' : 'Odeslat nyní'}
-              </button>
+              <div className="pending-banner-main">
+                <div>
+                  Čeká na odeslání: {pendingCount} {syncing ? '(synchronizuji…)' : ''}
+                </div>
+                <div className="pending-banner-actions">
+                  <button type="button" className="ghost" onClick={() => setShowPendingDetails((prev) => !prev)}>
+                    {showPendingDetails ? 'Skrýt frontu' : 'Zobrazit frontu'}
+                  </button>
+                  <button type="button" onClick={syncQueue} disabled={syncing}>
+                    {syncing ? 'Pracuji…' : 'Odeslat nyní'}
+                  </button>
+                </div>
+              </div>
+              {showPendingDetails ? (
+                <div className="pending-preview">
+                  {pendingItems.length === 0 ? (
+                    <p>Fronta je prázdná.</p>
+                  ) : (
+                    <div className="table-scroll">
+                      <table className="pending-table">
+                        <thead>
+                          <tr>
+                            <th>Hlídka</th>
+                            <th>Body / Terč</th>
+                            <th>Rozhodčí</th>
+                            <th>Poznámka</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pendingItems.map((item, index) => {
+                            const answers = item.useTargetScoring
+                              ? formatAnswersForInput(item.normalizedAnswers || '')
+                              : '';
+                            const patrolLabel = item.team_name || 'Neznámá hlídka';
+                            const codeLabel = item.patrol_code ? ` (${item.patrol_code})` : '';
+                            const categoryLabel = item.sex ? `${item.category}/${item.sex}` : item.category;
+                            return (
+                              <tr key={`${item.patrol_id}-${item.arrived_at}-${index}`}>
+                                <td>
+                                  <div className="pending-patrol">
+                                    <strong>
+                                      {patrolLabel}
+                                      {codeLabel}
+                                    </strong>
+                                    <span className="pending-subline">{categoryLabel}</span>
+                                    <span className="pending-subline">Čekání: {item.wait_minutes} min</span>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="pending-score">
+                                    <span className="pending-score-points">{item.points} b</span>
+                                    <span className="pending-subline">
+                                      {item.useTargetScoring ? 'Terčový úsek' : 'Manuální body'}
+                                    </span>
+                                    {item.useTargetScoring ? (
+                                      <span className="pending-answers">{answers || '—'}</span>
+                                    ) : null}
+                                  </div>
+                                </td>
+                                <td>{item.judge || '—'}</td>
+                                <td>{item.note ? item.note : '—'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </section>
 
         <LastScoresList />
+        <TargetAnswersReport />
       </main>
     </div>
   );
