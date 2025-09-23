@@ -131,6 +131,13 @@ body {
   margin: 0;
 }
 
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .card-subtitle {
   margin: 6px 0 0;
   font-size: 14px;
