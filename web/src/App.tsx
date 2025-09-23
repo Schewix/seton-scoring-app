@@ -32,6 +32,11 @@ interface PendingSubmission {
   sex?: string;
 }
 
+interface StationMeta {
+  code: string;
+  name: string;
+}
+
 const ANSWER_CATEGORIES = ['N', 'M', 'S', 'R'] as const;
 type CategoryKey = (typeof ANSWER_CATEGORIES)[number];
 const QUEUE_KEY = 'web_pending_station_submissions_v1';
@@ -39,6 +44,7 @@ const JUDGE_KEY = 'judge_name';
 
 const rawEventId = import.meta.env.VITE_EVENT_ID as string | undefined;
 const rawStationId = import.meta.env.VITE_STATION_ID as string | undefined;
+const rawAdminMode = import.meta.env.VITE_ADMIN_MODE as string | undefined;
 
 if (!rawEventId || !rawStationId) {
   throw new Error('Missing VITE_EVENT_ID or VITE_STATION_ID environment variables.');
@@ -46,6 +52,8 @@ if (!rawEventId || !rawStationId) {
 
 const eventId = rawEventId;
 const stationId = rawStationId;
+const isAdminMode =
+  typeof rawAdminMode === 'string' && ['1', 'true', 'yes', 'on'].includes(rawAdminMode.toLowerCase());
 
 localforage.config({
   name: 'seton-web',
@@ -84,11 +92,24 @@ function formatTime(value: string) {
   return new Date(value).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatWaitDuration(seconds: number) {
+  const safe = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
+}
+
+function waitSecondsToMinutes(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.round(seconds / 60));
+}
+
 function App() {
   const [judge, setJudge] = useState('');
   const [patrol, setPatrol] = useState<Patrol | null>(null);
   const [points, setPoints] = useState('');
-  const [wait, setWait] = useState('0');
   const [note, setNote] = useState('');
   const [answersInput, setAnswersInput] = useState('');
   const [answersError, setAnswersError] = useState('');
@@ -100,6 +121,7 @@ function App() {
     S: '',
     R: '',
   });
+  const [stationMeta, setStationMeta] = useState<StationMeta | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingItems, setPendingItems] = useState<PendingSubmission[]>([]);
   const [showPendingDetails, setShowPendingDetails] = useState(false);
@@ -112,7 +134,17 @@ function App() {
   const [alerts, setAlerts] = useState<string[]>([]);
   const [showAnswersEditor, setShowAnswersEditor] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
-  const autoScoringManuallySet = useRef(false);
+  const [arrivedAt, setArrivedAt] = useState<string | null>(null);
+  const [isWaiting, setIsWaiting] = useState(false);
+  const [waitDurationSeconds, setWaitDurationSeconds] = useState(0);
+  const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const waitStartRef = useRef<number | null>(null);
+
+  const isTargetStation = useMemo(() => {
+    const code = stationMeta?.code?.trim().toUpperCase() || '';
+    return code === 'T';
+  }, [stationMeta]);
+  const canEditAnswers = isAdminMode;
 
   const updateQueueState = useCallback((items: PendingSubmission[]) => {
     setPendingCount(items.length);
@@ -130,6 +162,38 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    const loadStation = async () => {
+      const { data, error } = await supabase
+        .from('stations')
+        .select('code, name')
+        .eq('event_id', eventId)
+        .eq('id', stationId)
+        .maybeSingle();
+
+      if (!active) {
+        return;
+      }
+
+      if (error) {
+        console.error('Failed to load station info', error);
+        pushAlert('Nepodařilo se načíst informace o stanovišti.');
+        return;
+      }
+
+      if (data) {
+        setStationMeta(data);
+      }
+    };
+
+    loadStation();
+
+    return () => {
+      active = false;
+    };
+  }, [eventId, stationId, pushAlert]);
+
+  useEffect(() => {
     const stored = window.localStorage.getItem(JUDGE_KEY);
     if (stored) setJudge(stored);
   }, []);
@@ -137,6 +201,64 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(JUDGE_KEY, judge);
   }, [judge]);
+
+  useEffect(() => {
+    setUseTargetScoring(isTargetStation);
+  }, [isTargetStation]);
+
+  useEffect(() => {
+    if (!canEditAnswers) {
+      setShowAnswersEditor(false);
+    }
+  }, [canEditAnswers]);
+
+  const clearWait = useCallback(() => {
+    if (waitTimerRef.current) {
+      clearInterval(waitTimerRef.current);
+      waitTimerRef.current = null;
+    }
+    waitStartRef.current = null;
+    setIsWaiting(false);
+    setWaitDurationSeconds(0);
+  }, []);
+
+  const startWait = useCallback(() => {
+    const start = Date.now();
+    if (waitTimerRef.current) {
+      clearInterval(waitTimerRef.current);
+    }
+    waitStartRef.current = start;
+    setIsWaiting(true);
+    setWaitDurationSeconds(0);
+    waitTimerRef.current = setInterval(() => {
+      if (waitStartRef.current === null) {
+        return;
+      }
+      const elapsed = Math.floor((Date.now() - waitStartRef.current) / 1000);
+      setWaitDurationSeconds(elapsed);
+    }, 500);
+  }, []);
+
+  const stopWait = useCallback(() => {
+    if (waitTimerRef.current) {
+      clearInterval(waitTimerRef.current);
+      waitTimerRef.current = null;
+    }
+    if (waitStartRef.current !== null) {
+      const elapsed = Math.floor((Date.now() - waitStartRef.current) / 1000);
+      setWaitDurationSeconds(elapsed);
+    }
+    waitStartRef.current = null;
+    setIsWaiting(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (waitTimerRef.current) {
+        clearInterval(waitTimerRef.current);
+      }
+    };
+  }, []);
 
   const loadCategoryAnswers = useCallback(async () => {
     setLoadingAnswers(true);
@@ -167,8 +289,13 @@ function App() {
   }, [pushAlert]);
 
   useEffect(() => {
+    if (!isTargetStation) {
+      setCategoryAnswers({});
+      setAnswersForm({ N: '', M: '', S: '', R: '' });
+      return;
+    }
     loadCategoryAnswers();
-  }, [loadCategoryAnswers]);
+  }, [isTargetStation, loadCategoryAnswers]);
 
   const syncQueue = useCallback(async () => {
     const queue = await readQueue();
@@ -268,15 +395,16 @@ function App() {
   const resetForm = useCallback(() => {
     setPatrol(null);
     setPoints('');
-    setWait('0');
     setNote('');
     setAnswersInput('');
     setAnswersError('');
     setAutoScore({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
-    setUseTargetScoring(false);
+    setUseTargetScoring(isTargetStation);
     setScanActive(true);
-    autoScoringManuallySet.current = false;
-  }, []);
+    setManualCode('');
+    setArrivedAt(null);
+    clearWait();
+  }, [clearWait, isTargetStation]);
 
   const fetchPatrol = useCallback(
     async (patrolCode: string) => {
@@ -294,20 +422,20 @@ function App() {
 
       setPatrol({ ...data });
       setPoints('');
-      setWait('0');
       setNote('');
       setAnswersInput('');
       setAnswersError('');
       setScanActive(false);
       setManualCode('');
-      autoScoringManuallySet.current = false;
+      setArrivedAt(new Date().toISOString());
+      clearWait();
 
       const stored = categoryAnswers[data.category] || '';
       const total = parseAnswerLetters(stored).length;
       setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
-      setUseTargetScoring(Boolean(stored));
+      setUseTargetScoring(isTargetStation);
     },
-    [categoryAnswers, pushAlert]
+    [categoryAnswers, clearWait, isTargetStation, pushAlert]
   );
 
   const handleScanResult = useCallback(
@@ -330,10 +458,6 @@ function App() {
     const stored = categoryAnswers[patrol.category] || '';
     const total = parseAnswerLetters(stored).length;
     setAutoScore((prev) => ({ ...prev, total }));
-
-    if (!autoScoringManuallySet.current) {
-      setUseTargetScoring(Boolean(stored));
-    }
   }, [categoryAnswers, patrol]);
 
   useEffect(() => {
@@ -434,27 +558,32 @@ function App() {
       normalizedAnswers = autoScore.normalizedGiven;
     } else {
       const parsed = parseInt(points, 10);
-      if (Number.isNaN(parsed) || parsed < -12 || parsed > 12) {
-        pushAlert('Body musí být číslo v rozsahu -12 až 12.');
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 12) {
+        pushAlert('Body musí být číslo v rozsahu 0 až 12.');
         return;
       }
       scorePoints = parsed;
     }
 
-    const waitValue = wait.trim() === '' ? 0 : parseInt(wait, 10);
-    if (Number.isNaN(waitValue) || waitValue < 0) {
-      pushAlert('Čekací doba musí být nezáporné číslo.');
-      return;
+    let effectiveWaitSeconds = waitDurationSeconds;
+    if (!useTargetScoring) {
+      if (waitStartRef.current !== null) {
+        effectiveWaitSeconds = Math.floor((Date.now() - waitStartRef.current) / 1000);
+      }
+      stopWait();
     }
 
+    const waitMinutes = useTargetScoring ? 0 : waitSecondsToMinutes(effectiveWaitSeconds);
+
     const now = new Date().toISOString();
+    const arrivalIso = arrivedAt || now;
     const submission: PendingSubmission = {
       event_id: eventId,
       station_id: stationId,
       patrol_id: patrol.id,
       category: patrol.category,
-      arrived_at: now,
-      wait_minutes: waitValue,
+      arrived_at: arrivalIso,
+      wait_minutes: waitMinutes,
       points: scorePoints,
       judge,
       note,
@@ -484,8 +613,8 @@ function App() {
           event_id: eventId,
           station_id: stationId,
           patrol_id: patrol.id,
-          arrived_at: now,
-          wait_minutes: waitValue,
+          arrived_at: arrivalIso,
+          wait_minutes: waitMinutes,
         },
         { onConflict: 'event_id,patrol_id,station_id' }
       );
@@ -553,12 +682,14 @@ function App() {
     note,
     patrol,
     points,
-    wait,
     useTargetScoring,
     syncQueue,
     pushAlert,
     resetForm,
     updateQueueState,
+    waitDurationSeconds,
+    stopWait,
+    arrivedAt,
   ]);
 
   const totalAnswers = useMemo(
@@ -568,10 +699,14 @@ function App() {
   const heroBadges = useMemo(
     () => [
       `Event: ${shortId(eventId)}`,
-      `Stanoviště: ${shortId(stationId)}`,
+      `Stanoviště: ${
+        stationMeta?.code
+          ? `${stationMeta.code}${stationMeta.name ? ` • ${stationMeta.name}` : ''}`
+          : shortId(stationId)
+      }`,
       pendingCount ? `Offline fronta: ${pendingCount}` : 'Offline fronta prázdná',
     ],
-    [pendingCount]
+    [pendingCount, stationMeta]
   );
 
   const answersSummary = useMemo(
@@ -591,6 +726,10 @@ function App() {
     () => ANSWER_CATEGORIES.some((cat) => answersSummary[cat].count > 0),
     [answersSummary]
   );
+
+  const waitSecondsDisplay = useTargetScoring ? 0 : waitDurationSeconds;
+  const waitMinutesDisplay = useTargetScoring ? 0 : waitSecondsToMinutes(waitDurationSeconds);
+  const hasWaitValue = useTargetScoring ? false : waitDurationSeconds > 0 || isWaiting;
 
   return (
     <div className="app-shell">
@@ -628,86 +767,95 @@ function App() {
           </div>
         ) : null}
 
-        <section className="card answers-card">
-          <header className="card-header">
-            <div>
-              <h2>Správné odpovědi</h2>
-              <p className="card-subtitle">Každá kategorie musí mít 12 odpovědí (A–D).</p>
-            </div>
-            <div className="card-actions">
-              <button
-                type="button"
-                className="ghost"
-                onClick={() => setShowAnswersEditor((prev) => !prev)}
-              >
-                {showAnswersEditor ? 'Zobrazit přehled' : 'Upravit odpovědi'}
-              </button>
-              <button
-                type="button"
-                className="ghost"
-                onClick={loadCategoryAnswers}
-                disabled={loadingAnswers}
-              >
-                {loadingAnswers ? 'Načítám…' : 'Obnovit'}
-              </button>
-            </div>
-          </header>
-          {showAnswersEditor ? (
-            <div className="answers-editor">
-              <p className="card-hint">Zadej 12 odpovědí (A/B/C/D) pro každou kategorii.</p>
-              <div className="answers-grid">
-                {ANSWER_CATEGORIES.map((cat) => (
-                  <label key={cat} className="answers-field">
-                    <span>{cat}</span>
-                    <input
-                      value={answersForm[cat]}
-                      onChange={(event) =>
-                        setAnswersForm((prev) => ({ ...prev, [cat]: event.target.value.toUpperCase() }))
-                      }
-                      placeholder="např. A B C D …"
-                    />
-                  </label>
-                ))}
+        {isTargetStation ? (
+          <section className="card answers-card">
+            <header className="card-header">
+              <div>
+                <h2>Správné odpovědi</h2>
+                <p className="card-subtitle">Každá kategorie musí mít 12 odpovědí (A–D).</p>
               </div>
-              <div className="answers-actions">
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={saveCategoryAnswers}
-                  disabled={savingAnswers}
-                >
-                  {savingAnswers ? 'Ukládám…' : 'Uložit správné odpovědi'}
-                </button>
+              <div className="card-actions">
+                {canEditAnswers ? (
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => setShowAnswersEditor((prev) => !prev)}
+                  >
+                    {showAnswersEditor ? 'Zobrazit přehled' : 'Upravit odpovědi'}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="ghost"
                   onClick={loadCategoryAnswers}
                   disabled={loadingAnswers}
                 >
-                  Znovu načíst
+                  {loadingAnswers ? 'Načítám…' : 'Obnovit'}
                 </button>
               </div>
-            </div>
-          ) : (
-            <div className="answers-summary">
-              {ANSWER_CATEGORIES.map((cat) => {
-                const summary = answersSummary[cat];
-                return (
-                  <div key={cat} className="answers-summary-row">
-                    <span className="answers-tag">{cat}</span>
-                    <span className="answers-value">
-                      {summary.count ? `${summary.count} • ${summary.letters.join(' ')}` : 'Nenastaveno'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {!showAnswersEditor && !hasAnyAnswers && !loadingAnswers ? (
-            <p className="card-hint">Správné odpovědi zatím nejsou nastavené.</p>
-          ) : null}
-          {!showAnswersEditor && loadingAnswers ? <p className="card-hint">Načítám…</p> : null}
-        </section>
+            </header>
+            {canEditAnswers && showAnswersEditor ? (
+              <div className="answers-editor">
+                <p className="card-hint">Zadej 12 odpovědí (A/B/C/D) pro každou kategorii.</p>
+                <div className="answers-grid">
+                  {ANSWER_CATEGORIES.map((cat) => (
+                    <label key={cat} className="answers-field">
+                      <span>{cat}</span>
+                      <input
+                        value={answersForm[cat]}
+                        onChange={(event) =>
+                          setAnswersForm((prev) => ({ ...prev, [cat]: event.target.value.toUpperCase() }))
+                        }
+                        placeholder="např. A B C D …"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="answers-actions">
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={saveCategoryAnswers}
+                    disabled={savingAnswers}
+                  >
+                    {savingAnswers ? 'Ukládám…' : 'Uložit správné odpovědi'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={loadCategoryAnswers}
+                    disabled={loadingAnswers}
+                  >
+                    Znovu načíst
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="answers-summary">
+                {ANSWER_CATEGORIES.map((cat) => {
+                  const summary = answersSummary[cat];
+                  return (
+                    <div key={cat} className="answers-summary-row">
+                      <span className="answers-tag">{cat}</span>
+                      <span className="answers-value">
+                        {summary.count ? `${summary.count} • ${summary.letters.join(' ')}` : 'Nenastaveno'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {!canEditAnswers ? (
+              <p className="card-hint">Správné odpovědi může upravit pouze administrátor.</p>
+            ) : null}
+            {!(canEditAnswers && showAnswersEditor) && !hasAnyAnswers && !loadingAnswers ? (
+              <p className="card-hint">Správné odpovědi zatím nejsou nastavené.</p>
+            ) : null}
+            {!(canEditAnswers && showAnswersEditor) && loadingAnswers ? (
+              <p className="card-hint">Načítám…</p>
+            ) : null}
+          </section>
+        ) : null}
 
         <section className="card scanner-card">
           <div className="scanner-icon" aria-hidden>
@@ -753,7 +901,11 @@ function App() {
           <header className="card-header">
             <div>
               <h2>Stanovištní formulář</h2>
-              <p className="card-subtitle">Vyplň body, čekací dobu, poznámku a potvrď uložení.</p>
+              <p className="card-subtitle">
+                {useTargetScoring
+                  ? 'Zadej odpovědi, přidej poznámku a potvrď uložení.'
+                  : 'Vyplň body, čekání, poznámku a potvrď uložení.'}
+              </p>
             </div>
             <button type="button" className="ghost" onClick={resetForm}>
               Vymazat
@@ -771,27 +923,33 @@ function App() {
                 Rozhodčí
                 <input value={judge} onChange={(event) => setJudge(event.target.value)} placeholder="Jméno" />
               </label>
-              <label>
-                Čekací doba (minuty)
-                <input value={wait} onChange={(event) => setWait(event.target.value)} type="number" min={0} />
-              </label>
+              {!useTargetScoring ? (
+                <div className="wait-field">
+                  <span className="wait-label">Čekání</span>
+                  <div className="wait-display">
+                    <strong>{formatWaitDuration(waitSecondsDisplay)}</strong>
+                    <span className="pending-subline">≈ {waitMinutesDisplay} min</span>
+                  </div>
+                  <div className="wait-actions">
+                    <button type="button" onClick={startWait} disabled={isWaiting}>
+                      {isWaiting ? 'Měřím…' : 'Začít čekání'}
+                    </button>
+                    <button type="button" onClick={stopWait} disabled={!isWaiting}>
+                      Ukončit čekání
+                    </button>
+                    <button type="button" className="ghost" onClick={clearWait} disabled={!hasWaitValue}>
+                      Vynulovat
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <label>
                 Poznámka
                 <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} />
               </label>
-              <label className="switch-field">
-                <input
-                  type="checkbox"
-                  checked={useTargetScoring}
-                  onChange={(event) => {
-                    autoScoringManuallySet.current = true;
-                    setUseTargetScoring(event.target.checked);
-                  }}
-                />
-                <span>Vyhodnotit terčový úsek</span>
-              </label>
               {useTargetScoring ? (
                 <div className="auto-section">
+                  <p className="card-hint">Terčový úsek se hodnotí automaticky podle zadaných odpovědí.</p>
                   <label>
                     Odpovědi hlídky ({totalAnswers || '–'})
                     <input
@@ -805,12 +963,12 @@ function App() {
                 </div>
               ) : (
                 <label>
-                  Body (-12 až 12)
+                  Body (0 až 12)
                   <input
                     value={points}
                     onChange={(event) => setPoints(event.target.value)}
                     type="number"
-                    min={-12}
+                    min={0}
                     max={12}
                   />
                 </label>
@@ -902,8 +1060,8 @@ function App() {
           ) : null}
         </section>
 
-        <LastScoresList />
-        <TargetAnswersReport />
+        <LastScoresList isTargetStation={isTargetStation} />
+        {isTargetStation ? <TargetAnswersReport /> : null}
       </main>
     </div>
   );
