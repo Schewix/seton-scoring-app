@@ -739,7 +739,7 @@ function App() {
             <span>🪢</span>
           </div>
           <div>
-            <h1>Uzlování – stanoviště</h1>
+            <h1>Setonův závod - stanoviště</h1>
             <p>Webová podpora rozhodčích s QR skenerem, automatickým hodnocením a offline frontou.</p>
           </div>
         </div>
