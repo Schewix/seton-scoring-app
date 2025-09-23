@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import localforage from 'localforage';
 import { QRScanner } from './components/QRScanner';
 import LastScoresList from './components/LastScoresList';
@@ -56,6 +56,10 @@ function packAnswersForStorage(value = '') {
   return parseAnswerLetters(value).join('');
 }
 
+function shortId(value: string) {
+  return value.length > 8 ? `${value.slice(0, 8)}…` : value;
+}
+
 async function readQueue(): Promise<PendingSubmission[]> {
   const raw = await localforage.getItem<PendingSubmission[]>(QUEUE_KEY);
   return raw || [];
@@ -93,6 +97,8 @@ function App() {
   const [savingAnswers, setSavingAnswers] = useState(false);
   const [autoScore, setAutoScore] = useState({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
   const [alerts, setAlerts] = useState<string[]>([]);
+  const [showAnswersEditor, setShowAnswersEditor] = useState(false);
+  const autoScoringManuallySet = useRef(false);
 
   const pushAlert = useCallback((message: string) => {
     setAlerts((prev) => [...prev, message]);
@@ -245,6 +251,7 @@ function App() {
     setAutoScore({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
     setUseTargetScoring(false);
     setScanActive(true);
+    autoScoringManuallySet.current = false;
   };
 
   const handleScanResult = async (text: string) => {
@@ -277,11 +284,26 @@ function App() {
     setAnswersError('');
     setScanActive(false);
 
+    autoScoringManuallySet.current = false;
     const stored = categoryAnswers[data.category] || '';
     const total = parseAnswerLetters(stored).length;
     setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
     setUseTargetScoring(Boolean(stored));
   }, [categoryAnswers, pushAlert]);
+
+  useEffect(() => {
+    if (!patrol) {
+      return;
+    }
+
+    const stored = categoryAnswers[patrol.category] || '';
+    const total = parseAnswerLetters(stored).length;
+    setAutoScore((prev) => ({ ...prev, total }));
+
+    if (!autoScoringManuallySet.current) {
+      setUseTargetScoring(Boolean(stored));
+    }
+  }, [categoryAnswers, patrol]);
 
   useEffect(() => {
     if (!patrol || !useTargetScoring) {
@@ -496,7 +518,23 @@ function App() {
     syncQueue();
   }, [autoScore, judge, note, patrol, points, wait, useTargetScoring, syncQueue, pushAlert]);
 
-  const totalAnswers = useMemo(() => (patrol ? parseAnswerLetters(categoryAnswers[patrol.category] || '').length : 0), [patrol, categoryAnswers]);
+  const totalAnswers = useMemo(
+    () => (patrol ? parseAnswerLetters(categoryAnswers[patrol.category] || '').length : 0),
+    [patrol, categoryAnswers]
+  );
+  const answersSummary = useMemo(
+    () =>
+      ANSWER_CATEGORIES.reduce(
+        (acc, cat) => {
+          const letters = parseAnswerLetters(categoryAnswers[cat] || '');
+          acc[cat] = { letters, count: letters.length };
+          return acc;
+        },
+        {} as Record<CategoryKey, { letters: string[]; count: number }>
+      ),
+    [categoryAnswers]
+  );
+  const hasAnyAnswers = useMemo(() => ANSWER_CATEGORIES.some((cat) => answersSummary[cat].count > 0), [answersSummary]);
 
   return (
     <div className="app-shell">
@@ -504,8 +542,8 @@ function App() {
         <div>
           <h1>Seton – Stanoviště</h1>
           <p>
-            Event: <code>{eventId}</code>
-            {' • '}Stanoviště: <code>{stationId}</code>
+            Event: <code title={eventId}>{shortId(eventId)}</code>
+            {' • '}Stanoviště: <code title={stationId}>{shortId(stationId)}</code>
           </p>
         </div>
         <div className="alerts">
@@ -519,25 +557,57 @@ function App() {
 
       <main className="layout">
         <section className="card">
-          <h2>Správné odpovědi (12 otázek)</h2>
-          {loadingAnswers ? <p>Načítám…</p> : null}
-          <div className="answers-grid">
-            {ANSWER_CATEGORIES.map((cat) => (
-              <label key={cat} className="answers-field">
-                <span>{cat}</span>
-                <input
-                  value={answersForm[cat]}
-                  onChange={(e) =>
-                    setAnswersForm((prev) => ({ ...prev, [cat]: e.target.value.toUpperCase() }))
-                  }
-                  placeholder="např. A B C D ..."
-                />
-              </label>
-            ))}
-          </div>
-          <button onClick={saveCategoryAnswers} disabled={savingAnswers}>
-            {savingAnswers ? 'Ukládám…' : 'Uložit správné odpovědi'}
-          </button>
+          <header className="card-header">
+            <h2>Správné odpovědi (12 otázek)</h2>
+            <div className="card-actions">
+              <button className="secondary" onClick={() => setShowAnswersEditor((prev) => !prev)}>
+                {showAnswersEditor ? 'Skrýt editor' : 'Upravit odpovědi'}
+              </button>
+              <button className="secondary" onClick={loadCategoryAnswers} disabled={loadingAnswers}>
+                {loadingAnswers ? 'Načítám…' : 'Obnovit'}
+              </button>
+            </div>
+          </header>
+          {showAnswersEditor ? (
+            <>
+              <p className="card-hint">Zadej 12 odpovědí (A/B/C/D) pro každou kategorii.</p>
+              <div className="answers-grid">
+                {ANSWER_CATEGORIES.map((cat) => (
+                  <label key={cat} className="answers-field">
+                    <span>{cat}</span>
+                    <input
+                      value={answersForm[cat]}
+                      onChange={(e) =>
+                        setAnswersForm((prev) => ({ ...prev, [cat]: e.target.value.toUpperCase() }))
+                      }
+                      placeholder="např. A B C D ..."
+                    />
+                  </label>
+                ))}
+              </div>
+              <button onClick={saveCategoryAnswers} disabled={savingAnswers}>
+                {savingAnswers ? 'Ukládám…' : 'Uložit správné odpovědi'}
+              </button>
+            </>
+          ) : (
+            <div className="answers-summary">
+              {ANSWER_CATEGORIES.map((cat) => {
+                const summary = answersSummary[cat];
+                return (
+                  <div key={cat} className="answers-summary-row">
+                    <span className="answers-summary-label">{cat}</span>
+                    <span className={summary.count ? 'answers-summary-value' : 'answers-summary-empty'}>
+                      {summary.count ? `${summary.count} • ${summary.letters.join(' ')}` : 'nenastaveno'}
+                    </span>
+                  </div>
+                );
+              })}
+              {!hasAnyAnswers && !loadingAnswers ? (
+                <p className="answers-summary-note">Správné odpovědi zatím nejsou nastavené.</p>
+              ) : null}
+              {loadingAnswers ? <p className="answers-summary-note">Načítám…</p> : null}
+            </div>
+          )}
         </section>
 
         <section className="card">
@@ -585,7 +655,10 @@ function App() {
                 <input
                   type="checkbox"
                   checked={useTargetScoring}
-                  onChange={(e) => setUseTargetScoring(e.target.checked)}
+                  onChange={(e) => {
+                    autoScoringManuallySet.current = true;
+                    setUseTargetScoring(e.target.checked);
+                  }}
                 />
                 <span>Vyhodnotit terčový úsek</span>
               </label>
@@ -622,7 +695,7 @@ function App() {
           )}
           {pendingCount > 0 ? (
             <div className="pending-banner">
-              <p>Čeká na odeslání: {pendingCount}</p>
+              <p>Čeká na odeslání: {pendingCount}{syncing ? ' (synchronizuji…)' : ''}</p>
               <button onClick={syncQueue} disabled={syncing}>
                 {syncing ? 'Synchronizuji…' : 'Odeslat nyní'}
               </button>

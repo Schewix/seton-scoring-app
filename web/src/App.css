@@ -77,6 +77,18 @@ body {
   margin: 0;
 }
 
+.card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.card-hint {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
 button {
   cursor: pointer;
   background: #2563eb;
@@ -129,6 +141,42 @@ textarea {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.answers-summary {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed #cbd5e1;
+  background: #f8fafc;
+}
+
+.answers-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
+
+.answers-summary-label {
+  font-weight: 600;
+  color: #334155;
+}
+
+.answers-summary-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.answers-summary-empty {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.answers-summary-note {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
 }
 
 .answers-field span {
