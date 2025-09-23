@@ -36,51 +36,74 @@ interface LoadOptions {
   skipLoader?: boolean;
 }
 
-export function LastScoresList() {
+interface LastScoresListProps {
+  isTargetStation: boolean;
+}
+
+export function LastScoresList({ isTargetStation }: LastScoresListProps) {
   const [rows, setRows] = useState<ScoreRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const refreshTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(async ({ skipLoader = false }: LoadOptions = {}) => {
-    if (!skipLoader) {
-      setLoading(true);
-    }
-    const [scoresRes, quizRes] = await Promise.all([
-      supabase
+  const load = useCallback(
+    async ({ skipLoader = false }: LoadOptions = {}) => {
+      if (!skipLoader) {
+        setLoading(true);
+      }
+
+      const scoresQuery = supabase
         .from('station_scores')
         .select('id, created_at, points, note, judge, patrol_id, patrols(team_name, category, sex)')
         .eq('event_id', eventId)
         .eq('station_id', stationId)
         .order('created_at', { ascending: false })
-        .limit(50),
-      supabase
-        .from('station_quiz_responses')
-        .select('patrol_id, correct_count, answers, updated_at')
-        .eq('event_id', eventId)
-        .eq('station_id', stationId),
-    ]);
+        .limit(50);
 
-    setLoading(false);
+      if (isTargetStation) {
+        const [scoresRes, quizRes] = await Promise.all([
+          scoresQuery,
+          supabase
+            .from('station_quiz_responses')
+            .select('patrol_id, correct_count, answers, updated_at')
+            .eq('event_id', eventId)
+            .eq('station_id', stationId),
+        ]);
 
-    if (scoresRes.error || quizRes.error) {
-      console.error('Nepodařilo se načíst poslední záznamy', scoresRes.error, quizRes.error);
-      return;
-    }
+        setLoading(false);
 
-    const quizMap = new Map<string, ScoreRow['quiz']>();
-    (quizRes.data || []).forEach((item) => {
-      quizMap.set(item.patrol_id, item);
-    });
+        if (scoresRes.error || quizRes.error) {
+          console.error('Nepodařilo se načíst poslední záznamy', scoresRes.error, quizRes.error);
+          return;
+        }
 
-    const merged = (scoresRes.data || []).map((row) => ({
-      ...row,
-      quiz: quizMap.get(row.patrol_id) || undefined,
-    }));
+        const quizMap = new Map<string, ScoreRow['quiz']>();
+        (quizRes.data || []).forEach((item) => {
+          quizMap.set(item.patrol_id, item);
+        });
 
-    setRows(merged);
-  }, [eventId, stationId]);
+        const merged = (scoresRes.data || []).map((row) => ({
+          ...row,
+          quiz: quizMap.get(row.patrol_id) || undefined,
+        }));
+
+        setRows(merged);
+        return;
+      }
+
+      const scoresRes = await scoresQuery;
+      setLoading(false);
+
+      if (scoresRes.error) {
+        console.error('Nepodařilo se načíst poslední záznamy', scoresRes.error);
+        return;
+      }
+
+      setRows(scoresRes.data || []);
+    },
+    [eventId, stationId, isTargetStation]
+  );
 
   useEffect(() => {
     load();
@@ -112,13 +135,17 @@ export function LastScoresList() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'station_scores' },
         handleScopedRefresh
-      )
-      .on(
+      );
+
+    if (isTargetStation) {
+      channel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'station_quiz_responses' },
         handleScopedRefresh
-      )
-      .subscribe();
+      );
+    }
+
+    channel.subscribe();
 
     return () => {
       if (refreshTimeout.current) {
@@ -127,7 +154,7 @@ export function LastScoresList() {
       }
       supabase.removeChannel(channel);
     };
-  }, [scheduleRealtimeRefresh, eventId, stationId]);
+  }, [scheduleRealtimeRefresh, eventId, stationId, isTargetStation]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -169,7 +196,7 @@ export function LastScoresList() {
                 {row.judge ? <span> • {row.judge}</span> : null}
               </div>
               {row.note ? <p className="score-note">„{row.note}“</p> : null}
-              {row.quiz ? (
+              {isTargetStation && row.quiz ? (
                 <div className="score-quiz">
                   Terčový úsek: {row.quiz.correct_count}
                   {quizLetters.length ? `/${quizLetters.length} • ${quizLetters.join(' ')}` : ''}

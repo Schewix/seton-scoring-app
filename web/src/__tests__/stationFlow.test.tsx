@@ -58,6 +58,20 @@ vi.mock('../supabaseClient', () => {
                 }),
               }),
             };
+          case 'stations':
+            return {
+              select: () => ({
+                eq: () => ({
+                  eq: () => ({
+                    maybeSingle: () =>
+                      Promise.resolve({
+                        data: { code: 'X', name: 'Testovací stanoviště' },
+                        error: null,
+                      }),
+                  }),
+                }),
+              }),
+            };
           case 'station_passages':
             return {
               upsert: () => Promise.resolve({ error: new Error('Offline') }),
@@ -122,7 +136,7 @@ describe('station workflow', () => {
     await screen.findAllByText(/Vlci/);
 
     await user.type(screen.getByPlaceholderText('Jméno'), 'Honza');
-    const pointsInput = screen.getByLabelText('Body (-12 až 12)');
+    const pointsInput = screen.getByLabelText('Body (0 až 12)');
     await user.clear(pointsInput);
     await user.type(pointsInput, '10');
 
