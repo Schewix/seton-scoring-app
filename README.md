@@ -3,16 +3,26 @@
 Systém pro bodování stanovišť Setonu. Projekt začal jako mobilní aplikace v
 Expo, ale aktuální vývoj se soustředí na webovou verzi postavenou na Reactu.
 Sdílená backendová vrstva běží na Supabase a seznam hlídek se synchronizuje z
-Google Sheets.
+Google Sheets. Historická mobilní aplikace už v repozitáři není – tento
+monorepo nyní obsahuje jen web, databázové skripty, Google Apps Script a nástroj
+pro generování QR kódů.
+
+## Předpoklady
+
+- Node.js 20 (stejná verze se používá v CI a při nasazení na Vercel) a `npm`.
+- Přístup k instanci Supabase (URL a anon/service klíče) a případně Supabase
+  CLI, pokud budeš lokálně zkoušet SQL skripty.
+- Google Apps Script účet s přístupem k tabulce pro import hlídek.
 
 ## Přehled repozitáře
 
-- `web/` – webová aplikace pro rozhodčího (React, Vite, TypeScript).
+- `web/` – webová aplikace pro rozhodčí a výsledkový přehled (React, Vite,
+  TypeScript).
 - `supabase/sql/` – schéma databáze, pohledy, RLS politiky a referenční seed.
 - `google-sheets/` – Apps Script pro import hlídek a popis šablony tabulky.
 - `scripts/` – nástroje pro generování QR kódů hlídek.
-- `mobile/` – historický prostor pro Expo aplikaci (v repozitáři nejsou zdrojové
-  soubory, hlavní vývoj běží ve webové verzi).
+- `.github/workflows/` – CI/CD workflow pro nasazení webu na Vercel a push
+  Supabase schématu.
 
 ## Webová aplikace (React + Vite)
 
@@ -28,7 +38,7 @@ Google Sheets.
 - Přehled posledních výsledků s napojením na Supabase Realtime a detail terče.
 - Report terčových odpovědí s exportem do CSV.
 - Samostatný výsledkový přehled pro kancelář postavený na pohledech Supabase
-  `results` a `results_ranked`.
+  `results` a `results_ranked` (stačí přidat `?view=scoreboard` do URL).
 
 ### Instalace a spuštění
 
@@ -46,6 +56,8 @@ Google Sheets.
    VITE_SUPABASE_ANON_KEY=<anon klíč>
    VITE_EVENT_ID=<UUID aktuální akce>
    VITE_STATION_ID=<UUID stanoviště>
+   # volitelné: zapne administrátorský režim pro editaci správných odpovědí
+   VITE_ADMIN_MODE=1
    ```
 
 3. Spusť vývojový server:
@@ -57,9 +69,20 @@ Google Sheets.
    Pro produkci použij `npm run build` a `npm run preview` nebo nasazení podle
    hostingu.
 
+4. Spusť lint a testy (Vitest) dle potřeby:
+
+   ```bash
+   npm run lint
+   npm run test
+   ```
+
+   Test `stationFlow.test.tsx` kontroluje offline frontu a náhled čekajících
+   záznamů.
+
 ### Výsledkový přehled (scoreboard)
 
-- Stejné prostředí (`.env`) jako pro rozhodčí – je potřeba především `VITE_EVENT_ID`.
+- Stejné prostředí (`.env`) jako pro rozhodčí – je potřeba především
+  `VITE_EVENT_ID`.
 - Při spuštění aplikace přidej do URL parametr `?view=scoreboard`. Dynamicky se
   načte stránka s tabulkami z pohledů `results` a `results_ranked`.
 - Stránka se automaticky obnovuje každých 30 sekund, případně lze použít ruční
@@ -71,17 +94,9 @@ Google Sheets.
   lokálně a po kliknutí na „Odeslat nyní" (nebo po návratu připojení)
   synchronizují.
 - Zadané jméno rozhodčího se ukládá do `localStorage` pro další relaci.
-- Správné odpovědi lze hromadně upravit v horním panelu. Při zapnutí
-  automatického hodnocení se odpovědi validují (12 otázek, pouze písmena A–D).
-
-### Testy
-
-```bash
-npm run test
-```
-
-Test `stationFlow.test.tsx` kontroluje offline frontu a náhled čekajících
-záznamů.
+- Správné odpovědi lze hromadně upravit v horním panelu (vyžaduje administrátorský
+  režim). Při zapnutí automatického hodnocení se odpovědi validují (12 otázek,
+  pouze písmena A–D).
 
 ## Supabase & Google Sheets
 
@@ -137,6 +152,15 @@ načte aktivní hlídky z Supabase a vygeneruje pro každou SVG i společné PDF
    Do QR kódu se vkládá payload `seton://p/<patrol_code>` a stejný kód se
    zobrazí i pod QR kódem vygenerovaného SVG.
 
+## CI/CD a nasazení
+
+- `.github/workflows/deploy-vercel.yml` buildí složku `web/` a nasazuje ji na
+  Vercel při pushi do `main`. Workflow očekává sekrety `VERCEL_ORG_ID`,
+  `VERCEL_PROJECT_ID` a `VERCEL_TOKEN`.
+- `.github/workflows/supabase.yml` propojuje repozitář se Supabase projektem a
+  spouští `supabase db push && supabase db seed`. Nastav sekrety
+  `SUPABASE_ACCESS_TOKEN` a `SUPABASE_DB_PASSWORD`.
+
 ## Terčový úsek
 
 - Pro každou kategorii nastav 12 správných odpovědí (`A/B/C/D`).
@@ -158,3 +182,5 @@ načte aktivní hlídky z Supabase a vygeneruje pro každou SVG i společné PDF
    Functions nebo externí službu) a popsat proces v dokumentaci.
 2. Rozšířit testy o automatické hodnocení terče a synchronizaci fronty, aby
    pokryly klíčové větve komunikace se Supabase.
+3. Doplnit detailní dokumentaci k archivní mobilní aplikaci, pokud ji bude
+   potřeba znovu oživit.
