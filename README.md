@@ -1,18 +1,32 @@
 # Seton Scoring App (Supabase + Google Sheets)
 
-Systém pro bodování stanovišť Setonu. Projekt původně vznikl jako mobilní aplikace v Expo, nyní ale probíhá převod do webové aplikace postavené na Reactu. Obě aplikace sdílí stejné Supabase backendové API a import hlídek z Google Sheets.
+Systém pro bodování stanovišť Setonu. Projekt začal jako mobilní aplikace v
+Expo, ale aktuální vývoj se soustředí na webovou verzi postavenou na Reactu.
+Sdílená backendová vrstva běží na Supabase a seznam hlídek se synchronizuje z
+Google Sheets.
+
+## Přehled repozitáře
+
+- `web/` – webová aplikace pro rozhodčího (React, Vite, TypeScript).
+- `supabase/sql/` – schéma databáze, pohledy, RLS politiky a referenční seed.
+- `google-sheets/` – Apps Script pro import hlídek a popis šablony tabulky.
+- `scripts/` – nástroje pro generování QR kódů hlídek.
+- `mobile/` – historický prostor pro Expo aplikaci (v repozitáři nejsou zdrojové
+  soubory, hlavní vývoj běží ve webové verzi).
 
 ## Webová aplikace (React + Vite)
 
-Webová verze sídlí ve složce [`web/`](./web) a pokrývá celý flow rozhodčího:
+### Hlavní funkce
 
-- **Skenování QR kódů** hlídek kamerou zařízení (pomocí knihovny ZXing) nebo ruční zadání kódu.
-- Formulář pro zápis **bodů**, **čekací doby** a poznámky ke stanovišti.
-- Automatické **hodnocení terčového úseku** s vizuálním porovnáním odpovědí a přepínačem mezi manuálním a automatickým hodnocením.
-- Editace a přehled **správných odpovědí** pro jednotlivé kategorie včetně přehledové tabulky.
-- Offline **fronta neodeslaných záznamů** uložená v IndexedDB (`localforage`) s možností ruční synchronizace.
-- Přehled **posledních výsledků** včetně bodů, rozhodčího a detailu terčového testu s automatickou obnovou přes Supabase
-  Realtime.
+- Skenování QR kódů hlídek kamerou zařízení (ZXing) nebo ruční zadání kódu.
+- Formulář pro zápis bodů, čekací doby a poznámky ke stanovišti.
+- Automatické vyhodnocení terčového úseku včetně přepínače mezi manuálním a
+  automatickým režimem.
+- Editace a přehled správných odpovědí pro jednotlivé kategorie včetně tabulky.
+- Offline fronta neodeslaných záznamů uložená v IndexedDB (`localforage`) s
+  náhledem a ruční synchronizací.
+- Přehled posledních výsledků s napojením na Supabase Realtime a detail terče.
+- Report terčových odpovědí s exportem do CSV.
 
 ### Instalace a spuštění
 
@@ -38,115 +52,57 @@ Webová verze sídlí ve složce [`web/`](./web) a pokrývá celý flow rozhodč
    npm run dev
    ```
 
-   V produkci použij `npm run build` a `npm run preview` (nebo nasazení na hostingu podle potřeby).
+   Pro produkci použij `npm run build` a `npm run preview` nebo nasazení podle
+   hostingu.
 
-### Poznámky k webové verzi
+### Další poznámky
 
-- Offline fronta je per prohlížeč/stanici – po ztrátě sítě se záznamy ukládají lokálně a po kliknutí na „Odeslat nyní" (nebo po návratu připojení) se synchronizují.
+- Offline fronta je per prohlížeč/stanici – při ztrátě sítě se záznamy ukládají
+  lokálně a po kliknutí na „Odeslat nyní" (nebo po návratu připojení)
+  synchronizují.
 - Zadané jméno rozhodčího se ukládá do `localStorage` pro další relaci.
-- Správné odpovědi lze hromadně načíst/opravit přes horní panel. Při přepnutí na automatické hodnocení se odpovědi validují (12 otázek, jen písmena A–D).
-Systém pro bodování stanovišť Setonu. Projekt původně vznikl jako mobilní aplikace v Expo, nyní ale probíhá převod do webové aplikace postavené na Reactu. Obě aplikace sdílí stejné Supabase backendové API a import hlídek z Google Sheets.
+- Správné odpovědi lze hromadně upravit v horním panelu. Při zapnutí
+  automatického hodnocení se odpovědi validují (12 otázek, pouze písmena A–D).
 
-## Webová aplikace (React + Vite)
+### Testy
 
-Webová verze sídlí ve složce [`web/`](./web) a pokrývá celý flow rozhodčího:
+```bash
+npm run test
+```
 
-- **Skenování QR kódů** hlídek kamerou zařízení (pomocí knihovny ZXing) nebo ruční zadání kódu.
-- Formulář pro zápis **bodů**, **čekací doby** a poznámky ke stanovišti.
-- Automatické **hodnocení terčového úseku** s vizuálním porovnáním odpovědí a přepínačem mezi manuálním a automatickým hodnocením.
-- Editace a přehled **správných odpovědí** pro jednotlivé kategorie včetně přehledové tabulky.
-- Offline **fronta neodeslaných záznamů** uložená v IndexedDB (`localforage`) s možností ruční synchronizace.
-- Přehled **posledních výsledků** včetně bodů, rozhodčího a detailu terčového testu s automatickou obnovou přes Supabase
-  Realtime.
-
-### Instalace a spuštění
-
-1. Nastav prostředí:
-
-   ```bash
-   cd web
-   npm install
-   ```
-
-2. Vytvoř soubor `.env` (nebo `.env.local`) s proměnnými:
-
-   ```bash
-   VITE_SUPABASE_URL=<url z projektu Supabase>
-   VITE_SUPABASE_ANON_KEY=<anon klíč>
-   VITE_EVENT_ID=<UUID aktuální akce>
-   VITE_STATION_ID=<UUID stanoviště>
-   ```
-
-3. Spusť vývojový server:
-
-   ```bash
-   npm run dev
-   ```
-
-   V produkci použij `npm run build` a `npm run preview` (nebo nasazení na hostingu podle potřeby).
-
-### Poznámky k webové verzi
-
-- Offline fronta je per prohlížeč/stanici – po ztrátě sítě se záznamy ukládají lokálně a po kliknutí na „Odeslat nyní" (nebo po návratu připojení) se synchronizují.
-- Zadané jméno rozhodčího se ukládá do `localStorage` pro další relaci.
-- Správné odpovědi lze hromadně načíst/opravit přes horní panel. Při přepnutí na automatické hodnocení se odpovědi validují (12 otázek, jen písmena A–D).
-
-## Mobilní aplikace (Expo – legacy)
-
-Původní mobilní verze stále existuje ve složce [`mobile/`](./mobile). Je možné ji použít nebo z ní brát inspiraci při dalším převodu funkcí.
-
-1. Instalace závislostí:
-
-## Mobilní aplikace (Expo – legacy)
-
-Původní mobilní verze stále existuje ve složce [`mobile/`](./mobile). Je možné ji použít nebo z ní brát inspiraci při dalším převodu funkcí.
-
-1. Instalace závislostí:
-
-   ```bash
-   cd mobile
-   npm install
-   ```
-
-   Pokud chybí peer závislosti, doinstaluj je přes `npx expo install` (viz komentáře v souboru `mobile/App.js`).
-
-2. Konfiguruj `mobile/app.config.js` (sekce `extra`):
-   - `EXPO_PUBLIC_SUPABASE_URL`
-   - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-   - `EXPO_PUBLIC_EVENT_ID`
-   - `EXPO_PUBLIC_STATION_ID`
-
-3. Spusť aplikaci:
-
-   ```bash
-   npm start
-   ```
+Test `stationFlow.test.tsx` kontroluje offline frontu a náhled čekajících
+záznamů.
 
 ## Supabase & Google Sheets
 
-1. **Supabase** – spusť SQL skripty ze složky [`supabase/sql/`](./supabase/sql):
-   1. `schema.sql`
-   2. `views.sql`
-   3. `rls.sql` (pokud potřebuješ zapnout RLS)
+1. Spusť SQL skripty ze složky [`supabase/sql/`](./supabase/sql):
 
-   V databázi jsou mimo jiné tabulky `station_passages`, `station_scores`, `station_category_answers` a `station_quiz_responses`. RLS politiky očekávají, že JWT token nese `event_id` a `station_id` jako textové hodnoty UUID.
+   ```bash
+   schema.sql
+   views.sql
+   rls.sql # zapni RLS jen pokud je potřeba
+   ```
 
-2. **Google Sheets** – ve složce [`google-sheets/`](./google-sheets) najdeš `AppsScript.gs`, který synchronizuje seznam hlídek do Supabase. Ve Script Properties nastav:
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_ROLE` (tajný service role klíč)
-   - `EVENT_ID`
+   V databázi vzniknou tabulky `station_passages`, `station_scores`,
+   `station_category_answers`, `station_quiz_responses` a pohledy `results`,
+   `results_ranked`. RLS politiky očekávají, že JWT obsahuje `event_id` a
+   `station_id` jako textové hodnoty UUID.
 
-## QR kód
+2. Apps Script v [`google-sheets/AppsScript.gs`](./google-sheets/AppsScript.gs)
+   synchronizuje listy Google Sheets do tabulky `patrols`. Ve Script Properties
+   nastav `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE` a `EVENT_ID`. Šablonu listů
+   popisuje soubor
+   [`SHEET_TEMPLATE_INFO.md`](./google-sheets/SHEET_TEMPLATE_INFO.md).
 
-Každá hlídka má QR kód s payloadem:
+3. Soubor
+   [`supabase/sql/seton_2024_seed.sql`](./supabase/sql/seton_2024_seed.sql)
+   slouží jako referenční seed dat. Před spuštěním nahraď `EVENT_ID` vlastním
+   UUID.
 
-```
-seton://p/<patrol_code>
-```
+## QR kódy
 
-### Generování QR kódů pro akci
-
-Ve složce [`scripts/`](./scripts) je k dispozici skript `generate-qr-codes.mjs`, který stáhne všechny aktivní hlídky konkrétní akce ze Supabase a ke každé vytvoří SVG soubor s QR kódem i čitelným kódem hlídky přímo pod ním. Navíc automaticky připraví také společné PDF, kde jsou QR kódy rozmístěny po několika na stránce a samotný QR kód má přibližně 6×6 cm.
+Skript [`scripts/generate-qr-codes.mjs`](./scripts/generate-qr-codes.mjs)
+načte aktivní hlídky z Supabase a vygeneruje pro každou SVG i společné PDF.
 
 1. Nainstaluj závislosti skriptu:
 
@@ -155,7 +111,8 @@ Ve složce [`scripts/`](./scripts) je k dispozici skript `generate-qr-codes.mjs`
    npm install
    ```
 
-2. Spusť generování (výstupní složka je volitelná, výchozí je `qr-codes/<EVENT_ID>`):
+2. Spusť generování (výstupní složka je volitelná, výchozí je
+   `qr-codes/<EVENT_ID>`):
 
    ```bash
    SUPABASE_URL=... \
@@ -163,25 +120,29 @@ Ve složce [`scripts/`](./scripts) je k dispozici skript `generate-qr-codes.mjs`
    node generate-qr-codes.mjs <EVENT_ID> [output-dir]
    ```
 
-Skript volá REST API Supabase (`patrols`) a pro každý záznam vytvoří soubor pojmenovaný podle kódu hlídky. Do QR kódu vkládá payload `seton://p/<patrol_code>` a v SVG přidá textovou podobu kódu pro případ ručního zadání. Výsledné SVG se ukládají do zvolené složky a společně s nimi vznikne i `qr-codes.pdf`, kde jsou kódy na stránkách formátu A4 automaticky vyskládány do mřížky.
+   Do QR kódu se vkládá payload `seton://p/<patrol_code>` a stejný kód se
+   zobrazí i pod QR kódem vygenerovaného SVG.
 
 ## Terčový úsek
 
-- Pro každou kategorii je potřeba nastavit 12 správných odpovědí (`A/B/C/D`).
-- Při zapnutém automatickém hodnocení appka porovná odpovědi, spočítá body a uloží i detail (`station_quiz_responses`).
-- Přepnutí zpět na manuální hodnocení automaticky odstraní dříve uložené odpovědi dané hlídky.
+- Pro každou kategorii nastav 12 správných odpovědí (`A/B/C/D`).
+- Při zapnutém automatickém hodnocení aplikace porovná odpovědi, spočítá body a
+  uloží detail (`station_quiz_responses`).
+- Přepnutí zpět na manuální hodnocení odstraní dříve uložené terčové odpovědi
+  dané hlídky.
 
 ## Známá omezení
 
-- Offline režim řeší pouze zápis stanovištních záznamů; načítání dat stále vyžaduje připojení.
-- Pro ostrý provoz je nutné zajistit správné JWT tokeny (s `event_id` a `station_id`) dle definovaných RLS politik.
-- Pro ostrý provoz je nutné zajistit správné JWT tokeny (s `event_id` a `station_id`) dle definovaných RLS politik.
+- Offline režim se stará pouze o zápis záznamů; načítání dat stále vyžaduje
+  připojení.
+- Pro ostrý provoz je nutné zajistit správné JWT tokeny (s `event_id` a
+  `station_id`) dle definovaných RLS politik.
 
 ## Next Steps
 
-1. Přidat detailní report terčových odpovědí (např. export pro výsledkovou kancelář).
-2. Zvážit základní integrační test (např. přes Detox nebo Cypress) pro klíčový flow sken → hodnocení → uložení.
-3. Doplnit jednoduchý náhled neodeslaných offline záznamů přímo v UI pro snazší kontrolu.
-1. Přidat detailní report terčových odpovědí (např. export pro výsledkovou kancelář).
-2. Zvážit základní integrační test (např. přes Detox nebo Cypress) pro klíčový flow sken → hodnocení → uložení.
-3. Doplnit jednoduchý náhled neodeslaných offline záznamů přímo v UI pro snazší kontrolu.
+1. Přidat jednoduchý scoreboard / výsledkový přehled postavený na pohledech
+   `results` a `results_ranked` pro potřeby kanceláře.
+2. Připravit bezpečné vydávání JWT tokenů pro rozhodčí (např. přes Supabase Edge
+   Functions nebo externí službu) a popsat proces v dokumentaci.
+3. Rozšířit testy o automatické hodnocení terče a synchronizaci fronty, aby
+   pokryly klíčové větve komunikace se Supabase.
