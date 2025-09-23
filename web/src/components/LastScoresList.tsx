@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
+import { unwrapRelation } from './utils';
 
 const eventId = import.meta.env.VITE_EVENT_ID as string | undefined;
 const stationId = import.meta.env.VITE_STATION_ID as string | undefined;
@@ -30,6 +31,21 @@ interface ScoreRow {
 
 function parseAnswerLetters(value?: string | null) {
   return (value?.match(/[A-D]/gi) || []).map((l) => l.toUpperCase());
+}
+
+type ScoreRowRecord = Omit<ScoreRow, 'patrols'> & {
+  patrols?: ScoreRow['patrols'] | ScoreRow['patrols'][] | null;
+};
+
+type QuizRowRecord = NonNullable<ScoreRow['quiz']> & {
+  patrol_id: string;
+};
+
+function mapScoreRows(rows: ScoreRowRecord[] = []): ScoreRow[] {
+  return rows.map((row) => ({
+    ...row,
+    patrols: unwrapRelation(row.patrols) ?? null,
+  }));
 }
 
 interface LoadOptions {
@@ -79,11 +95,12 @@ export function LastScoresList({ isTargetStation }: LastScoresListProps) {
         }
 
         const quizMap = new Map<string, ScoreRow['quiz']>();
-        (quizRes.data || []).forEach((item) => {
-          quizMap.set(item.patrol_id, item);
+        ((quizRes.data ?? []) as QuizRowRecord[]).forEach((item) => {
+          const { patrol_id, ...quiz } = item;
+          quizMap.set(patrol_id, quiz);
         });
 
-        const merged = (scoresRes.data || []).map((row) => ({
+        const merged = mapScoreRows((scoresRes.data ?? []) as ScoreRowRecord[]).map((row) => ({
           ...row,
           quiz: quizMap.get(row.patrol_id) || undefined,
         }));
@@ -100,7 +117,7 @@ export function LastScoresList({ isTargetStation }: LastScoresListProps) {
         return;
       }
 
-      setRows(scoresRes.data || []);
+      setRows(mapScoreRows((scoresRes.data ?? []) as ScoreRowRecord[]));
     },
     [eventId, stationId, isTargetStation]
   );
@@ -122,8 +139,10 @@ export function LastScoresList({ isTargetStation }: LastScoresListProps) {
     const handleScopedRefresh = (
       payload: RealtimePostgresChangesPayload<{ event_id?: string; station_id?: string }>
     ) => {
-      const record = payload.new ?? payload.old;
-      if (record?.event_id !== eventId || record?.station_id !== stationId) {
+      const record = (payload.new ?? payload.old) as
+        | { event_id?: string; station_id?: string }
+        | null;
+      if (!record || record.event_id !== eventId || record.station_id !== stationId) {
         return;
       }
       scheduleRealtimeRefresh();

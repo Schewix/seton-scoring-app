@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { BrowserMultiFormatReader, DecodeHintType, Result, BarcodeFormat } from '@zxing/library';
+import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
+import { DecodeHintType, Result, BarcodeFormat } from '@zxing/library';
 
 interface QRScannerProps {
   active: boolean;
@@ -7,47 +8,54 @@ interface QRScannerProps {
   onError?: (error: Error) => void;
 }
 
-const hints = new Map();
+const hints = new Map<DecodeHintType, unknown>();
 hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
 
 export function QRScanner({ active, onResult, onError }: QRScannerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const readerRef = useRef<BrowserMultiFormatReader | null>(null);
-  const controlsRef = useRef<{ stop: () => void } | null>(null);
+  const controlsRef = useRef<IScannerControls | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!active) {
       controlsRef.current?.stop();
       controlsRef.current = null;
-      readerRef.current?.reset();
+      BrowserMultiFormatReader.releaseAllStreams();
       return;
     }
 
-    if (!videoRef.current) return;
+    const videoElement = videoRef.current;
+    if (!videoElement) {
+      return;
+    }
 
-    const reader = new BrowserMultiFormatReader(hints, 500);
-    readerRef.current = reader;
+    const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 500 });
 
     const start = async () => {
       try {
         const controls = await reader.decodeFromVideoDevice(
           undefined,
-          videoRef.current!,
+          videoElement,
           (result: Result | undefined, err) => {
             if (result) {
               onResult(result.getText());
             }
-            if (err && err.message && !permissionError) {
-              setPermissionError(err.message);
-              onError?.(err);
+            if (err && 'message' in err) {
+              const error = err as Error;
+              setPermissionError((prev) => {
+                if (prev) {
+                  return prev;
+                }
+                onError?.(error);
+                return error.message;
+              });
             }
           }
         );
         controlsRef.current = controls;
         setPermissionError(null);
       } catch (error) {
-        const err = error as Error;
+        const err = error instanceof Error ? error : new Error(String(error));
         setPermissionError(err.message);
         onError?.(err);
       }
@@ -58,10 +66,9 @@ export function QRScanner({ active, onResult, onError }: QRScannerProps) {
     return () => {
       controlsRef.current?.stop();
       controlsRef.current = null;
-      reader.reset();
+      BrowserMultiFormatReader.releaseAllStreams();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
+  }, [active, onResult, onError]);
 
   return (
     <div className="qr-scanner">
