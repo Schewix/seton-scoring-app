@@ -69,6 +69,33 @@ function fetchExistingCodes_() {
   return new Set(list.map(x => x.patrol_code));
 }
 
+function normalizeString_(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+function parseStartTime_(value) {
+  if (value === null || value === undefined || value === '') {
+    return { present: true, value: null };
+  }
+
+  if (value instanceof Date) {
+    return { present: true, value: value.toISOString() };
+  }
+
+  const str = String(value).trim();
+  if (!str) {
+    return { present: true, value: null };
+  }
+
+  const parsed = new Date(str);
+  if (!isFinite(parsed.getTime())) {
+    throw new Error(`Invalid start_time value: ${value}`);
+  }
+
+  return { present: true, value: parsed.toISOString() };
+}
+
 function readSheet_(name, existingCodes, batchCodes) {
   const sh = SpreadsheetApp.getActive().getSheetByName(name);
   if (!sh) return [];
@@ -79,6 +106,10 @@ function readSheet_(name, existingCodes, batchCodes) {
   const idx = (c) => header.indexOf(c);
   const iTeam = idx('team_name');
   const iCode = idx('patrol_code');
+  const iChild1 = idx('child1');
+  const iChild2 = idx('child2');
+  const iChild3 = idx('child3');
+  const iStartTime = idx('start_time');
   const iNote = idx('note');
   const iActive = idx('active');
 
@@ -94,9 +125,26 @@ function readSheet_(name, existingCodes, batchCodes) {
     if (!team) return;
 
     let code = String(row[iCode] || '').trim();
-    const note = iNote >= 0 ? String(row[iNote] || '').trim() : '';
+    const childNames = [iChild1, iChild2, iChild3]
+      .filter(index => index >= 0)
+      .map(index => normalizeString_(row[index]))
+      .filter(Boolean);
+
+    const members = childNames.join(', ');
+
+    const rawNote = iNote >= 0 ? normalizeString_(row[iNote]) : '';
     const activeStr = iActive >= 0 ? String(row[iActive] || '').trim().toLowerCase() : 'yes';
     const active = ['yes','true','1','ano','y'].includes(activeStr);
+
+    let startTime = { present: false, value: null };
+    if (iStartTime >= 0) {
+      startTime = parseStartTime_(row[iStartTime]);
+    }
+
+    const combinedNoteParts = [];
+    if (members) combinedNoteParts.push(members);
+    if (rawNote) combinedNoteParts.push(rawNote);
+    const combinedNote = combinedNoteParts.join('\n');
 
     if (!['N','M','S','R'].includes(category) || !['H','D'].includes(sex)) {
       throw new Error(`Sheet name must be X_Y (X∈{N,M,S,R}, Y∈{H,D}). Problem: ${name}`);
@@ -119,23 +167,33 @@ function readSheet_(name, existingCodes, batchCodes) {
     }
 
     updates.push({
-      event_id: CONFIG().EVENT_ID,
-      team_name: team,
-      category, sex,
-      patrol_code: code,
-      note,
-      active
+      patrol: {
+        event_id: CONFIG().EVENT_ID,
+        team_name: team,
+        category,
+        sex,
+        patrol_code: code,
+        note: combinedNote,
+        active
+      },
+      meta: {
+        patrol_code: code,
+        members,
+        note: rawNote,
+        start_time_present: startTime.present,
+        start_time_value: startTime.value
+      }
     });
   });
 
   return updates;
 }
 
-function upsertBatched_(rows, batchSize = 200) {
+function upsertBatched_(entries, batchSize = 200) {
   const { SUPABASE_URL } = CONFIG();
   const url = `${SUPABASE_URL}/rest/v1/${TABLE}?on_conflict=patrol_code,event_id`;
-  for (let i = 0; i < rows.length; i += batchSize) {
-    const chunk = rows.slice(i, i + batchSize);
+  for (let i = 0; i < entries.length; i += batchSize) {
+    const chunk = entries.slice(i, i + batchSize).map(entry => entry.patrol);
     const res = UrlFetchApp.fetch(url, {
       method: 'post',
       headers: headers_(),
@@ -149,6 +207,62 @@ function upsertBatched_(rows, batchSize = 200) {
   }
 }
 
+function fetchPatrolIds_() {
+  const { SUPABASE_URL, EVENT_ID } = CONFIG();
+  const url = `${SUPABASE_URL}/rest/v1/${TABLE}?select=id,patrol_code&event_id=eq.${EVENT_ID}`;
+  const res = UrlFetchApp.fetch(url, { method: 'get', headers: headers_(), muteHttpExceptions: true });
+  if (res.getResponseCode() >= 300) {
+    throw new Error('Fetching patrol ids failed: ' + res.getContentText());
+  }
+  const list = JSON.parse(res.getContentText());
+  const map = new Map();
+  list.forEach(item => { map.set(item.patrol_code, item.id); });
+  return map;
+}
+
+function upsertStartTimes_(entries) {
+  const updates = entries
+    .filter(entry => entry.meta && entry.meta.start_time_present)
+    .map(entry => ({
+      patrol_code: entry.meta.patrol_code,
+      start_time: entry.meta.start_time_value
+    }));
+
+  if (!updates.length) return 0;
+
+  const patrolIdMap = fetchPatrolIds_();
+  const rows = [];
+
+  updates.forEach(update => {
+    if (!patrolIdMap.has(update.patrol_code)) {
+      log_(`Missing patrol for start_time sync: ${update.patrol_code}`, 'WARN');
+      return;
+    }
+    rows.push({
+      event_id: CONFIG().EVENT_ID,
+      patrol_id: patrolIdMap.get(update.patrol_code),
+      start_time: update.start_time
+    });
+  });
+
+  if (!rows.length) return 0;
+
+  const { SUPABASE_URL } = CONFIG();
+  const url = `${SUPABASE_URL}/rest/v1/timings?on_conflict=event_id,patrol_id`;
+  const res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    headers: headers_(),
+    payload: JSON.stringify(rows),
+    muteHttpExceptions: true
+  });
+
+  if (res.getResponseCode() >= 300) {
+    throw new Error('Supabase timing upsert error: ' + res.getContentText());
+  }
+
+  return rows.length;
+}
+
 function syncToSupabase() {
   const lock = LockService.getScriptLock();
   try {
@@ -156,15 +270,19 @@ function syncToSupabase() {
 
     const existingCodes = fetchExistingCodes_();
     const batchCodes = new Set();
-    let allRows = [];
+    let allEntries = [];
     ['N_H','N_D','M_H','M_D','S_H','S_D','R_H','R_D'].forEach(name => {
       const rows = readSheet_(name, existingCodes, batchCodes);
-      allRows = allRows.concat(rows);
+      allEntries = allEntries.concat(rows);
     });
 
-    if (!allRows.length) { log_('Nothing to upsert.'); return; }
-    upsertBatched_(allRows);
-    log_(`Upsert done: ${allRows.length} rows.`);
+    if (!allEntries.length) { log_('Nothing to upsert.'); return; }
+    upsertBatched_(allEntries);
+    const timingUpdates = upsertStartTimes_(allEntries);
+    const message = timingUpdates
+      ? `Upsert done: ${allEntries.length} rows (timings updated: ${timingUpdates}).`
+      : `Upsert done: ${allEntries.length} rows.`;
+    log_(message);
 
   } catch (e) {
     log_(e.stack || e.message, 'ERROR');
