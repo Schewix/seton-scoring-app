@@ -13,6 +13,24 @@ function CONFIG() {
 }
 
 const SHEET_NAMES = ['N_H','N_D','M_H','M_D','S_H','S_D','R_H','R_D'];
+const RESULT_CATEGORIES = ['N','M','S','R'];
+const RESULT_SHEET_NAMES = {
+  N: 'Výsledky N',
+  M: 'Výsledky M',
+  S: 'Výsledky S',
+  R: 'Výsledky R'
+};
+const RESULT_HEADERS = [
+  'Kategorie',
+  'Pohlaví',
+  'Pořadí',
+  'Kód hlídky',
+  'Oddíl / tým',
+  'Členové hlídky',
+  'Body celkem',
+  'Body bez T',
+  'Čistý čas (s)'
+];
 const TABLE = 'patrols';
 
 function headers_() {
@@ -156,9 +174,86 @@ function syncToSupabase() {
   }
 }
 
+function toNumberOrEmpty_(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const num = Number(value);
+  return isFinite(num) ? num : value;
+}
+
+function fetchRankedResults_() {
+  const { SUPABASE_URL, EVENT_ID } = CONFIG();
+  const base = `${SUPABASE_URL}/rest/v1/results_ranked`;
+  const query = [
+    'select=category,sex,rank_in_bracket,team_name,patrol_code,total_points,points_no_T,pure_seconds,patrol_members',
+    `event_id=eq.${EVENT_ID}`,
+    'order=category.asc',
+    'order=sex.asc',
+    'order=rank_in_bracket.asc'
+  ].join('&');
+  const res = UrlFetchApp.fetch(`${base}?${query}`, { method: 'get', headers: headers_(), muteHttpExceptions: true });
+  if (res.getResponseCode() >= 300) {
+    throw new Error('Supabase results export failed: ' + res.getContentText());
+  }
+  return JSON.parse(res.getContentText());
+}
+
+function writeResultsToSheets_(rows) {
+  const grouped = {};
+  RESULT_CATEGORIES.forEach(cat => { grouped[cat] = []; });
+
+  rows.forEach(row => {
+    const cat = row.category;
+    if (!cat) return;
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(row);
+  });
+
+  RESULT_CATEGORIES.forEach(cat => {
+    const sheetName = RESULT_SHEET_NAMES[cat] || `Výsledky ${cat}`;
+    const sh = ensureSheet_(sheetName);
+    sh.clearContents();
+    sh.getRange(1, 1, 1, RESULT_HEADERS.length).setValues([RESULT_HEADERS]);
+    sh.setFrozenRows(1);
+
+    const data = grouped[cat] || [];
+    if (data.length) {
+      const values = data.map(row => [
+        row.category || cat,
+        row.sex || '',
+        toNumberOrEmpty_(row.rank_in_bracket),
+        row.patrol_code || '',
+        row.team_name || '',
+        row.patrol_members || '',
+        toNumberOrEmpty_(row.total_points),
+        toNumberOrEmpty_(row.points_no_T),
+        toNumberOrEmpty_(row.pure_seconds)
+      ]);
+      sh.getRange(2, 1, values.length, RESULT_HEADERS.length).setValues(values);
+    }
+
+    sh.autoResizeColumns(1, RESULT_HEADERS.length);
+  });
+}
+
+function exportResultsToSheets() {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.tryLock(20000);
+    const rows = fetchRankedResults_();
+    writeResultsToSheets_(rows);
+    log_(`Results export done: ${rows.length} rows.`);
+  } catch (e) {
+    log_(e.stack || e.message, 'ERROR');
+    throw e;
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Seton')
     .addItem('Synchronizovat teď', 'syncToSupabase')
+    .addItem('Exportovat výsledky', 'exportResultsToSheets')
     .addToUi();
 }
