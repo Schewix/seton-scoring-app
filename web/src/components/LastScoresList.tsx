@@ -3,13 +3,6 @@ import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 import { unwrapRelation } from './utils';
 
-const eventId = import.meta.env.VITE_EVENT_ID as string | undefined;
-const stationId = import.meta.env.VITE_STATION_ID as string | undefined;
-
-if (!eventId || !stationId) {
-  throw new Error('Missing VITE_EVENT_ID or VITE_STATION_ID environment variable.');
-}
-
 interface ScoreRow {
   id: string;
   created_at: string;
@@ -53,10 +46,12 @@ interface LoadOptions {
 }
 
 interface LastScoresListProps {
+  eventId: string;
+  stationId: string;
   isTargetStation: boolean;
 }
 
-export function LastScoresList({ isTargetStation }: LastScoresListProps) {
+export function LastScoresList({ eventId, stationId, isTargetStation }: LastScoresListProps) {
   const [rows, setRows] = useState<ScoreRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
