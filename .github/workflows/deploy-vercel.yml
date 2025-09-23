@@ -39,6 +39,8 @@ jobs:
 
       - name: Pull Vercel environment information
         run: npx vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: web
 
       - name: Deploy to Vercel
         run: npx vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: web
