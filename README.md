@@ -114,6 +114,27 @@ Každá hlídka má QR kód s payloadem:
 seton://p/<patrol_code>
 ```
 
+### Generování QR kódů pro akci
+
+Ve složce [`scripts/`](./scripts) je k dispozici skript `generate-qr-codes.mjs`, který stáhne všechny aktivní hlídky konkrétní akce ze Supabase a ke každé vytvoří SVG soubor s QR kódem i čitelným kódem hlídky přímo pod ním. Navíc automaticky připraví také společné PDF, kde jsou QR kódy rozmístěny po několika na stránce a samotný QR kód má přibližně 6×6 cm.
+
+1. Nainstaluj závislosti skriptu:
+
+   ```bash
+   cd scripts
+   npm install
+   ```
+
+2. Spusť generování (výstupní složka je volitelná, výchozí je `qr-codes/<EVENT_ID>`):
+
+   ```bash
+   SUPABASE_URL=... \
+   SUPABASE_SERVICE_ROLE_KEY=... \
+   node generate-qr-codes.mjs <EVENT_ID> [output-dir]
+   ```
+
+Skript volá REST API Supabase (`patrols`) a pro každý záznam vytvoří soubor pojmenovaný podle kódu hlídky. Do QR kódu vkládá payload `seton://p/<patrol_code>` a v SVG přidá textovou podobu kódu pro případ ručního zadání. Výsledné SVG se ukládají do zvolené složky a společně s nimi vznikne i `qr-codes.pdf`, kde jsou kódy na stránkách formátu A4 automaticky vyskládány do mřížky.
+
 ## Terčový úsek
 
 - Pro každou kategorii je potřeba nastavit 12 správných odpovědí (`A/B/C/D`).
