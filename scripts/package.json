@@ -1,0 +1,14 @@
+{
+  "name": "seton-scripts",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "scripts": {
+    "generate:qrcodes": "node generate-qr-codes.mjs"
+  },
+  "dependencies": {
+    "pdfkit": "^0.15.0",
+    "qrcode": "^1.5.4",
+    "svg-to-pdfkit": "^0.1.8"
+  }
+}
