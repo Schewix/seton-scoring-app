@@ -1,12 +1,41 @@
-# React + Vite
+# Seton web app
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Tato složka obsahuje webovou aplikaci pro zapisování výsledků stanovišť a
+veřejný výsledkový přehled. Projekt je postavený na Reactu, TypeScriptu a Vite
+(viz `package.json`).
 
-Currently, two official plugins are available:
+## Vývoj
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```bash
+npm install
+npm run dev
+```
 
-## Expanding the ESLint configuration
+V prostředí se očekávají tyto proměnné (například v `.env.local`):
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+VITE_SUPABASE_URL=<url z projektu Supabase>
+VITE_SUPABASE_ANON_KEY=<anon klíč>
+VITE_EVENT_ID=<UUID aktuální akce>
+VITE_STATION_ID=<UUID stanoviště>
+# volitelné, zapne administrátorský režim pro editaci správných odpovědí
+VITE_ADMIN_MODE=1
+```
+
+Spuštěním aplikace s parametrem `?view=scoreboard` v URL se načte výsledkový
+přehled, který využívá pohledy `results` a `results_ranked`.
+
+## Scripts
+
+- `npm run dev` – vývojový server Vite.
+- `npm run build` – produkční build.
+- `npm run preview` – náhled buildu.
+- `npm run lint` – ESLint.
+- `npm run test` – Vitest testy (viz `src/__tests__`).
+
+## Další poznámky
+
+- Offline fronta neodeslaných záznamů je uložená v IndexedDB (`localforage`).
+- QR kód je možné skenovat přes ZXing nebo zadat ručně.
+- Administrátorský režim (`VITE_ADMIN_MODE`) umožňuje spravovat správné odpovědi
+  pro terčový úsek.
