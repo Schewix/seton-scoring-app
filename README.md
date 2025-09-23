@@ -27,6 +27,8 @@ Google Sheets.
   náhledem a ruční synchronizací.
 - Přehled posledních výsledků s napojením na Supabase Realtime a detail terče.
 - Report terčových odpovědí s exportem do CSV.
+- Samostatný výsledkový přehled pro kancelář postavený na pohledech Supabase
+  `results` a `results_ranked`.
 
 ### Instalace a spuštění
 
@@ -54,6 +56,14 @@ Google Sheets.
 
    Pro produkci použij `npm run build` a `npm run preview` nebo nasazení podle
    hostingu.
+
+### Výsledkový přehled (scoreboard)
+
+- Stejné prostředí (`.env`) jako pro rozhodčí – je potřeba především `VITE_EVENT_ID`.
+- Při spuštění aplikace přidej do URL parametr `?view=scoreboard`. Dynamicky se
+  načte stránka s tabulkami z pohledů `results` a `results_ranked`.
+- Stránka se automaticky obnovuje každých 30 sekund, případně lze použít ruční
+  tlačítko „Aktualizovat“.
 
 ### Další poznámky
 
@@ -92,7 +102,11 @@ záznamů.
    synchronizuje listy Google Sheets do tabulky `patrols`. Ve Script Properties
    nastav `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE` a `EVENT_ID`. Šablonu listů
    popisuje soubor
-   [`SHEET_TEMPLATE_INFO.md`](./google-sheets/SHEET_TEMPLATE_INFO.md).
+   [`SHEET_TEMPLATE_INFO.md`](./google-sheets/SHEET_TEMPLATE_INFO.md). Skript
+   také nabízí funkci `exportResultsToSheets`, která načte pohled
+   `results_ranked` a naplní listy `Výsledky N/M/S/R` pořadím včetně celkových
+   bodů, bodů bez trestů a členů hlídek. Export lze spouštět ručně z menu
+   „Seton → Exportovat výsledky“ nebo přes časovač Apps Scriptu.
 
 3. Soubor
    [`supabase/sql/seton_2024_seed.sql`](./supabase/sql/seton_2024_seed.sql)
@@ -140,9 +154,7 @@ načte aktivní hlídky z Supabase a vygeneruje pro každou SVG i společné PDF
 
 ## Next Steps
 
-1. Přidat jednoduchý scoreboard / výsledkový přehled postavený na pohledech
-   `results` a `results_ranked` pro potřeby kanceláře.
-2. Připravit bezpečné vydávání JWT tokenů pro rozhodčí (např. přes Supabase Edge
+1. Připravit bezpečné vydávání JWT tokenů pro rozhodčí (např. přes Supabase Edge
    Functions nebo externí službu) a popsat proces v dokumentaci.
-3. Rozšířit testy o automatické hodnocení terče a synchronizaci fronty, aby
+2. Rozšířit testy o automatické hodnocení terče a synchronizaci fronty, aby
    pokryly klíčové větve komunikace se Supabase.
