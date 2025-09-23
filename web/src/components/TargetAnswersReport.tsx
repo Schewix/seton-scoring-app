@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
+import { unwrapRelation } from './utils';
 
 const eventId = import.meta.env.VITE_EVENT_ID as string | undefined;
 const stationId = import.meta.env.VITE_STATION_ID as string | undefined;
@@ -30,6 +31,17 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString('cs-CZ');
 }
 
+type TargetRowRecord = Omit<TargetRow, 'patrols'> & {
+  patrols?: TargetRow['patrols'] | TargetRow['patrols'][] | null;
+};
+
+function mapTargetRows(rows: TargetRowRecord[] = []): TargetRow[] {
+  return rows.map((row) => ({
+    ...row,
+    patrols: unwrapRelation(row.patrols) ?? null,
+  }));
+}
+
 export default function TargetAnswersReport() {
   const [rows, setRows] = useState<TargetRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -54,7 +66,7 @@ export default function TargetAnswersReport() {
       return;
     }
 
-    setRows(data || []);
+    setRows(mapTargetRows((data ?? []) as TargetRowRecord[]));
   }, [eventId, stationId]);
 
   useEffect(() => {
