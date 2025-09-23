@@ -371,18 +371,6 @@ textarea {
   gap: 4px;
 }
 
-.switch-field {
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-  font-weight: 600;
-}
-
-.switch-field input {
-  width: auto;
-  accent-color: #0d7c54;
-}
-
 .auto-section {
   display: flex;
   flex-direction: column;
@@ -391,6 +379,35 @@ textarea {
 
 .auto-score {
   font-weight: 600;
+}
+
+.wait-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wait-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.wait-display {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.wait-display strong {
+  font-size: 20px;
+}
+
+.wait-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .error-text {
