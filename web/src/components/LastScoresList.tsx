@@ -83,10 +83,15 @@ export function LastScoresList() {
     setRefreshing(false);
   };
 
+  const countLabel = loading ? '…' : rows.length;
+
   return (
     <section className="card">
       <header className="card-header">
-        <h2>Poslední záznamy</h2>
+        <h2>
+          Poslední záznamy{' '}
+          <span className="card-hint">({countLabel})</span>
+        </h2>
         <button onClick={handleRefresh} disabled={loading || refreshing}>
           {refreshing ? 'Obnovuji…' : 'Obnovit'}
         </button>
