@@ -122,6 +122,11 @@ pro generování QR kódů.
    `results_ranked` a naplní listy `Výsledky N/M/S/R` pořadím včetně celkových
    bodů, bodů bez trestů a členů hlídek. Export lze spouštět ručně z menu
    „Seton → Exportovat výsledky“ nebo přes časovač Apps Scriptu.
+   Pokud nechceš používat Apps Script, stejnou synchronizaci zvládne Edge Function
+   [`sync-patrols`](./supabase/functions/sync-patrols) – stačí publikovat
+   jednotlivé listy jako CSV (`File → Share → Publish to web`) a odkazy předat
+   do proměnné `SHEET_EXPORTS` (např. `N_H=https://...`). Funkci pak spouštíš
+   přes Supabase cron nebo externí plánovač.
 
 3. Soubor
    [`supabase/sql/seton_2024_seed.sql`](./supabase/sql/seton_2024_seed.sql)
