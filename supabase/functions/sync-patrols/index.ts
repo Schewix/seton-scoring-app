@@ -111,6 +111,22 @@ function parseStartTime(value: string | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
+
+  const timeMatch = trimmed.match(/^([0-2]?\d):([0-5]\d)(?::([0-5]\d))?$/);
+  if (timeMatch) {
+    const [, hours, minutes, seconds = '00'] = timeMatch;
+    const today = new Date();
+    const iso = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+      Number.parseInt(hours, 10),
+      Number.parseInt(minutes, 10),
+      Number.parseInt(seconds, 10),
+    );
+    return iso.toISOString();
+  }
+
   const asDate = new Date(trimmed);
   if (Number.isNaN(asDate.getTime())) {
     throw new Error(`Invalid start_time value: ${value}`);
