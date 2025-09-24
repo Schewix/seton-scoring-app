@@ -3,9 +3,11 @@
 Vytvoř si listy s názvy: `N_H, N_D, M_H, M_D, S_H, S_D, R_H, R_D`.
 
 Každý list má hlavičku (řádek 1):
+
 ```
 team_name | patrol_code | child1 | child2 | child3 | start_time | note | active
 ```
+
 - `team_name` – povinné
 - `patrol_code` – může být prázdné (skript vygeneruje unikátní)
 - `child1`/`child2`/`child3` – jména členů hlídky (volitelné, zobrazují se ve výsledcích)
