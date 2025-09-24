@@ -7,6 +7,7 @@
     "generate:qrcodes": "node generate-qr-codes.mjs"
   },
   "dependencies": {
+    "dotenv": "^16.4.5",
     "pdfkit": "^0.15.0",
     "qrcode": "^1.5.4",
     "svg-to-pdfkit": "^0.1.8"
