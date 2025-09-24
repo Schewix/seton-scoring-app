@@ -51,6 +51,18 @@ const QUEUE_KEY_PREFIX = 'web_pending_station_submissions_v1';
 const JUDGE_KEY = 'judge_name';
 const STATION_STORAGE_KEY = 'selected_station_id';
 const STATION_QUERY_KEY = 'station';
+const STATION_PATH_PATTERN = /\/(?:stations|stanoviste)\/([^/?#]+)/i;
+
+function extractStationIdFromPath(pathname: string): string | null {
+  const match = pathname.match(STATION_PATH_PATTERN);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch (error) {
+    console.error('Failed to decode station id from path', error);
+    return match[1];
+  }
+}
 
 const rawEventId = import.meta.env.VITE_EVENT_ID as string | undefined;
 const rawStationId = import.meta.env.VITE_STATION_ID as string | undefined;
@@ -126,6 +138,10 @@ function App() {
       const queryValue = params.get(STATION_QUERY_KEY)?.trim();
       if (queryValue) {
         return queryValue;
+      }
+      const pathValue = extractStationIdFromPath(window.location.pathname)?.trim();
+      if (pathValue) {
+        return pathValue;
       }
       const stored = window.localStorage.getItem(STATION_STORAGE_KEY)?.trim();
       if (stored) {
@@ -296,18 +312,27 @@ function App() {
       }
 
       const params = new URLSearchParams(window.location.search);
-      const current = params.get(STATION_QUERY_KEY);
-      if (stationId) {
-        if (current !== stationId) {
-          params.set(STATION_QUERY_KEY, stationId);
-          const search = params.toString();
-          const newUrl = `${window.location.pathname}?${search}${window.location.hash}`;
-          window.history.replaceState({}, '', newUrl);
-        }
-      } else if (current) {
+      const currentQueryStation = params.get(STATION_QUERY_KEY);
+      const currentPathStation = extractStationIdFromPath(window.location.pathname);
+
+      if (currentQueryStation && currentQueryStation !== stationId) {
         params.delete(STATION_QUERY_KEY);
-        const search = params.toString();
-        const newUrl = `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`;
+      }
+
+      let nextPath = window.location.pathname;
+      if (stationId) {
+        const desiredPath = `/stations/${encodeURIComponent(stationId)}`;
+        if (nextPath !== desiredPath) {
+          nextPath = desiredPath;
+        }
+      } else if (currentPathStation) {
+        nextPath = '/';
+      }
+
+      const search = params.toString();
+      const newUrl = `${nextPath}${search ? `?${search}` : ''}${window.location.hash}`;
+      const relativeUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (newUrl !== relativeUrl) {
         window.history.replaceState({}, '', newUrl);
       }
     } catch (error) {

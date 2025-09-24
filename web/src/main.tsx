@@ -6,12 +6,14 @@ const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement)
 
 const params = new URLSearchParams(window.location.search);
 const view = params.get('view');
+const pathname = window.location.pathname;
+const isScoreboardPath = /^\/scoreboard(?:\b|\/)/i.test(pathname);
 
 function render(element: React.ReactNode) {
   root.render(<React.StrictMode>{element}</React.StrictMode>);
 }
 
-if (view === 'scoreboard') {
+if (view === 'scoreboard' || isScoreboardPath) {
   import('./scoreboard/ScoreboardApp')
     .then(({ default: ScoreboardApp }) => {
       render(<ScoreboardApp />);
