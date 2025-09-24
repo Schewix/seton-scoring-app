@@ -1,12 +1,48 @@
 #!/usr/bin/env node
 
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { config as loadEnv } from 'dotenv';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import SVGtoPDF from 'svg-to-pdfkit';
+
+const envCandidates = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), 'scripts/.env'),
+  path.resolve(process.cwd(), 'web/.env'),
+  path.resolve(process.cwd(), 'web/.env.local'),
+  path.resolve(process.cwd(), 'web/src/.env'),
+  path.resolve(process.cwd(), 'web/src/.env.local'),
+];
+
+const loadedEnvFiles = [];
+for (const candidate of envCandidates) {
+  if (existsSync(candidate)) {
+    const result = loadEnv({ path: candidate, override: false });
+    if (!result.error) {
+      loadedEnvFiles.push(candidate);
+    }
+  }
+}
+
+if (loadedEnvFiles.length) {
+  console.log(`Loaded environment variables from: ${loadedEnvFiles.join(', ')}`);
+}
+
+if (!process.env.SUPABASE_URL && process.env.VITE_SUPABASE_URL) {
+  process.env.SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+}
+
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_SERVICE_KEY) {
+  process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_KEY;
+}
+
+if (!process.env.SUPABASE_ANON_KEY && process.env.VITE_SUPABASE_ANON_KEY) {
+  process.env.SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
+}
 
 function printUsageAndExit() {
   console.error('Usage: node scripts/generate-qr-codes.mjs <EVENT_ID> [output-directory]');
