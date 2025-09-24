@@ -3,7 +3,7 @@
 Systém pro bodování stanovišť Setonu. Projekt začal jako mobilní aplikace v
 Expo, ale aktuální vývoj se soustředí na webovou verzi postavenou na Reactu.
 Sdílená backendová vrstva běží na Supabase a seznam hlídek se synchronizuje z
-Google Sheets. Historická mobilní aplikace už v repozitáři není – tento
+Google Sheets. Historická mobilní aplikace už v repozitáři není – toto
 monorepo nyní obsahuje jen web, databázové skripty, Google Apps Script a nástroj
 pro generování QR kódů.
 
@@ -91,7 +91,7 @@ pro generování QR kódů.
 ### Další poznámky
 
 - Offline fronta je per prohlížeč/stanici – při ztrátě sítě se záznamy ukládají
-  lokálně a po kliknutí na „Odeslat nyní" (nebo po návratu připojení)
+  lokálně a po kliknutí na „Odeslat nyní“ (nebo po návratu připojení)
   synchronizují.
 - Zadané jméno rozhodčího se ukládá do `localStorage` pro další relaci.
 - Správné odpovědi lze hromadně upravit v horním panelu (vyžaduje administrátorský
