@@ -331,7 +331,21 @@ function buildRows(
         continue;
       }
 
+      const prefix = `${source.category}${source.sex}`;
       let patrolCode = normalizeString(raw.patrol_code);
+      if (patrolCode) {
+        const numericMatch = patrolCode.match(/^(\d+)$/);
+        if (numericMatch) {
+          patrolCode = `${prefix}-${numericMatch[1]}`;
+        } else {
+          const upper = patrolCode.toUpperCase();
+          if (upper.startsWith(prefix) && !upper.startsWith(`${prefix}-`)) {
+            patrolCode = `${prefix}-${upper.slice(prefix.length).replace(/^[-\s]*/, '')}`;
+          } else if (upper.startsWith(prefix)) {
+            patrolCode = `${prefix}-${upper.slice(prefix.length + 1).trim()}`;
+          }
+        }
+      }
       if (!patrolCode) {
         patrolCode = generateCode(existingCodes, batchCodes);
       }
