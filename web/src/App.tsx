@@ -187,6 +187,7 @@ function App() {
   const [waitDurationSeconds, setWaitDurationSeconds] = useState(0);
   const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const waitStartRef = useRef<number | null>(null);
+  const lastScanRef = useRef<{ code: string; at: number } | null>(null);
 
   const queueKey = useMemo(() => (stationId ? `${QUEUE_KEY_PREFIX}_${stationId}` : null), [stationId]);
 
@@ -558,6 +559,7 @@ function App() {
     setManualCode('');
     setArrivedAt(null);
     clearWait();
+    lastScanRef.current = null;
   }, [clearWait, isTargetStation]);
 
   useEffect(() => {
@@ -605,7 +607,14 @@ function App() {
         pushAlert('Neplatný QR kód. Očekávám seton://p/<code>');
         return;
       }
-      await fetchPatrol(match[1]);
+      const scannedCode = match[1].trim();
+      const now = Date.now();
+      const recent = lastScanRef.current;
+      if (recent && recent.code === scannedCode && now - recent.at < 3_000) {
+        return;
+      }
+      lastScanRef.current = { code: scannedCode, at: now };
+      await fetchPatrol(scannedCode);
     },
     [fetchPatrol, pushAlert]
   );
