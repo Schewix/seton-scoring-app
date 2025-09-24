@@ -97,6 +97,8 @@ pro generování QR kódů.
 - Správné odpovědi lze hromadně upravit v horním panelu (vyžaduje administrátorský
   režim). Při zapnutí automatického hodnocení se odpovědi validují (12 otázek,
   pouze písmena A–D).
+- Každé stanoviště má vlastní URL tvaru `/stations/<station_id>` (alias `/stanoviste/<station_id>`);
+  pro scoreboard existuje krátká adresa `/scoreboard`.
 
 ## Supabase & Google Sheets
 

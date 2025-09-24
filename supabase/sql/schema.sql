@@ -36,7 +36,13 @@ create table if not exists stations (
 );
 
 do $$ begin
-  alter table stations add constraint stations_event_code_key unique (event_id, code);
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'stations_event_code_key'
+  ) then
+    alter table stations add constraint stations_event_code_key unique (event_id, code);
+  end if;
 exception when duplicate_object then null; end $$;
 
 create table if not exists station_passages (

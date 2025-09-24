@@ -7,9 +7,15 @@ declare module 'https://deno.land/std@0.224.0/csv/mod.ts' {
   export function parse<T>(input: string, options: T): unknown;
 }
 
+type DenoServeHandler = (req: Request) => Response | Promise<Response>;
+type DenoServeOptions = {
+  port?: number;
+  signal?: AbortSignal;
+};
+
 declare const Deno: {
   env: {
     get(key: string): string | undefined;
   };
-  serve: typeof import('https://deno.land/std@0.224.0/http/server.ts').serve;
+  serve: (handler: DenoServeHandler, options?: DenoServeOptions) => Promise<void>;
 };
