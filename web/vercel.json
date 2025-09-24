@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/stations/(.*)", "destination": "/" },
+    { "source": "/stanoviste/(.*)", "destination": "/" },
+    { "source": "/scoreboard", "destination": "/" },
+    { "source": "/scoreboard/(.*)", "destination": "/" }
+  ]
+}
