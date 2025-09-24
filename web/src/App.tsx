@@ -197,19 +197,24 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    setStationsLoading(true);
-    setStationsError(null);
 
-    supabase
-      .from('stations')
-      .select('id, code, name')
-      .eq('event_id', eventId)
-      .order('code', { ascending: true })
-      .then(({ data, error }) => {
+    const fetchStations = async () => {
+      setStationsLoading(true);
+      setStationsError(null);
+
+      try {
+        const { data, error } = await supabase
+          .from('stations')
+          .select('id, code, name')
+          .eq('event_id', eventId)
+          .order('code', { ascending: true });
+
         if (!active) {
           return;
         }
+
         setStationsLoading(false);
+
         if (error) {
           console.error('Failed to load stations list', error);
           setStationsError('Nepodařilo se načíst seznam stanovišť.');
@@ -223,8 +228,7 @@ function App() {
           name: row.name,
         }));
         setAvailableStations(mapped);
-      })
-      .catch((error) => {
+      } catch (error) {
         if (!active) {
           return;
         }
@@ -232,7 +236,10 @@ function App() {
         console.error('Failed to load stations list', error);
         setStationsError('Nepodařilo se načíst seznam stanovišť.');
         pushAlert('Nepodařilo se načíst seznam stanovišť.');
-      });
+      }
+    };
+
+    fetchStations();
 
     return () => {
       active = false;
@@ -617,6 +624,11 @@ function App() {
   }, [answersInput, useTargetScoring, patrol, categoryAnswers]);
 
   const saveCategoryAnswers = useCallback(async () => {
+    if (!stationId) {
+      pushAlert('Vyber prosím stanoviště před uložením odpovědí.');
+      return;
+    }
+
     setSavingAnswers(true);
     const updates: { event_id: string; station_id: string; category: string; correct_answers: string }[] = [];
     const deletions: string[] = [];
@@ -665,7 +677,7 @@ function App() {
     setSavingAnswers(false);
     pushAlert('Správné odpovědi uloženy.');
     loadCategoryAnswers();
-  }, [answersForm, categoryAnswers, loadCategoryAnswers, pushAlert]);
+  }, [answersForm, categoryAnswers, eventId, loadCategoryAnswers, pushAlert, stationId]);
 
   const handleSave = useCallback(async () => {
     if (!patrol) return;
