@@ -108,6 +108,41 @@ body {
   align-items: center;
 }
 
+.patrol-code-input {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.patrol-code-input span {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(11, 83, 70, 0.7);
+}
+
+.patrol-code-input input {
+  appearance: none;
+  border: 1px solid rgba(11, 83, 70, 0.25);
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.92);
+  color: #0a4236;
+  font-size: 16px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.patrol-code-input small {
+  font-size: 0.75rem;
+  color: rgba(11, 83, 70, 0.6);
+}
+
+.patrol-code-input small.invalid {
+  color: #b91c1c;
+}
+
 .judge-display {
   display: flex;
   flex-direction: column;

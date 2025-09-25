@@ -3,6 +3,7 @@ import localforage from 'localforage';
 import QRScanner from './components/QRScanner';
 import LastScoresList from './components/LastScoresList';
 import TargetAnswersReport from './components/TargetAnswersReport';
+import PatrolCodeInput from './components/PatrolCodeInput';
 import { supabase } from './supabaseClient';
 import './App.css';
 import setonLogo from './assets/seton-logo.png';
@@ -1008,18 +1009,16 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
               <div className="scanner-wrapper">
                 <QRScanner active={scanActive} onResult={handleScanResult} onError={(err) => console.error(err)} />
                 <div className="manual-entry">
-                  <label>
-                    Ruční kód
-                    <input
-                      value={manualCode}
-                      onChange={(event) => setManualCode(event.target.value)}
-                      placeholder="např. NH-15"
-                    />
-                  </label>
+                  <PatrolCodeInput
+                    value={manualCode}
+                    onChange={setManualCode}
+                    label="Ruční kód"
+                  />
                   <button
                     type="button"
                     className="primary"
                     onClick={() => manualCode.trim() && fetchPatrol(manualCode.trim())}
+                    disabled={!manualCode}
                   >
                     Načíst hlídku
                   </button>
