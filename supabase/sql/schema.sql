@@ -105,3 +105,41 @@ create index if not exists station_scores_event_station_idx on station_scores(ev
 create index if not exists passages_event_station_idx on station_passages(event_id, station_id);
 create index if not exists category_answers_event_station_idx on station_category_answers(event_id, station_id);
 create index if not exists quiz_responses_event_station_idx on station_quiz_responses(event_id, station_id);
+
+create table if not exists judges (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique,
+  password_hash text not null,
+  display_name text not null,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists judge_assignments (
+  id uuid primary key default gen_random_uuid(),
+  judge_id uuid not null references judges(id) on delete cascade,
+  station_id uuid not null references stations(id) on delete cascade,
+  event_id uuid not null references events(id) on delete cascade,
+  allowed_categories category[] not null default array[]::category[],
+  allowed_tasks text[] not null default array[]::text[],
+  created_at timestamptz not null default now(),
+  unique (judge_id, station_id, event_id)
+);
+
+create table if not exists judge_sessions (
+  id uuid primary key default gen_random_uuid(),
+  judge_id uuid not null references judges(id) on delete cascade,
+  station_id uuid not null references stations(id) on delete cascade,
+  device_salt text not null,
+  public_key text,
+  manifest_version int not null default 1,
+  refresh_token_hash text not null,
+  refresh_token_expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  revoked_at timestamptz,
+  unique (judge_id, station_id, device_salt)
+);
+
+create index if not exists judge_assignments_station_idx on judge_assignments(station_id);
+create index if not exists judge_sessions_judge_idx on judge_sessions(judge_id);

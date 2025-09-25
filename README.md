@@ -21,8 +21,37 @@ pro generování QR kódů.
 - `supabase/sql/` – schéma databáze, pohledy, RLS politiky a referenční seed.
 - `google-sheets/` – Apps Script pro import hlídek a popis šablony tabulky.
 - `scripts/` – nástroje pro generování QR kódů hlídek.
+- `server/` – Express API (login, manifest, synchronizační backend pro rozhodčí).
 - `.github/workflows/` – CI/CD workflow pro nasazení webu na Vercel a push
   Supabase schématu.
+
+## Backend (Express API)
+
+Autentizace rozhodčích a manifest stanoviště obstarává mini-server v adresáři
+`server/`.
+
+```bash
+cd server
+npm install
+npm run dev
+```
+
+Konfigurace (`server/.env`):
+
+```
+SUPABASE_URL=<https://...>
+SUPABASE_SERVICE_ROLE_KEY=<service role>
+JWT_SECRET=<tajný klíč>
+REFRESH_TOKEN_SECRET=<jiný tajný klíč>
+# volitelné (default 15 min / 14 dní)
+ACCESS_TOKEN_TTL_SECONDS=900
+REFRESH_TOKEN_TTL_SECONDS=1209600
+```
+
+Server poskytuje endpointy:
+
+- `POST /auth/login` – email/heslo → access/refresh tokeny, manifest, seznam hlídek.
+- `GET /manifest` – obnoví manifest podle aktuálního přiřazení (vyžaduje access token).
 
 ## Webová aplikace (React + Vite)
 
@@ -58,7 +87,11 @@ pro generování QR kódů.
    VITE_STATION_ID=<UUID stanoviště>
    # volitelné: zapne administrátorský režim pro editaci správných odpovědí
    VITE_ADMIN_MODE=1
-   ```
+   # adresa backendu pro login/manifest (pokud běží samostatně)
+   VITE_AUTH_API_URL=https://scoring-backend.example.com
+   # pro lokální vývoj bez přihlášení
+   VITE_AUTH_BYPASS=1
+  ```
 
 3. Spusť vývojový server:
 

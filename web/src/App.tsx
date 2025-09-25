@@ -6,6 +6,11 @@ import TargetAnswersReport from './components/TargetAnswersReport';
 import { supabase } from './supabaseClient';
 import './App.css';
 import setonLogo from './assets/seton-logo.png';
+import { useAuth } from './auth/context';
+import LoginScreen from './auth/LoginScreen';
+import type { AuthStatus } from './auth/types';
+import { env } from './envVars';
+import { signPayload } from './auth/crypto';
 
 
 interface Patrol {
@@ -33,50 +38,23 @@ interface PendingSubmission {
   team_name?: string;
   sex?: string;
   finish_time?: string | null;
+  judge_id: string;
+  session_id: string;
+  manifest_version: number;
+  signature: string;
+  signature_payload: string;
 }
 
-interface StationMeta {
-  code: string;
-  name: string | null;
-}
+type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 
-interface StationOption {
-  id: string;
-  code: string;
-  name: string | null;
-}
-
-const ANSWER_CATEGORIES = ['N', 'M', 'S'] as const;
+const ANSWER_CATEGORIES = ['N', 'M', 'S', 'R'] as const;
 type CategoryKey = (typeof ANSWER_CATEGORIES)[number];
 const QUEUE_KEY_PREFIX = 'web_pending_station_submissions_v1';
-const JUDGE_KEY = 'judge_name';
-const STATION_STORAGE_KEY = 'selected_station_id';
-const STATION_QUERY_KEY = 'station';
-const STATION_PATH_PATTERN = /\/(?:stations|stanoviste)\/([^/?#]+)/i;
 
-function extractStationIdFromPath(pathname: string): string | null {
-  const match = pathname.match(STATION_PATH_PATTERN);
-  if (!match) return null;
-  try {
-    return decodeURIComponent(match[1]);
-  } catch (error) {
-    console.error('Failed to decode station id from path', error);
-    return match[1];
-  }
-}
+import { env } from './envVars';
 
-const rawEventId = import.meta.env.VITE_EVENT_ID as string | undefined;
-const rawStationId = import.meta.env.VITE_STATION_ID as string | undefined;
-const rawAdminMode = import.meta.env.VITE_ADMIN_MODE as string | undefined;
-
-if (!rawEventId) {
-  throw new Error('Missing VITE_EVENT_ID environment variable.');
-}
-
-const eventId = rawEventId;
-const defaultStationId = rawStationId ?? null;
 const isAdminMode =
-  typeof rawAdminMode === 'string' && ['1', 'true', 'yes', 'on'].includes(rawAdminMode.toLowerCase());
+  typeof env.VITE_ADMIN_MODE === 'string' && ['1', 'true', 'yes', 'on'].includes(env.VITE_ADMIN_MODE.toLowerCase());
 
 localforage.config({
   name: 'seton-web',
@@ -92,10 +70,6 @@ function formatAnswersForInput(stored = '') {
 
 function packAnswersForStorage(value = '') {
   return parseAnswerLetters(value).join('');
-}
-
-function shortId(value: string) {
-  return value.length > 8 ? `${value.slice(0, 8)}…` : value;
 }
 
 async function readQueue(key: string): Promise<PendingSubmission[]> {
@@ -149,34 +123,12 @@ function fromLocalDateTimeInput(value: string) {
   return date.toISOString();
 }
 
-function App() {
-  const [stationId, setStationId] = useState<string | null>(() => {
-    if (typeof window === 'undefined') {
-      return defaultStationId;
-    }
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const queryValue = params.get(STATION_QUERY_KEY)?.trim();
-      if (queryValue) {
-        return queryValue;
-      }
-      const pathValue = extractStationIdFromPath(window.location.pathname)?.trim();
-      if (pathValue) {
-        return pathValue;
-      }
-      const stored = window.localStorage.getItem(STATION_STORAGE_KEY)?.trim();
-      if (stored) {
-        return stored;
-      }
-    } catch (error) {
-      console.error('Failed to resolve initial station selection', error);
-    }
-    return defaultStationId;
-  });
-  const [availableStations, setAvailableStations] = useState<StationOption[]>([]);
-  const [stationsLoading, setStationsLoading] = useState(false);
-  const [stationsError, setStationsError] = useState<string | null>(null);
-  const [judge, setJudge] = useState('');
+function StationApp({ auth }: { auth: AuthenticatedState }) {
+  const manifest = auth.manifest;
+  const eventId = manifest.event.id;
+  const stationId = manifest.station.id;
+  const stationCode = manifest.station.code?.trim().toUpperCase() || '';
+  const stationName = manifest.station.name;
   const [patrol, setPatrol] = useState<Patrol | null>(null);
   const [points, setPoints] = useState('');
   const [note, setNote] = useState('');
@@ -190,7 +142,6 @@ function App() {
     S: '',
     R: '',
   });
-  const [stationMeta, setStationMeta] = useState<StationMeta | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingItems, setPendingItems] = useState<PendingSubmission[]>([]);
   const [showPendingDetails, setShowPendingDetails] = useState(false);
@@ -211,12 +162,9 @@ function App() {
   const waitStartRef = useRef<number | null>(null);
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
 
-  const queueKey = useMemo(() => (stationId ? `${QUEUE_KEY_PREFIX}_${stationId}` : null), [stationId]);
+  const queueKey = useMemo(() => `${QUEUE_KEY_PREFIX}_${stationId}`, [stationId]);
 
-  const isTargetStation = useMemo(() => {
-    const code = stationMeta?.code?.trim().toUpperCase() || '';
-    return code === 'T';
-  }, [stationMeta]);
+  const isTargetStation = stationCode === 'T';
   const canEditAnswers = isAdminMode;
 
   const updateQueueState = useCallback((items: PendingSubmission[]) => {
@@ -235,144 +183,13 @@ function App() {
   }, []);
 
   useEffect(() => {
-    let active = true;
-
-    const fetchStations = async () => {
-      setStationsLoading(true);
-      setStationsError(null);
-
-      try {
-        const { data, error } = await supabase
-          .from('stations')
-          .select('id, code, name')
-          .eq('event_id', eventId)
-          .order('code', { ascending: true });
-
-        if (!active) {
-          return;
-        }
-
-        setStationsLoading(false);
-
-        if (error) {
-          console.error('Failed to load stations list', error);
-          setStationsError('Nepodařilo se načíst seznam stanovišť.');
-          pushAlert('Nepodařilo se načíst seznam stanovišť.');
-          return;
-        }
-
-        const mapped = (data || [])
-          .map((row: { id: string; code: string; name: string | null }) => ({
-            id: row.id,
-            code: row.code,
-            name: row.name,
-          }))
-          .filter((station) => station.code.trim().toUpperCase() !== 'R');
-        setAvailableStations(mapped);
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-        setStationsLoading(false);
-        console.error('Failed to load stations list', error);
-        setStationsError('Nepodařilo se načíst seznam stanovišť.');
-        pushAlert('Nepodařilo se načíst seznam stanovišť.');
+    if (typeof window !== 'undefined') {
+      const desiredPath = `/stations/${encodeURIComponent(stationId)}`;
+      if (window.location.pathname !== desiredPath) {
+        window.history.replaceState({}, '', desiredPath + window.location.search + window.location.hash);
       }
-    };
-
-    fetchStations();
-
-    return () => {
-      active = false;
-    };
-  }, [eventId, pushAlert]);
-
-  useEffect(() => {
-    let active = true;
-    const loadStation = async () => {
-      if (!stationId) {
-        setStationMeta(null);
-        return;
-      }
-      const { data, error } = await supabase
-        .from('stations')
-        .select('code, name')
-        .eq('event_id', eventId)
-        .eq('id', stationId)
-        .maybeSingle();
-
-      if (!active) {
-        return;
-      }
-
-      if (error) {
-        console.error('Failed to load station info', error);
-        pushAlert('Nepodařilo se načíst informace o stanovišti.');
-        return;
-      }
-
-      if (data) {
-        setStationMeta(data);
-      } else {
-        setStationMeta(null);
-      }
-    };
-
-    loadStation();
-
-    return () => {
-      active = false;
-    };
-  }, [eventId, stationId, pushAlert]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    try {
-      if (stationId) {
-        window.localStorage.setItem(STATION_STORAGE_KEY, stationId);
-      } else {
-        window.localStorage.removeItem(STATION_STORAGE_KEY);
-      }
-
-      const params = new URLSearchParams(window.location.search);
-      const currentQueryStation = params.get(STATION_QUERY_KEY);
-      const currentPathStation = extractStationIdFromPath(window.location.pathname);
-
-      if (currentQueryStation && currentQueryStation !== stationId) {
-        params.delete(STATION_QUERY_KEY);
-      }
-
-      let nextPath = window.location.pathname;
-      if (stationId) {
-        const desiredPath = `/stations/${encodeURIComponent(stationId)}`;
-        if (nextPath !== desiredPath) {
-          nextPath = desiredPath;
-        }
-      } else if (currentPathStation) {
-        nextPath = '/';
-      }
-
-      const search = params.toString();
-      const newUrl = `${nextPath}${search ? `?${search}` : ''}${window.location.hash}`;
-      const relativeUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      if (newUrl !== relativeUrl) {
-        window.history.replaceState({}, '', newUrl);
-      }
-    } catch (error) {
-      console.error('Failed to persist station selection', error);
     }
   }, [stationId]);
-
-  useEffect(() => {
-    const stored = window.localStorage.getItem(JUDGE_KEY);
-    if (stored) setJudge(stored);
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(JUDGE_KEY, judge);
-  }, [judge]);
 
   useEffect(() => {
     setUseTargetScoring(isTargetStation);
@@ -473,10 +290,6 @@ function App() {
   }, [isTargetStation, loadCategoryAnswers]);
 
   const syncQueue = useCallback(async () => {
-    if (!queueKey) {
-      updateQueueState([]);
-      return;
-    }
     const queue = await readQueue(queueKey);
     updateQueueState(queue);
     if (!queue.length || syncing) return;
@@ -611,18 +424,40 @@ function App() {
     setShowPendingDetails(false);
   }, [resetForm, stationId]);
 
+  const cachedPatrolMap = useMemo(() => {
+    const map = new Map<string, Patrol>();
+    auth.patrols.forEach((patrol) => {
+      if (patrol.patrol_code) {
+        map.set(patrol.patrol_code.trim().toUpperCase(), {
+          id: patrol.id,
+          team_name: patrol.team_name,
+          category: patrol.category,
+          sex: patrol.sex,
+          patrol_code: patrol.patrol_code,
+        });
+      }
+    });
+    return map;
+  }, [auth.patrols]);
+
   const fetchPatrol = useCallback(
     async (patrolCode: string) => {
-      const { data, error } = await supabase
-        .from('patrols')
-        .select('id, team_name, category, sex, patrol_code')
-        .eq('event_id', eventId)
-        .eq('patrol_code', patrolCode)
-        .maybeSingle();
+      const normalized = patrolCode.trim().toUpperCase();
+      let data = cachedPatrolMap.get(normalized) || null;
 
-      if (error || !data) {
-        pushAlert('Hlídka nenalezena.');
-        return;
+      if (!data) {
+        const { data: fetched, error } = await supabase
+          .from('patrols')
+          .select('id, team_name, category, sex, patrol_code')
+          .eq('event_id', eventId)
+          .eq('patrol_code', normalized)
+          .maybeSingle();
+
+        if (error || !fetched) {
+          pushAlert('Hlídka nenalezena.');
+          return;
+        }
+        data = fetched as Patrol;
       }
 
       setPatrol({ ...data });
@@ -640,7 +475,7 @@ function App() {
       setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
       setUseTargetScoring(isTargetStation);
 
-      if (stationMeta?.code?.trim().toUpperCase() === 'T') {
+      if (stationCode === 'T') {
         const { data: timingRows, error: timingError } = await supabase
           .from('timings')
           .select('finish_time')
@@ -658,7 +493,7 @@ function App() {
         setFinishAt(null);
       }
     },
-    [categoryAnswers, clearWait, eventId, isTargetStation, pushAlert, stationMeta]
+    [auth.patrols, cachedPatrolMap, categoryAnswers, clearWait, eventId, isTargetStation, pushAlert, stationCode]
   );
 
   const handleScanResult = useCallback(
@@ -816,7 +651,7 @@ function App() {
 
     const now = new Date().toISOString();
     const arrivalIso = arrivedAt || now;
-    const submission: PendingSubmission = {
+    const submissionData = {
       event_id: eventId,
       station_id: stationId,
       patrol_id: patrol.id,
@@ -824,15 +659,50 @@ function App() {
       arrived_at: arrivalIso,
       wait_minutes: waitMinutes,
       points: scorePoints,
-      judge,
       note,
-      useTargetScoring,
-      normalizedAnswers,
-      shouldDeleteQuiz: !useTargetScoring,
+      use_target_scoring: useTargetScoring,
+      normalized_answers: normalizedAnswers,
+      finish_time: finishAt,
       patrol_code: patrol.patrol_code,
       team_name: patrol.team_name,
       sex: patrol.sex,
-      finish_time: finishAt,
+    };
+
+    const signaturePayload = {
+      version: 1,
+      manifest_version: manifest.manifestVersion,
+      session_id: auth.tokens.sessionId,
+      judge_id: manifest.judge.id,
+      station_id: stationId,
+      event_id: eventId,
+      signed_at: now,
+      data: submissionData,
+    };
+
+    const signatureResult = await signPayload(auth.deviceKey, signaturePayload);
+
+    const submission: PendingSubmission = {
+      event_id: submissionData.event_id,
+      station_id: submissionData.station_id,
+      patrol_id: submissionData.patrol_id,
+      category: submissionData.category,
+      arrived_at: submissionData.arrived_at,
+      wait_minutes: submissionData.wait_minutes,
+      points: submissionData.points,
+      judge: manifest.judge.displayName,
+      note: submissionData.note,
+      useTargetScoring,
+      normalizedAnswers,
+      shouldDeleteQuiz: !useTargetScoring,
+      patrol_code: submissionData.patrol_code,
+      team_name: submissionData.team_name,
+      sex: submissionData.sex,
+      finish_time: submissionData.finish_time,
+      judge_id: manifest.judge.id,
+      session_id: auth.tokens.sessionId,
+      manifest_version: manifest.manifestVersion,
+      signature: signatureResult.signature,
+      signature_payload: signatureResult.canonical,
     };
 
     const queueBefore = await readQueue(queueKey);
@@ -872,7 +742,7 @@ function App() {
           station_id: stationId,
           patrol_id: patrol.id,
           points: scorePoints,
-          judge,
+          judge: manifest.judge.displayName,
           note,
         },
         { onConflict: 'event_id,patrol_id,station_id' }
@@ -936,7 +806,6 @@ function App() {
     syncQueue();
   }, [
     autoScore,
-    judge,
     note,
     patrol,
     points,
@@ -951,6 +820,11 @@ function App() {
     stationId,
     queueKey,
     finishAt,
+    manifest.judge.displayName,
+    manifest.judge.id,
+    manifest.manifestVersion,
+    auth.tokens.sessionId,
+    auth.deviceKey,
   ]);
 
   const totalAnswers = useMemo(
@@ -958,30 +832,9 @@ function App() {
     [patrol, categoryAnswers]
   );
   const heroBadges = useMemo(() => {
-    const stationLabel = stationMeta?.code
-      ? `${stationMeta.code}${stationMeta.name ? ` • ${stationMeta.name}` : ''}`
-      : stationId
-        ? shortId(stationId)
-        : 'Nevybráno';
-    const queueLabel = queueKey
-      ? pendingCount
-        ? `Offline fronta: ${pendingCount}`
-        : 'Offline fronta prázdná'
-      : 'Offline fronta: —';
-    return [`Event: ${shortId(eventId)}`, `Stanoviště: ${stationLabel}`, queueLabel];
-  }, [eventId, pendingCount, queueKey, stationId, stationMeta]);
-
-  const stationOptionsForSelect = useMemo(() => {
-    if (!stationId) {
-      return availableStations;
-    }
-    if (availableStations.some((station) => station.id === stationId)) {
-      return availableStations;
-    }
-    const fallbackCode = stationMeta?.code ?? stationId;
-    const fallbackName = stationMeta?.name ?? null;
-    return [...availableStations, { id: stationId, code: fallbackCode, name: fallbackName }];
-  }, [availableStations, stationId, stationMeta]);
+    const queueLabel = pendingCount ? `Offline fronta: ${pendingCount}` : 'Offline fronta prázdná';
+    return [`Event: ${manifest.event.name}`, queueLabel];
+  }, [manifest.event.name, pendingCount]);
 
   const answersSummary = useMemo(
     () =>
@@ -1018,39 +871,27 @@ function App() {
           </div>
         </div>
         <div className="hero-meta">
-          <div className="station-selector">
-            <label htmlFor="station-select">Stanoviště</label>
-            <select
-              id="station-select"
-              value={stationId ?? ''}
-              onChange={(event) => setStationId(event.target.value || null)}
-              disabled={stationsLoading && stationOptionsForSelect.length === 0}
-            >
-              <option value="">
-                {stationsLoading && stationOptionsForSelect.length === 0
-                  ? 'Načítám…'
-                  : 'Vyber stanoviště'}
-              </option>
-              {stationOptionsForSelect.map((station) => {
-                const label = station.name ? `${station.code} • ${station.name}` : station.code;
-                return (
-                  <option key={station.id} value={station.id}>
-                    {label}
-                  </option>
-                );
-              })}
-            </select>
-            {stationsError ? <span className="station-selector-error">{stationsError}</span> : null}
+          <div className="station-summary">
+            <span className="station-summary-label">Stanoviště</span>
+            <strong>{stationCode || '—'}</strong>
+            {stationName ? <span className="station-summary-sub">{stationName}</span> : null}
           </div>
-          {heroBadges.map((badge) => (
-            <span key={badge} className="meta-pill">
-              {badge}
-            </span>
-          ))}
-          {lastSavedAt ? (
-            <span className="meta-pill subtle">Poslední záznam: {formatTime(lastSavedAt)}</span>
-          ) : null}
-          {syncing ? <span className="meta-pill subtle">Synchronizuji frontu…</span> : null}
+          <div className="station-summary">
+            <span className="station-summary-label">Rozhodčí</span>
+            <strong>{manifest.judge.displayName}</strong>
+            <span className="station-summary-sub">{manifest.judge.email}</span>
+          </div>
+          <div className="hero-badges">
+            {heroBadges.map((badge) => (
+              <span key={badge} className="meta-pill">
+                {badge}
+              </span>
+            ))}
+            {lastSavedAt ? (
+              <span className="meta-pill subtle">Poslední záznam: {formatTime(lastSavedAt)}</span>
+            ) : null}
+            {syncing ? <span className="meta-pill subtle">Synchronizuji frontu…</span> : null}
+          </div>
         </div>
       </header>
 
@@ -1065,9 +906,8 @@ function App() {
           </div>
         ) : null}
 
-        {stationId ? (
-          <>
-            {isTargetStation ? (
+        <>
+          {isTargetStation ? (
               <section className="card answers-card">
                 <header className="card-header">
                   <div>
@@ -1197,7 +1037,7 @@ function App() {
               </div>
             </section>
 
-            <section className="card form-card">
+          <section className="card form-card">
               <header className="card-header">
                 <div>
                   <h2>Stanovištní formulář</h2>
@@ -1219,10 +1059,11 @@ function App() {
                       {patrol.category}/{patrol.sex}
                     </span>
                   </div>
-                  <label>
-                    Rozhodčí
-                    <input value={judge} onChange={(event) => setJudge(event.target.value)} placeholder="Jméno" />
-                  </label>
+                  <div className="judge-display">
+                    <span>Rozhodčí</span>
+                    <strong>{manifest.judge.displayName}</strong>
+                    <small>{manifest.judge.email}</small>
+                  </div>
                   {!useTargetScoring ? (
                     <div className="wait-field">
                       <span className="wait-label">Čekání</span>
@@ -1243,7 +1084,7 @@ function App() {
                       </div>
                     </div>
                 ) : null}
-                {stationMeta?.code?.trim().toUpperCase() === 'T' ? (
+                {stationCode === 'T' ? (
                   <div className="finish-time-section">
                     <label>
                       Čas v cíli
@@ -1382,23 +1223,40 @@ function App() {
               ) : null}
             </section>
 
-            <LastScoresList eventId={eventId} stationId={stationId} isTargetStation={isTargetStation} />
-            {isTargetStation ? (
-              <TargetAnswersReport eventId={eventId} stationId={stationId} />
-            ) : null}
-          </>
-        ) : (
-          <section className="card notice-card">
-            <h2>Vyber stanoviště</h2>
-            <p>
-              Pro práci s aplikací vyber v horní části konkrétní stanoviště. Offline fronta a skener se aktivují
-              po výběru.
-            </p>
-          </section>
-        )}
+          <LastScoresList eventId={eventId} stationId={stationId} isTargetStation={isTargetStation} />
+          {isTargetStation ? <TargetAnswersReport eventId={eventId} stationId={stationId} /> : null}
+        </>
       </main>
     </div>
   );
+}
+
+function App() {
+  const { status } = useAuth();
+
+  if (status.state === 'loading') {
+    return (
+      <div className="auth-shell">
+        <div className="auth-card">
+          <h1>Načítám…</h1>
+        </div>
+      </div>
+    );
+  }
+
+  if (status.state === 'unauthenticated') {
+    return <LoginScreen />;
+  }
+
+  if (status.state === 'locked') {
+    return <LoginScreen requirePinOnly />;
+  }
+
+  if (status.state === 'authenticated') {
+    return <StationApp auth={status} />;
+  }
+
+  return null;
 }
 
 export default App;

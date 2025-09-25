@@ -2,11 +2,15 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import localforage from 'localforage';
+import type { ReactNode } from 'react';
+import { AuthProvider } from '../auth/context';
 
 vi.stubEnv('VITE_EVENT_ID', 'event-test');
 vi.stubEnv('VITE_STATION_ID', 'station-test');
 vi.stubEnv('VITE_SUPABASE_URL', 'http://localhost');
 vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-test');
+vi.stubEnv('VITE_AUTH_BYPASS', '1');
+vi.stubEnv('VITE_STATION_CODE', 'X');
 
 vi.mock('../supabaseClient', () => {
   const tableFactories = new Map<string, () => unknown>();
@@ -142,7 +146,73 @@ vi.mock('../components/QRScanner', () => ({
   default: () => <div data-testid="qr-scanner" />,
 }));
 
+let mockedStationCode = 'X';
+const mockDeviceKey = new Uint8Array(32);
+
+vi.mock('../auth/context', async () => {
+  const { vi: vitest } = await import('vitest');
+  const mockPatrols = [
+    {
+      id: 'patrol-1',
+      team_name: 'Vlci',
+      category: 'N',
+      sex: 'H',
+      patrol_code: 'N-01',
+    },
+  ];
+
+  function buildManifest() {
+    return {
+      judge: { id: 'judge-test', email: 'test@example.com', displayName: 'Test Judge' },
+      station: {
+        id: 'station-test',
+        code: mockedStationCode,
+        name: mockedStationCode === 'T' ? 'Terčové stanoviště' : 'Stanoviště X',
+      },
+      event: { id: 'event-test', name: 'Test Event' },
+      allowedCategories: ['N', 'M', 'S', 'R'],
+      allowedTasks: [],
+      manifestVersion: 1,
+    };
+  }
+
+  const contextValue = {
+    login: vitest.fn(),
+    unlock: vitest.fn(),
+    logout: vitest.fn(),
+    updateManifest: vitest.fn(),
+    get status() {
+      return {
+        state: 'authenticated' as const,
+        manifest: buildManifest(),
+        patrols: mockPatrols,
+        deviceKey: mockDeviceKey,
+        tokens: {
+          accessToken: '',
+          accessTokenExpiresAt: Date.now() + 3600 * 1000,
+          refreshToken: 'refresh-test',
+          sessionId: 'session-test',
+        },
+      };
+    },
+  };
+
+  return {
+    useAuth: () => contextValue,
+    AuthProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  };
+});
+
 import { supabase } from '../supabaseClient';
+
+async function renderApp() {
+  const { default: App } = await import('../App');
+  render(
+    <AuthProvider>
+      <App />
+    </AuthProvider>,
+  );
+}
 
 type TableFactory = () => unknown;
 
@@ -191,6 +261,7 @@ function createSelectResult<T>(data: T, error: unknown = null) {
 
 describe('station workflow', () => {
   beforeEach(async () => {
+    mockedStationCode = 'X';
     supabaseMock.__resetMocks();
     vi.clearAllMocks();
     await localforage.clear();
@@ -198,10 +269,9 @@ describe('station workflow', () => {
   });
 
   it('stores offline submissions with queue preview details', async () => {
-    const { default: App } = await import('../App');
     const user = userEvent.setup();
 
-    render(<App />);
+    await renderApp();
 
     await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
 
@@ -210,7 +280,6 @@ describe('station workflow', () => {
 
     await screen.findAllByText(/Vlci/);
 
-    await user.type(screen.getByPlaceholderText('Jméno'), 'Honza');
     const pointsInput = screen.getByLabelText('Body (0 až 12)');
     await user.clear(pointsInput);
     await user.type(pointsInput, '10');
@@ -225,6 +294,7 @@ describe('station workflow', () => {
   });
 
   it('automatically scores target answers and saves quiz responses', async () => {
+    mockedStationCode = 'T';
     supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Terčové stanoviště' }));
     supabaseMock.__setMock(
       'station_category_answers',
@@ -254,10 +324,9 @@ describe('station workflow', () => {
       };
     });
 
-    const { default: App } = await import('../App');
     const user = userEvent.setup();
 
-    render(<App />);
+    await renderApp();
 
     await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
     await screen.findByText('Správné odpovědi');
@@ -266,8 +335,6 @@ describe('station workflow', () => {
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
 
     await screen.findAllByText(/Vlci/);
-
-    await user.type(screen.getByPlaceholderText('Jméno'), 'Ivana');
 
     const answersInput = await screen.findByLabelText('Odpovědi hlídky (12)');
     await user.type(answersInput, 'A B C D A B C D A B C D');
@@ -286,7 +353,7 @@ describe('station workflow', () => {
     expect(passagePayload).toMatchObject({ wait_minutes: 0 });
 
     const [scorePayload] = scoresUpsert.mock.calls.at(-1)!;
-    expect(scorePayload).toMatchObject({ points: 12, judge: 'Ivana' });
+    expect(scorePayload).toMatchObject({ points: 12, judge: 'Test Judge' });
 
     const [quizPayload] = quizUpsert.mock.calls.at(-1)!;
     expect(quizPayload).toMatchObject({
@@ -301,6 +368,7 @@ describe('station workflow', () => {
   });
 
   it('queues target quiz response when Supabase quiz upsert fails', async () => {
+    mockedStationCode = 'T';
     supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Terčové stanoviště' }));
     supabaseMock.__setMock(
       'station_category_answers',
@@ -330,10 +398,9 @@ describe('station workflow', () => {
       };
     });
 
-    const { default: App } = await import('../App');
     const user = userEvent.setup();
 
-    render(<App />);
+    await renderApp();
 
     await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
     await screen.findByText('Správné odpovědi');
@@ -342,8 +409,6 @@ describe('station workflow', () => {
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
 
     await screen.findAllByText(/Vlci/);
-
-    await user.type(screen.getByPlaceholderText('Jméno'), 'Ivana');
 
     const answersInput = await screen.findByLabelText('Odpovědi hlídky (12)');
     await user.type(answersInput, 'A B C D A B C D A B C D');
@@ -368,9 +433,14 @@ describe('station workflow', () => {
       useTargetScoring: true,
       normalizedAnswers: 'ABCDABCDABCD',
       shouldDeleteQuiz: false,
-      judge: 'Ivana',
+      judge: 'Test Judge',
       points: 12,
+      judge_id: 'judge-test',
+      session_id: 'session-test',
+      manifest_version: 1,
     });
+    expect(typeof queued.signature).toBe('string');
+    expect(typeof queued.signature_payload).toBe('string');
   });
 
   it('synchronizes pending queue when connectivity is restored', async () => {
@@ -382,7 +452,7 @@ describe('station workflow', () => {
       arrived_at: new Date('2024-01-01T10:00:00Z').toISOString(),
       wait_minutes: 5,
       points: 7,
-      judge: 'Jana',
+      judge: 'Test Judge',
       note: 'Offline záznam',
       useTargetScoring: false,
       normalizedAnswers: null,
@@ -390,6 +460,12 @@ describe('station workflow', () => {
       patrol_code: 'N-99',
       team_name: 'Rysi',
       sex: 'F',
+      finish_time: null,
+      judge_id: 'judge-test',
+      session_id: 'session-test',
+      manifest_version: 1,
+      signature: 'offline-signature',
+      signature_payload: '{}',
     };
 
     await localforage.setItem(QUEUE_KEY, [pendingItem]);
@@ -419,9 +495,7 @@ describe('station workflow', () => {
       };
     });
 
-    const { default: App } = await import('../App');
-
-    render(<App />);
+    await renderApp();
 
     await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
     await screen.findByText(/Synchronizováno 1 záznamů\./);
@@ -440,7 +514,7 @@ describe('station workflow', () => {
     expect(scorePayload).toMatchObject({
       patrol_id: 'patrol-queued',
       points: 7,
-      judge: 'Jana',
+      judge: 'Test Judge',
     });
 
     expect(deleteMatch).toHaveBeenCalledWith({
@@ -462,7 +536,7 @@ describe('station workflow', () => {
       arrived_at: new Date('2024-02-01T09:15:00Z').toISOString(),
       wait_minutes: 0,
       points: 11,
-      judge: 'Roman',
+      judge: 'Test Judge',
       note: 'Terč offline',
       useTargetScoring: true,
       normalizedAnswers: 'ABCDABCDABCD',
@@ -470,6 +544,12 @@ describe('station workflow', () => {
       patrol_code: 'N-77',
       team_name: 'Ještěrky',
       sex: 'F',
+      finish_time: null,
+      judge_id: 'judge-test',
+      session_id: 'session-test',
+      manifest_version: 1,
+      signature: 'offline-signature',
+      signature_payload: '{}',
     };
 
     await localforage.setItem(QUEUE_KEY, [pendingItem]);
@@ -497,9 +577,7 @@ describe('station workflow', () => {
       };
     });
 
-    const { default: App } = await import('../App');
-
-    render(<App />);
+    await renderApp();
 
     await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
     await screen.findByText(/Synchronizováno 1 záznamů\./);

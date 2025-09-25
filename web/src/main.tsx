@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
+import { AuthProvider } from './auth/context';
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 
@@ -10,7 +11,11 @@ const pathname = window.location.pathname;
 const isScoreboardPath = /^\/scoreboard(?:\b|\/)/i.test(pathname);
 
 function render(element: React.ReactNode) {
-  root.render(<React.StrictMode>{element}</React.StrictMode>);
+  root.render(
+    <React.StrictMode>
+      <AuthProvider>{element}</AuthProvider>
+    </React.StrictMode>,
+  );
 }
 
 if (view === 'scoreboard' || isScoreboardPath) {
