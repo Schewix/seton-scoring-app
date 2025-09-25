@@ -32,6 +32,7 @@ interface PendingSubmission {
   patrol_code: string;
   team_name?: string;
   sex?: string;
+  finish_time?: string | null;
 }
 
 interface StationMeta {
@@ -45,7 +46,7 @@ interface StationOption {
   name: string | null;
 }
 
-const ANSWER_CATEGORIES = ['N', 'M', 'S', 'R'] as const;
+const ANSWER_CATEGORIES = ['N', 'M', 'S'] as const;
 type CategoryKey = (typeof ANSWER_CATEGORIES)[number];
 const QUEUE_KEY_PREFIX = 'web_pending_station_submissions_v1';
 const JUDGE_KEY = 'judge_name';
@@ -128,6 +129,26 @@ function waitSecondsToMinutes(seconds: number) {
   return Math.max(0, Math.round(seconds / 60));
 }
 
+function toLocalDateTimeInput(value: string | null | undefined) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (num: number) => num.toString().padStart(2, '0');
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function fromLocalDateTimeInput(value: string) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
 function App() {
   const [stationId, setStationId] = useState<string | null>(() => {
     if (typeof window === 'undefined') {
@@ -183,6 +204,7 @@ function App() {
   const [showAnswersEditor, setShowAnswersEditor] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [arrivedAt, setArrivedAt] = useState<string | null>(null);
+  const [finishAt, setFinishAt] = useState<string | null>(null);
   const [isWaiting, setIsWaiting] = useState(false);
   const [waitDurationSeconds, setWaitDurationSeconds] = useState(0);
   const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -239,11 +261,13 @@ function App() {
           return;
         }
 
-        const mapped = (data || []).map((row: { id: string; code: string; name: string | null }) => ({
-          id: row.id,
-          code: row.code,
-          name: row.name,
-        }));
+        const mapped = (data || [])
+          .map((row: { id: string; code: string; name: string | null }) => ({
+            id: row.id,
+            code: row.code,
+            name: row.name,
+          }))
+          .filter((station) => station.code.trim().toUpperCase() !== 'R');
         setAvailableStations(mapped);
       } catch (error) {
         if (!active) {
@@ -498,6 +522,24 @@ function App() {
         continue;
       }
 
+      if (item.finish_time) {
+        const resTiming = await supabase
+          .from('timings')
+          .upsert(
+            {
+              event_id: item.event_id,
+              patrol_id: item.patrol_id,
+              finish_time: item.finish_time,
+            },
+            { onConflict: 'event_id,patrol_id' }
+          );
+
+        if (resTiming.error) {
+          remaining.push(item);
+          continue;
+        }
+      }
+
       if (item.useTargetScoring && item.normalizedAnswers) {
         const resQuiz = await supabase
           .from('station_quiz_responses')
@@ -558,6 +600,7 @@ function App() {
     setScanActive(true);
     setManualCode('');
     setArrivedAt(null);
+    setFinishAt(null);
     clearWait();
     lastScanRef.current = null;
   }, [clearWait, isTargetStation]);
@@ -596,8 +639,26 @@ function App() {
       const total = parseAnswerLetters(stored).length;
       setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
       setUseTargetScoring(isTargetStation);
+
+      if (stationMeta?.code?.trim().toUpperCase() === 'T') {
+        const { data: timingRows, error: timingError } = await supabase
+          .from('timings')
+          .select('finish_time')
+          .eq('event_id', eventId)
+          .eq('patrol_id', data.id);
+
+        if (timingError) {
+          console.error('Failed to load finish time', timingError);
+          setFinishAt(null);
+        } else {
+          const row = Array.isArray(timingRows) && timingRows.length > 0 ? timingRows[0] : null;
+          setFinishAt((row as { finish_time?: string | null } | null)?.finish_time ?? null);
+        }
+      } else {
+        setFinishAt(null);
+      }
     },
-    [categoryAnswers, clearWait, isTargetStation, pushAlert]
+    [categoryAnswers, clearWait, eventId, isTargetStation, pushAlert, stationMeta]
   );
 
   const handleScanResult = useCallback(
@@ -771,6 +832,7 @@ function App() {
       patrol_code: patrol.patrol_code,
       team_name: patrol.team_name,
       sex: patrol.sex,
+      finish_time: finishAt,
     };
 
     const queueBefore = await readQueue(queueKey);
@@ -819,6 +881,24 @@ function App() {
     if (scoreRes.error) {
       await handleOfflineFallback('Offline: body uložené do fronty.');
       return;
+    }
+
+    if (finishAt) {
+      const timingRes = await supabase
+        .from('timings')
+        .upsert(
+          {
+            event_id: eventId,
+            patrol_id: patrol.id,
+            finish_time: finishAt,
+          },
+          { onConflict: 'event_id,patrol_id' }
+        );
+
+      if (timingRes.error) {
+        await handleOfflineFallback('Offline: čas v cíli uložen do fronty.');
+        return;
+      }
     }
 
     if (useTargetScoring && normalizedAnswers !== null) {
@@ -870,6 +950,7 @@ function App() {
     arrivedAt,
     stationId,
     queueKey,
+    finishAt,
   ]);
 
   const totalAnswers = useMemo(
@@ -1161,11 +1242,33 @@ function App() {
                         </button>
                       </div>
                     </div>
-                  ) : null}
-                  <label>
-                    Poznámka
-                    <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} />
-                  </label>
+                ) : null}
+                {stationMeta?.code?.trim().toUpperCase() === 'T' ? (
+                  <div className="finish-time-section">
+                    <label>
+                      Čas v cíli
+                      <input
+                        type="datetime-local"
+                        value={toLocalDateTimeInput(finishAt)}
+                        onChange={(event) => setFinishAt(fromLocalDateTimeInput(event.target.value))}
+                      />
+                    </label>
+                    <div className="finish-time-actions">
+                      <button type="button" onClick={() => setFinishAt(new Date().toISOString())}>
+                        Nastavit na aktuální čas
+                      </button>
+                      {finishAt ? (
+                        <button type="button" className="ghost" onClick={() => setFinishAt(null)}>
+                          Vymazat
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                <label>
+                  Poznámka
+                  <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} />
+                </label>
                   {useTargetScoring ? (
                     <div className="auto-section">
                       <p className="card-hint">Terčový úsek se hodnotí automaticky podle zadaných odpovědí.</p>
