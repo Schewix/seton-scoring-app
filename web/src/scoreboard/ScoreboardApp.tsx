@@ -5,6 +5,7 @@ import './ScoreboardApp.css';
 interface RawResult {
   event_id: string;
   patrol_id: string;
+  patrol_code: string | null;
   team_name: string;
   category: string;
   sex: string;
@@ -20,6 +21,7 @@ interface RawRankedResult extends RawResult {
 interface Result {
   eventId: string;
   patrolId: string;
+  patrolCode: string | null;
   teamName: string;
   category: string;
   sex: string;
@@ -47,16 +49,7 @@ if (!rawEventId) {
 
 const REFRESH_INTERVAL_MS = 30_000;
 
-const BRACKET_ORDER = [
-  'N__H',
-  'N__D',
-  'M__H',
-  'M__D',
-  'S__H',
-  'S__D',
-  'R__H',
-  'R__D',
-];
+const BRACKET_ORDER = ['N__H', 'N__D', 'M__H', 'M__D', 'S__H', 'S__D'];
 
 const BRACKET_ORDER_INDEX = new Map(BRACKET_ORDER.map((key, index) => [key, index] as const));
 
@@ -76,6 +69,7 @@ function normaliseResult(raw: RawResult): Result {
   return {
     eventId: raw.event_id,
     patrolId: raw.patrol_id,
+    patrolCode: raw.patrol_code,
     teamName: raw.team_name,
     category: raw.category,
     sex: raw.sex,
@@ -147,6 +141,23 @@ function formatCategoryLabel(category: string, sex?: string) {
   return '—';
 }
 
+function formatPatrolNumber(patrolCode: string | null, category: string, sex: string) {
+  if (!patrolCode) return '—';
+  const normalized = patrolCode.trim();
+  if (!normalized) return '—';
+  const prefix = `${(category || '').trim().toUpperCase()}${(sex || '').trim().toUpperCase()}`;
+  const upper = normalized.toUpperCase();
+  if (prefix && upper.startsWith(`${prefix}-`)) {
+    const remainder = normalized.slice(prefix.length + 1).trim();
+    return remainder || normalized;
+  }
+  if (prefix && upper.startsWith(prefix)) {
+    const remainder = normalized.slice(prefix.length).replace(/^[-_\s]*/, '').trim();
+    return remainder || normalized;
+  }
+  return normalized;
+}
+
 function ScoreboardApp() {
   const [overall, setOverall] = useState<Result[]>([]);
   const [ranked, setRanked] = useState<RankedResult[]>([]);
@@ -154,6 +165,7 @@ function ScoreboardApp() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [eventName, setEventName] = useState<string>('');
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -162,12 +174,31 @@ function ScoreboardApp() {
     };
   }, []);
 
-  const loadData = useCallback(async () => {
-    setError(null);
-    setRefreshing(true);
+  useEffect(() => {
+    supabase
+      .from('events')
+      .select('name')
+      .eq('id', rawEventId)
+      .limit(1)
+      .then(({ data, error }) => {
+        if (!isMountedRef.current) return;
+        if (error) {
+          console.error('Failed to load event name', error);
+          setEventName('');
+          return;
+        }
+        const row = Array.isArray(data) && data.length ? data[0] : null;
+        setEventName((row as { name?: string } | null)?.name ?? '');
+      })
+      .catch((err) => {
+        console.error('Failed to load event name', err);
+      });
+  }, [rawEventId]);
 
-    const [{ data: overallData, error: overallError }, { data: rankedData, error: rankedError }] =
-      await Promise.all([
+  const loadData = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const [overallRes, rankedRes] = await Promise.all([
         supabase
           .from('results')
           .select('*')
@@ -184,27 +215,57 @@ function ScoreboardApp() {
           .order('rank_in_bracket', { ascending: true }),
       ]);
 
-    if (!isMountedRef.current) {
-      return;
-    }
+      if (!isMountedRef.current) {
+        return;
+      }
 
-    if (overallError || rankedError) {
-      console.error('Failed to load scoreboard data', overallError || rankedError);
+      const overallError = overallRes.error;
+      const rankedError = rankedRes.error;
+
+      if (overallRes.data) {
+        const normalised = overallRes.data
+          .map(normaliseResult)
+          .filter((item) => item.category.trim().toUpperCase() !== 'R');
+        setOverall(normalised);
+      } else {
+        setOverall([]);
+      }
+
+      if (rankedRes.data) {
+        const filtered = rankedRes.data
+          .map(normaliseRankedResult)
+          .filter((item) => item.category.trim().toUpperCase() !== 'R');
+        setRanked(filtered);
+      } else {
+        setRanked([]);
+      }
+
+      if (overallError && rankedError) {
+        console.error('Failed to load scoreboard data', overallError, rankedError);
+        setError('Nepodařilo se načíst výsledky. Zkuste to prosím znovu.');
+      } else if (overallError) {
+        console.error('Failed to load overall standings', overallError);
+        setError('Nepodařilo se načíst celkové pořadí.');
+      } else if (rankedError) {
+        console.error('Failed to load ranked standings', rankedError);
+        setError('Nepodařilo se načíst pořadí podle kategorií.');
+      } else {
+        setError(null);
+      }
+
+      setLastUpdatedAt(new Date());
+      setLoading(false);
+      setRefreshing(false);
+    } catch (err) {
+      console.error('Failed to load scoreboard data', err);
+      if (!isMountedRef.current) return;
       setError('Nepodařilo se načíst výsledky. Zkuste to prosím znovu.');
+      setOverall([]);
+      setRanked([]);
+      setLoading(false);
+      setRefreshing(false);
     }
-
-    if (overallData) {
-      setOverall(overallData.map(normaliseResult));
-    }
-
-    if (rankedData) {
-      setRanked(rankedData.map(normaliseRankedResult));
-    }
-
-    setLastUpdatedAt(new Date());
-    setLoading(false);
-    setRefreshing(false);
-  }, []);
+  }, [rawEventId]);
 
   useEffect(() => {
     let interval: number | undefined;
@@ -254,6 +315,8 @@ function ScoreboardApp() {
       <header className="scoreboard-header">
         <div>
           <h1>Výsledkový přehled</h1>
+          {eventName ? <p className="scoreboard-subtitle">{eventName}</p> : null}
+          {!eventName ? <p className="scoreboard-subtitle subtle">{rawEventId}</p> : null}
           <p className="scoreboard-subtitle">
             Data z pohledů Supabase <code>results</code> a <code>results_ranked</code>.
           </p>
@@ -281,7 +344,7 @@ function ScoreboardApp() {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Tým</th>
+                <th>Hlídka</th>
                 <th>Kategorie</th>
                 <th>Body</th>
                 <th>Body bez T</th>
@@ -293,8 +356,11 @@ function ScoreboardApp() {
                 <tr key={row.patrolId}>
                   <td>{index + 1}</td>
                   <td className="scoreboard-team">
-                    <strong>{row.teamName}</strong>
-                    <span className="scoreboard-team-meta">{row.sex}</span>
+                    <strong>{formatPatrolNumber(row.patrolCode, row.category, row.sex)}</strong>
+                    <span className="scoreboard-team-meta">{row.teamName || '—'}</span>
+                    {row.patrolCode ? (
+                      <span className="scoreboard-team-meta subtle">{row.patrolCode}</span>
+                    ) : null}
                   </td>
                   <td>{formatCategoryLabel(row.category, row.sex)}</td>
                   <td>{formatPoints(row.totalPoints)}</td>
@@ -322,7 +388,7 @@ function ScoreboardApp() {
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>Tým</th>
+                      <th>Hlídka</th>
                       <th>Body</th>
                       <th>Body bez T</th>
                       <th>Čistý čas</th>
@@ -333,7 +399,11 @@ function ScoreboardApp() {
                       <tr key={row.patrolId}>
                         <td>{row.rankInBracket}</td>
                         <td className="scoreboard-team">
-                          <strong>{row.teamName}</strong>
+                          <strong>{formatPatrolNumber(row.patrolCode, row.category, row.sex)}</strong>
+                          <span className="scoreboard-team-meta">{row.teamName || '—'}</span>
+                          {row.patrolCode ? (
+                            <span className="scoreboard-team-meta subtle">{row.patrolCode}</span>
+                          ) : null}
                         </td>
                         <td>{formatPoints(row.totalPoints)}</td>
                         <td>{formatPoints(row.pointsNoT)}</td>

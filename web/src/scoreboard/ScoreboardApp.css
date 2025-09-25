@@ -29,6 +29,10 @@
   color: #cbd5f5;
 }
 
+.scoreboard-subtitle.subtle {
+  color: rgba(203, 213, 225, 0.8);
+}
+
 .scoreboard-subtitle code {
   font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     'Liberation Mono', 'Courier New', monospace;
@@ -137,6 +141,10 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #94a3b8;
+}
+
+.scoreboard-team-meta.subtle {
+  color: rgba(148, 163, 184, 0.6);
 }
 
 .scoreboard-placeholder {
