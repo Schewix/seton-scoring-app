@@ -36,6 +36,12 @@ export interface PatrolSummary {
   patrol_code: string;
 }
 
+export interface TicketManifest {
+  stationId: string;
+  judgeId: string;
+  manifestVersion: number;
+}
+
 export interface AuthTokens {
   accessToken: string;
   accessTokenExpiresAt: number;

@@ -12,6 +12,15 @@ import LoginScreen from './auth/LoginScreen';
 import type { AuthStatus } from './auth/types';
 import { env } from './envVars';
 import { signPayload } from './auth/crypto';
+import TicketQueue from './components/TicketQueue';
+import {
+  createTicket,
+  loadTickets,
+  saveTickets,
+  computeWaitTime,
+  computeServeTime,
+  Ticket,
+} from './auth/tickets';
 
 
 interface Patrol {
@@ -149,6 +158,8 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
   const [syncing, setSyncing] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [scanActive, setScanActive] = useState(true);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [tick, setTick] = useState(0);
   const [loadingAnswers, setLoadingAnswers] = useState(false);
   const [savingAnswers, setSavingAnswers] = useState(false);
   const [autoScore, setAutoScore] = useState({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
@@ -166,6 +177,16 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
   const queueKey = useMemo(() => `${QUEUE_KEY_PREFIX}_${stationId}`, [stationId]);
 
   const isTargetStation = stationCode === 'T';
+  const updateTickets = useCallback(
+    async (updater: (current: Ticket[]) => Ticket[]) => {
+      setTickets((prev) => {
+        const next = updater(prev);
+        void saveTickets(stationId, next);
+        return next;
+      });
+    },
+    [stationId],
+  );
   const canEditAnswers = isAdminMode;
 
   const updateQueueState = useCallback((items: PendingSubmission[]) => {
@@ -191,6 +212,19 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
       }
     }
   }, [stationId]);
+
+  useEffect(() => {
+    loadTickets(stationId).then((loaded) => {
+      setTickets(loaded);
+    });
+  }, [stationId]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setTick((prev) => prev + 1);
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     setUseTargetScoring(isTargetStation);
