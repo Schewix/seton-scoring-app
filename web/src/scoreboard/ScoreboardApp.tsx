@@ -49,7 +49,7 @@ if (!rawEventId) {
 
 const REFRESH_INTERVAL_MS = 30_000;
 
-const BRACKET_ORDER = ['N__H', 'N__D', 'M__H', 'M__D', 'S__H', 'S__D'];
+const BRACKET_ORDER = ['N__H', 'N__D', 'M__H', 'M__D', 'S__H', 'S__D', 'R__H', 'R__D'];
 
 const BRACKET_ORDER_INDEX = new Map(BRACKET_ORDER.map((key, index) => [key, index] as const));
 
@@ -223,19 +223,13 @@ function ScoreboardApp() {
       const rankedError = rankedRes.error;
 
       if (overallRes.data) {
-        const normalised = overallRes.data
-          .map(normaliseResult)
-          .filter((item) => item.category.trim().toUpperCase() !== 'R');
-        setOverall(normalised);
+        setOverall(overallRes.data.map(normaliseResult));
       } else {
         setOverall([]);
       }
 
       if (rankedRes.data) {
-        const filtered = rankedRes.data
-          .map(normaliseRankedResult)
-          .filter((item) => item.category.trim().toUpperCase() !== 'R');
-        setRanked(filtered);
+        setRanked(rankedRes.data.map(normaliseRankedResult));
       } else {
         setRanked([]);
       }
