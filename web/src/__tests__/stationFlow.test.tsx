@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import localforage from 'localforage';
 import type { ReactNode } from 'react';
@@ -230,13 +230,20 @@ vi.mock('../auth/context', async () => {
 
 import { supabase } from '../supabaseClient';
 
+async function flushMicrotasks() {
+  return Promise.resolve();
+}
+
 async function renderApp() {
   const { default: App } = await import('../App');
-  render(
-    <AuthProvider>
-      <App />
-    </AuthProvider>,
-  );
+  await act(async () => {
+    render(
+      <AuthProvider>
+        <App />
+      </AuthProvider>,
+    );
+    await flushMicrotasks();
+  });
 }
 
 type TableFactory = () => unknown;
@@ -253,6 +260,9 @@ interface SupabaseTestClient {
 const supabaseMock = supabase as unknown as SupabaseTestClient;
 
 const QUEUE_KEY = 'web_pending_ops_v1_station-test';
+
+const realSetTimeout = global.setTimeout;
+const realSetInterval = global.setInterval;
 
 function createMaybeSingleResult<T>(data: T, error: unknown = null) {
   const row = {
@@ -284,8 +294,45 @@ function createSelectResult<T>(data: T, error: unknown = null) {
   };
 }
 
+let timeoutSpy: vi.SpyInstance<typeof setTimeout> | undefined;
+let intervalSpy: vi.SpyInstance<typeof setInterval> | undefined;
+
 describe('station workflow', () => {
   beforeEach(async () => {
+    timeoutSpy = vi
+      .spyOn(global, 'setTimeout')
+      .mockImplementation(((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+        if (typeof handler !== 'function') {
+          return realSetTimeout(handler, timeout, ...(args as Parameters<typeof setTimeout>));
+        }
+        return realSetTimeout(
+          ((...innerArgs: unknown[]) => {
+            act(() => {
+              (handler as (...cbArgs: unknown[]) => void)(...innerArgs);
+            });
+          }) as TimerHandler,
+          timeout,
+          ...(args as Parameters<typeof setTimeout>),
+        );
+      }) as typeof setTimeout);
+
+    intervalSpy = vi
+      .spyOn(global, 'setInterval')
+      .mockImplementation(((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+        if (typeof handler !== 'function') {
+          return realSetInterval(handler, timeout, ...(args as Parameters<typeof setInterval>));
+        }
+        return realSetInterval(
+          ((...innerArgs: unknown[]) => {
+            act(() => {
+              (handler as (...cbArgs: unknown[]) => void)(...innerArgs);
+            });
+          }) as TimerHandler,
+          timeout,
+          ...(args as Parameters<typeof setInterval>),
+        );
+      }) as typeof setInterval);
+
     mockedStationCode = 'X';
     mockedPatrolCode = 'N-01';
     mockedStartTime = '2024-02-01T08:00:00Z';
@@ -296,6 +343,11 @@ describe('station workflow', () => {
     (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
     await localforage.clear();
     window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    timeoutSpy?.mockRestore();
+    intervalSpy?.mockRestore();
   });
 
   it('stores offline submissions with queue preview details', async () => {

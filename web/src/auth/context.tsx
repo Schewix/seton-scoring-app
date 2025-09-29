@@ -73,74 +73,96 @@ async function bootstrap(): Promise<
 function useInitialization(setStatus: (status: AuthStatus) => void) {
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      if (AUTH_BYPASS) {
-        setStatus({
-          state: 'authenticated',
-          manifest: {
-            judge: { id: 'judge-test', email: 'test@example.com', displayName: 'Test Judge' },
-            station: {
-              id: env.VITE_STATION_ID || 'station-test',
-              code: 'X',
-              name: 'Testovací stanoviště',
-            },
-            event: {
-              id: env.VITE_EVENT_ID || 'event-test',
-              name: 'Test Event',
-            },
-            allowedCategories: ['N', 'M', 'S', 'R'],
-            allowedTasks: [],
-            manifestVersion: 1,
-          },
-          patrols: [],
-          deviceKey: new Uint8Array(32),
-          tokens: {
-            accessToken: '',
-            accessTokenExpiresAt: Date.now() + 3600 * 1000,
-            refreshToken: 'test-refresh',
-            sessionId: 'session-test',
-          },
-        });
-        return;
-      }
-
-      setStatus({ state: 'loading' });
-      const cached = await bootstrap();
-      if (cancelled) return;
-      if (!cached) {
-        setStatus({ state: 'unauthenticated' });
-        return;
-      }
-
-      const { manifest, patrols, tokens, encryptedDeviceKey, pinHash } = cached;
+    const initialize = async () => {
       try {
-        const wrappingKey = await deriveWrappingKey(tokens.refreshToken, encryptedDeviceKey.deviceSalt);
-        const deviceKey = await decryptDeviceKey({
-          iv: encryptedDeviceKey.iv,
-          ciphertext: encryptedDeviceKey.ciphertext,
-        }, wrappingKey);
+        if (AUTH_BYPASS) {
+          if (!cancelled) {
+            setStatus({
+              state: 'authenticated',
+              manifest: {
+                judge: { id: 'judge-test', email: 'test@example.com', displayName: 'Test Judge' },
+                station: {
+                  id: env.VITE_STATION_ID || 'station-test',
+                  code: 'X',
+                  name: 'Testovací stanoviště',
+                },
+                event: {
+                  id: env.VITE_EVENT_ID || 'event-test',
+                  name: 'Test Event',
+                },
+                allowedCategories: ['N', 'M', 'S', 'R'],
+                allowedTasks: [],
+                manifestVersion: 1,
+              },
+              patrols: [],
+              deviceKey: new Uint8Array(32),
+              tokens: {
+                accessToken: '',
+                accessTokenExpiresAt: Date.now() + 3600 * 1000,
+                refreshToken: 'test-refresh',
+                sessionId: 'session-test',
+              },
+            });
+          }
+          return;
+        }
 
-        if (pinHash) {
-          setStatus({ state: 'locked', requiresPin: true });
-        } else {
-          setStatus({
-            state: 'authenticated',
-            manifest,
-            patrols,
-            deviceKey,
-            tokens: {
-              accessToken: tokens.accessToken || '',
-              accessTokenExpiresAt: tokens.accessTokenExpiresAt || Date.now(),
-              refreshToken: tokens.refreshToken,
-              sessionId: tokens.sessionId,
+        if (!cancelled) {
+          setStatus({ state: 'loading' });
+        }
+
+        const cached = await bootstrap();
+        if (cancelled) return;
+        if (!cached) {
+          setStatus({ state: 'unauthenticated' });
+          return;
+        }
+
+        const { manifest, patrols, tokens, encryptedDeviceKey, pinHash } = cached;
+        try {
+          const wrappingKey = await deriveWrappingKey(tokens.refreshToken, encryptedDeviceKey.deviceSalt);
+          const deviceKey = await decryptDeviceKey(
+            {
+              iv: encryptedDeviceKey.iv,
+              ciphertext: encryptedDeviceKey.ciphertext,
             },
-          });
+            wrappingKey,
+          );
+
+          if (cancelled) return;
+
+          if (pinHash) {
+            setStatus({ state: 'locked', requiresPin: true });
+          } else {
+            setStatus({
+              state: 'authenticated',
+              manifest,
+              patrols,
+              deviceKey,
+              tokens: {
+                accessToken: tokens.accessToken || '',
+                accessTokenExpiresAt: tokens.accessTokenExpiresAt || Date.now(),
+                refreshToken: tokens.refreshToken,
+                sessionId: tokens.sessionId,
+              },
+            });
+          }
+        } catch (error) {
+          console.error('Failed to decrypt device key', error);
+          if (!cancelled) {
+            setStatus({ state: 'locked', requiresPin: !!pinHash });
+          }
         }
       } catch (error) {
-        console.error('Failed to decrypt device key', error);
-        setStatus({ state: 'locked', requiresPin: !!pinHash });
+        console.error('Auth initialization failed', error);
+        if (!cancelled) {
+          const message = error instanceof Error && error.message ? error.message : 'Nepodařilo se načíst aplikaci.';
+          setStatus({ state: 'error', message });
+        }
       }
-    })();
+    };
+
+    initialize();
 
     return () => {
       cancelled = true;
@@ -168,6 +190,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           encryptedDeviceKey: data.encryptedDeviceKey,
         });
       }
+    } else if (state.state === 'error') {
+      setCachedData(null);
     }
     setStatus(state);
   });
