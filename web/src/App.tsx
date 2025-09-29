@@ -1598,9 +1598,23 @@ function App() {
 
   if (status.state === 'loading') {
     return (
-      <div className="auth-shell">
+      <div className="auth-shell auth-overlay">
         <div className="auth-card">
           <h1>Načítám…</h1>
+        </div>
+      </div>
+    );
+  }
+
+  if (status.state === 'error') {
+    return (
+      <div className="auth-shell auth-overlay">
+        <div className="auth-card">
+          <h1>Nelze načíst aplikaci</h1>
+          <p className="auth-description">{status.message || 'Zkontroluj připojení nebo konfiguraci a zkus to znovu.'}</p>
+          <button type="button" className="auth-primary" onClick={() => window.location.reload()}>
+            Zkusit znovu
+          </button>
         </div>
       </div>
     );

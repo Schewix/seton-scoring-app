@@ -53,6 +53,7 @@ export type AuthStatus =
   | { state: 'loading' }
   | { state: 'locked'; requiresPin: boolean }
   | { state: 'unauthenticated' }
+  | { state: 'error'; message: string }
   | {
       state: 'authenticated';
       manifest: StationManifest;
