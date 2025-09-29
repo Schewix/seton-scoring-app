@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import localforage from 'localforage';
 import type { ReactNode } from 'react';
@@ -52,8 +52,8 @@ vi.mock('../supabaseClient', () => {
                       id: 'patrol-1',
                       team_name: 'Vlci',
                       category: 'N',
-                      sex: 'M',
-                      patrol_code: 'N-01',
+                      sex: 'H',
+                      patrol_code: mockedPatrolCode,
                     },
                     error: null,
                   }),
@@ -147,18 +147,19 @@ vi.mock('../components/QRScanner', () => ({
 }));
 
 let mockedStationCode = 'X';
+let mockedPatrolCode: string | null = 'N-01';
 const mockDeviceKey = new Uint8Array(32);
 const fetchMock = vi.fn();
 
 vi.mock('../auth/context', async () => {
   const { vi: vitest } = await import('vitest');
-  const mockPatrols = [
+  const mockPatrols = () => [
     {
       id: 'patrol-1',
       team_name: 'Vlci',
       category: 'N',
       sex: 'H',
-      patrol_code: 'N-01',
+      patrol_code: mockedPatrolCode,
     },
   ];
 
@@ -187,7 +188,7 @@ vi.mock('../auth/context', async () => {
       return {
         state: 'authenticated' as const,
         manifest: buildManifest(),
-        patrols: mockPatrols,
+        patrols: mockPatrols(),
         deviceKey: mockDeviceKey,
         tokens: {
           accessToken: 'access-test',
@@ -264,6 +265,7 @@ function createSelectResult<T>(data: T, error: unknown = null) {
 describe('station workflow', () => {
   beforeEach(async () => {
     mockedStationCode = 'X';
+    mockedPatrolCode = 'N-01';
     supabaseMock.__resetMocks();
     vi.clearAllMocks();
     fetchMock.mockReset();
@@ -518,5 +520,34 @@ describe('station workflow', () => {
     });
     const storedQueue = await localforage.getItem(QUEUE_KEY);
     expect(storedQueue).toBeNull();
+  });
+
+  it('generates temporary code when patrol lacks official code', async () => {
+    mockedPatrolCode = null;
+
+    const user = userEvent.setup();
+
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+
+    await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
+    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+
+    const quickAddButton = await screen.findByRole('button', { name: 'Přidat do fronty' });
+
+    await user.click(quickAddButton);
+
+    expect(await screen.findByText('TMP-001')).toBeInTheDocument();
+  });
+
+  it('shows offline queue health widget', async () => {
+    await renderApp();
+
+    const widget = await screen.findByLabelText('Stav offline fronty');
+    expect(within(widget).getByText('Síť:')).toBeInTheDocument();
+    expect(within(widget).getByText('Online')).toBeInTheDocument();
+    expect(within(widget).getByText('Fronta:')).toBeInTheDocument();
+    expect(within(widget).getByText('prázdná')).toBeInTheDocument();
   });
 });
