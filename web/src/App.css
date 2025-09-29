@@ -451,6 +451,11 @@ textarea {
   font-size: 15px;
 }
 
+.scanner-note {
+  font-size: 0.85rem;
+  color: #475569;
+}
+
 .scanner-placeholder {
   font-style: italic;
   color: #9c8d82;
@@ -600,6 +605,14 @@ textarea {
   font-weight: 700;
   font-size: 16px;
   color: #92400e;
+}
+
+.pending-status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: #7d6d60;
 }
 
 .pending-answers {

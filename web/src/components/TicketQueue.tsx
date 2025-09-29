@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
 import type { Ticket } from '../auth/tickets';
+import { computeServeTime, computeWaitTime } from '../auth/tickets';
 
 interface TicketQueueProps {
   tickets: Ticket[];
   onChangeState: (id: string, nextState: Ticket['state']) => void;
   onReset: () => void;
+  heartbeat: number;
 }
 
 function formatDuration(ms: number) {
@@ -21,7 +23,7 @@ function slaClass(ms: number) {
   return 'ticket-ok';
 }
 
-export default function TicketQueue({ tickets, onChangeState, onReset }: TicketQueueProps) {
+export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat }: TicketQueueProps) {
   const grouped = useMemo(() => {
     const waiting: Ticket[] = [];
     const serving: Ticket[] = [];
@@ -48,7 +50,7 @@ export default function TicketQueue({ tickets, onChangeState, onReset }: TicketQ
     });
 
     return { waiting, serving, done, paused };
-  }, [tickets]);
+  }, [tickets, heartbeat]);
 
   const nextUp = grouped.waiting[0];
 
@@ -75,23 +77,26 @@ export default function TicketQueue({ tickets, onChangeState, onReset }: TicketQ
             <span>{grouped.waiting.length}</span>
           </div>
           <ul>
-            {grouped.waiting.map((ticket) => (
-              <li key={ticket.id} className={`ticket ${slaClass(ticket.waitAccumMs)}`}>
-                <div>
-                  <strong>{ticket.patrolCode}</strong>
-                  <span>{ticket.teamName}</span>
-                </div>
-                <div className="ticket-meta">
-                  <span>{formatDuration(ticket.waitAccumMs)}</span>
-                  <button type="button" onClick={() => onChangeState(ticket.id, 'serving')}>
-                    Obsluhovat
-                  </button>
-                  <button type="button" onClick={() => onChangeState(ticket.id, 'paused')}>
-                    Pozastavit
-                  </button>
-                </div>
-              </li>
-            ))}
+            {grouped.waiting.map((ticket) => {
+              const waitMs = computeWaitTime(ticket);
+              return (
+                <li key={ticket.id} className={`ticket ${slaClass(waitMs)}`}>
+                  <div>
+                    <strong>{ticket.patrolCode}</strong>
+                    <span>{ticket.teamName}</span>
+                  </div>
+                  <div className="ticket-meta">
+                    <span>{formatDuration(waitMs)}</span>
+                    <button type="button" onClick={() => onChangeState(ticket.id, 'serving')}>
+                      Obsluhovat
+                    </button>
+                    <button type="button" onClick={() => onChangeState(ticket.id, 'paused')}>
+                      Pozastavit
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
         <div className="tickets-column">
@@ -100,23 +105,26 @@ export default function TicketQueue({ tickets, onChangeState, onReset }: TicketQ
             <span>{grouped.serving.length}</span>
           </div>
           <ul>
-            {grouped.serving.map((ticket) => (
-              <li key={ticket.id} className="ticket ticket-serving">
-                <div>
-                  <strong>{ticket.patrolCode}</strong>
-                  <span>{ticket.teamName}</span>
-                </div>
-                <div className="ticket-meta">
-                  <span>{formatDuration(ticket.serveAccumMs)}</span>
-                  <button type="button" onClick={() => onChangeState(ticket.id, 'done')}>
-                    Hotovo
-                  </button>
-                  <button type="button" onClick={() => onChangeState(ticket.id, 'paused')}>
-                    Pozastavit
-                  </button>
-                </div>
-              </li>
-            ))}
+            {grouped.serving.map((ticket) => {
+              const serveMs = computeServeTime(ticket);
+              return (
+                <li key={ticket.id} className="ticket ticket-serving">
+                  <div>
+                    <strong>{ticket.patrolCode}</strong>
+                    <span>{ticket.teamName}</span>
+                  </div>
+                  <div className="ticket-meta">
+                    <span>{formatDuration(serveMs)}</span>
+                    <button type="button" onClick={() => onChangeState(ticket.id, 'done')}>
+                      Hotovo
+                    </button>
+                    <button type="button" onClick={() => onChangeState(ticket.id, 'paused')}>
+                      Pozastavit
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
         <div className="tickets-column">
@@ -125,20 +133,23 @@ export default function TicketQueue({ tickets, onChangeState, onReset }: TicketQ
             <span>{grouped.paused.length}</span>
           </div>
           <ul>
-            {grouped.paused.map((ticket) => (
-              <li key={ticket.id} className="ticket ticket-paused">
-                <div>
-                  <strong>{ticket.patrolCode}</strong>
-                  <span>{ticket.teamName}</span>
-                </div>
-                <div className="ticket-meta">
-                  <span>{formatDuration(ticket.waitAccumMs)}</span>
-                  <button type="button" onClick={() => onChangeState(ticket.id, 'waiting')}>
-                    Čeká dál
-                  </button>
-                </div>
-              </li>
-            ))}
+            {grouped.paused.map((ticket) => {
+              const waitMs = computeWaitTime(ticket);
+              return (
+                <li key={ticket.id} className="ticket ticket-paused">
+                  <div>
+                    <strong>{ticket.patrolCode}</strong>
+                    <span>{ticket.teamName}</span>
+                  </div>
+                  <div className="ticket-meta">
+                    <span>{formatDuration(waitMs)}</span>
+                    <button type="button" onClick={() => onChangeState(ticket.id, 'waiting')}>
+                      Čeká dál
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
         <div className="tickets-column">
@@ -147,17 +158,20 @@ export default function TicketQueue({ tickets, onChangeState, onReset }: TicketQ
             <span>{grouped.done.length}</span>
           </div>
           <ul>
-            {grouped.done.map((ticket) => (
-              <li key={ticket.id} className="ticket ticket-done">
-                <div>
-                  <strong>{ticket.patrolCode}</strong>
-                  <span>{ticket.teamName}</span>
-                </div>
-                <div className="ticket-meta">
-                  <span>{formatDuration(ticket.serveAccumMs)}</span>
-                </div>
-              </li>
-            ))}
+            {grouped.done.map((ticket) => {
+              const serveMs = computeServeTime(ticket);
+              return (
+                <li key={ticket.id} className="ticket ticket-done">
+                  <div>
+                    <strong>{ticket.patrolCode}</strong>
+                    <span>{ticket.teamName}</span>
+                  </div>
+                  <div className="ticket-meta">
+                    <span>{formatDuration(serveMs)}</span>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </div>

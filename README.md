@@ -84,13 +84,13 @@ Server poskytuje endpointy:
    VITE_SUPABASE_URL=<url z projektu Supabase>
    VITE_SUPABASE_ANON_KEY=<anon klíč>
    VITE_EVENT_ID=<UUID aktuální akce>
-   VITE_STATION_ID=<UUID stanoviště>
    # volitelné: zapne administrátorský režim pro editaci správných odpovědí
    VITE_ADMIN_MODE=1
    # adresa backendu pro login/manifest (pokud běží samostatně)
    VITE_AUTH_API_URL=https://scoring-backend.example.com
    # pro lokální vývoj bez přihlášení
    VITE_AUTH_BYPASS=1
+
   ```
 
 3. Spusť vývojový server:

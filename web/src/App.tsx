@@ -13,14 +13,7 @@ import type { AuthStatus } from './auth/types';
 import { env } from './envVars';
 import { signPayload } from './auth/crypto';
 import TicketQueue from './components/TicketQueue';
-import {
-  createTicket,
-  loadTickets,
-  saveTickets,
-  computeWaitTime,
-  computeServeTime,
-  Ticket,
-} from './auth/tickets';
+import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket } from './auth/tickets';
 
 
 interface Patrol {
@@ -31,7 +24,7 @@ interface Patrol {
   patrol_code: string;
 }
 
-interface PendingSubmission {
+interface PendingSubmissionPayload {
   event_id: string;
   station_id: string;
   patrol_id: string;
@@ -51,15 +44,32 @@ interface PendingSubmission {
   judge_id: string;
   session_id: string;
   manifest_version: number;
+}
+
+interface PendingOperation {
+  id: string;
+  type: 'submission';
+  payload: PendingSubmissionPayload;
   signature: string;
   signature_payload: string;
+  created_at: string;
+  inProgress: boolean;
+  retryCount: number;
+  nextAttemptAt: number;
+  lastError?: string;
 }
+
+type LegacyPendingSubmission = PendingSubmissionPayload & {
+  signature: string;
+  signature_payload: string;
+};
 
 type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 
 const ANSWER_CATEGORIES = ['N', 'M', 'S', 'R'] as const;
 type CategoryKey = (typeof ANSWER_CATEGORIES)[number];
-const QUEUE_KEY_PREFIX = 'web_pending_station_submissions_v1';
+const QUEUE_KEY_PREFIX = 'web_pending_ops_v1';
+const LEGACY_QUEUE_KEY_PREFIX = 'web_pending_station_submissions_v1';
 
 import { env } from './envVars';
 
@@ -82,17 +92,93 @@ function packAnswersForStorage(value = '') {
   return parseAnswerLetters(value).join('');
 }
 
-async function readQueue(key: string): Promise<PendingSubmission[]> {
-  const raw = await localforage.getItem<PendingSubmission[]>(key);
-  return raw || [];
+async function readQueue(key: string): Promise<PendingOperation[]> {
+  let raw = await localforage.getItem<(PendingOperation | LegacyPendingSubmission)[]>(key);
+  let migratedFromLegacy = false;
+
+  if ((!raw || !Array.isArray(raw) || raw.length === 0) && key.startsWith(QUEUE_KEY_PREFIX)) {
+    const legacyKey = key.replace(QUEUE_KEY_PREFIX, LEGACY_QUEUE_KEY_PREFIX);
+    const legacyRaw = await localforage.getItem<(LegacyPendingSubmission | PendingOperation)[]>(legacyKey);
+    if (legacyRaw && Array.isArray(legacyRaw) && legacyRaw.length) {
+      raw = legacyRaw;
+      migratedFromLegacy = true;
+      await localforage.removeItem(legacyKey);
+    }
+  }
+
+  if (!raw || !Array.isArray(raw)) {
+    return [];
+  }
+
+  let mutated = false;
+  const mapped = raw.map((item) => {
+    if (item && typeof item === 'object' && 'type' in item && 'payload' in item) {
+      return item as PendingOperation;
+    }
+
+    mutated = true;
+    const legacy = item as LegacyPendingSubmission;
+    return {
+      id: generateOperationId(),
+      type: 'submission' as const,
+      payload: {
+        event_id: legacy.event_id,
+        station_id: legacy.station_id,
+        patrol_id: legacy.patrol_id,
+        category: legacy.category,
+        arrived_at: legacy.arrived_at,
+        wait_minutes: legacy.wait_minutes,
+        points: legacy.points,
+        judge: legacy.judge,
+        note: legacy.note,
+        useTargetScoring: legacy.useTargetScoring,
+        normalizedAnswers: legacy.normalizedAnswers,
+        shouldDeleteQuiz: legacy.shouldDeleteQuiz,
+        patrol_code: legacy.patrol_code,
+        team_name: legacy.team_name,
+        sex: legacy.sex,
+        finish_time: legacy.finish_time,
+        judge_id: legacy.judge_id,
+        session_id: legacy.session_id,
+        manifest_version: legacy.manifest_version,
+      },
+      signature: legacy.signature,
+      signature_payload: legacy.signature_payload,
+      created_at: new Date().toISOString(),
+      inProgress: false,
+      retryCount: 0,
+      nextAttemptAt: Date.now(),
+    } satisfies PendingOperation;
+  });
+
+  if (mutated || migratedFromLegacy) {
+    await writeQueue(key, mapped);
+  }
+
+  return mapped;
 }
 
-async function writeQueue(key: string, items: PendingSubmission[]) {
+async function writeQueue(key: string, items: PendingOperation[]) {
   if (!items.length) {
     await localforage.removeItem(key);
   } else {
     await localforage.setItem(key, items);
   }
+}
+
+function generateOperationId() {
+  const cryptoObj = typeof globalThis !== 'undefined' ? (globalThis.crypto as Crypto | undefined) : undefined;
+  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
+    return cryptoObj.randomUUID();
+  }
+  return `op-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function computeBackoffMs(retryCount: number) {
+  const base = 5000;
+  const max = 5 * 60 * 1000;
+  const delay = base * 2 ** Math.max(0, retryCount - 1);
+  return Math.min(max, delay);
 }
 
 function formatTime(value: string) {
@@ -133,7 +219,7 @@ function fromLocalDateTimeInput(value: string) {
   return date.toISOString();
 }
 
-function StationApp({ auth }: { auth: AuthenticatedState }) {
+function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refreshManifest: () => Promise<void> }) {
   const manifest = auth.manifest;
   const eventId = manifest.event.id;
   const stationId = manifest.station.id;
@@ -153,7 +239,7 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
     R: '',
   });
   const [pendingCount, setPendingCount] = useState(0);
-  const [pendingItems, setPendingItems] = useState<PendingSubmission[]>([]);
+  const [pendingItems, setPendingItems] = useState<PendingOperation[]>([]);
   const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [manualCode, setManualCode] = useState('');
@@ -178,20 +264,24 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
 
   const isTargetStation = stationCode === 'T';
   const updateTickets = useCallback(
-    async (updater: (current: Ticket[]) => Ticket[]) => {
+    (updater: (current: Ticket[]) => Ticket[]) => {
+      let nextTickets: Ticket[] = [];
       setTickets((prev) => {
         const next = updater(prev);
+        nextTickets = next;
         void saveTickets(stationId, next);
         return next;
       });
+      return nextTickets;
     },
     [stationId],
   );
   const canEditAnswers = isAdminMode;
 
-  const updateQueueState = useCallback((items: PendingSubmission[]) => {
+  const updateQueueState = useCallback((items: PendingOperation[]) => {
     setPendingCount(items.length);
-    setPendingItems(items);
+    const sorted = [...items].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    setPendingItems(sorted);
     if (items.length === 0) {
       setShowPendingDetails(false);
     }
@@ -203,6 +293,80 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
       setAlerts((prev) => prev.slice(1));
     }, 4500);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refresh = async () => {
+      try {
+        await refreshManifest();
+      } catch (error) {
+        console.error('Manifest refresh failed', error);
+        if (!cancelled) {
+          pushAlert('Nepodařilo se obnovit manifest. Zkusím to znovu později.');
+        }
+      }
+    };
+
+    refresh();
+    const interval = window.setInterval(refresh, 5 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [refreshManifest, pushAlert]);
+
+  const handleAddTicket = useCallback(() => {
+    if (!patrol) {
+      pushAlert('Nejprve naskenuj hlídku.');
+      return;
+    }
+
+    let added = false;
+    const patrolCode = patrol.patrol_code.trim().toUpperCase();
+
+    updateTickets((current) => {
+      const exists = current.some((ticket) => ticket.patrolId === patrol.id && ticket.state !== 'done');
+      if (exists) {
+        return current;
+      }
+      added = true;
+      const newTicket = createTicket({
+        patrolId: patrol.id,
+        patrolCode,
+        teamName: patrol.team_name,
+        category: patrol.category,
+      });
+      return [...current, newTicket];
+    });
+
+    if (added) {
+      pushAlert(`Do fronty přidána hlídka ${patrol.team_name}.`);
+    } else {
+      pushAlert('Hlídka už je ve frontě.');
+    }
+  }, [patrol, pushAlert, updateTickets]);
+
+  const handleTicketStateChange = useCallback(
+    (id: string, nextState: Ticket['state']) => {
+      updateTickets((current) =>
+        current.map((ticket) => (ticket.id === id ? transitionTicket(ticket, nextState) : ticket)),
+      );
+    },
+    [updateTickets],
+  );
+
+  const handleResetTickets = useCallback(() => {
+    let hadTickets = false;
+    updateTickets((current) => {
+      hadTickets = current.length > 0;
+      return [];
+    });
+    if (hadTickets) {
+      pushAlert('Fronta byla vymazána.');
+    }
+  }, [pushAlert, updateTickets]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -327,108 +491,122 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
   const syncQueue = useCallback(async () => {
     const queue = await readQueue(queueKey);
     updateQueueState(queue);
-    if (!queue.length || syncing) return;
+    if (syncing) return;
+
+    const now = Date.now();
+    const ready = queue.filter((op) => !op.inProgress && op.nextAttemptAt <= now);
+    if (!ready.length) {
+      return;
+    }
 
     setSyncing(true);
-    const remaining: PendingSubmission[] = [];
-    let flushed = 0;
 
-    for (const item of queue) {
-      const resPassage = await supabase
-        .from('station_passages')
-        .upsert(
-          {
-            event_id: item.event_id,
-            patrol_id: item.patrol_id,
-            station_id: item.station_id,
-            arrived_at: item.arrived_at,
-            wait_minutes: item.wait_minutes,
-          },
-          { onConflict: 'event_id,patrol_id,station_id' }
-        );
-      if (resPassage.error) {
-        remaining.push(item);
-        continue;
-      }
+    const readyIds = new Set(ready.map((op) => op.id));
+    const queueWithLocks = queue.map((op) => (readyIds.has(op.id) ? { ...op, inProgress: true } : op));
+    await writeQueue(queueKey, queueWithLocks);
+    updateQueueState(queueWithLocks);
 
-      const resScore = await supabase
-        .from('station_scores')
-        .upsert(
-          {
-            event_id: item.event_id,
-            patrol_id: item.patrol_id,
-            station_id: item.station_id,
-            points: item.points,
-            judge: item.judge,
-            note: item.note,
-          },
-          { onConflict: 'event_id,patrol_id,station_id' }
-        );
+    const operationsPayload = ready.map((op) => ({
+      id: op.id,
+      type: op.type,
+      signature: op.signature,
+      signature_payload: op.signature_payload,
+    }));
 
-      if (resScore.error) {
-        remaining.push(item);
-        continue;
-      }
+    const baseUrl = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
+    const accessToken = auth.tokens.accessToken;
 
-      if (item.finish_time) {
-        const resTiming = await supabase
-          .from('timings')
-          .upsert(
-            {
-              event_id: item.event_id,
-              patrol_id: item.patrol_id,
-              finish_time: item.finish_time,
-            },
-            { onConflict: 'event_id,patrol_id' }
-          );
-
-        if (resTiming.error) {
-          remaining.push(item);
-          continue;
-        }
-      }
-
-      if (item.useTargetScoring && item.normalizedAnswers) {
-        const resQuiz = await supabase
-          .from('station_quiz_responses')
-          .upsert(
-            {
-              event_id: item.event_id,
-              station_id: item.station_id,
-              patrol_id: item.patrol_id,
-              category: item.category,
-              answers: item.normalizedAnswers,
-              correct_count: item.points,
-            },
-            { onConflict: 'event_id,station_id,patrol_id' }
-          );
-        if (resQuiz.error) {
-          remaining.push(item);
-          continue;
-        }
-      } else if (item.shouldDeleteQuiz) {
-        const resDelete = await supabase
-          .from('station_quiz_responses')
-          .delete()
-          .match({ event_id: item.event_id, station_id: item.station_id, patrol_id: item.patrol_id });
-        if (resDelete.error) {
-          remaining.push(item);
-          continue;
-        }
-      }
-
-      flushed += 1;
+    if (!accessToken) {
+      const rollbackQueue = queueWithLocks.map((op) => {
+        if (!readyIds.has(op.id)) return op;
+        const retryCount = op.retryCount + 1;
+        return {
+          ...op,
+          inProgress: false,
+          retryCount,
+          nextAttemptAt: Date.now() + computeBackoffMs(retryCount),
+          lastError: 'missing-access-token',
+        };
+      });
+      await writeQueue(queueKey, rollbackQueue);
+      updateQueueState(rollbackQueue);
+      setSyncing(false);
+      return;
     }
 
-    await writeQueue(queueKey, remaining);
-    updateQueueState(remaining);
-    setSyncing(false);
+    try {
+      const response = await fetch(`${baseUrl}/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ operations: operationsPayload }),
+      });
 
-    if (flushed) {
-      pushAlert(`Synchronizováno ${flushed} záznamů.`);
-      setLastSavedAt(new Date().toISOString());
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const resultBody: { results?: { id: string; status: 'done' | 'failed'; error?: string }[] } = await response.json();
+      const resultMap = new Map<string, { status: 'done' | 'failed'; error?: string }>();
+      for (const result of resultBody.results ?? []) {
+        resultMap.set(result.id, { status: result.status, error: result.error });
+      }
+
+      const updatedQueue: PendingOperation[] = [];
+      let flushed = 0;
+
+      for (const op of queueWithLocks) {
+        if (!readyIds.has(op.id)) {
+          updatedQueue.push(op);
+          continue;
+        }
+
+        const result = resultMap.get(op.id);
+        if (result && result.status === 'done') {
+          flushed += 1;
+          continue;
+        }
+
+        const retryCount = op.retryCount + 1;
+        const lastError = result?.error || 'sync-failed';
+        updatedQueue.push({
+          ...op,
+          inProgress: false,
+          retryCount,
+          nextAttemptAt: Date.now() + computeBackoffMs(retryCount),
+          lastError,
+        });
+      }
+
+      await writeQueue(queueKey, updatedQueue);
+      updateQueueState(updatedQueue);
+
+      if (flushed) {
+        pushAlert(`Synchronizováno ${flushed} záznamů.`);
+        setLastSavedAt(new Date().toISOString());
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown-error';
+      const rollbackQueue = queueWithLocks.map((op) => {
+        if (!readyIds.has(op.id)) return op;
+        const retryCount = op.retryCount + 1;
+        return {
+          ...op,
+          inProgress: false,
+          retryCount,
+          nextAttemptAt: Date.now() + computeBackoffMs(retryCount),
+          lastError: message,
+        };
+      });
+      await writeQueue(queueKey, rollbackQueue);
+      updateQueueState(rollbackQueue);
+      pushAlert('Synchronizace selhala, zkusím to znovu později.');
+    } finally {
+      setSyncing(false);
     }
-  }, [pushAlert, queueKey, syncing, updateQueueState]);
+  }, [auth.tokens.accessToken, queueKey, syncing, updateQueueState, pushAlert]);
 
   useEffect(() => {
     syncQueue();
@@ -436,6 +614,10 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
   }, [syncQueue]);
+
+  useEffect(() => {
+    syncQueue();
+  }, [syncQueue, tick]);
 
   const resetForm = useCallback(() => {
     setPatrol(null);
@@ -716,7 +898,7 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
 
     const signatureResult = await signPayload(auth.deviceKey, signaturePayload);
 
-    const submission: PendingSubmission = {
+    const queuePayload: PendingSubmissionPayload = {
       event_id: submissionData.event_id,
       station_id: submissionData.station_id,
       patrol_id: submissionData.patrol_id,
@@ -736,116 +918,35 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
       judge_id: manifest.judge.id,
       session_id: auth.tokens.sessionId,
       manifest_version: manifest.manifestVersion,
+    };
+
+    const operation: PendingOperation = {
+      id: generateOperationId(),
+      type: 'submission',
+      payload: queuePayload,
       signature: signatureResult.signature,
       signature_payload: signatureResult.canonical,
+      created_at: now,
+      inProgress: false,
+      retryCount: 0,
+      nextAttemptAt: Date.now(),
     };
 
     const queueBefore = await readQueue(queueKey);
-    const queueWithSubmission = [...queueBefore, submission];
-    const handleOfflineFallback = async (message: string) => {
-      await writeQueue(queueKey, queueWithSubmission);
-      updateQueueState(queueWithSubmission);
-      setShowPendingDetails(true);
-      pushAlert(message);
-      setLastSavedAt(now);
-      resetForm();
-    };
-
-    const passageRes = await supabase
-      .from('station_passages')
-      .upsert(
-        {
-          event_id: eventId,
-          station_id: stationId,
-          patrol_id: patrol.id,
-          arrived_at: arrivalIso,
-          wait_minutes: waitMinutes,
-        },
-        { onConflict: 'event_id,patrol_id,station_id' }
-      );
-
-    if (passageRes.error) {
-      await handleOfflineFallback('Offline: průchod uložen do fronty.');
-      return;
-    }
-
-    const scoreRes = await supabase
-      .from('station_scores')
-      .upsert(
-        {
-          event_id: eventId,
-          station_id: stationId,
-          patrol_id: patrol.id,
-          points: scorePoints,
-          judge: manifest.judge.displayName,
-          note,
-        },
-        { onConflict: 'event_id,patrol_id,station_id' }
-      );
-
-    if (scoreRes.error) {
-      await handleOfflineFallback('Offline: body uložené do fronty.');
-      return;
-    }
-
-    if (finishAt) {
-      const timingRes = await supabase
-        .from('timings')
-        .upsert(
-          {
-            event_id: eventId,
-            patrol_id: patrol.id,
-            finish_time: finishAt,
-          },
-          { onConflict: 'event_id,patrol_id' }
-        );
-
-      if (timingRes.error) {
-        await handleOfflineFallback('Offline: čas v cíli uložen do fronty.');
-        return;
-      }
-    }
-
-    if (useTargetScoring && normalizedAnswers !== null) {
-      const quizRes = await supabase
-        .from('station_quiz_responses')
-        .upsert(
-          {
-            event_id: eventId,
-            station_id: stationId,
-            patrol_id: patrol.id,
-            category: patrol.category,
-            answers: normalizedAnswers,
-            correct_count: scorePoints,
-          },
-          { onConflict: 'event_id,station_id,patrol_id' }
-        );
-      if (quizRes.error) {
-        await handleOfflineFallback('Offline: odpovědi uložené do fronty.');
-        return;
-      }
-    } else {
-      const deleteRes = await supabase
-        .from('station_quiz_responses')
-        .delete()
-        .match({ event_id: eventId, station_id: stationId, patrol_id: patrol.id });
-      if (deleteRes.error) {
-        await handleOfflineFallback('Offline: odstranění odpovědí čeká ve frontě.');
-        return;
-      }
-    }
-
-    pushAlert(`Uloženo: ${patrol.team_name} (${scorePoints} b)`);
+    const queueWithOperation = [...queueBefore, operation];
+    await writeQueue(queueKey, queueWithOperation);
+    updateQueueState(queueWithOperation);
+    setShowPendingDetails(true);
+    pushAlert(`Záznam uložen do fronty (${queuePayload.team_name ?? queuePayload.patrol_code}).`);
     setLastSavedAt(now);
     resetForm();
-    syncQueue();
+    void syncQueue();
   }, [
     autoScore,
     note,
     patrol,
     points,
     useTargetScoring,
-    syncQueue,
     pushAlert,
     resetForm,
     updateQueueState,
@@ -860,6 +961,7 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
     manifest.manifestVersion,
     auth.tokens.sessionId,
     auth.deviceKey,
+    syncQueue,
   ]);
 
   const totalAnswers = useMemo(
@@ -870,6 +972,13 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
     const queueLabel = pendingCount ? `Offline fronta: ${pendingCount}` : 'Offline fronta prázdná';
     return [`Event: ${manifest.event.name}`, queueLabel];
   }, [manifest.event.name, pendingCount]);
+
+  const isPatrolInQueue = useMemo(() => {
+    if (!patrol) {
+      return false;
+    }
+    return tickets.some((ticket) => ticket.patrolId === patrol.id && ticket.state !== 'done');
+  }, [patrol, tickets]);
 
   const answersSummary = useMemo(
     () =>
@@ -1032,7 +1141,14 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
               </section>
             ) : null}
 
-            <section className="card scanner-card">
+          <TicketQueue
+            tickets={tickets}
+            heartbeat={tick}
+            onChangeState={handleTicketStateChange}
+            onReset={handleResetTickets}
+          />
+
+          <section className="card scanner-card">
               <div className="scanner-icon" aria-hidden>
                 <span>📷</span>
               </div>
@@ -1063,6 +1179,15 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
                     <span>
                       {patrol.category}/{patrol.sex}
                     </span>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={handleAddTicket}
+                      disabled={isPatrolInQueue}
+                    >
+                      {isPatrolInQueue ? 'Ve frontě' : 'Přidat do fronty'}
+                    </button>
+                    {isPatrolInQueue ? <span className="scanner-note">Hlídka už čeká ve frontě.</span> : null}
                   </div>
                 ) : (
                   <p className="scanner-placeholder">Nejprve naskenuj QR kód hlídky.</p>
@@ -1208,18 +1333,25 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
                                 <th>Body / Terč</th>
                                 <th>Rozhodčí</th>
                                 <th>Poznámka</th>
+                                <th>Stav</th>
                               </tr>
                             </thead>
                             <tbody>
                               {pendingItems.map((item, index) => {
-                                const answers = item.useTargetScoring
-                                  ? formatAnswersForInput(item.normalizedAnswers || '')
+                                const payload = item.payload;
+                                const answers = payload.useTargetScoring
+                                  ? formatAnswersForInput(payload.normalizedAnswers || '')
                                   : '';
-                                const patrolLabel = item.team_name || 'Neznámá hlídka';
-                                const codeLabel = item.patrol_code ? ` (${item.patrol_code})` : '';
-                                const categoryLabel = item.sex ? `${item.category}/${item.sex}` : item.category;
+                                const patrolLabel = payload.team_name || 'Neznámá hlídka';
+                                const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';
+                                const categoryLabel = payload.sex ? `${payload.category}/${payload.sex}` : payload.category;
+                                const statusLabel = item.inProgress
+                                  ? 'Odesílám…'
+                                  : item.retryCount > 0
+                                    ? `Další pokus v ${formatTime(new Date(item.nextAttemptAt).toISOString())}`
+                                    : 'Čeká na odeslání';
                                 return (
-                                  <tr key={`${item.patrol_id}-${item.arrived_at}-${index}`}>
+                                  <tr key={`${item.id}-${index}`}>
                                     <td>
                                       <div className="pending-patrol">
                                         <strong>
@@ -1227,22 +1359,30 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
                                           {codeLabel}
                                         </strong>
                                         <span className="pending-subline">{categoryLabel}</span>
-                                        <span className="pending-subline">Čekání: {item.wait_minutes} min</span>
+                                        <span className="pending-subline">Čekání: {payload.wait_minutes} min</span>
                                       </div>
                                     </td>
                                     <td>
                                       <div className="pending-score">
-                                        <span className="pending-score-points">{item.points} b</span>
+                                        <span className="pending-score-points">{payload.points} b</span>
                                         <span className="pending-subline">
-                                          {item.useTargetScoring ? 'Terčový úsek' : 'Manuální body'}
+                                          {payload.useTargetScoring ? 'Terčový úsek' : 'Manuální body'}
                                         </span>
-                                        {item.useTargetScoring ? (
+                                        {payload.useTargetScoring ? (
                                           <span className="pending-answers">{answers || '—'}</span>
                                         ) : null}
                                       </div>
                                     </td>
-                                    <td>{item.judge || '—'}</td>
-                                    <td>{item.note ? item.note : '—'}</td>
+                                    <td>{payload.judge || '—'}</td>
+                                    <td>{payload.note ? payload.note : '—'}</td>
+                                    <td>
+                                      <div className="pending-status">
+                                        <span>{statusLabel}</span>
+                                        {item.lastError ? (
+                                          <span className="pending-subline">Chyba: {item.lastError}</span>
+                                        ) : null}
+                                      </div>
+                                    </td>
                                   </tr>
                                 );
                               })}
@@ -1265,7 +1405,7 @@ function StationApp({ auth }: { auth: AuthenticatedState }) {
 }
 
 function App() {
-  const { status } = useAuth();
+  const { status, refreshManifest } = useAuth();
 
   if (status.state === 'loading') {
     return (
@@ -1286,7 +1426,7 @@ function App() {
   }
 
   if (status.state === 'authenticated') {
-    return <StationApp auth={status} />;
+    return <StationApp auth={status} refreshManifest={refreshManifest} />;
   }
 
   return null;

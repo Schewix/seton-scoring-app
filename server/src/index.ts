@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import authRouter, { manifestHandler } from './auth.js';
+import syncRouter from './sync.js';
 
 const app = express();
 
@@ -14,6 +15,8 @@ app.get('/health', (_req, res) => {
 app.use('/auth', authRouter);
 
 app.get('/manifest', manifestHandler);
+
+app.use(syncRouter);
 
 const port = Number(process.env.PORT || 8787);
 

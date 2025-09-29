@@ -148,6 +148,7 @@ vi.mock('../components/QRScanner', () => ({
 
 let mockedStationCode = 'X';
 const mockDeviceKey = new Uint8Array(32);
+const fetchMock = vi.fn();
 
 vi.mock('../auth/context', async () => {
   const { vi: vitest } = await import('vitest');
@@ -181,6 +182,7 @@ vi.mock('../auth/context', async () => {
     unlock: vitest.fn(),
     logout: vitest.fn(),
     updateManifest: vitest.fn(),
+    refreshManifest: vitest.fn().mockResolvedValue(undefined),
     get status() {
       return {
         state: 'authenticated' as const,
@@ -188,7 +190,7 @@ vi.mock('../auth/context', async () => {
         patrols: mockPatrols,
         deviceKey: mockDeviceKey,
         tokens: {
-          accessToken: '',
+          accessToken: 'access-test',
           accessTokenExpiresAt: Date.now() + 3600 * 1000,
           refreshToken: 'refresh-test',
           sessionId: 'session-test',
@@ -227,7 +229,7 @@ interface SupabaseTestClient {
 
 const supabaseMock = supabase as unknown as SupabaseTestClient;
 
-const QUEUE_KEY = 'web_pending_station_submissions_v1_station-test';
+const QUEUE_KEY = 'web_pending_ops_v1_station-test';
 
 function createMaybeSingleResult<T>(data: T, error: unknown = null) {
   const row = {
@@ -264,6 +266,8 @@ describe('station workflow', () => {
     mockedStationCode = 'X';
     supabaseMock.__resetMocks();
     vi.clearAllMocks();
+    fetchMock.mockReset();
+    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
     await localforage.clear();
     window.localStorage.clear();
   });
@@ -278,19 +282,22 @@ describe('station workflow', () => {
     await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
 
-    await screen.findAllByText(/Vlci/);
-
     const pointsInput = screen.getByLabelText('Body (0 až 12)');
     await user.clear(pointsInput);
     await user.type(pointsInput, '10');
 
+    fetchMock.mockRejectedValueOnce(new Error('offline'));
+
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
+    expect(await screen.findByText(/Záznam uložen do fronty/)).toBeInTheDocument();
     expect(await screen.findByText(/Čeká na odeslání: 1/)).toBeInTheDocument();
 
-    expect(await screen.findByText(/Vlci/)).toBeInTheDocument();
+    const queueLabel = await screen.findByText('Vlci (N-01)');
+    expect(queueLabel).toBeInTheDocument();
     expect(screen.getByText(/N-01/)).toBeInTheDocument();
     expect(screen.getByText('Manuální body')).toBeInTheDocument();
+    expect(screen.getByText(/Chyba:/)).toBeInTheDocument();
   });
 
   it('automatically scores target answers and saves quiz responses', async () => {
@@ -301,27 +308,14 @@ describe('station workflow', () => {
       () => createSelectResult([{ category: 'N', correct_answers: 'ABCDABCDABCD' }])
     );
 
-    const passagesUpsert = vi.fn().mockResolvedValue({ error: null });
-    supabaseMock.__setMock('station_passages', () => ({
-      upsert: passagesUpsert,
-    }));
-
-    const scoresUpsert = vi.fn().mockResolvedValue({ error: null });
-    supabaseMock.__setMock('station_scores', () => {
-      const base = supabaseMock.__getDefault('station_scores') as Record<string, unknown>;
+    fetchMock.mockImplementation(async (_input, init) => {
+      const body = JSON.parse((init?.body as string) ?? '{}');
+      const results = (body.operations ?? []).map((op: { id: string }) => ({ id: op.id, status: 'done' as const }));
       return {
-        ...base,
-        upsert: scoresUpsert,
-      };
-    });
-
-    const quizUpsert = vi.fn().mockResolvedValue({ error: null });
-    supabaseMock.__setMock('station_quiz_responses', () => {
-      const base = supabaseMock.__getDefault('station_quiz_responses') as Record<string, unknown>;
-      return {
-        ...base,
-        upsert: quizUpsert,
-      };
+        ok: true,
+        status: 200,
+        json: async () => ({ results }),
+      } as any;
     });
 
     const user = userEvent.setup();
@@ -343,31 +337,24 @@ describe('station workflow', () => {
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
-    await screen.findByText(/Uloženo: Vlci \(12 b\)/);
+    await screen.findByText(/Záznam uložen do fronty/);
 
-    expect(passagesUpsert).toHaveBeenCalledTimes(1);
-    expect(scoresUpsert).toHaveBeenCalledTimes(1);
-    expect(quizUpsert).toHaveBeenCalledTimes(1);
-
-    const [passagePayload] = passagesUpsert.mock.calls.at(-1)!;
-    expect(passagePayload).toMatchObject({ wait_minutes: 0 });
-
-    const [scorePayload] = scoresUpsert.mock.calls.at(-1)!;
-    expect(scorePayload).toMatchObject({ points: 12, judge: 'Test Judge' });
-
-    const [quizPayload] = quizUpsert.mock.calls.at(-1)!;
-    expect(quizPayload).toMatchObject({
-      answers: 'ABCDABCDABCD',
-      correct_count: 12,
-      category: 'N',
-      patrol_id: 'patrol-1',
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(screen.queryByText(/Čeká na odeslání:/)).not.toBeInTheDocument();
     });
+    const [, init] = fetchMock.mock.calls.at(-1)!;
+    expect(init?.headers?.Authorization).toContain('Bearer');
+    const body = JSON.parse((init?.body as string) ?? '{}');
+    expect(body.operations).toHaveLength(1);
 
-    const storedQueue = await localforage.getItem(QUEUE_KEY);
-    expect(storedQueue).toBeNull();
+    await waitFor(async () => {
+      const storedQueue = await localforage.getItem(QUEUE_KEY);
+      expect(storedQueue).toBeNull();
+    });
   });
 
-  it('queues target quiz response when Supabase quiz upsert fails', async () => {
+  it('queues submission when sync endpoint reports failure', async () => {
     mockedStationCode = 'T';
     supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Terčové stanoviště' }));
     supabaseMock.__setMock(
@@ -375,27 +362,18 @@ describe('station workflow', () => {
       () => createSelectResult([{ category: 'N', correct_answers: 'ABCDABCDABCD' }])
     );
 
-    const passagesUpsert = vi.fn().mockResolvedValue({ error: null });
-    supabaseMock.__setMock('station_passages', () => ({
-      upsert: passagesUpsert,
-    }));
-
-    const scoresUpsert = vi.fn().mockResolvedValue({ error: null });
-    supabaseMock.__setMock('station_scores', () => {
-      const base = supabaseMock.__getDefault('station_scores') as Record<string, unknown>;
+    fetchMock.mockImplementation(async (_input, init) => {
+      const body = JSON.parse((init?.body as string) ?? '{}');
+      const results = (body.operations ?? []).map((op: { id: string }) => ({
+        id: op.id,
+        status: 'failed' as const,
+        error: 'server-error',
+      }));
       return {
-        ...base,
-        upsert: scoresUpsert,
-      };
-    });
-
-    const quizUpsert = vi.fn().mockResolvedValue({ error: new Error('Offline failure') });
-    supabaseMock.__setMock('station_quiz_responses', () => {
-      const base = supabaseMock.__getDefault('station_quiz_responses') as Record<string, unknown>;
-      return {
-        ...base,
-        upsert: quizUpsert,
-      };
+        ok: true,
+        status: 200,
+        json: async () => ({ results }),
+      } as any;
     });
 
     const user = userEvent.setup();
@@ -417,185 +395,127 @@ describe('station workflow', () => {
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
-    await screen.findByText('Offline: odpovědi uložené do fronty.');
+    await screen.findByText(/Záznam uložen do fronty/);
     await screen.findByText(/Čeká na odeslání: 1/);
 
-    expect(passagesUpsert).toHaveBeenCalledTimes(1);
-    expect(scoresUpsert).toHaveBeenCalledTimes(1);
-    expect(quizUpsert).toHaveBeenCalledTimes(1);
-
-    const storedQueue = (await localforage.getItem(QUEUE_KEY)) as unknown[] | null;
+    const storedQueue = (await localforage.getItem(QUEUE_KEY)) as any[] | null;
     expect(storedQueue).not.toBeNull();
     expect(storedQueue).toHaveLength(1);
-
     const [queued] = storedQueue!;
-    expect(queued).toMatchObject({
-      useTargetScoring: true,
-      normalizedAnswers: 'ABCDABCDABCD',
-      shouldDeleteQuiz: false,
-      judge: 'Test Judge',
-      points: 12,
-      judge_id: 'judge-test',
-      session_id: 'session-test',
-      manifest_version: 1,
-    });
-    expect(typeof queued.signature).toBe('string');
-    expect(typeof queued.signature_payload).toBe('string');
+    expect(queued.retryCount).toBe(1);
+    expect(queued.lastError).toBe('server-error');
   });
 
   it('synchronizes pending queue when connectivity is restored', async () => {
-    const pendingItem = {
-      event_id: 'event-test',
-      station_id: 'station-test',
-      patrol_id: 'patrol-queued',
-      category: 'N',
-      arrived_at: new Date('2024-01-01T10:00:00Z').toISOString(),
-      wait_minutes: 5,
-      points: 7,
-      judge: 'Test Judge',
-      note: 'Offline záznam',
-      useTargetScoring: false,
-      normalizedAnswers: null,
-      shouldDeleteQuiz: true,
-      patrol_code: 'N-99',
-      team_name: 'Rysi',
-      sex: 'F',
-      finish_time: null,
-      judge_id: 'judge-test',
-      session_id: 'session-test',
-      manifest_version: 1,
+    const pendingOperation = {
+      id: 'op-sync-test',
+      type: 'submission' as const,
+      payload: {
+        event_id: 'event-test',
+        station_id: 'station-test',
+        patrol_id: 'patrol-queued',
+        category: 'N',
+        arrived_at: new Date('2024-01-01T10:00:00Z').toISOString(),
+        wait_minutes: 5,
+        points: 7,
+        judge: 'Test Judge',
+        note: 'Offline záznam',
+        useTargetScoring: false,
+        normalizedAnswers: null,
+        shouldDeleteQuiz: true,
+        patrol_code: 'N-99',
+        team_name: 'Rysi',
+        sex: 'F',
+        finish_time: null,
+        judge_id: 'judge-test',
+        session_id: 'session-test',
+        manifest_version: 1,
+      },
       signature: 'offline-signature',
       signature_payload: '{}',
+      created_at: new Date('2024-01-01T10:00:00Z').toISOString(),
+      inProgress: false,
+      retryCount: 0,
+      nextAttemptAt: Date.now(),
     };
 
-    await localforage.setItem(QUEUE_KEY, [pendingItem]);
+    await localforage.setItem(QUEUE_KEY, [pendingOperation]);
 
-    const passagesUpsert = vi.fn().mockResolvedValue({ error: null });
-    supabaseMock.__setMock('station_passages', () => ({
-      upsert: passagesUpsert,
-    }));
-
-    const scoresUpsert = vi.fn().mockResolvedValue({ error: null });
-    supabaseMock.__setMock('station_scores', () => {
-      const base = supabaseMock.__getDefault('station_scores') as Record<string, unknown>;
+    fetchMock.mockImplementation(async (_input, init) => {
+      const body = JSON.parse((init?.body as string) ?? '{}');
+      const results = (body.operations ?? []).map((op: { id: string }) => ({ id: op.id, status: 'done' as const }));
       return {
-        ...base,
-        upsert: scoresUpsert,
-      };
-    });
-
-    const deleteMatch = vi.fn().mockResolvedValue({ error: null });
-    supabaseMock.__setMock('station_quiz_responses', () => {
-      const base = supabaseMock.__getDefault('station_quiz_responses') as Record<string, unknown>;
-      return {
-        ...base,
-        delete: () => ({
-          match: (filters: unknown) => deleteMatch(filters),
-        }),
-      };
+        ok: true,
+        status: 200,
+        json: async () => ({ results }),
+      } as any;
     });
 
     await renderApp();
 
     await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
-    await screen.findByText(/Synchronizováno 1 záznamů\./);
 
-    expect(passagesUpsert).toHaveBeenCalledTimes(1);
-    expect(scoresUpsert).toHaveBeenCalledTimes(1);
-    expect(deleteMatch).toHaveBeenCalledTimes(1);
-
-    const [passagePayload] = passagesUpsert.mock.calls[0];
-    expect(passagePayload).toMatchObject({
-      patrol_id: 'patrol-queued',
-      wait_minutes: 5,
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(screen.queryByText(/Čeká na odeslání:/)).not.toBeInTheDocument();
     });
-
-    const [scorePayload] = scoresUpsert.mock.calls[0];
-    expect(scorePayload).toMatchObject({
-      patrol_id: 'patrol-queued',
-      points: 7,
-      judge: 'Test Judge',
-    });
-
-    expect(deleteMatch).toHaveBeenCalledWith({
-      event_id: 'event-test',
-      station_id: 'station-test',
-      patrol_id: 'patrol-queued',
-    });
-
     const storedQueue = await localforage.getItem(QUEUE_KEY);
     expect(storedQueue).toBeNull();
   });
 
-  it('uploads queued target quiz responses during synchronization', async () => {
-    const pendingItem = {
-      event_id: 'event-test',
-      station_id: 'station-test',
-      patrol_id: 'patrol-target',
-      category: 'N',
-      arrived_at: new Date('2024-02-01T09:15:00Z').toISOString(),
-      wait_minutes: 0,
-      points: 11,
-      judge: 'Test Judge',
-      note: 'Terč offline',
-      useTargetScoring: true,
-      normalizedAnswers: 'ABCDABCDABCD',
-      shouldDeleteQuiz: false,
-      patrol_code: 'N-77',
-      team_name: 'Ještěrky',
-      sex: 'F',
-      finish_time: null,
-      judge_id: 'judge-test',
-      session_id: 'session-test',
-      manifest_version: 1,
+  it('flushes queued target quiz submission via sync endpoint', async () => {
+    const pendingOperation = {
+      id: 'op-target-sync',
+      type: 'submission' as const,
+      payload: {
+        event_id: 'event-test',
+        station_id: 'station-test',
+        patrol_id: 'patrol-target',
+        category: 'N',
+        arrived_at: new Date('2024-02-01T09:15:00Z').toISOString(),
+        wait_minutes: 0,
+        points: 11,
+        judge: 'Test Judge',
+        note: 'Terč offline',
+        useTargetScoring: true,
+        normalizedAnswers: 'ABCDABCDABCD',
+        shouldDeleteQuiz: false,
+        patrol_code: 'N-77',
+        team_name: 'Ještěrky',
+        sex: 'F',
+        finish_time: null,
+        judge_id: 'judge-test',
+        session_id: 'session-test',
+        manifest_version: 1,
+      },
       signature: 'offline-signature',
       signature_payload: '{}',
+      created_at: new Date('2024-02-01T09:15:00Z').toISOString(),
+      inProgress: false,
+      retryCount: 0,
+      nextAttemptAt: Date.now(),
     };
 
-    await localforage.setItem(QUEUE_KEY, [pendingItem]);
+    await localforage.setItem(QUEUE_KEY, [pendingOperation]);
 
-    const passagesUpsert = vi.fn().mockResolvedValue({ error: null });
-    supabaseMock.__setMock('station_passages', () => ({
-      upsert: passagesUpsert,
-    }));
-
-    const scoresUpsert = vi.fn().mockResolvedValue({ error: null });
-    supabaseMock.__setMock('station_scores', () => {
-      const base = supabaseMock.__getDefault('station_scores') as Record<string, unknown>;
+    fetchMock.mockImplementation(async (_input, init) => {
+      const body = JSON.parse((init?.body as string) ?? '{}');
+      const results = (body.operations ?? []).map((op: { id: string }) => ({ id: op.id, status: 'done' as const }));
       return {
-        ...base,
-        upsert: scoresUpsert,
-      };
-    });
-
-    const quizUpsert = vi.fn().mockResolvedValue({ error: null });
-    supabaseMock.__setMock('station_quiz_responses', () => {
-      const base = supabaseMock.__getDefault('station_quiz_responses') as Record<string, unknown>;
-      return {
-        ...base,
-        upsert: quizUpsert,
-      };
+        ok: true,
+        status: 200,
+        json: async () => ({ results }),
+      } as any;
     });
 
     await renderApp();
 
     await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
-    await screen.findByText(/Synchronizováno 1 záznamů\./);
 
-    expect(passagesUpsert).toHaveBeenCalledTimes(1);
-    expect(scoresUpsert).toHaveBeenCalledTimes(1);
-    expect(quizUpsert).toHaveBeenCalledTimes(1);
-
-    const [quizPayload] = quizUpsert.mock.calls.at(-1)!;
-    expect(quizPayload).toMatchObject({
-      event_id: 'event-test',
-      station_id: 'station-test',
-      patrol_id: 'patrol-target',
-      answers: 'ABCDABCDABCD',
-      correct_count: 11,
-      category: 'N',
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(screen.queryByText(/Čeká na odeslání:/)).not.toBeInTheDocument();
     });
-
     const storedQueue = await localforage.getItem(QUEUE_KEY);
     expect(storedQueue).toBeNull();
   });

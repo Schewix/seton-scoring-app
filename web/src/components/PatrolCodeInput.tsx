@@ -47,6 +47,7 @@ export default function PatrolCodeInput({ value, onChange, id, label }: PatrolCo
   );
 
   const isValid = PATROL_CODE_REGEX.test(value.trim().toUpperCase());
+  const shouldUseNumericKeyboard = value.includes('-') && value.length >= 3;
 
   return (
     <label className="patrol-code-input" htmlFor={id}>
@@ -57,7 +58,7 @@ export default function PatrolCodeInput({ value, onChange, id, label }: PatrolCo
         onChange={handleChange}
         placeholder="např. NH-15"
         autoComplete="off"
-        inputMode="text"
+        inputMode={shouldUseNumericKeyboard ? 'numeric' : 'text'}
         pattern="[A-Za-z0-9-]*"
       />
       <small className={isValid ? 'valid' : 'invalid'}>
