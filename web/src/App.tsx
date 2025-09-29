@@ -14,6 +14,8 @@ import type { AuthStatus } from './auth/types';
 import { signPayload } from './auth/crypto';
 import TicketQueue from './components/TicketQueue';
 import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket } from './auth/tickets';
+import { registerPendingSync, setupSyncListener } from './backgroundSync';
+import { appendScanRecord } from './storage/scanHistory';
 
 
 interface Patrol {
@@ -163,6 +165,9 @@ async function writeQueue(key: string, items: PendingOperation[]) {
     await localforage.removeItem(key);
   } else {
     await localforage.setItem(key, items);
+    if (typeof window !== 'undefined') {
+      void registerPendingSync();
+    }
   }
 }
 
@@ -702,6 +707,8 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     return () => window.removeEventListener('online', onOnline);
   }, [syncQueue]);
 
+  useEffect(() => setupSyncListener(syncQueue), [syncQueue]);
+
   useEffect(() => {
     syncQueue();
   }, [syncQueue, tick]);
@@ -774,7 +781,13 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
 
         if (error || !fetched) {
           pushAlert('Hlídka nenalezena.');
-          return;
+          void appendScanRecord(eventId, stationId, {
+            code: normalized,
+            scannedAt: new Date().toISOString(),
+            status: 'failed',
+            reason: error ? 'fetch-error' : 'not-found',
+          }).catch((err) => console.debug('scan history store failed', err));
+          return false;
         }
         data = fetched as Patrol;
       }
@@ -817,8 +830,18 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
         setStartTime(null);
         setFinishAt(null);
       }
+
+      void appendScanRecord(eventId, stationId, {
+        code: normalized,
+        scannedAt: new Date().toISOString(),
+        status: 'success',
+        patrolId: data.id,
+        teamName: data.team_name,
+      }).catch((err) => console.debug('scan history store failed', err));
+
+      return true;
     },
-    [auth.patrols, cachedPatrolMap, categoryAnswers, clearWait, eventId, isTargetStation, pushAlert, stationCode]
+    [cachedPatrolMap, categoryAnswers, clearWait, eventId, isTargetStation, pushAlert, stationCode, stationId]
   );
 
   const handleScanResult = useCallback(
@@ -826,6 +849,12 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
       const match = text.match(/seton:\/\/p\/(.+)$/);
       if (!match) {
         pushAlert('Neplatný QR kód. Očekávám seton://p/<code>');
+        void appendScanRecord(eventId, stationId, {
+          code: text,
+          scannedAt: new Date().toISOString(),
+          status: 'failed',
+          reason: 'invalid-schema',
+        }).catch((err) => console.debug('scan history store failed', err));
         return;
       }
       const scannedCode = match[1].trim();
@@ -837,7 +866,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
       lastScanRef.current = { code: scannedCode, at: now };
       await fetchPatrol(scannedCode);
     },
-    [fetchPatrol, pushAlert]
+    [eventId, fetchPatrol, pushAlert, stationId]
   );
 
   useEffect(() => {
