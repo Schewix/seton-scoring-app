@@ -20,8 +20,9 @@ import {
   getPinHash,
 } from './storage';
 import type { AuthStatus, PatrolSummary, StationManifest } from './types';
-import { loginRequest } from './api';
+import { fetchManifest, loginRequest } from './api';
 import { deriveWrappingKey, encryptDeviceKey, generateDeviceKey, decryptDeviceKey, digestPin } from './crypto';
+import { toBase64 } from './base64';
 import { decodeJwt } from './jwt';
 import { env } from '../envVars';
 
@@ -31,6 +32,7 @@ interface AuthContextValue {
   unlock: (pin?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateManifest: (manifest: StationManifest, patrols: PatrolSummary[]) => Promise<void>;
+  refreshManifest: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -172,7 +174,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async ({ email, password, pin }: { email: string; password: string; pin?: string }) => {
-      const response = await loginRequest(email, password);
+      const deviceKey = await generateDeviceKey();
+      const devicePublicKey = toBase64(deviceKey);
+      const response = await loginRequest(email, password, devicePublicKey);
       const accessClaims = decodeJwt<{ sessionId?: string }>(response.access_token);
       const sessionId = typeof accessClaims.sessionId === 'string' && accessClaims.sessionId.length
         ? accessClaims.sessionId
@@ -180,7 +184,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             throw new Error('Missing session identifier');
           })();
       const wrappingKey = await deriveWrappingKey(response.refresh_token, response.device_salt);
-      const deviceKey = await generateDeviceKey();
       const encrypted = await encryptDeviceKey(deviceKey, wrappingKey);
 
       await Promise.all([
@@ -195,6 +198,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setDeviceKeyPayload({ ...encrypted, deviceSalt: response.device_salt }),
         setPinHash(pin ? await digestPin(pin) : null),
       ]);
+
+      setCachedData({
+        manifest: response.manifest,
+        patrols: response.patrols,
+        tokens: {
+          refreshToken: response.refresh_token,
+          accessToken: response.access_token,
+          accessTokenExpiresAt: Date.now() + response.access_token_expires_in * 1000,
+          sessionId,
+        },
+        encryptedDeviceKey: { ...encrypted, deviceSalt: response.device_salt },
+      });
 
       setStatus({
         state: 'authenticated',
@@ -211,6 +226,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const refreshManifest = useCallback(async () => {
+    if (status.state !== 'authenticated') {
+      throw new Error('Cannot refresh manifest when unauthenticated');
+    }
+
+    const accessToken = status.tokens.accessToken;
+    if (!accessToken) {
+      throw new Error('Missing access token for manifest refresh');
+    }
+
+    const { manifest: nextManifest, device_salt: nextDeviceSalt } = await fetchManifest(accessToken);
+
+    await setManifest(nextManifest);
+
+    setStatus((prev) => {
+      if (prev.state !== 'authenticated') return prev;
+      return { ...prev, manifest: nextManifest };
+    });
+
+    setCachedData((prev) => {
+      if (!prev) return prev;
+      return { ...prev, manifest: nextManifest };
+    });
+
+    if (nextDeviceSalt) {
+      const storedPayload = await getDeviceKeyPayload();
+      if (storedPayload && storedPayload.deviceSalt !== nextDeviceSalt) {
+        const wrappingKey = await deriveWrappingKey(status.tokens.refreshToken, nextDeviceSalt);
+        const encrypted = await encryptDeviceKey(status.deviceKey, wrappingKey);
+        await setDeviceKeyPayload({ ...encrypted, deviceSalt: nextDeviceSalt });
+        setCachedData((prev) => {
+          if (!prev) return prev;
+          return { ...prev, encryptedDeviceKey: { ...encrypted, deviceSalt: nextDeviceSalt } };
+        });
+      }
+    }
+  }, [status]);
 
   const unlock = useCallback(
     async (pin?: string) => {
@@ -283,8 +336,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       unlock,
       logout,
       updateManifest,
+      refreshManifest,
     }),
-    [status, login, unlock, logout, updateManifest],
+    [status, login, unlock, logout, updateManifest, refreshManifest],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
