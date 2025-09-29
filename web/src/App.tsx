@@ -4,13 +4,13 @@ import QRScanner from './components/QRScanner';
 import LastScoresList from './components/LastScoresList';
 import TargetAnswersReport from './components/TargetAnswersReport';
 import PatrolCodeInput from './components/PatrolCodeInput';
+import OfflineHealth from './components/OfflineHealth';
 import { supabase } from './supabaseClient';
 import './App.css';
 import setonLogo from './assets/seton-logo.png';
 import { useAuth } from './auth/context';
 import LoginScreen from './auth/LoginScreen';
 import type { AuthStatus } from './auth/types';
-import { env } from './envVars';
 import { signPayload } from './auth/crypto';
 import TicketQueue from './components/TicketQueue';
 import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket } from './auth/tickets';
@@ -21,7 +21,7 @@ interface Patrol {
   team_name: string;
   category: string;
   sex: string;
-  patrol_code: string;
+  patrol_code: string | null;
 }
 
 interface PendingSubmissionPayload {
@@ -259,6 +259,9 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
   const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const waitStartRef = useRef<number | null>(null);
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
+  const tempCodesRef = useRef<Map<string, string>>(new Map());
+  const tempCounterRef = useRef(1);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   const queueKey = useMemo(() => `${QUEUE_KEY_PREFIX}_${stationId}`, [stationId]);
 
@@ -295,6 +298,43 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
   }, []);
 
   useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    tempCodesRef.current.clear();
+    tempCounterRef.current = 1;
+  }, [stationId]);
+
+  const resolvePatrolCode = useCallback(
+    (currentPatrol: Patrol | null) => {
+      if (!currentPatrol) {
+        return '';
+      }
+      const raw = (currentPatrol.patrol_code ?? '').trim().toUpperCase();
+      if (raw) {
+        return raw;
+      }
+      const existing = tempCodesRef.current.get(currentPatrol.id);
+      if (existing) {
+        return existing;
+      }
+      const nextValue = `TMP-${String(tempCounterRef.current).padStart(3, '0')}`;
+      tempCounterRef.current += 1;
+      tempCodesRef.current.set(currentPatrol.id, nextValue);
+      return nextValue;
+    },
+    [],
+  );
+
+  useEffect(() => {
     let cancelled = false;
 
     const refresh = async () => {
@@ -324,7 +364,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     }
 
     let added = false;
-    const patrolCode = patrol.patrol_code.trim().toUpperCase();
+    const patrolCode = resolvePatrolCode(patrol);
 
     updateTickets((current) => {
       const exists = current.some((ticket) => ticket.patrolId === patrol.id && ticket.state !== 'done');
@@ -346,7 +386,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     } else {
       pushAlert('Hlídka už je ve frontě.');
     }
-  }, [patrol, pushAlert, updateTickets]);
+  }, [patrol, pushAlert, resolvePatrolCode, updateTickets]);
 
   const handleTicketStateChange = useCallback(
     (id: string, nextState: Ticket['state']) => {
@@ -868,6 +908,8 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
 
     const now = new Date().toISOString();
     const arrivalIso = arrivedAt || now;
+    const effectivePatrolCode = resolvePatrolCode(patrol);
+
     const submissionData = {
       event_id: eventId,
       station_id: stationId,
@@ -880,7 +922,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
       use_target_scoring: useTargetScoring,
       normalized_answers: normalizedAnswers,
       finish_time: finishAt,
-      patrol_code: patrol.patrol_code,
+      patrol_code: effectivePatrolCode,
       team_name: patrol.team_name,
       sex: patrol.sex,
     };
@@ -911,7 +953,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
       useTargetScoring,
       normalizedAnswers,
       shouldDeleteQuiz: !useTargetScoring,
-      patrol_code: submissionData.patrol_code,
+      patrol_code: effectivePatrolCode,
       team_name: submissionData.team_name,
       sex: submissionData.sex,
       finish_time: submissionData.finish_time,
@@ -961,6 +1003,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     manifest.manifestVersion,
     auth.tokens.sessionId,
     auth.deviceKey,
+    resolvePatrolCode,
     syncQueue,
   ]);
 
@@ -972,6 +1015,19 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     const queueLabel = pendingCount ? `Offline fronta: ${pendingCount}` : 'Offline fronta prázdná';
     return [`Event: ${manifest.event.name}`, queueLabel];
   }, [manifest.event.name, pendingCount]);
+
+  const failedCount = useMemo(() => pendingItems.filter((item) => Boolean(item.lastError)).length, [pendingItems]);
+
+  const nextAttemptAtIso = useMemo(() => {
+    const future = pendingItems
+      .filter((item) => !item.inProgress && item.nextAttemptAt > Date.now())
+      .map((item) => item.nextAttemptAt);
+    if (!future.length) {
+      return null;
+    }
+    const earliest = Math.min(...future);
+    return new Date(earliest).toISOString();
+  }, [pendingItems]);
 
   const isPatrolInQueue = useMemo(() => {
     if (!patrol) {
@@ -1036,6 +1092,14 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
             ) : null}
             {syncing ? <span className="meta-pill subtle">Synchronizuji frontu…</span> : null}
           </div>
+          <OfflineHealth
+            isOnline={isOnline}
+            pendingCount={pendingCount}
+            failedCount={failedCount}
+            syncing={syncing}
+            nextAttemptAt={nextAttemptAtIso}
+            lastSyncedAt={lastSavedAt}
+          />
         </div>
       </header>
 
@@ -1052,94 +1116,94 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
 
         <>
           {isTargetStation ? (
-              <section className="card answers-card">
-                <header className="card-header">
-                  <div>
-                    <h2>Správné odpovědi</h2>
-                    <p className="card-subtitle">Každá kategorie musí mít 12 odpovědí (A–D).</p>
+            <section className="card answers-card">
+              <header className="card-header">
+                <div>
+                  <h2>Správné odpovědi</h2>
+                  <p className="card-subtitle">Každá kategorie musí mít 12 odpovědí (A–D).</p>
+                </div>
+                <div className="card-actions">
+                  {canEditAnswers ? (
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => setShowAnswersEditor((prev) => !prev)}
+                    >
+                      {showAnswersEditor ? 'Zobrazit přehled' : 'Upravit odpovědi'}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={loadCategoryAnswers}
+                    disabled={loadingAnswers}
+                  >
+                    {loadingAnswers ? 'Načítám…' : 'Obnovit'}
+                  </button>
+                </div>
+              </header>
+              {canEditAnswers && showAnswersEditor ? (
+                <div className="answers-editor">
+                  <p className="card-hint">Zadej 12 odpovědí (A/B/C/D) pro každou kategorii.</p>
+                  <div className="answers-grid">
+                    {ANSWER_CATEGORIES.map((cat) => (
+                      <label key={cat} className="answers-field">
+                        <span>{cat}</span>
+                        <input
+                          value={answersForm[cat]}
+                          onChange={(event) =>
+                            setAnswersForm((prev) => ({ ...prev, [cat]: event.target.value.toUpperCase() }))
+                          }
+                          placeholder="např. A B C D …"
+                        />
+                      </label>
+                    ))}
                   </div>
-                  <div className="card-actions">
-                    {canEditAnswers ? (
-                      <button
-                        type="button"
-                        className="ghost"
-                        onClick={() => setShowAnswersEditor((prev) => !prev)}
-                      >
-                        {showAnswersEditor ? 'Zobrazit přehled' : 'Upravit odpovědi'}
-                      </button>
-                    ) : null}
+                  <div className="answers-actions">
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={saveCategoryAnswers}
+                      disabled={savingAnswers}
+                    >
+                      {savingAnswers ? 'Ukládám…' : 'Uložit správné odpovědi'}
+                    </button>
                     <button
                       type="button"
                       className="ghost"
                       onClick={loadCategoryAnswers}
                       disabled={loadingAnswers}
                     >
-                      {loadingAnswers ? 'Načítám…' : 'Obnovit'}
+                      Znovu načíst
                     </button>
                   </div>
-                </header>
-                {canEditAnswers && showAnswersEditor ? (
-                  <div className="answers-editor">
-                    <p className="card-hint">Zadej 12 odpovědí (A/B/C/D) pro každou kategorii.</p>
-                    <div className="answers-grid">
-                      {ANSWER_CATEGORIES.map((cat) => (
-                        <label key={cat} className="answers-field">
-                          <span>{cat}</span>
-                          <input
-                            value={answersForm[cat]}
-                            onChange={(event) =>
-                              setAnswersForm((prev) => ({ ...prev, [cat]: event.target.value.toUpperCase() }))
-                            }
-                            placeholder="např. A B C D …"
-                          />
-                        </label>
-                      ))}
-                    </div>
-                    <div className="answers-actions">
-                      <button
-                        type="button"
-                        className="primary"
-                        onClick={saveCategoryAnswers}
-                        disabled={savingAnswers}
-                      >
-                        {savingAnswers ? 'Ukládám…' : 'Uložit správné odpovědi'}
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost"
-                        onClick={loadCategoryAnswers}
-                        disabled={loadingAnswers}
-                      >
-                        Znovu načíst
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="answers-summary">
-                    {ANSWER_CATEGORIES.map((cat) => {
-                      const summary = answersSummary[cat];
-                      return (
-                        <div key={cat} className="answers-summary-row">
-                          <span className="answers-tag">{cat}</span>
-                          <span className="answers-value">
-                            {summary.count ? `${summary.count} • ${summary.letters.join(' ')}` : 'Nenastaveno'}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {!canEditAnswers ? (
-                  <p className="card-hint">Správné odpovědi může upravit pouze administrátor.</p>
-                ) : null}
-                {!(canEditAnswers && showAnswersEditor) && !hasAnyAnswers && !loadingAnswers ? (
-                  <p className="card-hint">Správné odpovědi zatím nejsou nastavené.</p>
-                ) : null}
-                {!(canEditAnswers && showAnswersEditor) && loadingAnswers ? (
-                  <p className="card-hint">Načítám…</p>
-                ) : null}
-              </section>
-            ) : null}
+                </div>
+              ) : (
+                <div className="answers-summary">
+                  {ANSWER_CATEGORIES.map((cat) => {
+                    const summary = answersSummary[cat];
+                    return (
+                      <div key={cat} className="answers-summary-row">
+                        <span className="answers-tag">{cat}</span>
+                        <span className="answers-value">
+                          {summary.count ? `${summary.count} • ${summary.letters.join(' ')}` : 'Nenastaveno'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {!canEditAnswers ? (
+                <p className="card-hint">Správné odpovědi může upravit pouze administrátor.</p>
+              ) : null}
+              {!(canEditAnswers && showAnswersEditor) && !hasAnyAnswers && !loadingAnswers ? (
+                <p className="card-hint">Správné odpovědi zatím nejsou nastavené.</p>
+              ) : null}
+              {!(canEditAnswers && showAnswersEditor) && loadingAnswers ? (
+                <p className="card-hint">Načítám…</p>
+              ) : null}
+            </section>
+          ) : null}
 
           <TicketQueue
             tickets={tickets}
@@ -1149,98 +1213,98 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
           />
 
           <section className="card scanner-card">
-              <div className="scanner-icon" aria-hidden>
-                <span>📷</span>
+            <div className="scanner-icon" aria-hidden>
+              <span>📷</span>
+            </div>
+            <div className="scanner-copy">
+              <h2>Skener hlídek</h2>
+              <p>Naskenuj QR kód nebo zadej kód ručně. Po načtení se formulář otevře automaticky.</p>
+            </div>
+            <div className="scanner-wrapper">
+              <QRScanner active={scanActive} onResult={handleScanResult} onError={(err) => console.error(err)} />
+              <div className="manual-entry">
+                <PatrolCodeInput
+                  value={manualCode}
+                  onChange={setManualCode}
+                  label="Ruční kód"
+                />
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => manualCode.trim() && fetchPatrol(manualCode.trim())}
+                  disabled={!manualCode}
+                >
+                  Načíst hlídku
+                </button>
               </div>
-              <div className="scanner-copy">
-                <h2>Skener hlídek</h2>
-                <p>Naskenuj QR kód nebo zadej kód ručně. Po načtení se formulář otevře automaticky.</p>
-              </div>
-              <div className="scanner-wrapper">
-                <QRScanner active={scanActive} onResult={handleScanResult} onError={(err) => console.error(err)} />
-                <div className="manual-entry">
-                  <PatrolCodeInput
-                    value={manualCode}
-                    onChange={setManualCode}
-                    label="Ruční kód"
-                  />
+              {patrol ? (
+                <div className="scanner-preview">
+                  <strong>{patrol.team_name}</strong>
+                  <span>
+                    {patrol.category}/{patrol.sex}
+                  </span>
                   <button
                     type="button"
-                    className="primary"
-                    onClick={() => manualCode.trim() && fetchPatrol(manualCode.trim())}
-                    disabled={!manualCode}
+                    className="ghost"
+                    onClick={handleAddTicket}
+                    disabled={isPatrolInQueue}
                   >
-                    Načíst hlídku
+                    {isPatrolInQueue ? 'Ve frontě' : 'Přidat do fronty'}
                   </button>
+                  {isPatrolInQueue ? <span className="scanner-note">Hlídka už čeká ve frontě.</span> : null}
                 </div>
-                {patrol ? (
-                  <div className="scanner-preview">
-                    <strong>{patrol.team_name}</strong>
-                    <span>
-                      {patrol.category}/{patrol.sex}
-                    </span>
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={handleAddTicket}
-                      disabled={isPatrolInQueue}
-                    >
-                      {isPatrolInQueue ? 'Ve frontě' : 'Přidat do fronty'}
-                    </button>
-                    {isPatrolInQueue ? <span className="scanner-note">Hlídka už čeká ve frontě.</span> : null}
-                  </div>
-                ) : (
-                  <p className="scanner-placeholder">Nejprve naskenuj QR kód hlídky.</p>
-                )}
-              </div>
-            </section>
+              ) : (
+                <p className="scanner-placeholder">Nejprve naskenuj QR kód hlídky.</p>
+              )}
+            </div>
+          </section>
 
           <section className="card form-card">
-              <header className="card-header">
-                <div>
-                  <h2>Stanovištní formulář</h2>
-                  <p className="card-subtitle">
-                    {useTargetScoring
-                      ? 'Zadej odpovědi, přidej poznámku a potvrď uložení.'
-                      : 'Vyplň body, čekání, poznámku a potvrď uložení.'}
-                  </p>
+            <header className="card-header">
+              <div>
+                <h2>Stanovištní formulář</h2>
+                <p className="card-subtitle">
+                  {useTargetScoring
+                    ? 'Zadej odpovědi, přidej poznámku a potvrď uložení.'
+                    : 'Vyplň body, čekání, poznámku a potvrď uložení.'}
+                </p>
+              </div>
+              <button type="button" className="ghost" onClick={resetForm}>
+                Vymazat
+              </button>
+            </header>
+            {patrol ? (
+              <div className="form-grid">
+                <div className="patrol-meta">
+                  <strong>{patrol.team_name}</strong>
+                  <span>
+                    {patrol.category}/{patrol.sex}
+                  </span>
                 </div>
-                <button type="button" className="ghost" onClick={resetForm}>
-                  Vymazat
-                </button>
-              </header>
-              {patrol ? (
-                <div className="form-grid">
-                  <div className="patrol-meta">
-                    <strong>{patrol.team_name}</strong>
-                    <span>
-                      {patrol.category}/{patrol.sex}
-                    </span>
-                  </div>
-                  <div className="judge-display">
-                    <span>Rozhodčí</span>
-                    <strong>{manifest.judge.displayName}</strong>
-                    <small>{manifest.judge.email}</small>
-                  </div>
-                  {!useTargetScoring ? (
-                    <div className="wait-field">
-                      <span className="wait-label">Čekání</span>
-                      <div className="wait-display">
-                        <strong>{formatWaitDuration(waitSecondsDisplay)}</strong>
-                        <span className="pending-subline">≈ {waitMinutesDisplay} min</span>
-                      </div>
-                      <div className="wait-actions">
-                        <button type="button" onClick={startWait} disabled={isWaiting}>
-                          {isWaiting ? 'Měřím…' : 'Začít čekání'}
-                        </button>
-                        <button type="button" onClick={stopWait} disabled={!isWaiting}>
-                          Ukončit čekání
-                        </button>
-                        <button type="button" className="ghost" onClick={clearWait} disabled={!hasWaitValue}>
-                          Vynulovat
-                        </button>
-                      </div>
+                <div className="judge-display">
+                  <span>Rozhodčí</span>
+                  <strong>{manifest.judge.displayName}</strong>
+                  <small>{manifest.judge.email}</small>
+                </div>
+                {!useTargetScoring ? (
+                  <div className="wait-field">
+                    <span className="wait-label">Čekání</span>
+                    <div className="wait-display">
+                      <strong>{formatWaitDuration(waitSecondsDisplay)}</strong>
+                      <span className="pending-subline">≈ {waitMinutesDisplay} min</span>
                     </div>
+                    <div className="wait-actions">
+                      <button type="button" onClick={startWait} disabled={isWaiting}>
+                        {isWaiting ? 'Měřím…' : 'Začít čekání'}
+                      </button>
+                      <button type="button" onClick={stopWait} disabled={!isWaiting}>
+                        Ukončit čekání
+                      </button>
+                      <button type="button" className="ghost" onClick={clearWait} disabled={!hasWaitValue}>
+                        Vynulovat
+                      </button>
+                    </div>
+                  </div>
                 ) : null}
                 {stationCode === 'T' ? (
                   <div className="finish-time-section">
@@ -1268,133 +1332,133 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
                   Poznámka
                   <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} />
                 </label>
-                  {useTargetScoring ? (
-                    <div className="auto-section">
-                      <p className="card-hint">Terčový úsek se hodnotí automaticky podle zadaných odpovědí.</p>
-                      <label>
-                        Odpovědi hlídky ({totalAnswers || '–'})
-                        <input
-                          value={answersInput}
-                          onChange={(event) => setAnswersInput(event.target.value.toUpperCase())}
-                          placeholder="např. A B C D …"
-                        />
-                      </label>
-                      <p className="auto-score">Správně: {autoScore.correct} / {autoScore.total}</p>
-                      {answersError ? <p className="error-text">{answersError}</p> : null}
-                    </div>
-                  ) : (
+                {useTargetScoring ? (
+                  <div className="auto-section">
+                    <p className="card-hint">Terčový úsek se hodnotí automaticky podle zadaných odpovědí.</p>
                     <label>
-                      Body (0 až 12)
+                      Odpovědi hlídky ({totalAnswers || '–'})
                       <input
-                        value={points}
-                        onChange={(event) => setPoints(event.target.value)}
-                        type="number"
-                        min={0}
-                        max={12}
+                        value={answersInput}
+                        onChange={(event) => setAnswersInput(event.target.value.toUpperCase())}
+                        placeholder="např. A B C D …"
                       />
                     </label>
-                  )}
-                  <button type="button" className="primary" onClick={handleSave}>
-                    Uložit záznam
-                  </button>
-                </div>
-              ) : (
-                <p className="form-placeholder">Nejprve naskenuj hlídku a otevři formulář.</p>
-              )}
-              {pendingCount > 0 ? (
-                <div className="pending-banner">
-                  <div className="pending-banner-main">
-                    <div>
-                      Čeká na odeslání: {pendingCount} {syncing ? '(synchronizuji…)' : ''}
-                    </div>
-                    <div className="pending-banner-actions">
-                      <button
-                        type="button"
-                        className="ghost"
-                        onClick={() => setShowPendingDetails((prev) => !prev)}
-                      >
-                        {showPendingDetails ? 'Skrýt frontu' : 'Zobrazit frontu'}
-                      </button>
-                      <button type="button" onClick={syncQueue} disabled={syncing}>
-                        {syncing ? 'Pracuji…' : 'Odeslat nyní'}
-                      </button>
-                    </div>
+                    <p className="auto-score">Správně: {autoScore.correct} / {autoScore.total}</p>
+                    {answersError ? <p className="error-text">{answersError}</p> : null}
                   </div>
-                  {showPendingDetails ? (
-                    <div className="pending-preview">
-                      {pendingItems.length === 0 ? (
-                        <p>Fronta je prázdná.</p>
-                      ) : (
-                        <div className="table-scroll">
-                          <table className="pending-table">
-                            <thead>
-                              <tr>
-                                <th>Hlídka</th>
-                                <th>Body / Terč</th>
-                                <th>Rozhodčí</th>
-                                <th>Poznámka</th>
-                                <th>Stav</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {pendingItems.map((item, index) => {
-                                const payload = item.payload;
-                                const answers = payload.useTargetScoring
-                                  ? formatAnswersForInput(payload.normalizedAnswers || '')
-                                  : '';
-                                const patrolLabel = payload.team_name || 'Neznámá hlídka';
-                                const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';
-                                const categoryLabel = payload.sex ? `${payload.category}/${payload.sex}` : payload.category;
-                                const statusLabel = item.inProgress
-                                  ? 'Odesílám…'
-                                  : item.retryCount > 0
-                                    ? `Další pokus v ${formatTime(new Date(item.nextAttemptAt).toISOString())}`
-                                    : 'Čeká na odeslání';
-                                return (
-                                  <tr key={`${item.id}-${index}`}>
-                                    <td>
-                                      <div className="pending-patrol">
-                                        <strong>
-                                          {patrolLabel}
-                                          {codeLabel}
-                                        </strong>
-                                        <span className="pending-subline">{categoryLabel}</span>
-                                        <span className="pending-subline">Čekání: {payload.wait_minutes} min</span>
-                                      </div>
-                                    </td>
-                                    <td>
-                                      <div className="pending-score">
-                                        <span className="pending-score-points">{payload.points} b</span>
-                                        <span className="pending-subline">
-                                          {payload.useTargetScoring ? 'Terčový úsek' : 'Manuální body'}
-                                        </span>
-                                        {payload.useTargetScoring ? (
-                                          <span className="pending-answers">{answers || '—'}</span>
-                                        ) : null}
-                                      </div>
-                                    </td>
-                                    <td>{payload.judge || '—'}</td>
-                                    <td>{payload.note ? payload.note : '—'}</td>
-                                    <td>
-                                      <div className="pending-status">
-                                        <span>{statusLabel}</span>
-                                        {item.lastError ? (
-                                          <span className="pending-subline">Chyba: {item.lastError}</span>
-                                        ) : null}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
+                ) : (
+                  <label>
+                    Body (0 až 12)
+                    <input
+                      value={points}
+                      onChange={(event) => setPoints(event.target.value)}
+                      type="number"
+                      min={0}
+                      max={12}
+                    />
+                  </label>
+                )}
+                <button type="button" className="primary" onClick={handleSave}>
+                  Uložit záznam
+                </button>
+              </div>
+            ) : (
+              <p className="form-placeholder">Nejprve naskenuj hlídku a otevři formulář.</p>
+            )}
+            {pendingCount > 0 ? (
+              <div className="pending-banner">
+                <div className="pending-banner-main">
+                  <div>
+                    Čeká na odeslání: {pendingCount} {syncing ? '(synchronizuji…)' : ''}
+                  </div>
+                  <div className="pending-banner-actions">
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => setShowPendingDetails((prev) => !prev)}
+                    >
+                      {showPendingDetails ? 'Skrýt frontu' : 'Zobrazit frontu'}
+                    </button>
+                    <button type="button" onClick={syncQueue} disabled={syncing}>
+                      {syncing ? 'Pracuji…' : 'Odeslat nyní'}
+                    </button>
+                  </div>
                 </div>
-              ) : null}
-            </section>
+                {showPendingDetails ? (
+                  <div className="pending-preview">
+                    {pendingItems.length === 0 ? (
+                      <p>Fronta je prázdná.</p>
+                    ) : (
+                      <div className="table-scroll">
+                        <table className="pending-table">
+                          <thead>
+                            <tr>
+                              <th>Hlídka</th>
+                              <th>Body / Terč</th>
+                              <th>Rozhodčí</th>
+                              <th>Poznámka</th>
+                              <th>Stav</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pendingItems.map((item, index) => {
+                              const payload = item.payload;
+                              const answers = payload.useTargetScoring
+                                ? formatAnswersForInput(payload.normalizedAnswers || '')
+                                : '';
+                              const patrolLabel = payload.team_name || 'Neznámá hlídka';
+                              const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';
+                              const categoryLabel = payload.sex ? `${payload.category}/${payload.sex}` : payload.category;
+                              const statusLabel = item.inProgress
+                                ? 'Odesílám…'
+                                : item.retryCount > 0
+                                  ? `Další pokus v ${formatTime(new Date(item.nextAttemptAt).toISOString())}`
+                                  : 'Čeká na odeslání';
+                              return (
+                                <tr key={`${item.id}-${index}`}>
+                                  <td>
+                                    <div className="pending-patrol">
+                                      <strong>
+                                        {patrolLabel}
+                                        {codeLabel}
+                                      </strong>
+                                      <span className="pending-subline">{categoryLabel}</span>
+                                      <span className="pending-subline">Čekání: {payload.wait_minutes} min</span>
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <div className="pending-score">
+                                      <span className="pending-score-points">{payload.points} b</span>
+                                      <span className="pending-subline">
+                                        {payload.useTargetScoring ? 'Terčový úsek' : 'Manuální body'}
+                                      </span>
+                                      {payload.useTargetScoring ? (
+                                        <span className="pending-answers">{answers || '—'}</span>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                  <td>{payload.judge || '—'}</td>
+                                  <td>{payload.note ? payload.note : '—'}</td>
+                                  <td>
+                                    <div className="pending-status">
+                                      <span>{statusLabel}</span>
+                                      {item.lastError ? (
+                                        <span className="pending-subline">Chyba: {item.lastError}</span>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
 
           <LastScoresList eventId={eventId} stationId={stationId} isTargetStation={isTargetStation} />
           {isTargetStation ? <TargetAnswersReport eventId={eventId} stationId={stationId} /> : null}

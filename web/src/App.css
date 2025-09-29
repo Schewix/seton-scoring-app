@@ -108,6 +108,67 @@ body {
   align-items: center;
 }
 
+.offline-health {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 12px 24px rgba(11, 83, 70, 0.15);
+  border: 1px solid rgba(11, 83, 70, 0.12);
+}
+
+.offline-health-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #0b5346;
+}
+
+.offline-health-label {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: rgba(11, 83, 70, 0.7);
+}
+
+.offline-health-value {
+  font-weight: 600;
+  color: #0b3d33;
+}
+
+.offline-health-value.info {
+  color: #2563eb;
+}
+
+.offline-health-value.warn {
+  color: #92400e;
+}
+
+.offline-health-value.ok {
+  color: #047857;
+}
+
+.offline-health-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  background: #047857;
+}
+
+.offline-health-dot.error {
+  background: #b91c1c;
+}
+
+.offline-health-dot.ok {
+  background: #047857;
+}
+
 .patrol-code-input {
   display: flex;
   flex-direction: column;
