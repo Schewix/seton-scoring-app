@@ -111,6 +111,26 @@ vi.mock('../supabaseClient', () => {
             };
           },
         };
+      case 'timings':
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () =>
+                Promise.resolve({
+                  data:
+                    mockedStartTime !== null
+                      ? [
+                          {
+                            start_time: mockedStartTime,
+                            finish_time: mockedFinishTime,
+                          },
+                        ]
+                      : [],
+                  error: null,
+                }),
+            }),
+          }),
+        };
       default:
         return {
           select: () => selectEmpty(),
@@ -148,6 +168,8 @@ vi.mock('../components/QRScanner', () => ({
 
 let mockedStationCode = 'X';
 let mockedPatrolCode: string | null = 'N-01';
+let mockedStartTime: string | null = '2024-02-01T08:00:00Z';
+let mockedFinishTime: string | null = '2024-02-01T08:45:00Z';
 const mockDeviceKey = new Uint8Array(32);
 const fetchMock = vi.fn();
 
@@ -266,6 +288,8 @@ describe('station workflow', () => {
   beforeEach(async () => {
     mockedStationCode = 'X';
     mockedPatrolCode = 'N-01';
+    mockedStartTime = '2024-02-01T08:00:00Z';
+    mockedFinishTime = '2024-02-01T08:45:00Z';
     supabaseMock.__resetMocks();
     vi.clearAllMocks();
     fetchMock.mockReset();

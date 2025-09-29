@@ -197,17 +197,21 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
           const quizLetters = parseAnswerLetters(row.quiz?.answers);
           return (
             <li key={row.id} className="score-item">
-              <div className="score-meta">
-                <strong>
-                  {patrol.team_name} • {patrol.category}/{patrol.sex}
-                </strong>
-                <span>{new Date(row.created_at).toLocaleString()}</span>
+              <div className="score-split">
+                <div className="score-points-box">
+                  <span className="score-points-value">{row.points}</span>
+                  <span className="score-points-label">body</span>
+                </div>
+                <div className="score-team-box">
+                  <strong>{patrol.team_name}</strong>
+                  <span className="score-team-meta">
+                    {patrol.category}/{patrol.sex}
+                  </span>
+                </div>
               </div>
-              <div className="score-detail">
-                <span>
-                  Body: <strong>{row.points}</strong>
-                </span>
-                {row.judge ? <span> • {row.judge}</span> : null}
+              <div className="score-meta">
+                <span>{new Date(row.created_at).toLocaleString()}</span>
+                {row.judge ? <span>{row.judge}</span> : null}
               </div>
               {row.note ? <p className="score-note">„{row.note}“</p> : null}
               {isTargetStation && row.quiz ? (
