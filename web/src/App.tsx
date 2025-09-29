@@ -185,11 +185,72 @@ function formatTime(value: string) {
   return new Date(value).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatDateTimeLabel(value: string | null) {
+  if (!value) return '—';
+  return new Date(value).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+}
+
 function formatWaitDuration(seconds: number) {
   const safe = Math.max(0, Math.floor(seconds));
   const minutes = Math.floor(safe / 60);
   const secs = safe % 60;
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
+}
+
+function toLocalTimeInput(value: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function parseTimeInput(value: string) {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) {
+    return null;
+  }
+  const [hStr, mStr] = value.split(':');
+  const hours = Number(hStr);
+  const minutes = Number(mStr);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return null;
+  }
+  return { hours, minutes };
+}
+
+function combineDateWithTime(baseIso: string | null, value: string) {
+  const parsed = parseTimeInput(value);
+  if (!parsed) return null;
+  const { hours, minutes } = parsed;
+  const baseDate = baseIso ? new Date(baseIso) : new Date();
+  if (Number.isNaN(baseDate.getTime())) {
+    return null;
+  }
+  const candidate = new Date(baseDate);
+  candidate.setHours(hours, minutes, 0, 0);
+  if (baseIso) {
+    const original = new Date(baseIso);
+    if (candidate.getTime() < original.getTime()) {
+      candidate.setDate(candidate.getDate() + 1);
+    }
+  }
+  return candidate.toISOString();
+}
+
+function formatDurationMs(ms: number) {
+  if (!Number.isFinite(ms) || ms < 0) {
+    return '—';
+  }
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const hoursPrefix = hours > 0 ? `${hours}:` : ''; // omit leading hours if zero
+  const minutesValue = hours > 0 ? minutes.toString().padStart(2, '0') : String(minutes);
+  return `${hoursPrefix}${minutesValue}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function waitSecondsToMinutes(seconds: number) {
@@ -199,32 +260,12 @@ function waitSecondsToMinutes(seconds: number) {
   return Math.max(0, Math.round(seconds / 60));
 }
 
-function toLocalDateTimeInput(value: string | null | undefined) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const pad = (num: number) => num.toString().padStart(2, '0');
-  const year = date.getFullYear();
-  const month = pad(date.getMonth() + 1);
-  const day = pad(date.getDate());
-  const hours = pad(date.getHours());
-  const minutes = pad(date.getMinutes());
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
-}
-
-function fromLocalDateTimeInput(value: string) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
-}
-
 function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refreshManifest: () => Promise<void> }) {
   const manifest = auth.manifest;
   const eventId = manifest.event.id;
   const stationId = manifest.station.id;
   const stationCode = manifest.station.code?.trim().toUpperCase() || '';
-  const stationName = manifest.station.name;
+  const stationDisplayName = stationCode === 'T' ? 'Výpočtka' : manifest.station.name;
   const [patrol, setPatrol] = useState<Patrol | null>(null);
   const [points, setPoints] = useState('');
   const [note, setNote] = useState('');
@@ -262,6 +303,8 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
   const tempCodesRef = useRef<Map<string, string>>(new Map());
   const tempCounterRef = useRef(1);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [startTime, setStartTime] = useState<string | null>(null);
+  const [finishTimeInput, setFinishTimeInput] = useState('');
 
   const queueKey = useMemo(() => `${QUEUE_KEY_PREFIX}_${stationId}`, [stationId]);
 
@@ -356,6 +399,10 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
       window.clearInterval(interval);
     };
   }, [refreshManifest, pushAlert]);
+
+  useEffect(() => {
+    setFinishTimeInput(toLocalTimeInput(finishAt));
+  }, [finishAt, stationId]);
 
   const handleAddTicket = useCallback(() => {
     if (!patrol) {
@@ -671,6 +718,8 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     setManualCode('');
     setArrivedAt(null);
     setFinishAt(null);
+    setFinishTimeInput('');
+    setStartTime(null);
     clearWait();
     lastScanRef.current = null;
   }, [clearWait, isTargetStation]);
@@ -680,6 +729,19 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     setLastSavedAt(null);
     setShowPendingDetails(false);
   }, [resetForm, stationId]);
+
+  const handleFinishTimeChange = useCallback(
+    (value: string) => {
+      setFinishTimeInput(value);
+      const combined = combineDateWithTime(startTime, value);
+      if (combined) {
+        setFinishAt(combined);
+      } else if (!value) {
+        setFinishAt(null);
+      }
+    },
+    [startTime],
+  );
 
   const cachedPatrolMap = useMemo(() => {
     const map = new Map<string, Patrol>();
@@ -735,18 +797,24 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
       if (stationCode === 'T') {
         const { data: timingRows, error: timingError } = await supabase
           .from('timings')
-          .select('finish_time')
+          .select('start_time, finish_time')
           .eq('event_id', eventId)
           .eq('patrol_id', data.id);
 
         if (timingError) {
           console.error('Failed to load finish time', timingError);
+          setStartTime(null);
           setFinishAt(null);
         } else {
           const row = Array.isArray(timingRows) && timingRows.length > 0 ? timingRows[0] : null;
-          setFinishAt((row as { finish_time?: string | null } | null)?.finish_time ?? null);
+          const timing = row as { start_time?: string | null; finish_time?: string | null } | null;
+          const startValue = timing?.start_time ?? null;
+          const finishValue = timing?.finish_time ?? null;
+          setStartTime(startValue);
+          setFinishAt(finishValue);
         }
       } else {
+        setStartTime(null);
         setFinishAt(null);
       }
     },
@@ -870,6 +938,11 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     if (!patrol) return;
     if (!stationId || !queueKey) {
       pushAlert('Vyber stanoviště před uložením záznamu.');
+      return;
+    }
+
+    if (stationCode === 'T' && (!finishTimeInput || !finishAt)) {
+      pushAlert('Nejdřív vyplň čas doběhu.');
       return;
     }
 
@@ -1029,6 +1102,33 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     return new Date(earliest).toISOString();
   }, [pendingItems]);
 
+  const timeOnCourse = useMemo(() => {
+    if (!startTime || !finishAt) {
+      return null;
+    }
+    const start = new Date(startTime);
+    const finish = new Date(finishAt);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(finish.getTime())) {
+      return null;
+    }
+    let ms = finish.getTime() - start.getTime();
+    if (ms < 0) {
+      ms += 24 * 60 * 60 * 1000;
+    }
+    return formatDurationMs(ms);
+  }, [startTime, finishAt]);
+
+  const controlChecks = useMemo(() => {
+    const checks: { label: string; ok: boolean }[] = [];
+    if (stationCode === 'T') {
+      checks.push({ label: 'Čas doběhu vyplněn', ok: Boolean(finishAt && finishTimeInput) });
+      checks.push({ label: 'Čas startu dostupný', ok: Boolean(startTime) });
+      const answersReady = autoScore.total > 0 ? autoScore.given === autoScore.total : false;
+      checks.push({ label: 'Odpovědi zadány', ok: answersReady });
+    }
+    return checks;
+  }, [stationCode, finishAt, finishTimeInput, startTime, autoScore]);
+
   const isPatrolInQueue = useMemo(() => {
     if (!patrol) {
       return false;
@@ -1074,7 +1174,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
           <div className="station-summary">
             <span className="station-summary-label">Stanoviště</span>
             <strong>{stationCode || '—'}</strong>
-            {stationName ? <span className="station-summary-sub">{stationName}</span> : null}
+            {stationDisplayName ? <span className="station-summary-sub">{stationDisplayName}</span> : null}
           </div>
           <div className="station-summary">
             <span className="station-summary-label">Rozhodčí</span>
@@ -1264,9 +1364,11 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
               <div>
                 <h2>Stanovištní formulář</h2>
                 <p className="card-subtitle">
-                  {useTargetScoring
-                    ? 'Zadej odpovědi, přidej poznámku a potvrď uložení.'
-                    : 'Vyplň body, čekání, poznámku a potvrď uložení.'}
+                  {stationCode === 'T'
+                    ? 'Zapiš čas doběhu, zkontroluj terčové odpovědi a potvrď uložení.'
+                    : useTargetScoring
+                        ? 'Zadej odpovědi, přidej poznámku a potvrď uložení.'
+                        : 'Vyplň body, čekání, poznámku a potvrď uložení.'}
                 </p>
               </div>
               <button type="button" className="ghost" onClick={resetForm}>
@@ -1307,25 +1409,47 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
                   </div>
                 ) : null}
                 {stationCode === 'T' ? (
-                  <div className="finish-time-section">
-                    <label>
-                      Čas v cíli
-                      <input
-                        type="datetime-local"
-                        value={toLocalDateTimeInput(finishAt)}
-                        onChange={(event) => setFinishAt(fromLocalDateTimeInput(event.target.value))}
-                      />
-                    </label>
-                    <div className="finish-time-actions">
-                      <button type="button" onClick={() => setFinishAt(new Date().toISOString())}>
-                        Nastavit na aktuální čas
-                      </button>
-                      {finishAt ? (
-                        <button type="button" className="ghost" onClick={() => setFinishAt(null)}>
-                          Vymazat
-                        </button>
-                      ) : null}
+                  <div className="calc-grid">
+                    <div className="calc-time-card">
+                      <div className="calc-time-header">
+                        <h3>Čas doběhu</h3>
+                        <p className="card-hint">Zapiš čas doběhu na stanovišti. Přepočet vychází ze startovního času.</p>
+                      </div>
+                      <div className="calc-time-input">
+                        <label htmlFor="finish-time-input">Doběh (HH:MM)</label>
+                        <input
+                          id="finish-time-input"
+                          type="time"
+                          value={finishTimeInput}
+                          onChange={(event) => handleFinishTimeChange(event.target.value)}
+                          step={60}
+                          placeholder="hh:mm"
+                        />
+                      </div>
+                      <div className="calc-time-meta">
+                        <div>
+                          <span className="calc-meta-label">Start:</span>
+                          <strong>{formatDateTimeLabel(startTime)}</strong>
+                        </div>
+                        <div>
+                          <span className="calc-meta-label">Čas na trati:</span>
+                          <strong>{timeOnCourse ?? '—'}</strong>
+                        </div>
+                      </div>
                     </div>
+                    {controlChecks.length ? (
+                      <div className="calc-checklist">
+                        <h3>Kontrola vyplnění</h3>
+                        <ul>
+                          {controlChecks.map((item) => (
+                            <li key={item.label} className={item.ok ? 'ok' : 'warn'}>
+                              <span className="status-dot" aria-hidden />
+                              {item.label}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 <label>
@@ -1333,7 +1457,8 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
                   <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} />
                 </label>
                 {useTargetScoring ? (
-                  <div className="auto-section">
+                  <div className={`auto-section${stationCode === 'T' ? ' calc-auto' : ''}`}>
+                    {stationCode === 'T' ? <h3>Odpovědi v terčovém úseku</h3> : null}
                     <p className="card-hint">Terčový úsek se hodnotí automaticky podle zadaných odpovědí.</p>
                     <label>
                       Odpovědi hlídky ({totalAnswers || '–'})

@@ -169,6 +169,104 @@ body {
   background: #047857;
 }
 
+.calc-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.calc-time-card,
+.calc-checklist {
+  flex: 1 1 260px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 18px rgba(15, 118, 110, 0.08);
+}
+
+.calc-time-header h3,
+.calc-checklist h3,
+.calc-auto h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  color: #0b5346;
+}
+
+.calc-time-input {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.calc-time-input input[type='time'] {
+  appearance: none;
+  border: 1px solid rgba(15, 118, 110, 0.25);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0b3d33;
+}
+
+.calc-time-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: #0b3d33;
+}
+
+.calc-time-meta strong {
+  margin-left: 6px;
+}
+
+.calc-meta-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(11, 83, 70, 0.6);
+}
+
+.calc-checklist ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.calc-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.calc-checklist li.ok {
+  color: #047857;
+}
+
+.calc-checklist li.warn {
+  color: #b45309;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.calc-auto {
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 16px;
+  padding: 16px;
+}
+
 .patrol-code-input {
   display: flex;
   flex-direction: column;
@@ -703,10 +801,58 @@ textarea {
   gap: 8px;
 }
 
+.score-split {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.score-points-box {
+  min-width: 76px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(15, 118, 110, 0.12);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.score-points-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #0b5346;
+}
+
+.score-points-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(11, 83, 70, 0.65);
+}
+
+.score-team-box {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.score-team-box strong {
+  font-size: 1.1rem;
+  color: #0f172a;
+}
+
+.score-team-meta {
+  font-size: 0.85rem;
+  color: #475569;
+}
+
 .score-meta {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
+  font-size: 0.8rem;
   color: #64748b;
   gap: 12px;
   flex-wrap: wrap;
