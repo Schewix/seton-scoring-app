@@ -1,8 +1,44 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
+      registerType: 'autoUpdate',
+      includeAssets: ['icon-192.png', 'icon-512.png'],
+      manifest: {
+        name: 'Setonův závod - Stanoviště',
+        short_name: 'Seton Stanoviště',
+        description: 'Offline scoring aplikace pro rozhodčí Setonova závodu.',
+        theme_color: '#0b5d44',
+        background_color: '#0b5d44',
+        display: 'standalone',
+        scope: '/',
+        start_url: '/',
+        lang: 'cs',
+        icons: [
+          {
+            src: 'icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+          },
+          {
+            src: 'icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+          },
+        ],
+      },
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,json}'],
+      },
+    }),
+  ],
   build: {
     target: 'es2022',
   },

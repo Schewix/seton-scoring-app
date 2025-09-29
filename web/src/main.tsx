@@ -2,8 +2,13 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import { AuthProvider } from './auth/context';
+import { registerSW } from 'virtual:pwa-register';
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
+
+if ('serviceWorker' in navigator) {
+  registerSW({ immediate: true });
+}
 
 const params = new URLSearchParams(window.location.search);
 const view = params.get('view');
