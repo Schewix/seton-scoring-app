@@ -562,12 +562,50 @@ textarea {
   gap: 16px;
 }
 
+.scanner-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.scanner-status {
+  font-size: 0.95rem;
+  color: #9c8d82;
+}
+
+.scanner-status.active {
+  color: #15803d;
+}
+
+.scanner-status.inactive {
+  color: #b45309;
+}
+
 .qr-scanner {
   position: relative;
   aspect-ratio: 4 / 3;
   background: #0f172a;
   border-radius: 16px;
   overflow: hidden;
+}
+
+.qr-scanner.inactive video {
+  filter: grayscale(1);
+  opacity: 0.35;
+}
+
+.qr-scanner-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  text-align: center;
+  font-weight: 600;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.7);
+  pointer-events: none;
 }
 
 .qr-scanner video {
