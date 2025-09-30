@@ -19,8 +19,18 @@ type OnboardingEvent = {
 };
 
 async function sendEmail(to: string, password: string): Promise<string> {
-  const from = "Seton <noreply@resend.dev>"; // sandbox sender for testing without own domain
-  const subject = "Váš účet rozhodčího na Seton";
+  const from = "Zelená liga <noreply@zelenaliga.cz>";
+  const replyTo = "info@zelenaliga.cz"; // kam půjdou případné odpovědi (můžeš změnit nebo smazat)
+  const subject = "Zelená liga — váš účet rozhodčího";
+
+  const text = [
+    "Dobrý den,",
+    "byl vám vytvořen účet rozhodčího v systému Zelená liga.",
+    `Dočasné heslo: ${password}`,
+    "Po přihlášení budete vyzváni ke změně hesla.",
+    "Děkujeme.",
+  ].join("\n");
+
   const html = `
     <p>Dobrý den,</p>
     <p>byl vám vytvořen účet rozhodčího. Přihlaste se prosím tímto dočasným heslem:</p>
@@ -40,6 +50,8 @@ async function sendEmail(to: string, password: string): Promise<string> {
       to: [to],
       subject,
       html,
+      text,
+      reply_to: replyTo,
     }),
   });
 
