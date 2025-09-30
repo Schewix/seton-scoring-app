@@ -10,6 +10,7 @@ import './App.css';
 import zelenaLigaLogo from './assets/znak_SPTO_transparent.png';
 import { useAuth } from './auth/context';
 import LoginScreen from './auth/LoginScreen';
+import ChangePasswordScreen from './auth/ChangePasswordScreen';
 import type { AuthStatus } from './auth/types';
 import { signPayload } from './auth/crypto';
 import TicketQueue from './components/TicketQueue';
@@ -1651,6 +1652,16 @@ function App() {
 
   if (status.state === 'unauthenticated') {
     return <LoginScreen />;
+  }
+
+  if (status.state === 'password-change-required') {
+    return (
+      <ChangePasswordScreen
+        email={status.email}
+        judgeId={status.judgeId}
+        pendingPin={status.pendingPin}
+      />
+    );
   }
 
   if (status.state === 'locked') {

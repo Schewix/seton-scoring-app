@@ -26,6 +26,15 @@ export function loginRequest(email: string, password: string, devicePublicKey?: 
   }).then((res) => handleResponse<LoginResponse>(res));
 }
 
+export function changePasswordRequest(params: { email?: string; id?: string; newPassword: string }) {
+  const url = `${BASE_URL}/auth/change-password`;
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  }).then((res) => handleResponse<{ success: true }>(res));
+}
+
 export function fetchManifest(accessToken: string) {
   const url = `${BASE_URL}/manifest`;
   return fetch(url, {
