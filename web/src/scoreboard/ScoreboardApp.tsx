@@ -417,6 +417,24 @@ function ScoreboardApp() {
                         </tr>
                       );
                     })}
+                    {group.items.map((row) => {
+                      const fallbackCode = createFallbackPatrolCode(
+                        group.category,
+                        group.sex,
+                        row.rankInBracket,
+                      );
+                      return (
+                        <tr key={row.patrolId}>
+                          <td>{row.rankInBracket}</td>
+                          <td className="scoreboard-team">
+                            <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
+                          </td>
+                          <td>{formatPoints(row.totalPoints)}</td>
+                          <td>{formatPoints(row.pointsNoT)}</td>
+                          <td>{formatSeconds(row.pureSeconds)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
