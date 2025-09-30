@@ -329,6 +329,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     },
     [stationId],
   );
+
   const canEditAnswers = isAdminMode;
 
   const updateQueueState = useCallback((items: PendingOperation[]) => {
@@ -442,13 +443,157 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     }
   }, [patrol, pushAlert, resolvePatrolCode, updateTickets]);
 
+  const clearWait = useCallback(() => {
+    if (waitTimerRef.current) {
+      clearInterval(waitTimerRef.current);
+      waitTimerRef.current = null;
+    }
+    waitStartRef.current = null;
+    setIsWaiting(false);
+    setWaitDurationSeconds(0);
+  }, []);
+
+  const startWait = useCallback(() => {
+    const start = Date.now();
+    if (waitTimerRef.current) {
+      clearInterval(waitTimerRef.current);
+    }
+    waitStartRef.current = start;
+    setIsWaiting(true);
+    setWaitDurationSeconds(0);
+    waitTimerRef.current = setInterval(() => {
+      if (waitStartRef.current === null) {
+        return;
+      }
+      const elapsed = Math.floor((Date.now() - waitStartRef.current) / 1000);
+      setWaitDurationSeconds(elapsed);
+    }, 500);
+  }, []);
+
+  const stopWait = useCallback(() => {
+    if (waitTimerRef.current) {
+      clearInterval(waitTimerRef.current);
+      waitTimerRef.current = null;
+    }
+    if (waitStartRef.current !== null) {
+      const elapsed = Math.floor((Date.now() - waitStartRef.current) / 1000);
+      setWaitDurationSeconds(elapsed);
+    }
+    waitStartRef.current = null;
+    setIsWaiting(false);
+  }, []);
+
+  const patrolById = useMemo(() => {
+    const map = new Map<string, Patrol>();
+    auth.patrols.forEach((summary) => {
+      map.set(summary.id, {
+        id: summary.id,
+        team_name: summary.team_name,
+        category: summary.category,
+        sex: summary.sex,
+        patrol_code: summary.patrol_code,
+      });
+    });
+    return map;
+  }, [auth.patrols]);
+
+  const loadTimingData = useCallback(
+    async (patrolId: string) => {
+      if (stationCode !== 'T') {
+        setStartTime(null);
+        setFinishAt(null);
+        return;
+      }
+
+      const { data: timingRows, error: timingError } = await supabase
+        .from('timings')
+        .select('start_time, finish_time')
+        .eq('event_id', eventId)
+        .eq('patrol_id', patrolId);
+
+      if (timingError) {
+        console.error('Failed to load finish time', timingError);
+        setStartTime(null);
+        setFinishAt(null);
+        return;
+      }
+
+      const row = Array.isArray(timingRows) && timingRows.length > 0 ? timingRows[0] : null;
+      const timing = row as { start_time?: string | null; finish_time?: string | null } | null;
+      setStartTime(timing?.start_time ?? null);
+      setFinishAt(timing?.finish_time ?? null);
+    },
+    [eventId, stationCode],
+  );
+
+  const initializeFormForPatrol = useCallback(
+    (data: Patrol, options?: { arrivedAt?: string | null; waitSeconds?: number | null }) => {
+      setPatrol({ ...data });
+      setPoints('');
+      setNote('');
+      setAnswersInput('');
+      setAnswersError('');
+      setScanActive(false);
+      setManualCode('');
+      setUseTargetScoring(isTargetStation);
+
+      const arrival = options?.arrivedAt ?? new Date().toISOString();
+      setArrivedAt(arrival);
+
+      clearWait();
+
+      if (typeof options?.waitSeconds === 'number' && !isTargetStation) {
+        setWaitDurationSeconds(options.waitSeconds);
+      }
+
+      const stored = categoryAnswers[data.category] || '';
+      const total = parseAnswerLetters(stored).length;
+      setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
+
+      void loadTimingData(data.id);
+    },
+    [categoryAnswers, clearWait, isTargetStation, loadTimingData],
+  );
+
   const handleTicketStateChange = useCallback(
     (id: string, nextState: Ticket['state']) => {
+      let updated: Ticket | null = null;
       updateTickets((current) =>
-        current.map((ticket) => (ticket.id === id ? transitionTicket(ticket, nextState) : ticket)),
+        current.map((ticket) => {
+          if (ticket.id !== id) {
+            return ticket;
+          }
+          const nextTicket = transitionTicket(ticket, nextState);
+          updated = nextTicket;
+          return nextTicket;
+        }),
       );
+
+      if (nextState === 'serving') {
+        stopWait();
+      }
+
+      if (nextState === 'done' && updated) {
+        const summary = patrolById.get(updated.patrolId);
+        if (!summary) {
+          pushAlert('Hlídku se nepodařilo otevřít, není v manifestu.');
+          return;
+        }
+        const ticketPatrol: Patrol = {
+          id: summary.id,
+          team_name: summary.team_name,
+          category: summary.category,
+          sex: summary.sex,
+          patrol_code: summary.patrol_code || updated.patrolCode || null,
+        };
+        const waitSeconds = Math.max(0, Math.round(updated.waitAccumMs / 1000));
+        initializeFormForPatrol(ticketPatrol, {
+          arrivedAt: updated.createdAt,
+          waitSeconds,
+        });
+      }
     },
-    [updateTickets],
+    [initializeFormForPatrol, patrolById, pushAlert, stopWait, updateTickets],
   );
 
   const handleResetTickets = useCallback(() => {
@@ -493,46 +638,6 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
       setShowAnswersEditor(false);
     }
   }, [canEditAnswers]);
-
-  const clearWait = useCallback(() => {
-    if (waitTimerRef.current) {
-      clearInterval(waitTimerRef.current);
-      waitTimerRef.current = null;
-    }
-    waitStartRef.current = null;
-    setIsWaiting(false);
-    setWaitDurationSeconds(0);
-  }, []);
-
-  const startWait = useCallback(() => {
-    const start = Date.now();
-    if (waitTimerRef.current) {
-      clearInterval(waitTimerRef.current);
-    }
-    waitStartRef.current = start;
-    setIsWaiting(true);
-    setWaitDurationSeconds(0);
-    waitTimerRef.current = setInterval(() => {
-      if (waitStartRef.current === null) {
-        return;
-      }
-      const elapsed = Math.floor((Date.now() - waitStartRef.current) / 1000);
-      setWaitDurationSeconds(elapsed);
-    }, 500);
-  }, []);
-
-  const stopWait = useCallback(() => {
-    if (waitTimerRef.current) {
-      clearInterval(waitTimerRef.current);
-      waitTimerRef.current = null;
-    }
-    if (waitStartRef.current !== null) {
-      const elapsed = Math.floor((Date.now() - waitStartRef.current) / 1000);
-      setWaitDurationSeconds(elapsed);
-    }
-    waitStartRef.current = null;
-    setIsWaiting(false);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -794,44 +899,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
         data = fetched as Patrol;
       }
 
-      setPatrol({ ...data });
-      setPoints('');
-      setNote('');
-      setAnswersInput('');
-      setAnswersError('');
-      setScanActive(false);
-      setManualCode('');
-      setArrivedAt(new Date().toISOString());
-      clearWait();
-
-      const stored = categoryAnswers[data.category] || '';
-      const total = parseAnswerLetters(stored).length;
-      setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
-      setUseTargetScoring(isTargetStation);
-
-      if (stationCode === 'T') {
-        const { data: timingRows, error: timingError } = await supabase
-          .from('timings')
-          .select('start_time, finish_time')
-          .eq('event_id', eventId)
-          .eq('patrol_id', data.id);
-
-        if (timingError) {
-          console.error('Failed to load finish time', timingError);
-          setStartTime(null);
-          setFinishAt(null);
-        } else {
-          const row = Array.isArray(timingRows) && timingRows.length > 0 ? timingRows[0] : null;
-          const timing = row as { start_time?: string | null; finish_time?: string | null } | null;
-          const startValue = timing?.start_time ?? null;
-          const finishValue = timing?.finish_time ?? null;
-          setStartTime(startValue);
-          setFinishAt(finishValue);
-        }
-      } else {
-        setStartTime(null);
-        setFinishAt(null);
-      }
+      initializeFormForPatrol(data, { arrivedAt: new Date().toISOString() });
 
       void appendScanRecord(eventId, stationId, {
         code: normalized,
@@ -843,7 +911,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
 
       return true;
     },
-    [cachedPatrolMap, categoryAnswers, clearWait, eventId, isTargetStation, pushAlert, stationCode, stationId]
+    [cachedPatrolMap, eventId, initializeFormForPatrol, pushAlert, stationId]
   );
 
   const handleScanResult = useCallback(
@@ -1186,7 +1254,6 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
   );
 
   const waitSecondsDisplay = useTargetScoring ? 0 : waitDurationSeconds;
-  const waitMinutesDisplay = useTargetScoring ? 0 : waitSecondsToMinutes(waitDurationSeconds);
   const hasWaitValue = useTargetScoring ? false : waitDurationSeconds > 0 || isWaiting;
 
   return (
@@ -1440,7 +1507,6 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
                     <span className="wait-label">Čekání</span>
                     <div className="wait-display">
                       <strong>{formatWaitDuration(waitSecondsDisplay)}</strong>
-                      <span className="pending-subline">≈ {waitMinutesDisplay} min</span>
                     </div>
                     <div className="wait-actions">
                       <button type="button" onClick={startWait} disabled={isWaiting}>

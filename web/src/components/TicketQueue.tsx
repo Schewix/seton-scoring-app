@@ -73,7 +73,7 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
       <div className="tickets-grid">
         <div className="tickets-column">
           <div className="tickets-column-header">
-            <h3>Waiting</h3>
+            <h3>Čekají</h3>
             <span>{grouped.waiting.length}</span>
           </div>
           <ul>
@@ -101,7 +101,7 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
         </div>
         <div className="tickets-column">
           <div className="tickets-column-header">
-            <h3>Serving</h3>
+            <h3>Obsluhované</h3>
             <span>{grouped.serving.length}</span>
           </div>
           <ul>
@@ -129,7 +129,7 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
         </div>
         <div className="tickets-column">
           <div className="tickets-column-header">
-            <h3>Paused</h3>
+            <h3>Pozastavené</h3>
             <span>{grouped.paused.length}</span>
           </div>
           <ul>
@@ -154,7 +154,7 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
         </div>
         <div className="tickets-column">
           <div className="tickets-column-header">
-            <h3>Done</h3>
+            <h3>Hotové</h3>
             <span>{grouped.done.length}</span>
           </div>
           <ul>
@@ -178,7 +178,7 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
 
       {nextUp ? (
         <div className="tickets-next">
-          <strong>Next up:</strong> {nextUp.patrolCode} • {nextUp.teamName}
+          <strong>Další v pořadí:</strong> {nextUp.patrolCode} • {nextUp.teamName}
         </div>
       ) : null}
     </section>
