@@ -5,6 +5,10 @@ import { registerRoute } from 'workbox-routing';
 import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies';
 
 declare let self: ServiceWorkerGlobalScope & { __WB_MANIFEST: any };
+// Minimal typings for Background Sync – not available in all TS lib.dom versions
+interface SyncEvent extends ExtendableEvent {
+  tag: string;
+}
 
 const SYNC_TAG = 'sync-pending-ops';
 
@@ -52,9 +56,10 @@ async function notifyClientsToSync() {
   }
 }
 
-self.addEventListener('sync', (event) => {
-  if (event.tag === SYNC_TAG) {
-    event.waitUntil(notifyClientsToSync());
+self.addEventListener('sync', (event: Event) => {
+  const se = event as unknown as SyncEvent;
+  if (se.tag === SYNC_TAG) {
+    se.waitUntil(notifyClientsToSync());
   }
 });
 

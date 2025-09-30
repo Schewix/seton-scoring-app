@@ -1,8 +1,24 @@
 {
   "rewrites": [
-    { "source": "/stations/(.*)", "destination": "/" },
-    { "source": "/stanoviste/(.*)", "destination": "/" },
-    { "source": "/scoreboard", "destination": "/" },
-    { "source": "/scoreboard/(.*)", "destination": "/" }
+    {
+      "source": "/auth/(.*)",
+      "destination": "https://vdkbdnxkpeeqxnruwiah.supabase.co/functions/v1/$1"
+    },
+    {
+      "source": "/stations/(.*)",
+      "destination": "/"
+    },
+    {
+      "source": "/stanoviste/(.*)",
+      "destination": "/"
+    },
+    {
+      "source": "/scoreboard",
+      "destination": "/"
+    },
+    {
+      "source": "/scoreboard/(.*)",
+      "destination": "/"
+    }
   ]
 }
