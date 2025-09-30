@@ -116,6 +116,33 @@ create table if not exists judges (
   updated_at timestamptz not null default now()
 );
 
+do $$ begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'judges' and column_name = 'password_rotated_at'
+  ) then
+    alter table judges add column password_rotated_at timestamptz;
+  end if;
+exception when duplicate_column then null; end $$;
+
+do $$ begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'judges' and column_name = 'onboarding_sent_at'
+  ) then
+    alter table judges add column onboarding_sent_at timestamptz;
+  end if;
+exception when duplicate_column then null; end $$;
+
+do $$ begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'judges' and column_name = 'must_change_password'
+  ) then
+    alter table judges add column must_change_password boolean not null default true;
+  end if;
+exception when duplicate_column then null; end $$;
+
 create table if not exists judge_assignments (
   id uuid primary key default gen_random_uuid(),
   judge_id uuid not null references judges(id) on delete cascade,
@@ -143,3 +170,19 @@ create table if not exists judge_sessions (
 
 create index if not exists judge_assignments_station_idx on judge_assignments(station_id);
 create index if not exists judge_sessions_judge_idx on judge_sessions(judge_id);
+
+create table if not exists judge_onboarding_events (
+  id uuid primary key default gen_random_uuid(),
+  judge_id uuid not null references judges(id) on delete cascade,
+  event_id uuid references events(id) on delete cascade,
+  station_id uuid references stations(id) on delete cascade,
+  token_hash text,
+  expires_at timestamptz,
+  sent_at timestamptz not null default now(),
+  accepted_at timestamptz,
+  delivery_channel text not null default 'email',
+  metadata jsonb not null default '{}'::jsonb
+);
+
+create index if not exists judge_onboarding_events_judge_idx on judge_onboarding_events(judge_id);
+create index if not exists judge_onboarding_events_token_hash_idx on judge_onboarding_events(token_hash);
