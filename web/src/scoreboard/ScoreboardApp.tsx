@@ -141,11 +141,32 @@ function formatCategoryLabel(category: string, sex?: string) {
   return '—';
 }
 
-function formatPatrolNumber(patrolCode: string | null) {
-  if (!patrolCode) return '—';
-  const normalized = patrolCode.trim();
-  if (!normalized) return '—';
-  return normalized.toUpperCase();
+function formatPatrolNumber(patrolCode: string | null, fallback?: string) {
+  if (patrolCode) {
+    const normalized = patrolCode.trim();
+    if (normalized) {
+      return normalized.toUpperCase();
+    }
+  }
+
+  if (fallback && fallback.trim()) {
+    return fallback;
+  }
+
+  return '—';
+}
+
+function createFallbackPatrolCode(category: string, sex: string, rank: number) {
+  const categoryLabel = formatCategoryLabel(category, sex);
+  if (categoryLabel === '—') {
+    return undefined;
+  }
+
+  if (!Number.isFinite(rank) || rank <= 0) {
+    return undefined;
+  }
+
+  return `${categoryLabel}-${rank}`;
 }
 
 function ScoreboardApp() {
@@ -378,17 +399,24 @@ function ScoreboardApp() {
                     </tr>
                   </thead>
                   <tbody>
-                    {group.items.map((row) => (
-                      <tr key={row.patrolId}>
-                        <td>{row.rankInBracket}</td>
-                        <td className="scoreboard-team">
-                          <strong>{formatPatrolNumber(row.patrolCode)}</strong>
-                        </td>
-                        <td>{formatPoints(row.totalPoints)}</td>
-                        <td>{formatPoints(row.pointsNoT)}</td>
-                        <td>{formatSeconds(row.pureSeconds)}</td>
-                      </tr>
-                    ))}
+                    {group.items.map((row) => {
+                      const fallbackCode = createFallbackPatrolCode(
+                        group.category,
+                        group.sex,
+                        row.rankInBracket,
+                      );
+                      return (
+                        <tr key={row.patrolId}>
+                          <td>{row.rankInBracket}</td>
+                          <td className="scoreboard-team">
+                            <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
+                          </td>
+                          <td>{formatPoints(row.totalPoints)}</td>
+                          <td>{formatPoints(row.pointsNoT)}</td>
+                          <td>{formatSeconds(row.pureSeconds)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
