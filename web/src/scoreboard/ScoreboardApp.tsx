@@ -141,21 +141,20 @@ function formatCategoryLabel(category: string, sex?: string) {
   return '—';
 }
 
-function formatPatrolNumber(patrolCode: string | null, category: string, sex: string) {
+function formatPatrolNumber(patrolCode: string | null) {
   if (!patrolCode) return '—';
   const normalized = patrolCode.trim();
   if (!normalized) return '—';
-  const prefix = `${(category || '').trim().toUpperCase()}${(sex || '').trim().toUpperCase()}`;
-  const upper = normalized.toUpperCase();
-  if (prefix && upper.startsWith(`${prefix}-`)) {
-    const remainder = normalized.slice(prefix.length + 1).trim();
-    return remainder || normalized;
-  }
-  if (prefix && upper.startsWith(prefix)) {
-    const remainder = normalized.slice(prefix.length).replace(/^[-_\s]*/, '').trim();
-    return remainder || normalized;
-  }
-  return normalized;
+  return normalized.toUpperCase();
+}
+
+function RankCell({ position, patrolCode }: { position: number; patrolCode: string | null }) {
+  return (
+    <td className="scoreboard-rank">
+      <span className="scoreboard-rank__position">{position}</span>
+      <span className="scoreboard-rank__code">{formatPatrolNumber(patrolCode)}</span>
+    </td>
+  );
 }
 
 function ScoreboardApp() {
@@ -351,13 +350,9 @@ function ScoreboardApp() {
             <tbody>
               {overall.map((row, index) => (
                 <tr key={row.patrolId}>
-                  <td>{index + 1}</td>
+                  <RankCell position={index + 1} patrolCode={row.patrolCode} />
                   <td className="scoreboard-team">
-                    <strong>{formatPatrolNumber(row.patrolCode, row.category, row.sex)}</strong>
-                    <span className="scoreboard-team-meta">{row.teamName || '—'}</span>
-                    {row.patrolCode ? (
-                      <span className="scoreboard-team-meta subtle">{row.patrolCode}</span>
-                    ) : null}
+                    <strong>{formatPatrolNumber(row.patrolCode)}</strong>
                   </td>
                   <td>{formatCategoryLabel(row.category, row.sex)}</td>
                   <td>{formatPoints(row.totalPoints)}</td>
@@ -394,13 +389,9 @@ function ScoreboardApp() {
                   <tbody>
                     {group.items.map((row) => (
                       <tr key={row.patrolId}>
-                        <td>{row.rankInBracket}</td>
+                        <RankCell position={row.rankInBracket} patrolCode={row.patrolCode} />
                         <td className="scoreboard-team">
-                          <strong>{formatPatrolNumber(row.patrolCode, row.category, row.sex)}</strong>
-                          <span className="scoreboard-team-meta">{row.teamName || '—'}</span>
-                          {row.patrolCode ? (
-                            <span className="scoreboard-team-meta subtle">{row.patrolCode}</span>
-                          ) : null}
+                          <strong>{formatPatrolNumber(row.patrolCode)}</strong>
                         </td>
                         <td>{formatPoints(row.totalPoints)}</td>
                         <td>{formatPoints(row.pointsNoT)}</td>

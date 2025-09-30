@@ -125,6 +125,24 @@
   vertical-align: middle;
 }
 
+.scoreboard-rank {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: #f8fafc;
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreboard-rank__position {
+  min-width: 1.75ch;
+}
+
+.scoreboard-rank__code {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .scoreboard-team {
   display: flex;
   flex-direction: column;
