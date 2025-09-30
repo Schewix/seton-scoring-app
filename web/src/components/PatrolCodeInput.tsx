@@ -12,26 +12,38 @@ interface PatrolCodeInputProps {
 export function normalisePatrolCode(raw: string) {
   const trimmed = raw.trim().toUpperCase();
   if (!trimmed) return '';
-  const match = trimmed.match(/^([NMSR])([^\-]?)(.*)$/i);
-  if (!match) return trimmed;
-  const category = match[1].toUpperCase();
-  let rest = match[3] ? match[3] : '';
-  const second = match[2] ? match[2].toUpperCase() : '';
-  if (second === 'H' || second === 'D') {
-    rest = `${second}${rest}`;
-  } else if (rest.startsWith('H') || rest.startsWith('D')) {
-    // keep rest
-  } else {
-    rest = `-${second}${rest}`;
+
+  const cleaned = trimmed.replace(/[^A-Z0-9-]/g, '');
+  const match = cleaned.match(/^([NMSR])(.*)$/);
+  if (!match) {
+    return cleaned;
   }
-  rest = rest.replace(/[^0-9HD-]/gi, '');
-  if (!rest.startsWith('-')) {
-    rest = `-${rest}`;
+
+  const [, category, remainder] = match;
+  const trailingHyphen = /-$/.test(cleaned);
+  const compact = remainder.replace(/-/g, '');
+
+  if (!compact) {
+    return category;
   }
-  return `${category}${rest}`
-    .replace(/-{2,}/g, '-')
-    .replace(/-(?![0-9])/g, '-')
-    .slice(0, 6);
+
+  const letterMatchIndex = compact.search(/[HD]/);
+  const hasLetter = letterMatchIndex === 0;
+  const letter = hasLetter ? compact[0] : '';
+  const digits = compact
+    .slice(hasLetter ? 1 : 0)
+    .replace(/[^0-9]/g, '')
+    .slice(0, 2);
+
+  let result = category + letter;
+
+  if (digits) {
+    result += `-${digits}`;
+  } else if (trailingHyphen && letter) {
+    result += '-';
+  }
+
+  return result;
 }
 
 export default function PatrolCodeInput({ value, onChange, id, label }: PatrolCodeInputProps) {
