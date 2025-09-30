@@ -772,7 +772,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     }
 
     try {
-      const response = await fetch(`${baseUrl}/sync`, {
+      const response = await fetch(`${baseUrl}/auth/sync`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
