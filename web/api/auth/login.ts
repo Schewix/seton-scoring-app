@@ -38,17 +38,23 @@ export default async function handler(req: any, res: any) {
   if (!email || !password) return res.status(400).json({ error: 'Missing credentials' });
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-  const { data, error } = await supabase
+  const { data: row, error } = await supabase
     .from('judges')
-    .select('id,email,password_hash,must_change_password')
+    .select('*')
     .eq('email', email)
-    .limit(1);
-  if (error) return res.status(500).json({ error: 'DB error' });
+    .maybeSingle();
 
-  const row = Array.isArray(data) && data[0];
-  if (!row) return res.status(401).json({ error: 'Invalid credentials' });
+  if (error) {
+    console.error('DB error', error);
+    return res.status(500).json({ error: 'DB error' });
+  }
 
-  const ok = await verifyPbkdf2(password, row.password_hash);
+  if (!row || !row.password_hash) {
+    console.warn('No password_hash for user', email, row);
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  const ok = await verifyPbkdf2(password, row.password_hash as string);
   if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
 
   // TODO: vytvoř a vrať vlastní session/JWT
