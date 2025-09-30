@@ -7,7 +7,7 @@ import PatrolCodeInput from './components/PatrolCodeInput';
 import OfflineHealth from './components/OfflineHealth';
 import { supabase } from './supabaseClient';
 import './App.css';
-import setonLogo from './assets/seton-logo.png';
+import zelenaLigaLogo from './assets/znak_SPTO_transparent.png';
 import { useAuth } from './auth/context';
 import LoginScreen from './auth/LoginScreen';
 import type { AuthStatus } from './auth/types';
@@ -1192,10 +1192,10 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
       <header className="hero">
         <div className="hero-brand">
           <div className="hero-logo">
-            <img src={setonLogo} alt="Logo Setonův závod" />
+            <img src={zelenaLigaLogo} alt="Logo Zelená liga" />
           </div>
           <div>
-            <h1>Setonův závod - stanoviště</h1>
+            <h1>Zelená liga - stanoviště</h1>
             <p>Webová podpora rozhodčích s QR skenerem, automatickým hodnocením a offline frontou.</p>
           </div>
         </div>

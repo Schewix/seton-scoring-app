@@ -283,7 +283,7 @@ function ScoreboardApp() {
   }, [loadData]);
 
   useEffect(() => {
-    document.title = 'Seton';
+    document.title = 'Zelena liga';
   }, []);
 
   const groupedRanked = useMemo(() => {
