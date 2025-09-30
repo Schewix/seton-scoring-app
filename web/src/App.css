@@ -73,6 +73,22 @@ body {
   gap: 16px;
 }
 
+.hero-actions {
+  display: flex;
+  align-items: center;
+}
+
+.hero-actions .logout-button {
+  background: rgba(255, 255, 255, 0.18);
+  color: #0b5346;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow: 0 16px 30px rgba(10, 78, 56, 0.28);
+}
+
+.hero-actions .logout-button:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
 .station-summary {
   display: flex;
   flex-direction: column;

@@ -267,7 +267,15 @@ function waitSecondsToMinutes(seconds: number) {
   return Math.max(0, Math.round(seconds / 60));
 }
 
-function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refreshManifest: () => Promise<void> }) {
+function StationApp({
+  auth,
+  refreshManifest,
+  logout,
+}: {
+  auth: AuthenticatedState;
+  refreshManifest: () => Promise<void>;
+  logout: () => Promise<void>;
+}) {
   const manifest = auth.manifest;
   const eventId = manifest.event.id;
   const stationId = manifest.station.id;
@@ -1025,6 +1033,10 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     }
   }, [answersInput, useTargetScoring, patrol, categoryAnswers]);
 
+  const handleLogout = useCallback(() => {
+    void logout();
+  }, [logout]);
+
   const saveCategoryAnswers = useCallback(async () => {
     if (!stationId) {
       pushAlert('Vyber prosím stanoviště před uložením odpovědí.');
@@ -1364,6 +1376,11 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
             nextAttemptAt={nextAttemptAtIso}
             lastSyncedAt={lastSavedAt}
           />
+          <div className="hero-actions">
+            <button type="button" className="logout-button" onClick={handleLogout}>
+              Odhlásit se
+            </button>
+          </div>
         </div>
       </header>
 
@@ -1810,7 +1827,7 @@ export function useStationRouting(status: AuthStatus) {
 }
 
 function App() {
-  const { status, refreshManifest } = useAuth();
+  const { status, refreshManifest, logout } = useAuth();
 
   useStationRouting(status);
 
@@ -1857,7 +1874,7 @@ function App() {
   }
 
   if (status.state === 'authenticated') {
-    return <StationApp auth={status} refreshManifest={refreshManifest} />;
+    return <StationApp auth={status} refreshManifest={refreshManifest} logout={logout} />;
   }
 
   return null;
