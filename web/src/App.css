@@ -1008,8 +1008,21 @@ textarea {
   border-radius: 0.9rem;
   padding: 0.75rem 1rem;
   background: rgba(15, 23, 42, 0.6);
-  color: inherit;
+  color: #e2e8f0;
+  caret-color: #e2e8f0;
   font-size: 1rem;
+}
+
+.auth-field input::placeholder {
+  color: rgba(148, 163, 184, 0.65);
+}
+
+.auth-field input:-webkit-autofill,
+.auth-field input:-webkit-autofill:hover,
+.auth-field input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #e2e8f0;
+  -webkit-box-shadow: 0 0 0px 1000px rgba(15, 23, 42, 0.6) inset;
+  transition: background-color 5000s ease-in-out 0s;
 }
 
 .auth-field input:focus {
