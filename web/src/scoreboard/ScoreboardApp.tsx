@@ -141,21 +141,11 @@ function formatCategoryLabel(category: string, sex?: string) {
   return '—';
 }
 
-function formatPatrolNumber(patrolCode: string | null, category: string, sex: string) {
+function formatPatrolNumber(patrolCode: string | null) {
   if (!patrolCode) return '—';
   const normalized = patrolCode.trim();
   if (!normalized) return '—';
-  const prefix = `${(category || '').trim().toUpperCase()}${(sex || '').trim().toUpperCase()}`;
-  const upper = normalized.toUpperCase();
-  if (prefix && upper.startsWith(`${prefix}-`)) {
-    const remainder = normalized.slice(prefix.length + 1).trim();
-    return remainder || normalized;
-  }
-  if (prefix && upper.startsWith(prefix)) {
-    const remainder = normalized.slice(prefix.length).replace(/^[-_\s]*/, '').trim();
-    return remainder || normalized;
-  }
-  return normalized;
+  return normalized.toUpperCase();
 }
 
 function ScoreboardApp() {
@@ -353,11 +343,7 @@ function ScoreboardApp() {
                 <tr key={row.patrolId}>
                   <td>{index + 1}</td>
                   <td className="scoreboard-team">
-                    <strong>{formatPatrolNumber(row.patrolCode, row.category, row.sex)}</strong>
-                    <span className="scoreboard-team-meta">{row.teamName || '—'}</span>
-                    {row.patrolCode ? (
-                      <span className="scoreboard-team-meta subtle">{row.patrolCode}</span>
-                    ) : null}
+                    <strong>{formatPatrolNumber(row.patrolCode)}</strong>
                   </td>
                   <td>{formatCategoryLabel(row.category, row.sex)}</td>
                   <td>{formatPoints(row.totalPoints)}</td>
@@ -396,11 +382,7 @@ function ScoreboardApp() {
                       <tr key={row.patrolId}>
                         <td>{row.rankInBracket}</td>
                         <td className="scoreboard-team">
-                          <strong>{formatPatrolNumber(row.patrolCode, row.category, row.sex)}</strong>
-                          <span className="scoreboard-team-meta">{row.teamName || '—'}</span>
-                          {row.patrolCode ? (
-                            <span className="scoreboard-team-meta subtle">{row.patrolCode}</span>
-                          ) : null}
+                          <strong>{formatPatrolNumber(row.patrolCode)}</strong>
                         </td>
                         <td>{formatPoints(row.totalPoints)}</td>
                         <td>{formatPoints(row.pointsNoT)}</td>
