@@ -108,7 +108,7 @@ function parseAllowedCategories(raw: string | undefined): string[] {
     return [];
   }
   const parts = raw
-    .split(',')
+    .split(/[^A-Za-z0-9]+/)
     .map((part) => part.trim().toUpperCase())
     .filter(Boolean)
     .filter((part) => CATEGORY_SET.has(part));
@@ -129,6 +129,27 @@ function normalizeCell(value: string | undefined): string {
   return String(value).trim();
 }
 
+function normalizeHeaderKey(column: string): string {
+  return column
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function findHeaderIndex(normalizedHeader: string[], ...candidates: string[]): number {
+  for (const candidate of candidates) {
+    const normalized = normalizeHeaderKey(candidate);
+    const idx = normalizedHeader.indexOf(normalized);
+    if (idx !== -1) {
+      return idx;
+    }
+  }
+  return -1;
+}
+
 function parseCsv(text: string): JudgeRow[] {
   const rows = parse(text) as string[][];
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -136,15 +157,14 @@ function parseCsv(text: string): JudgeRow[] {
   }
 
   const [header, ...dataRows] = rows;
-  const normalizedHeader = header.map((column) => column.trim().toLowerCase());
-  const headerIndex = (column: string): number => normalizedHeader.indexOf(column);
+  const normalizedHeader = header.map((column) => normalizeHeaderKey(column));
 
-  const idxStation = headerIndex('stanoviste');
-  const idxFirst = headerIndex('jmeno');
-  const idxLast = headerIndex('prijmeni');
-  const idxEmail = headerIndex('email');
-  const idxPhone = headerIndex('telefon');
-  const idxCategories = headerIndex('allowed_categories');
+  const idxStation = findHeaderIndex(normalizedHeader, 'stanoviste', 'stanoviště', 'station', 'station_code');
+  const idxFirst = findHeaderIndex(normalizedHeader, 'jmeno', 'jméno', 'first_name');
+  const idxLast = findHeaderIndex(normalizedHeader, 'prijmeni', 'příjmení', 'last_name');
+  const idxEmail = findHeaderIndex(normalizedHeader, 'email', 'e-mail');
+  const idxPhone = findHeaderIndex(normalizedHeader, 'telefon', 'phone');
+  const idxCategories = findHeaderIndex(normalizedHeader, 'allowed_categories', 'allowed categories', 'categories');
 
   if (idxStation === -1 || idxFirst === -1 || idxEmail === -1) {
     throw new Error('Sheet must contain columns "stanoviste", "jmeno", "email".');
