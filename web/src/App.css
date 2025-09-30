@@ -715,6 +715,127 @@ textarea {
   gap: 18px;
 }
 
+.score-review {
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.score-review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.score-review-header h3 {
+  margin: 0;
+}
+
+.score-review-table {
+  overflow-x: auto;
+}
+
+.score-review-table table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 420px;
+}
+
+.score-review-table thead th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+}
+
+.score-review-table th,
+.score-review-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+  text-align: left;
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.score-review-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.score-review-input {
+  width: 72px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.score-review-station {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.score-review-code {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0b5346;
+}
+
+.score-review-name {
+  font-size: 13px;
+  color: #475569;
+}
+
+.score-review-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #334155;
+  font-weight: 600;
+}
+
+.score-review-check input {
+  width: 18px;
+  height: 18px;
+}
+
+.score-review-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.score-review-save {
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
+.score-review-status {
+  font-size: 12px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.score-review-row-error {
+  font-size: 12px;
+}
+
+.score-review-editing {
+  background: rgba(253, 230, 138, 0.25);
+}
+
+.score-review-refresh {
+  padding: 10px 16px;
+  font-size: 12px;
+}
+
 .patrol-meta {
   display: flex;
   flex-direction: column;

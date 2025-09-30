@@ -62,6 +62,23 @@ interface PendingOperation {
   lastError?: string;
 }
 
+interface StationScoreRow {
+  stationId: string;
+  stationCode: string;
+  stationName: string;
+  points: number | null;
+  judge: string | null;
+  note: string | null;
+  hasScore: boolean;
+}
+
+interface StationScoreRowState {
+  ok: boolean;
+  draft: string;
+  saving: boolean;
+  error: string | null;
+}
+
 type LegacyPendingSubmission = PendingSubmissionPayload & {
   signature: string;
   signature_payload: string;
@@ -312,6 +329,10 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [startTime, setStartTime] = useState<string | null>(null);
   const [finishTimeInput, setFinishTimeInput] = useState('');
+  const [scoreReviewRows, setScoreReviewRows] = useState<StationScoreRow[]>([]);
+  const [scoreReviewState, setScoreReviewState] = useState<Record<string, StationScoreRowState>>({});
+  const [scoreReviewLoading, setScoreReviewLoading] = useState(false);
+  const [scoreReviewError, setScoreReviewError] = useState<string | null>(null);
 
   const queueKey = useMemo(() => `${QUEUE_KEY_PREFIX}_${stationId}`, [stationId]);
 
@@ -526,6 +547,103 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     [eventId, stationCode],
   );
 
+  const loadScoreReview = useCallback(
+    async (patrolId: string) => {
+      if (!isTargetStation) {
+        setScoreReviewRows([]);
+        setScoreReviewState({});
+        setScoreReviewError(null);
+        setScoreReviewLoading(false);
+        return;
+      }
+
+      setScoreReviewLoading(true);
+      setScoreReviewError(null);
+
+      try {
+        const [stationsRes, scoresRes] = await Promise.all([
+          supabase
+            .from('stations')
+            .select('id, code, name')
+            .eq('event_id', eventId),
+          supabase
+            .from('station_scores')
+            .select('station_id, points, judge, note')
+            .eq('event_id', eventId)
+            .eq('patrol_id', patrolId),
+        ]);
+
+        setScoreReviewLoading(false);
+
+        if (stationsRes.error || scoresRes.error) {
+          console.error('Failed to load station scores for review', stationsRes.error, scoresRes.error);
+          setScoreReviewRows([]);
+          setScoreReviewState({});
+          setScoreReviewError('Nepodařilo se načíst body ostatních stanovišť.');
+          return;
+        }
+
+        const stations = ((stationsRes.data ?? []) as { id: string; code: string; name: string }[]).map((station) => ({
+          id: station.id,
+          code: (station.code || '').trim().toUpperCase(),
+          name: station.name,
+        }));
+
+        const scoreMap = new Map<
+          string,
+          { points: number | null; judge: string | null; note: string | null }
+        >();
+        ((scoresRes.data ?? []) as { station_id: string; points: number | null; judge: string | null; note: string | null }[]).forEach(
+          (row) => {
+            scoreMap.set(row.station_id, {
+              points: typeof row.points === 'number' ? row.points : row.points ?? null,
+              judge: row.judge ?? null,
+              note: row.note ?? null,
+            });
+          },
+        );
+
+        const rows = stations
+          .map<StationScoreRow>((station) => {
+            const existing = scoreMap.get(station.id);
+            return {
+              stationId: station.id,
+              stationCode: station.code,
+              stationName: station.name,
+              points: existing?.points ?? null,
+              judge: existing?.judge ?? null,
+              note: existing?.note ?? null,
+              hasScore: typeof existing?.points === 'number',
+            };
+          })
+          .sort((a, b) => a.stationCode.localeCompare(b.stationCode, 'cs'));
+
+        setScoreReviewRows(rows);
+        setScoreReviewState((prev) => {
+          const next: Record<string, StationScoreRowState> = {};
+          rows.forEach((row) => {
+            const previous = prev[row.stationId];
+            const defaultDraft = row.points !== null ? String(row.points) : '';
+            next[row.stationId] = {
+              ok: previous?.ok ?? true,
+              draft: previous ? (previous.ok ? defaultDraft : previous.draft) : defaultDraft,
+              saving: false,
+              error: null,
+            };
+          });
+          return next;
+        });
+      } catch (error) {
+        setScoreReviewLoading(false);
+        setScoreReviewRows([]);
+        setScoreReviewState({});
+        setScoreReviewError('Nepodařilo se načíst body ostatních stanovišť.');
+        console.error('Failed to load station score review', error);
+      }
+    },
+    [eventId, isTargetStation],
+  );
+
   const initializeFormForPatrol = useCallback(
     (data: Patrol, options?: { arrivedAt?: string | null; waitSeconds?: number | null }) => {
       setPatrol({ ...data });
@@ -551,9 +669,145 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
       setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
 
       void loadTimingData(data.id);
+      void loadScoreReview(data.id);
     },
-    [categoryAnswers, clearWait, isTargetStation, loadTimingData],
+    [categoryAnswers, clearWait, isTargetStation, loadTimingData, loadScoreReview],
   );
+
+  const handleScoreOkToggle = useCallback(
+    (stationId: string, ok: boolean) => {
+      setScoreReviewState((prev) => {
+        const next = { ...prev };
+        const base = scoreReviewRows.find((row) => row.stationId === stationId);
+        const defaultDraft = base && base.points !== null ? String(base.points) : '';
+        const current = prev[stationId];
+        next[stationId] = {
+          ok,
+          draft: ok ? defaultDraft : current?.draft ?? defaultDraft,
+          saving: false,
+          error: null,
+        };
+        return next;
+      });
+    },
+    [scoreReviewRows],
+  );
+
+  const handleScoreDraftChange = useCallback((stationId: string, value: string) => {
+    setScoreReviewState((prev) => {
+      const current = prev[stationId] ?? { ok: false, draft: '', saving: false, error: null };
+      return {
+        ...prev,
+        [stationId]: {
+          ...current,
+          draft: value,
+          error: null,
+        },
+      };
+    });
+  }, []);
+
+  const handleSaveStationScore = useCallback(
+    async (stationId: string) => {
+      if (!patrol) {
+        return;
+      }
+
+      const baseRow = scoreReviewRows.find((row) => row.stationId === stationId);
+      const state = scoreReviewState[stationId];
+
+      if (!baseRow || !state) {
+        return;
+      }
+
+      const trimmed = state.draft.trim();
+      const parsedValue = trimmed === '' ? NaN : Number(trimmed);
+
+      if (!Number.isInteger(parsedValue) || parsedValue < 0 || parsedValue > 12) {
+        setScoreReviewState((prev) => {
+          const previous = prev[stationId] ?? state;
+          return {
+            ...prev,
+            [stationId]: {
+              ...previous,
+              ok: false,
+              draft: previous?.draft ?? state.draft,
+              saving: false,
+              error: 'Body musí být číslo 0–12.',
+            },
+          };
+        });
+        return;
+      }
+
+      setScoreReviewState((prev) => {
+        const previous = prev[stationId] ?? state;
+        return {
+          ...prev,
+          [stationId]: { ...previous, saving: true, error: null },
+        };
+      });
+
+      try {
+        if (baseRow.hasScore) {
+          const { error } = await supabase
+            .from('station_scores')
+            .update({ points: parsedValue })
+            .eq('event_id', eventId)
+            .eq('station_id', stationId)
+            .eq('patrol_id', patrol.id);
+          if (error) {
+            throw error;
+          }
+        } else {
+          const { error } = await supabase.from('station_scores').insert({
+            event_id: eventId,
+            station_id: stationId,
+            patrol_id: patrol.id,
+            points: parsedValue,
+            judge: manifest.judge.displayName,
+          });
+          if (error) {
+            throw error;
+          }
+        }
+
+        pushAlert(`Body pro stanoviště ${baseRow.stationCode || stationId} aktualizovány.`);
+        await loadScoreReview(patrol.id);
+        setScoreReviewState((prev) => {
+          const current = prev[stationId];
+          if (!current) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [stationId]: { ...current, ok: true, saving: false, error: null },
+          };
+        });
+      } catch (error) {
+        console.error('Failed to save station score', error);
+        setScoreReviewState((prev) => {
+          const previous = prev[stationId] ?? state;
+          return {
+            ...prev,
+            [stationId]: {
+              ...previous,
+              saving: false,
+              error: 'Uložení se nezdařilo. Zkus to znovu.',
+            },
+          };
+        });
+        pushAlert('Nepodařilo se uložit body pro vybrané stanoviště.');
+      }
+    },
+    [eventId, loadScoreReview, manifest.judge.displayName, patrol, pushAlert, scoreReviewRows, scoreReviewState],
+  );
+
+  const handleRefreshScoreReview = useCallback(() => {
+    if (patrol) {
+      void loadScoreReview(patrol.id);
+    }
+  }, [loadScoreReview, patrol]);
 
   const handleTicketStateChange = useCallback(
     (id: string, nextState: Ticket['state']) => {
@@ -882,6 +1136,10 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     setFinishAt(null);
     setFinishTimeInput('');
     setStartTime(null);
+    setScoreReviewRows([]);
+    setScoreReviewState({});
+    setScoreReviewError(null);
+    setScoreReviewLoading(false);
     clearWait();
     lastScanRef.current = null;
   }, [clearWait, isTargetStation]);
@@ -1588,48 +1846,163 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
                   </div>
                 ) : null}
                 {stationCode === 'T' ? (
-                  <div className="calc-grid">
-                    <div className="calc-time-card">
-                      <div className="calc-time-header">
-                        <h3>Čas doběhu</h3>
-                        <p className="card-hint">Zapiš čas doběhu na stanovišti. Přepočet vychází ze startovního času.</p>
-                      </div>
-                      <div className="calc-time-input">
-                        <label htmlFor="finish-time-input">Doběh (HH:MM)</label>
-                        <input
-                          id="finish-time-input"
-                          type="time"
-                          value={finishTimeInput}
-                          onChange={(event) => handleFinishTimeChange(event.target.value)}
-                          step={60}
-                          placeholder="hh:mm"
-                        />
-                      </div>
-                      <div className="calc-time-meta">
-                        <div>
-                          <span className="calc-meta-label">Start:</span>
-                          <strong>{formatDateTimeLabel(startTime)}</strong>
+                  <>
+                    <div className="calc-grid">
+                      <div className="calc-time-card">
+                        <div className="calc-time-header">
+                          <h3>Čas doběhu</h3>
+                          <p className="card-hint">Zapiš čas doběhu na stanovišti. Přepočet vychází ze startovního času.</p>
                         </div>
-                        <div>
-                          <span className="calc-meta-label">Čas na trati:</span>
-                          <strong>{timeOnCourse ?? '—'}</strong>
+                        <div className="calc-time-input">
+                          <label htmlFor="finish-time-input">Doběh (HH:MM)</label>
+                          <input
+                            id="finish-time-input"
+                            type="time"
+                            value={finishTimeInput}
+                            onChange={(event) => handleFinishTimeChange(event.target.value)}
+                            step={60}
+                            placeholder="hh:mm"
+                          />
+                        </div>
+                        <div className="calc-time-meta">
+                          <div>
+                            <span className="calc-meta-label">Start:</span>
+                            <strong>{formatDateTimeLabel(startTime)}</strong>
+                          </div>
+                          <div>
+                            <span className="calc-meta-label">Čas na trati:</span>
+                            <strong>{timeOnCourse ?? '—'}</strong>
+                          </div>
                         </div>
                       </div>
+                      {controlChecks.length ? (
+                        <div className="calc-checklist">
+                          <h3>Kontrola vyplnění</h3>
+                          <ul>
+                            {controlChecks.map((item) => (
+                              <li key={item.label} className={item.ok ? 'ok' : 'warn'}>
+                                <span className="status-dot" aria-hidden />
+                                {item.label}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
                     </div>
-                    {controlChecks.length ? (
-                      <div className="calc-checklist">
-                        <h3>Kontrola vyplnění</h3>
-                        <ul>
-                          {controlChecks.map((item) => (
-                            <li key={item.label} className={item.ok ? 'ok' : 'warn'}>
-                              <span className="status-dot" aria-hidden />
-                              {item.label}
-                            </li>
-                          ))}
-                        </ul>
+                    <div className="score-review">
+                      <div className="score-review-header">
+                        <div>
+                          <h3>Kontrola bodů stanovišť</h3>
+                          <p className="card-hint">Zkontroluj body ze všech stanovišť a případně je uprav.</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="ghost score-review-refresh"
+                          onClick={handleRefreshScoreReview}
+                          disabled={scoreReviewLoading}
+                        >
+                          {scoreReviewLoading ? 'Načítám…' : 'Obnovit'}
+                        </button>
                       </div>
-                    ) : null}
-                  </div>
+                      {scoreReviewError ? <p className="error-text">{scoreReviewError}</p> : null}
+                      {!scoreReviewRows.length && !scoreReviewLoading ? (
+                        <p className="card-hint">Pro tuto hlídku zatím nejsou žádné body k zobrazení.</p>
+                      ) : null}
+                      {scoreReviewRows.length ? (
+                        <div className="score-review-table">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Body</th>
+                                <th>Stanoviště</th>
+                                <th>OK</th>
+                                <th>Akce</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {scoreReviewRows.map((row) => {
+                                const state =
+                                  scoreReviewState[row.stationId] ??
+                                  ({
+                                    ok: true,
+                                    draft: row.points !== null ? String(row.points) : '',
+                                    saving: false,
+                                    error: null,
+                                  } satisfies StationScoreRowState);
+                                const draft = state.draft;
+                                const trimmed = draft.trim();
+                                const draftNumber = trimmed === '' ? NaN : Number(trimmed);
+                                const isValid =
+                                  Number.isInteger(draftNumber) && draftNumber >= 0 && draftNumber <= 12;
+                                const dirty =
+                                  !state.ok &&
+                                  (Number.isNaN(draftNumber)
+                                    ? row.points !== null
+                                    : row.points === null
+                                      ? true
+                                      : draftNumber !== row.points);
+                                return (
+                                  <tr key={row.stationId} className={state.ok ? '' : 'score-review-editing'}>
+                                    <td>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={12}
+                                        inputMode="numeric"
+                                        value={draft}
+                                        onChange={(event) => handleScoreDraftChange(row.stationId, event.target.value)}
+                                        disabled={state.ok || state.saving}
+                                        placeholder="—"
+                                        className="score-review-input"
+                                      />
+                                    </td>
+                                    <td>
+                                      <div className="score-review-station">
+                                        <span className="score-review-code">{row.stationCode || '—'}</span>
+                                        <span className="score-review-name">{row.stationName}</span>
+                                      </div>
+                                    </td>
+                                    <td>
+                                      <label className="score-review-check">
+                                        <input
+                                          type="checkbox"
+                                          checked={state.ok}
+                                          onChange={(event) => handleScoreOkToggle(row.stationId, event.target.checked)}
+                                          disabled={state.saving}
+                                        />
+                                        <span>OK</span>
+                                      </label>
+                                    </td>
+                                    <td>
+                                      {state.ok ? (
+                                        <span className="score-review-status">
+                                          {row.hasScore ? 'Potvrzeno' : 'Bez bodů'}
+                                        </span>
+                                      ) : (
+                                        <div className="score-review-actions">
+                                          <button
+                                            type="button"
+                                            className="ghost score-review-save"
+                                            onClick={() => handleSaveStationScore(row.stationId)}
+                                            disabled={state.saving || !isValid || !dirty}
+                                          >
+                                            {state.saving ? 'Ukládám…' : 'Uložit'}
+                                          </button>
+                                          {state.error ? (
+                                            <span className="error-text score-review-row-error">{state.error}</span>
+                                          ) : null}
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : null}
+                    </div>
+                  </>
                 ) : null}
                 <label>
                   Poznámka
