@@ -72,12 +72,13 @@ authRouter.post('/login', async (req, res) => {
   }
 
   const { email, password, devicePublicKey } = parse.data;
-  const lowerEmail = email.toLowerCase();
+  const normalizedEmail = email.trim();
 
   const { data: judge, error: judgeError } = await supabase
     .from('judges')
     .select('*')
-    .eq('email', lowerEmail)
+    .ilike('email', normalizedEmail)
+    .limit(1)
     .maybeSingle();
 
   if (judgeError || !judge) {
