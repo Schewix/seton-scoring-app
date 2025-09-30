@@ -290,7 +290,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
   const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [manualCode, setManualCode] = useState('');
-  const [scanActive, setScanActive] = useState(true);
+  const [scanActive, setScanActive] = useState(false);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [tick, setTick] = useState(0);
   const [loadingAnswers, setLoadingAnswers] = useState(false);
@@ -1351,6 +1351,18 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
               <p>Naskenuj QR kód nebo zadej kód ručně. Po načtení se formulář otevře automaticky.</p>
             </div>
             <div className="scanner-wrapper">
+              <div className="scanner-controls">
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setScanActive((prev) => !prev)}
+                >
+                  {scanActive ? 'Vypnout skener' : 'Zapnout skener'}
+                </button>
+                <span className={`scanner-status ${scanActive ? 'active' : 'inactive'}`}>
+                  {scanActive ? 'Skener je zapnutý' : 'Skener je vypnutý'}
+                </span>
+              </div>
               <QRScanner active={scanActive} onResult={handleScanResult} onError={(err) => console.error(err)} />
               <div className="manual-entry">
                 <PatrolCodeInput
@@ -1384,7 +1396,11 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
                   {isPatrolInQueue ? <span className="scanner-note">Hlídka už čeká ve frontě.</span> : null}
                 </div>
               ) : (
-                <p className="scanner-placeholder">Nejprve naskenuj QR kód hlídky.</p>
+                <p className="scanner-placeholder">
+                  {scanActive
+                    ? 'Naskenuj QR kód hlídky nebo zadej kód ručně.'
+                    : 'Zapni skener a naskenuj QR kód nebo zadej kód ručně.'}
+                </p>
               )}
             </div>
           </section>
