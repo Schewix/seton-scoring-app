@@ -3,12 +3,40 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { AuthProvider } from './auth/context';
 import { registerSW } from 'virtual:pwa-register';
+import setonLogo from './assets/seton-logo.png';
+
+function applyBranding() {
+  if (document.title !== 'Seton') {
+    document.title = 'Seton';
+  }
+
+  const existingLinks = Array.from(
+    document.querySelectorAll<HTMLLinkElement>("link[rel~='icon']"),
+  );
+
+  if (existingLinks.length > 0) {
+    existingLinks.forEach((link) => {
+      link.rel = 'icon';
+      link.type = 'image/png';
+      link.href = setonLogo;
+    });
+    return;
+  }
+
+  const link = document.createElement('link');
+  link.rel = 'icon';
+  link.type = 'image/png';
+  link.href = setonLogo;
+  document.head.appendChild(link);
+}
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 
 if ('serviceWorker' in navigator) {
   registerSW({ immediate: true });
 }
+
+applyBranding();
 
 const params = new URLSearchParams(window.location.search);
 const view = params.get('view');
