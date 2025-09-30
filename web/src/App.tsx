@@ -1249,6 +1249,24 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     return new Date(earliest).toISOString();
   }, [pendingItems]);
 
+  useEffect(() => {
+    if (!nextAttemptAtIso) {
+      return undefined;
+    }
+
+    const targetTime = new Date(nextAttemptAtIso).getTime();
+    if (!Number.isFinite(targetTime)) {
+      return undefined;
+    }
+
+    const delay = Math.max(0, targetTime - Date.now());
+    const timeout = window.setTimeout(() => {
+      void syncQueue();
+    }, delay);
+
+    return () => window.clearTimeout(timeout);
+  }, [nextAttemptAtIso, syncQueue]);
+
   const timeOnCourse = useMemo(() => {
     if (!startTime || !finishAt) {
       return null;
