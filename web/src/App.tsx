@@ -75,6 +75,7 @@ const QUEUE_KEY_PREFIX = 'web_pending_ops_v1';
 const LEGACY_QUEUE_KEY_PREFIX = 'web_pending_station_submissions_v1';
 
 import { env } from './envVars';
+import { getStationPath, isStationAppPath } from './routing';
 
 const isAdminMode =
   typeof env.VITE_ADMIN_MODE === 'string' && ['1', 'true', 'yes', 'on'].includes(env.VITE_ADMIN_MODE.toLowerCase());
@@ -463,7 +464,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const desiredPath = `/stations/${encodeURIComponent(stationId)}`;
+      const desiredPath = getStationPath(stationId);
       if (window.location.pathname !== desiredPath) {
         window.history.replaceState({}, '', desiredPath + window.location.search + window.location.hash);
       }
@@ -1655,10 +1656,9 @@ export function useStationRouting(status: AuthStatus) {
         return;
       }
 
-      const canonicalPath = `/stations/${stationId}`;
-      const altPath = `/stanoviste/${stationId}`;
+      const canonicalPath = getStationPath(stationId);
 
-      if (pathname !== canonicalPath && pathname !== altPath) {
+      if (pathname !== canonicalPath) {
         window.history.replaceState(window.history.state, '', `${canonicalPath}${search}${hash}`);
       }
       return;
@@ -1670,7 +1670,7 @@ export function useStationRouting(status: AuthStatus) {
       status.state === 'password-change-required' ||
       status.state === 'error'
     ) {
-      if (/^\/(?:stations|stanoviste)\//i.test(pathname)) {
+      if (isStationAppPath(pathname)) {
         window.history.replaceState(window.history.state, '', '/');
       }
     }
