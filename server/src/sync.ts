@@ -151,7 +151,7 @@ async function processSubmission(
   return <OperationResult>{ id: operation.id, status: 'done' };
 }
 
-syncRouter.post('/sync', async (req: Request, res: Response) => {
+async function handleSyncRequest(req: Request, res: Response) {
   const authHeader = req.header('authorization');
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Missing token' });
@@ -250,8 +250,10 @@ syncRouter.post('/sync', async (req: Request, res: Response) => {
       results.push({ id: operation.id, status: 'failed', error: message });
     }
   }
-
   res.json({ results });
-});
+}
+
+syncRouter.post('/sync', handleSyncRequest);
+syncRouter.post('/auth/sync', handleSyncRequest);
 
 export default syncRouter;
