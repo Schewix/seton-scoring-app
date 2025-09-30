@@ -142,273 +142,267 @@ function formatCategoryLabel(category: string, sex?: string) {
 }
 
 function formatPatrolNumber(patrolCode: string | null) {
-  if (!patrolCode) return '—';
-  const normalized = patrolCode.trim();
-  if (!normalized) return '—';
-  return normalized.toUpperCase();
-}
+  function formatPatrolNumber(patrolCode: string | null) {
+    if (!patrolCode) return '—';
+    const normalized = patrolCode.trim();
+    if (!normalized) return '—';
+    return normalized.toUpperCase();
+  }
 
-function RankCell({ position, patrolCode }: { position: number; patrolCode: string | null }) {
-  return (
-    <td className="scoreboard-rank">
-      <span className="scoreboard-rank__position">{position}</span>
-      <span className="scoreboard-rank__code">{formatPatrolNumber(patrolCode)}</span>
-    </td>
-  );
-}
+  function ScoreboardApp() {
+    const [overall, setOverall] = useState<Result[]>([]);
+    const [ranked, setRanked] = useState<RankedResult[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+    const [eventName, setEventName] = useState<string>('');
+    const isMountedRef = useRef(true);
 
-function ScoreboardApp() {
-  const [overall, setOverall] = useState<Result[]>([]);
-  const [ranked, setRanked] = useState<RankedResult[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
-  const [eventName, setEventName] = useState<string>('');
-  const isMountedRef = useRef(true);
+    useEffect(() => {
+      return () => {
+        isMountedRef.current = false;
+      };
+    }, []);
 
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data, error } = await supabase
-          .from('events')
-          .select('name')
-          .eq('id', rawEventId)
-          .limit(1);
-        if (!isMountedRef.current) return;
-        if (error) {
-          console.error('Failed to load event name', error);
+    useEffect(() => {
+      (async () => {
+        try {
+          const { data, error } = await supabase
+            .from('events')
+            .select('name')
+            .eq('id', rawEventId)
+            .limit(1);
+          if (!isMountedRef.current) return;
+          if (error) {
+            console.error('Failed to load event name', error);
+            setEventName('');
+            return;
+          }
+          const row = Array.isArray(data) && data.length ? data[0] : null;
+          setEventName((row as { name?: string } | null)?.name ?? '');
+        } catch (err) {
+          if (!isMountedRef.current) return;
+          console.error('Failed to load event name', err);
           setEventName('');
+        }
+      })();
+    }, [rawEventId]);
+
+    const loadData = useCallback(async () => {
+      setRefreshing(true);
+      try {
+        const [overallRes, rankedRes] = await Promise.all([
+          supabase
+            .from('results')
+            .select('*')
+            .eq('event_id', rawEventId)
+            .order('total_points', { ascending: false })
+            .order('points_no_T', { ascending: false })
+            .order('pure_seconds', { ascending: true }),
+          supabase
+            .from('results_ranked')
+            .select('*')
+            .eq('event_id', rawEventId)
+            .order('category', { ascending: true })
+            .order('sex', { ascending: true })
+            .order('rank_in_bracket', { ascending: true }),
+        ]);
+
+        if (!isMountedRef.current) {
           return;
         }
-        const row = Array.isArray(data) && data.length ? data[0] : null;
-        setEventName((row as { name?: string } | null)?.name ?? '');
+
+        const overallError = overallRes.error;
+        const rankedError = rankedRes.error;
+
+        if (overallRes.data) {
+          setOverall(overallRes.data.map(normaliseResult));
+        } else {
+          setOverall([]);
+        }
+
+        if (rankedRes.data) {
+          setRanked(rankedRes.data.map(normaliseRankedResult));
+        } else {
+          setRanked([]);
+        }
+
+        if (overallError && rankedError) {
+          console.error('Failed to load scoreboard data', overallError, rankedError);
+          setError('Nepodařilo se načíst výsledky. Zkuste to prosím znovu.');
+        } else if (overallError) {
+          console.error('Failed to load overall standings', overallError);
+          setError('Nepodařilo se načíst celkové pořadí.');
+        } else if (rankedError) {
+          console.error('Failed to load ranked standings', rankedError);
+          setError('Nepodařilo se načíst pořadí podle kategorií.');
+        } else {
+          setError(null);
+        }
+
+        setLastUpdatedAt(new Date());
+        setLoading(false);
+        setRefreshing(false);
       } catch (err) {
+        console.error('Failed to load scoreboard data', err);
         if (!isMountedRef.current) return;
-        console.error('Failed to load event name', err);
-        setEventName('');
-      }
-    })();
-  }, [rawEventId]);
-
-  const loadData = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      const [overallRes, rankedRes] = await Promise.all([
-        supabase
-          .from('results')
-          .select('*')
-          .eq('event_id', rawEventId)
-          .order('total_points', { ascending: false })
-          .order('points_no_T', { ascending: false })
-          .order('pure_seconds', { ascending: true }),
-        supabase
-          .from('results_ranked')
-          .select('*')
-          .eq('event_id', rawEventId)
-          .order('category', { ascending: true })
-          .order('sex', { ascending: true })
-          .order('rank_in_bracket', { ascending: true }),
-      ]);
-
-      if (!isMountedRef.current) {
-        return;
-      }
-
-      const overallError = overallRes.error;
-      const rankedError = rankedRes.error;
-
-      if (overallRes.data) {
-        setOverall(overallRes.data.map(normaliseResult));
-      } else {
-        setOverall([]);
-      }
-
-      if (rankedRes.data) {
-        setRanked(rankedRes.data.map(normaliseRankedResult));
-      } else {
-        setRanked([]);
-      }
-
-      if (overallError && rankedError) {
-        console.error('Failed to load scoreboard data', overallError, rankedError);
         setError('Nepodařilo se načíst výsledky. Zkuste to prosím znovu.');
-      } else if (overallError) {
-        console.error('Failed to load overall standings', overallError);
-        setError('Nepodařilo se načíst celkové pořadí.');
-      } else if (rankedError) {
-        console.error('Failed to load ranked standings', rankedError);
-        setError('Nepodařilo se načíst pořadí podle kategorií.');
-      } else {
-        setError(null);
+        setOverall([]);
+        setRanked([]);
+        setLoading(false);
+        setRefreshing(false);
       }
+    }, [rawEventId]);
 
-      setLastUpdatedAt(new Date());
-      setLoading(false);
-      setRefreshing(false);
-    } catch (err) {
-      console.error('Failed to load scoreboard data', err);
-      if (!isMountedRef.current) return;
-      setError('Nepodařilo se načíst výsledky. Zkuste to prosím znovu.');
-      setOverall([]);
-      setRanked([]);
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [rawEventId]);
+    useEffect(() => {
+      let interval: number | undefined;
 
-  useEffect(() => {
-    let interval: number | undefined;
+      const initialise = async () => {
+        await loadData();
+        if (!isMountedRef.current) return;
 
-    const initialise = async () => {
-      await loadData();
-      if (!isMountedRef.current) return;
+        interval = window.setInterval(() => {
+          loadData();
+        }, REFRESH_INTERVAL_MS);
+      };
 
-      interval = window.setInterval(() => {
-        loadData();
-      }, REFRESH_INTERVAL_MS);
-    };
+      initialise();
 
-    initialise();
+      return () => {
+        if (interval) {
+          window.clearInterval(interval);
+        }
+      };
+    }, [loadData]);
 
-    return () => {
-      if (interval) {
-        window.clearInterval(interval);
-      }
-    };
-  }, [loadData]);
+    useEffect(() => {
+      document.title = 'Zelena liga';
+    }, []);
 
-  useEffect(() => {
-    document.title = 'Zelena liga';
-  }, []);
+    const groupedRanked = useMemo(() => {
+      const groups = new Map<string, RankedGroup>();
 
-  const groupedRanked = useMemo(() => {
-    const groups = new Map<string, RankedGroup>();
+      ranked.forEach((item) => {
+        const key = `${item.category}__${item.sex}`;
+        if (!groups.has(key)) {
+          groups.set(key, { key, category: item.category, sex: item.sex, items: [] });
+        }
+        groups.get(key)!.items.push(item);
+      });
 
-    ranked.forEach((item) => {
-      const key = `${item.category}__${item.sex}`;
-      if (!groups.has(key)) {
-        groups.set(key, { key, category: item.category, sex: item.sex, items: [] });
-      }
-      groups.get(key)!.items.push(item);
-    });
+      return Array.from(groups.values()).sort((a, b) => compareBrackets(a.category, a.sex, b.category, b.sex));
+    }, [ranked]);
 
-    return Array.from(groups.values()).sort((a, b) => compareBrackets(a.category, a.sex, b.category, b.sex));
-  }, [ranked]);
+    const handleRefresh = useCallback(() => {
+      loadData();
+    }, [loadData]);
 
-  const handleRefresh = useCallback(() => {
-    loadData();
-  }, [loadData]);
-
-  return (
-    <div className="scoreboard-app">
-      <header className="scoreboard-header">
-        <div>
-          <h1>Výsledkový přehled</h1>
-          {eventName ? <p className="scoreboard-subtitle">{eventName}</p> : null}
-          {!eventName ? <p className="scoreboard-subtitle subtle">{rawEventId}</p> : null}
-          <p className="scoreboard-subtitle">
-            Data z pohledů Supabase <code>results</code> a <code>results_ranked</code>.
-          </p>
-        </div>
-        <div className="scoreboard-meta">
-          {lastUpdatedAt && (
-            <span>
-              Aktualizováno: {lastUpdatedAt.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </span>
-          )}
-          <button type="button" onClick={handleRefresh} disabled={refreshing}>
-            {refreshing ? 'Aktualizuji…' : 'Aktualizovat'}
-          </button>
-        </div>
-      </header>
-
-      {error && <div className="scoreboard-error">{error}</div>}
-
-      <section className="scoreboard-section">
-        <h2>Celkové pořadí</h2>
-        {loading && !overall.length ? (
-          <div className="scoreboard-placeholder">Načítám data…</div>
-        ) : overall.length ? (
-          <table className="scoreboard-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Hlídka</th>
-                <th>Kategorie</th>
-                <th>Body</th>
-                <th>Body bez T</th>
-                <th>Čistý čas</th>
-              </tr>
-            </thead>
-            <tbody>
-              {overall.map((row, index) => (
-                <tr key={row.patrolId}>
-                  <RankCell position={index + 1} patrolCode={row.patrolCode} />
-                  <td className="scoreboard-team">
-                    <strong>{formatPatrolNumber(row.patrolCode)}</strong>
-                  </td>
-                  <td>{formatCategoryLabel(row.category, row.sex)}</td>
-                  <td>{formatPoints(row.totalPoints)}</td>
-                  <td>{formatPoints(row.pointsNoT)}</td>
-                  <td>{formatSeconds(row.pureSeconds)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="scoreboard-placeholder">Zatím nejsou žádné výsledky.</div>
-        )}
-      </section>
-
-      <section className="scoreboard-section">
-        <h2>Pořadí podle kategorií</h2>
-        {loading && !groupedRanked.length ? (
-          <div className="scoreboard-placeholder">Načítám data…</div>
-        ) : groupedRanked.length ? (
-          <div className="scoreboard-groups">
-            {groupedRanked.map((group) => (
-              <div key={group.key} className="scoreboard-group">
-                <h3>{formatCategoryLabel(group.category, group.sex)}</h3>
-                <table className="scoreboard-table scoreboard-table--compact">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Hlídka</th>
-                      <th>Body</th>
-                      <th>Body bez T</th>
-                      <th>Čistý čas</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.items.map((row) => (
-                      <tr key={row.patrolId}>
-                        <RankCell position={row.rankInBracket} patrolCode={row.patrolCode} />
-                        <td className="scoreboard-team">
-                          <strong>{formatPatrolNumber(row.patrolCode)}</strong>
-                        </td>
-                        <td>{formatPoints(row.totalPoints)}</td>
-                        <td>{formatPoints(row.pointsNoT)}</td>
-                        <td>{formatSeconds(row.pureSeconds)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ))}
+    return (
+      <div className="scoreboard-app">
+        <header className="scoreboard-header">
+          <div>
+            <h1>Výsledkový přehled</h1>
+            {eventName ? <p className="scoreboard-subtitle">{eventName}</p> : null}
+            {!eventName ? <p className="scoreboard-subtitle subtle">{rawEventId}</p> : null}
+            <p className="scoreboard-subtitle">
+              Data z pohledů Supabase <code>results</code> a <code>results_ranked</code>.
+            </p>
           </div>
-        ) : (
-          <div className="scoreboard-placeholder">Zatím nejsou žádné výsledky.</div>
-        )}
-      </section>
-    </div>
-  );
-}
+          <div className="scoreboard-meta">
+            {lastUpdatedAt && (
+              <span>
+                Aktualizováno: {lastUpdatedAt.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            )}
+            <button type="button" onClick={handleRefresh} disabled={refreshing}>
+              {refreshing ? 'Aktualizuji…' : 'Aktualizovat'}
+            </button>
+          </div>
+        </header>
 
-export default ScoreboardApp;
+        {error && <div className="scoreboard-error">{error}</div>}
+
+        <section className="scoreboard-section">
+          <h2>Celkové pořadí</h2>
+          {loading && !overall.length ? (
+            <div className="scoreboard-placeholder">Načítám data…</div>
+          ) : overall.length ? (
+            <table className="scoreboard-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Hlídka</th>
+                  <th>Kategorie</th>
+                  <th>Body</th>
+                  <th>Body bez T</th>
+                  <th>Čistý čas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {overall.map((row, index) => (
+                  <tr key={row.patrolId}>
+                    <RankCell position={index + 1} patrolCode={row.patrolCode} />
+                    <td className="scoreboard-team">
+                      <strong>{formatPatrolNumber(row.patrolCode)}</strong>
+                      <strong>{formatPatrolNumber(row.patrolCode)}</strong>
+                    </td>
+                    <td>{formatCategoryLabel(row.category, row.sex)}</td>
+                    <td>{formatPoints(row.totalPoints)}</td>
+                    <td>{formatPoints(row.pointsNoT)}</td>
+                    <td>{formatSeconds(row.pureSeconds)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="scoreboard-placeholder">Zatím nejsou žádné výsledky.</div>
+          )}
+        </section>
+
+        <section className="scoreboard-section">
+          <h2>Pořadí podle kategorií</h2>
+          {loading && !groupedRanked.length ? (
+            <div className="scoreboard-placeholder">Načítám data…</div>
+          ) : groupedRanked.length ? (
+            <div className="scoreboard-groups">
+              {groupedRanked.map((group) => (
+                <div key={group.key} className="scoreboard-group">
+                  <h3>{formatCategoryLabel(group.category, group.sex)}</h3>
+                  <table className="scoreboard-table scoreboard-table--compact">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Hlídka</th>
+                        <th>Body</th>
+                        <th>Body bez T</th>
+                        <th>Čistý čas</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.items.map((row) => (
+                        <tr key={row.patrolId}>
+                          <RankCell position={row.rankInBracket} patrolCode={row.patrolCode} />
+                          <td className="scoreboard-team">
+                            <strong>{formatPatrolNumber(row.patrolCode)}</strong>
+                            <strong>{formatPatrolNumber(row.patrolCode)}</strong>
+                          </td>
+                          <td>{formatPoints(row.totalPoints)}</td>
+                          <td>{formatPoints(row.pointsNoT)}</td>
+                          <td>{formatSeconds(row.pureSeconds)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="scoreboard-placeholder">Zatím nejsou žádné výsledky.</div>
+          )}
+        </section>
+      </div>
+    );
+  }
+
+  export default ScoreboardApp;
