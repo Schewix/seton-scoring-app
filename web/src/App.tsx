@@ -1623,8 +1623,48 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
   );
 }
 
+export function useStationRouting(status: AuthStatus) {
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const pathname = window.location.pathname;
+    const search = window.location.search ?? '';
+    const hash = window.location.hash ?? '';
+
+    if (status.state === 'authenticated') {
+      const stationId = status.manifest.station.id;
+      if (!stationId) {
+        return;
+      }
+
+      const canonicalPath = `/stations/${stationId}`;
+      const altPath = `/stanoviste/${stationId}`;
+
+      if (pathname !== canonicalPath && pathname !== altPath) {
+        window.history.replaceState(window.history.state, '', `${canonicalPath}${search}${hash}`);
+      }
+      return;
+    }
+
+    if (
+      status.state === 'unauthenticated' ||
+      status.state === 'locked' ||
+      status.state === 'password-change-required' ||
+      status.state === 'error'
+    ) {
+      if (/^\/(?:stations|stanoviste)\//i.test(pathname)) {
+        window.history.replaceState(window.history.state, '', '/');
+      }
+    }
+  }, [status]);
+}
+
 function App() {
   const { status, refreshManifest } = useAuth();
+
+  useStationRouting(status);
 
   if (status.state === 'loading') {
     return (
