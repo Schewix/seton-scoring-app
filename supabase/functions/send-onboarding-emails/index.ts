@@ -19,7 +19,7 @@ type OnboardingEvent = {
 };
 
 async function sendEmail(to: string, password: string) {
-  const from = "Seton <noreply@your-domain.tld>"; // TODO: nastav si vlastní odesílatele/doménu v Resend
+  const from = "Seton <noreply@resend.dev>"; // sandbox sender for testing without own domain
   const subject = "Váš účet rozhodčího na Seton";
   const html = `
     <p>Dobrý den,</p>
