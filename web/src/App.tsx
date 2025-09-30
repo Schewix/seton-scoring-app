@@ -723,7 +723,7 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     setAnswersError('');
     setAutoScore({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
     setUseTargetScoring(isTargetStation);
-    setScanActive(true);
+    setScanActive(false);
     setManualCode('');
     setArrivedAt(null);
     setFinishAt(null);
