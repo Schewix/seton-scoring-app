@@ -1220,8 +1220,13 @@ textarea {
 
 .ticket-meta {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 0.5rem;
-  align-items: center;
+}
+
+.ticket-meta > span {
+  font-variant-numeric: tabular-nums;
 }
 
 .ticket-meta button {
@@ -1232,6 +1237,19 @@ textarea {
   background: rgba(255, 255, 255, 0.7);
   color: #0b5346;
   cursor: pointer;
+  width: 100%;
+  justify-content: center;
+}
+
+@media (min-width: 640px) {
+  .ticket-meta {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .ticket-meta button {
+    width: auto;
+  }
 }
 
 .tickets-next {
