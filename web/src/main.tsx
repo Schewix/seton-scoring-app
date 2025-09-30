@@ -3,11 +3,11 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { AuthProvider } from './auth/context';
 import { registerSW } from 'virtual:pwa-register';
-import setonLogo from './assets/seton-logo.png';
+import zelenaLigaLogo from './assets/znak_SPTO_transparent.png';
 
 function applyBranding() {
-  if (document.title !== 'Seton') {
-    document.title = 'Seton';
+  if (document.title !== 'Zelena liga') {
+    document.title = 'Zelena liga';
   }
 
   const existingLinks = Array.from(
@@ -18,7 +18,7 @@ function applyBranding() {
     existingLinks.forEach((link) => {
       link.rel = 'icon';
       link.type = 'image/png';
-      link.href = setonLogo;
+      link.href = zelenaLigaLogo;
     });
     return;
   }
@@ -26,7 +26,7 @@ function applyBranding() {
   const link = document.createElement('link');
   link.rel = 'icon';
   link.type = 'image/png';
-  link.href = setonLogo;
+  link.href = zelenaLigaLogo;
   document.head.appendChild(link);
 }
 

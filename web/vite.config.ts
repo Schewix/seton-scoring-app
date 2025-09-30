@@ -12,9 +12,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'Setonův závod - Stanoviště',
-        short_name: 'Seton Stanoviště',
-        description: 'Offline scoring aplikace pro rozhodčí Setonova závodu.',
+        name: 'Zelená liga - Stanoviště',
+        short_name: 'Zelená liga',
+        description: 'Offline scoring aplikace pro rozhodčí Zelené ligy.',
         theme_color: '#0b5d44',
         background_color: '#0b5d44',
         display: 'standalone',
