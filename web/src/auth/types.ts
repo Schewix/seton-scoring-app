@@ -1,4 +1,4 @@
-export interface LoginResponse {
+export interface LoginSuccessResponse {
   access_token: string;
   access_token_expires_in: number;
   refresh_token: string;
@@ -7,6 +7,14 @@ export interface LoginResponse {
   manifest: StationManifest;
   patrols: PatrolSummary[];
 }
+
+export interface LoginRequiresPasswordChangeResponse {
+  id?: string;
+  must_change_password: true;
+  email?: string | null;
+}
+
+export type LoginResponse = LoginSuccessResponse | LoginRequiresPasswordChangeResponse;
 
 export interface StationManifest {
   judge: {
@@ -54,6 +62,7 @@ export type AuthStatus =
   | { state: 'locked'; requiresPin: boolean }
   | { state: 'unauthenticated' }
   | { state: 'error'; message: string }
+  | { state: 'password-change-required'; email: string; judgeId?: string; pendingPin?: string }
   | {
       state: 'authenticated';
       manifest: StationManifest;

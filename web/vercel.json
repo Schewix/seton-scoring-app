@@ -5,6 +5,10 @@
       "destination": "/api/auth/login"
     },
     {
+      "source": "/auth/change-password",
+      "destination": "/api/auth/change-password"
+    },
+    {
       "source": "/auth/(.*)",
       "destination": "https://vdkbdnxkpeeqxnruwiah.supabase.co/functions/v1/$1"
     },
