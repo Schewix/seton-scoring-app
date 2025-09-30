@@ -18,7 +18,7 @@ type OnboardingEvent = {
   metadata: Record<string, unknown> | null;
 };
 
-async function sendEmail(to: string, password: string) {
+async function sendEmail(to: string, password: string): Promise<string> {
   const from = "Seton <noreply@resend.dev>"; // sandbox sender for testing without own domain
   const subject = "Váš účet rozhodčího na Seton";
   const html = `
@@ -47,6 +47,10 @@ async function sendEmail(to: string, password: string) {
     const text = await resp.text();
     throw new Error(`Resend error ${resp.status}: ${text}`);
   }
+
+  const body = await resp.json().catch(() => ({} as Record<string, unknown>));
+  const messageId = typeof body?.id === "string" ? body.id : "";
+  return messageId;
 }
 
 Deno.serve(async (req) => {
@@ -112,19 +116,29 @@ Deno.serve(async (req) => {
 
     try {
       if (!dryRun) {
-        await sendEmail(email, password);
+        const messageId = await sendEmail(email, password);
 
         // označíme jako odeslané (metadata.sent=true, metadata.sent_at=now)
-        const newMetadata = { ...md, sent: true, sent_at: new Date().toISOString() };
+        const { password: _pw, ...restMd } = md as Record<string, unknown>;
+        const newMetadata = { 
+          ...restMd, 
+          sent: true, 
+          sent_at: new Date().toISOString(),
+          provider: "resend",
+          message_id: messageId
+        };
         const { error: updErr } = await supabase
           .from("judge_onboarding_events")
           .update({ metadata: newMetadata })
           .eq("id", ev.id);
 
         if (updErr) throw new Error(`Update failed: ${updErr.message}`);
-      }
 
-      summary.sent += 1;
+        summary.sent += 1;
+        console.log(`Onboarding email sent: ${email} (message_id=${messageId})`);
+      } else {
+        summary.sent += 1;
+      }
     } catch (e) {
       summary.failed += 1;
       summary.errors.push(`id=${ev.id} email=${email}: ${e instanceof Error ? e.message : String(e)}`);
