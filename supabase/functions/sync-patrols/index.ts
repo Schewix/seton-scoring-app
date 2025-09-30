@@ -383,6 +383,17 @@ function buildRows(
   return results;
 }
 
+function messageFromError(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') {
+      return message;
+    }
+  }
+
+  return String(error);
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') {
     return new Response('Method Not Allowed', { status: 405 });
@@ -406,7 +417,7 @@ Deno.serve(async (req) => {
     }
   } catch (error) {
     console.error('Failed to fetch or parse CSV', error);
-    return new Response(JSON.stringify({ error: String(error?.message ?? error) }), {
+    return new Response(JSON.stringify({ error: messageFromError(error) }), {
       status: 502,
       headers: { 'Content-Type': 'application/json' },
     });
@@ -422,7 +433,7 @@ Deno.serve(async (req) => {
     patrolRows = buildRows(sources, csvRecords, EVENT_ID, existingCodes);
   } catch (error) {
     console.error('Failed to build patrol rows', error);
-    return new Response(JSON.stringify({ error: String(error?.message ?? error) }), {
+    return new Response(JSON.stringify({ error: messageFromError(error) }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
     });
@@ -443,7 +454,7 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error('Failed to upsert data', error);
-    return new Response(JSON.stringify({ error: String(error?.message ?? error) }), {
+    return new Response(JSON.stringify({ error: messageFromError(error) }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
