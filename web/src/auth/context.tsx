@@ -179,22 +179,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     encryptedDeviceKey: { ciphertext: string; iv: string; deviceSalt: string };
   } | null>(null);
 
-  useInitialization(async (state) => {
-    if (state.state === 'locked' || state.state === 'unauthenticated') {
-      const data = await bootstrap();
-      if (data) {
-        setCachedData({
-          manifest: data.manifest,
-          patrols: data.patrols,
-          tokens: data.tokens,
-          encryptedDeviceKey: data.encryptedDeviceKey,
-        });
+  const handleInitializationState = useCallback(
+    async (state: AuthStatus) => {
+      if (state.state === 'locked' || state.state === 'unauthenticated') {
+        const data = await bootstrap();
+        if (data) {
+          setCachedData({
+            manifest: data.manifest,
+            patrols: data.patrols,
+            tokens: data.tokens,
+            encryptedDeviceKey: data.encryptedDeviceKey,
+          });
+        }
+      } else if (state.state === 'error') {
+        setCachedData(null);
       }
-    } else if (state.state === 'error') {
-      setCachedData(null);
-    }
-    setStatus(state);
-  });
+      setStatus(state);
+    },
+    [setCachedData, setStatus],
+  );
+
+  useInitialization(handleInitializationState);
 
   const login = useCallback(
     async ({ email, password, pin }: { email: string; password: string; pin?: string }) => {
