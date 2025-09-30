@@ -175,12 +175,13 @@ function ScoreboardApp() {
   }, []);
 
   useEffect(() => {
-    supabase
-      .from('events')
-      .select('name')
-      .eq('id', rawEventId)
-      .limit(1)
-      .then(({ data, error }) => {
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('events')
+          .select('name')
+          .eq('id', rawEventId)
+          .limit(1);
         if (!isMountedRef.current) return;
         if (error) {
           console.error('Failed to load event name', error);
@@ -189,10 +190,12 @@ function ScoreboardApp() {
         }
         const row = Array.isArray(data) && data.length ? data[0] : null;
         setEventName((row as { name?: string } | null)?.name ?? '');
-      })
-      .catch((err) => {
+      } catch (err) {
+        if (!isMountedRef.current) return;
         console.error('Failed to load event name', err);
-      });
+        setEventName('');
+      }
+    })();
   }, [rawEventId]);
 
   const loadData = useCallback(async () => {
@@ -322,7 +325,7 @@ function ScoreboardApp() {
             </span>
           )}
           <button type="button" onClick={handleRefresh} disabled={refreshing}>
-            {refreshing ? 'Aktualizuji…' : 'Aktualizovat' }
+            {refreshing ? 'Aktualizuji…' : 'Aktualizovat'}
           </button>
         </div>
       </header>

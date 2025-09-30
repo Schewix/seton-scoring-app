@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import localforage from 'localforage';
@@ -120,11 +120,11 @@ vi.mock('../supabaseClient', () => {
                   data:
                     mockedStartTime !== null
                       ? [
-                          {
-                            start_time: mockedStartTime,
-                            finish_time: mockedFinishTime,
-                          },
-                        ]
+                        {
+                          start_time: mockedStartTime,
+                          finish_time: mockedFinishTime,
+                        },
+                      ]
                       : [],
                   error: null,
                 }),
@@ -294,8 +294,9 @@ function createSelectResult<T>(data: T, error: unknown = null) {
   };
 }
 
-let timeoutSpy: vi.SpyInstance<typeof setTimeout> | undefined;
-let intervalSpy: vi.SpyInstance<typeof setInterval> | undefined;
+// Loosened typing to avoid Vitest version-specific type mismatches
+let timeoutSpy: any;
+let intervalSpy: any;
 
 describe('station workflow', () => {
   beforeEach(async () => {
