@@ -39,6 +39,10 @@ async function sendEmail(to: string, password: string): Promise<string> {
     <p>Děkujeme.</p>
   `;
 
+  const ac = new AbortController();
+  const FETCH_TIMEOUT_MS = 1500; // keep requests snappy in cron
+  const fetchTimer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+
   const resp = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -53,11 +57,14 @@ async function sendEmail(to: string, password: string): Promise<string> {
       text,
       reply_to: replyTo,
     }),
+    signal: ac.signal,
   });
 
+  clearTimeout(fetchTimer);
+
   if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Resend error ${resp.status}: ${text}`);
+    const bodyTxt = await resp.text().catch(() => "");
+    throw new Error(`Resend error status=${resp.status} body=${bodyTxt || "<no body>"} aborted=${ac.signal.aborted}`);
   }
 
   const body = await resp.json().catch(() => ({} as Record<string, unknown>));
@@ -81,6 +88,12 @@ Deno.serve(async (req) => {
   const dryRun = url.searchParams.get("dry_run") === "true";
 
   const supabase = createClient(SUPABASE_URL!, SERVICE_ROLE_KEY!);
+
+  // ---- 5s cron guardrails ----
+  const STARTED = Date.now();
+  const CRON_BUDGET_MS = 4000;   // keep well under the 5s scheduler limit
+  const MAX_PER_RUN = 5;         // process at most 5 emails per run
+  let processed = 0;
 
   // Vytáhneme události, které:
   // - patří do daného eventu,
@@ -122,6 +135,11 @@ Deno.serve(async (req) => {
   };
 
   for (const ev of candidates) {
+    // stop early if we are close to the scheduler timeout
+    if (processed >= MAX_PER_RUN) break;
+    if (Date.now() - STARTED > CRON_BUDGET_MS) break;
+    processed++;
+
     const md = (ev.metadata ?? {}) as Record<string, unknown>;
     const email = String(md["email"]);
     const password = String(md["password"]);
