@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
 import './ScoreboardApp.css';
 
@@ -170,13 +171,13 @@ function createFallbackPatrolCode(category: string, sex: string, rank: number) {
 }
 
 function ScoreboardApp() {
-  const [overall, setOverall] = useState<Result[]>([]);
   const [ranked, setRanked] = useState<RankedResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [eventName, setEventName] = useState<string>('');
+  const [exporting, setExporting] = useState(false);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -212,64 +213,40 @@ function ScoreboardApp() {
   const loadData = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [overallRes, rankedRes] = await Promise.all([
-        supabase
-          .from('results')
-          .select('*')
-          .eq('event_id', rawEventId)
-          .order('total_points', { ascending: false })
-          .order('points_no_T', { ascending: false })
-          .order('pure_seconds', { ascending: true }),
-        supabase
-          .from('results_ranked')
-          .select('*')
-          .eq('event_id', rawEventId)
-          .order('category', { ascending: true })
-          .order('sex', { ascending: true })
-          .order('rank_in_bracket', { ascending: true }),
-      ]);
+      const { data, error } = await supabase
+        .from('results_ranked')
+        .select('*')
+        .eq('event_id', rawEventId)
+        .order('category', { ascending: true })
+        .order('sex', { ascending: true })
+        .order('rank_in_bracket', { ascending: true });
 
       if (!isMountedRef.current) {
         return;
       }
 
-      const overallError = overallRes.error;
-      const rankedError = rankedRes.error;
-
-      if (overallRes.data) {
-        setOverall(overallRes.data.map(normaliseResult));
-      } else {
-        setOverall([]);
-      }
-
-      if (rankedRes.data) {
-        setRanked(rankedRes.data.map(normaliseRankedResult));
+      if (data) {
+        setRanked(data.map(normaliseRankedResult));
       } else {
         setRanked([]);
       }
 
-      if (overallError && rankedError) {
-        console.error('Failed to load scoreboard data', overallError, rankedError);
-        setError('Nepodařilo se načíst výsledky. Zkuste to prosím znovu.');
-      } else if (overallError) {
-        console.error('Failed to load overall standings', overallError);
-        setError('Nepodařilo se načíst celkové pořadí.');
-      } else if (rankedError) {
-        console.error('Failed to load ranked standings', rankedError);
+      if (error) {
+        console.error('Failed to load ranked standings', error);
         setError('Nepodařilo se načíst pořadí podle kategorií.');
       } else {
         setError(null);
+        setLastUpdatedAt(new Date());
       }
-
-      setLastUpdatedAt(new Date());
-      setLoading(false);
-      setRefreshing(false);
     } catch (err) {
       console.error('Failed to load scoreboard data', err);
       if (!isMountedRef.current) return;
-      setError('Nepodařilo se načíst výsledky. Zkuste to prosím znovu.');
-      setOverall([]);
+      setError('Nepodařilo se načíst pořadí podle kategorií. Zkuste to prosím znovu.');
       setRanked([]);
+    } finally {
+      if (!isMountedRef.current) {
+        return;
+      }
       setLoading(false);
       setRefreshing(false);
     }
@@ -318,66 +295,96 @@ function ScoreboardApp() {
     loadData();
   }, [loadData]);
 
+  const handleExport = useCallback(() => {
+    if (!groupedRanked.length || exporting) {
+      return;
+    }
+
+    try {
+      setExporting(true);
+      const workbook = XLSX.utils.book_new();
+
+      groupedRanked.forEach((group) => {
+        const sheetName = formatCategoryLabel(group.category, group.sex);
+        const rows = [
+          ['#', 'Hlídka', 'Tým', 'Body', 'Body bez T', 'Čistý čas'],
+          ...group.items.map((row, rowIndex) => {
+            const displayRank = row.rankInBracket > 0 ? row.rankInBracket : rowIndex + 1;
+            const fallbackCode = createFallbackPatrolCode(group.category, group.sex, displayRank);
+            return [
+              displayRank,
+              formatPatrolNumber(row.patrolCode, fallbackCode),
+              row.teamName,
+              row.totalPoints ?? '',
+              row.pointsNoT ?? '',
+              formatSeconds(row.pureSeconds),
+            ];
+          }),
+        ];
+        const worksheet = XLSX.utils.aoa_to_sheet(rows);
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName || '—');
+      });
+
+      const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
+      const rawName = eventName || 'vysledky';
+      const safeName = rawName
+        .trim()
+        .replace(/[\\/?%*:|"<>]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/ /g, '-');
+      const fileName = `${safeName || 'vysledky'}-${timestamp}.xlsx`;
+
+      XLSX.writeFile(workbook, fileName);
+    } catch (err) {
+      console.error('Failed to export scoreboard data', err);
+    } finally {
+      setExporting(false);
+    }
+  }, [eventName, exporting, groupedRanked]);
+
   return (
     <div className="scoreboard-app">
       <header className="scoreboard-header">
         <div>
           <h1>Výsledkový přehled</h1>
-          {eventName ? <p className="scoreboard-subtitle">{eventName}</p> : null}
-          {!eventName ? <p className="scoreboard-subtitle subtle">{rawEventId}</p> : null}
+          <p className={`scoreboard-subtitle${eventName ? '' : ' subtle'}`}>
+            {eventName || 'Název závodu není k dispozici'}
+          </p>
           <p className="scoreboard-subtitle">
-            Data z pohledů Supabase <code>results</code> a <code>results_ranked</code>.
+            Data z pohledu Supabase <code>results_ranked</code>.
           </p>
         </div>
         <div className="scoreboard-meta">
-          {lastUpdatedAt && (
+          {lastUpdatedAt ? (
             <span>
               Aktualizováno: {lastUpdatedAt.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
+          ) : (
+            <span>Čekám na první data…</span>
           )}
-          <button type="button" onClick={handleRefresh} disabled={refreshing}>
-            {refreshing ? 'Aktualizuji…' : 'Aktualizovat'}
-          </button>
+          <div className="scoreboard-actions">
+            <button
+              type="button"
+              className="scoreboard-button scoreboard-button--secondary"
+              onClick={handleExport}
+              disabled={!groupedRanked.length || loading || exporting}
+            >
+              {exporting ? 'Exportuji…' : 'Exportovat Excel'}
+            </button>
+            <button
+              type="button"
+              className="scoreboard-button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+            >
+              {refreshing ? 'Aktualizuji…' : 'Aktualizovat'}
+            </button>
+          </div>
         </div>
       </header>
 
       {error && <div className="scoreboard-error">{error}</div>}
-
-      <section className="scoreboard-section">
-        <h2>Celkové pořadí</h2>
-        {loading && !overall.length ? (
-          <div className="scoreboard-placeholder">Načítám data…</div>
-        ) : overall.length ? (
-          <table className="scoreboard-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Hlídka</th>
-                <th>Kategorie</th>
-                <th>Body</th>
-                <th>Body bez T</th>
-                <th>Čistý čas</th>
-              </tr>
-            </thead>
-            <tbody>
-              {overall.map((row, index) => (
-                <tr key={row.patrolId}>
-                  <td>{index + 1}</td>
-                  <td className="scoreboard-team">
-                    <strong>{formatPatrolNumber(row.patrolCode)}</strong>
-                  </td>
-                  <td>{formatCategoryLabel(row.category, row.sex)}</td>
-                  <td>{formatPoints(row.totalPoints)}</td>
-                  <td>{formatPoints(row.pointsNoT)}</td>
-                  <td>{formatSeconds(row.pureSeconds)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="scoreboard-placeholder">Zatím nejsou žádné výsledky.</div>
-        )}
-      </section>
 
       <section className="scoreboard-section">
         <h2>Pořadí podle kategorií</h2>
@@ -399,33 +406,16 @@ function ScoreboardApp() {
                     </tr>
                   </thead>
                   <tbody>
-                    {group.items.map((row) => {
+                    {group.items.map((row, rowIndex) => {
+                      const displayRank = row.rankInBracket > 0 ? row.rankInBracket : rowIndex + 1;
                       const fallbackCode = createFallbackPatrolCode(
                         group.category,
                         group.sex,
-                        row.rankInBracket,
+                        displayRank,
                       );
                       return (
                         <tr key={row.patrolId}>
-                          <td>{row.rankInBracket}</td>
-                          <td className="scoreboard-team">
-                            <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
-                          </td>
-                          <td>{formatPoints(row.totalPoints)}</td>
-                          <td>{formatPoints(row.pointsNoT)}</td>
-                          <td>{formatSeconds(row.pureSeconds)}</td>
-                        </tr>
-                      );
-                    })}
-                    {group.items.map((row) => {
-                      const fallbackCode = createFallbackPatrolCode(
-                        group.category,
-                        group.sex,
-                        row.rankInBracket,
-                      );
-                      return (
-                        <tr key={row.patrolId}>
-                          <td>{row.rankInBracket}</td>
+                          <td>{displayRank}</td>
                           <td className="scoreboard-team">
                             <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
                           </td>
