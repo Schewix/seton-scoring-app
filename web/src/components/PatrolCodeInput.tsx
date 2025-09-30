@@ -1,6 +1,12 @@
-import { useCallback } from 'react';
+import { useCallback, useId, useMemo } from 'react';
 
 const PATROL_CODE_REGEX = /^[NMSR][HD]-(?:[1-9]|[1-3][0-9])$/;
+
+const CATEGORY_OPTIONS = ['N', 'M', 'S', 'R'] as const;
+const TYPE_OPTIONS = ['H', 'D'] as const;
+
+type CategoryOption = (typeof CATEGORY_OPTIONS)[number];
+type TypeOption = (typeof TYPE_OPTIONS)[number];
 
 interface PatrolCodeInputProps {
   value: string;
@@ -35,11 +41,15 @@ export function normalisePatrolCode(raw: string) {
     .replace(/[^0-9]/g, '')
     .slice(0, 2);
 
-  let result = category + letter;
+  let result = category;
+
+  if (letter) {
+    result += letter;
+  }
 
   if (digits) {
     result += `-${digits}`;
-  } else if (trailingHyphen && letter) {
+  } else if (letter || (trailingHyphen && category)) {
     result += '-';
   }
 
@@ -47,6 +57,28 @@ export function normalisePatrolCode(raw: string) {
 }
 
 export default function PatrolCodeInput({ value, onChange, id, label }: PatrolCodeInputProps) {
+  const generatedId = useId();
+  const inputId = id ?? generatedId;
+  const feedbackId = `${inputId}-feedback`;
+
+  const { normalisedValue, selectedCategory, selectedType, digits } = useMemo(() => {
+    const normalised = normalisePatrolCode(value);
+    const categoryOption = CATEGORY_OPTIONS.find((option) => normalised.startsWith(option)) ?? '';
+    const typeCandidate = normalised.charAt(1);
+    const typeOption =
+      categoryOption && TYPE_OPTIONS.includes(typeCandidate as TypeOption)
+        ? (typeCandidate as TypeOption)
+        : '';
+    const digitsMatch = normalised.match(/-(\d{1,2})$/);
+
+    return {
+      normalisedValue: normalised,
+      selectedCategory: categoryOption,
+      selectedType: typeOption,
+      digits: digitsMatch ? digitsMatch[1] : '',
+    };
+  }, [value]);
+
   const handleChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const raw = event.target.value;
@@ -58,24 +90,97 @@ export default function PatrolCodeInput({ value, onChange, id, label }: PatrolCo
     [onChange],
   );
 
-  const isValid = PATROL_CODE_REGEX.test(value.trim().toUpperCase());
-  const shouldUseNumericKeyboard = value.includes('-') && value.length >= 3;
+  const handleCategorySelect = useCallback(
+    (option: CategoryOption) => {
+      if (option === selectedCategory) {
+        return;
+      }
+
+      let nextValue = option;
+
+      if (selectedType) {
+        nextValue += selectedType;
+        nextValue += digits ? `-${digits}` : '-';
+      } else if (digits) {
+        nextValue += `-${digits}`;
+      }
+
+      onChange(nextValue);
+    },
+    [digits, onChange, selectedCategory, selectedType],
+  );
+
+  const handleTypeSelect = useCallback(
+    (option: TypeOption) => {
+      if (!selectedCategory || option === selectedType) {
+        return;
+      }
+
+      let nextValue = `${selectedCategory}${option}`;
+      nextValue += digits ? `-${digits}` : '-';
+
+      onChange(nextValue);
+    },
+    [digits, onChange, selectedCategory, selectedType],
+  );
+
+  const isValid = PATROL_CODE_REGEX.test(normalisedValue.trim().toUpperCase());
+  const shouldUseNumericKeyboard = normalisedValue.includes('-') && normalisedValue.length >= 3;
 
   return (
-    <label className="patrol-code-input" htmlFor={id}>
-      {label ? <span>{label}</span> : null}
+    <div className="patrol-code-input">
+      {label ? (
+        <label className="patrol-code-input__label" htmlFor={inputId}>
+          {label}
+        </label>
+      ) : null}
+      <div className="patrol-code-input__selectors">
+        <div className="patrol-code-input__options" role="group" aria-label="Kategorie hlídky">
+          {CATEGORY_OPTIONS.map((option) => (
+            <button
+              type="button"
+              key={option}
+              className="patrol-code-input__option"
+              onClick={() => handleCategorySelect(option)}
+              aria-pressed={selectedCategory === option}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+        <div
+          className="patrol-code-input__options"
+          role="group"
+          aria-label="Družina nebo hlídka"
+          aria-disabled={!selectedCategory}
+        >
+          {TYPE_OPTIONS.map((option) => (
+            <button
+              type="button"
+              key={option}
+              className="patrol-code-input__option"
+              onClick={() => handleTypeSelect(option)}
+              aria-pressed={selectedType === option}
+              disabled={!selectedCategory}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      </div>
       <input
-        id={id}
-        value={value}
+        id={inputId}
+        value={normalisedValue}
         onChange={handleChange}
         placeholder="např. NH-15"
         autoComplete="off"
         inputMode={shouldUseNumericKeyboard ? 'numeric' : 'text'}
         pattern="[A-Za-z0-9-]*"
+        aria-describedby={feedbackId}
       />
-      <small className={isValid ? 'valid' : 'invalid'}>
+      <small id={feedbackId} className={isValid ? 'valid' : 'invalid'}>
         {isValid ? 'Kód je platný' : 'Formát: N/M/S/R + H/D + číslo 1–39 (např. NH-5)'}
       </small>
-    </label>
+    </div>
   );
 }

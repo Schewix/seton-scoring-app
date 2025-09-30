@@ -270,14 +270,60 @@ body {
 .patrol-code-input {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
+  flex: 1 1 220px;
 }
 
-.patrol-code-input span {
+.patrol-code-input__label {
   font-size: 0.75rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: rgba(11, 83, 70, 0.7);
+}
+
+.patrol-code-input__selectors {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.patrol-code-input__options {
+  display: flex;
+  gap: 8px;
+}
+
+.patrol-code-input__option {
+  appearance: none;
+  border: 1px solid rgba(11, 83, 70, 0.24);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.9);
+  color: #0a4236;
+  font-size: 0.9rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.patrol-code-input__option[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.patrol-code-input__option[aria-pressed='true'] {
+  background: #0d7c54;
+  color: #fffdf7;
+  border-color: #0b5d44;
+  box-shadow: 0 6px 14px rgba(13, 124, 84, 0.25);
+}
+
+.patrol-code-input__option:not([disabled]):hover,
+.patrol-code-input__option:not([disabled]):focus-visible {
+  border-color: #0d7c54;
+  box-shadow: 0 0 0 2px rgba(13, 124, 84, 0.15);
 }
 
 .patrol-code-input input {
@@ -291,6 +337,7 @@ body {
   font-size: 16px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  width: 100%;
 }
 
 .patrol-code-input small {
