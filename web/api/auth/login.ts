@@ -54,7 +54,13 @@ export default async function handler(req: any, res: any) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
-  const ok = await verifyPbkdf2(password, row.password_hash as string);
+  if (typeof row.password_hash !== 'string') {
+    console.error('Unexpected password_hash type for user', email, row.password_hash);
+    return res.status(500).json({ error: 'Server password config error' });
+  }
+
+  const ok = await verifyPbkdf2(password, row.password_hash);
+
   if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
 
   // TODO: vytvoř a vrať vlastní session/JWT
