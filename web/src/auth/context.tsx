@@ -19,7 +19,14 @@ import {
   setPinHash,
   getPinHash,
 } from './storage';
-import type { AuthStatus, PatrolSummary, StationManifest } from './types';
+import type {
+  AuthStatus,
+  LoginRequiresPasswordChangeResponse,
+  LoginResponse,
+  LoginSuccessResponse,
+  PatrolSummary,
+  StationManifest,
+} from './types';
 import { fetchManifest, loginRequest } from './api';
 import { deriveWrappingKey, encryptDeviceKey, generateDeviceKey, decryptDeviceKey, digestPin } from './crypto';
 import { toBase64 } from './base64';
@@ -38,6 +45,16 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const AUTH_BYPASS = env.VITE_AUTH_BYPASS === '1' || env.VITE_AUTH_BYPASS === 'true';
+
+function isPasswordChangeResponse(
+  response: LoginResponse,
+): response is LoginRequiresPasswordChangeResponse {
+  return 'must_change_password' in response && response.must_change_password === true;
+}
+
+function isLoginSuccessResponse(response: LoginResponse): response is LoginSuccessResponse {
+  return 'access_token' in response && typeof response.access_token === 'string';
+}
 
 async function bootstrap(): Promise<
   | {
@@ -206,49 +223,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const deviceKey = await generateDeviceKey();
       const devicePublicKey = toBase64(deviceKey);
       const response = await loginRequest(email, password, devicePublicKey);
-      const accessClaims = decodeJwt<{ sessionId?: string }>(response.access_token);
+
+      if (isPasswordChangeResponse(response)) {
+        setStatus({
+          state: 'password-change-required',
+          email,
+          judgeId: response.id,
+          pendingPin: pin,
+        });
+        return;
+      }
+
+      if (!isLoginSuccessResponse(response)) {
+        throw new Error('Invalid login response');
+      }
+
+      const success = response;
+      const accessClaims = decodeJwt<{ sessionId?: string }>(success.access_token);
       const sessionId = typeof accessClaims.sessionId === 'string' && accessClaims.sessionId.length
         ? accessClaims.sessionId
         : (() => {
             throw new Error('Missing session identifier');
           })();
-      const wrappingKey = await deriveWrappingKey(response.refresh_token, response.device_salt);
+      const wrappingKey = await deriveWrappingKey(success.refresh_token, success.device_salt);
       const encrypted = await encryptDeviceKey(deviceKey, wrappingKey);
 
       await Promise.all([
-        setManifest(response.manifest),
-        setPatrols(response.patrols),
+        setManifest(success.manifest),
+        setPatrols(success.patrols),
         setTokens({
-          refreshToken: response.refresh_token,
-          accessToken: response.access_token,
-          accessTokenExpiresAt: Date.now() + response.access_token_expires_in * 1000,
+          refreshToken: success.refresh_token,
+          accessToken: success.access_token,
+          accessTokenExpiresAt: Date.now() + success.access_token_expires_in * 1000,
           sessionId,
         }),
-        setDeviceKeyPayload({ ...encrypted, deviceSalt: response.device_salt }),
+        setDeviceKeyPayload({ ...encrypted, deviceSalt: success.device_salt }),
         setPinHash(pin ? await digestPin(pin) : null),
       ]);
 
       setCachedData({
-        manifest: response.manifest,
-        patrols: response.patrols,
+        manifest: success.manifest,
+        patrols: success.patrols,
         tokens: {
-          refreshToken: response.refresh_token,
-          accessToken: response.access_token,
-          accessTokenExpiresAt: Date.now() + response.access_token_expires_in * 1000,
+          refreshToken: success.refresh_token,
+          accessToken: success.access_token,
+          accessTokenExpiresAt: Date.now() + success.access_token_expires_in * 1000,
           sessionId,
         },
-        encryptedDeviceKey: { ...encrypted, deviceSalt: response.device_salt },
+        encryptedDeviceKey: { ...encrypted, deviceSalt: success.device_salt },
       });
 
       setStatus({
         state: 'authenticated',
-        manifest: response.manifest,
-        patrols: response.patrols,
+        manifest: success.manifest,
+        patrols: success.patrols,
         deviceKey,
         tokens: {
-          accessToken: response.access_token,
-          accessTokenExpiresAt: Date.now() + response.access_token_expires_in * 1000,
-          refreshToken: response.refresh_token,
+          accessToken: success.access_token,
+          accessTokenExpiresAt: Date.now() + success.access_token_expires_in * 1000,
+          refreshToken: success.refresh_token,
           sessionId,
         },
       });
