@@ -13,6 +13,22 @@
       "destination": "https://vdkbdnxkpeeqxnruwiah.supabase.co/functions/v1/$1"
     },
     {
+      "source": "/setonuv-zavod/station",
+      "destination": "/"
+    },
+    {
+      "source": "/setonuv-zavod/station/(.*)",
+      "destination": "/"
+    },
+    {
+      "source": "/setonuv-zavod/scoreboard",
+      "destination": "/"
+    },
+    {
+      "source": "/setonuv-zavod/scoreboard/(.*)",
+      "destination": "/"
+    },
+    {
       "source": "/stations/(.*)",
       "destination": "/"
     },

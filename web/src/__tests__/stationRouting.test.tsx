@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { AuthStatus } from '../auth/types';
+import { getStationPath } from '../routing';
 
 let useStationRouting: (status: AuthStatus) => void;
 
@@ -43,7 +44,7 @@ describe('useStationRouting', () => {
 
     rerender({ status: stationStatus });
 
-    expect(window.location.pathname).toBe('/stations/station-123');
+    expect(window.location.pathname).toBe(getStationPath('station-123'));
   });
 
   it('clears station path when returning to login', () => {
@@ -73,7 +74,7 @@ describe('useStationRouting', () => {
       initialProps: { status: stationStatus },
     });
 
-    expect(window.location.pathname).toBe('/stations/station-123');
+    expect(window.location.pathname).toBe(getStationPath('station-123'));
 
     rerender({ status: unauthStatus });
 
