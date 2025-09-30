@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { ROUTE_PREFIX, STATION_ROUTE_PREFIX } from './src/routing';
 
 export default defineConfig({
   plugins: [
@@ -18,8 +19,8 @@ export default defineConfig({
         theme_color: '#0b5d44',
         background_color: '#0b5d44',
         display: 'standalone',
-        scope: '/',
-        start_url: '/',
+        scope: `${ROUTE_PREFIX}/`,
+        start_url: STATION_ROUTE_PREFIX,
         lang: 'cs',
         icons: [
           {
