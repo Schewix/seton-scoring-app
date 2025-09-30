@@ -166,7 +166,7 @@ function createFallbackPatrolCode(category: string, sex: string, rank: number) {
     return undefined;
   }
 
-  return `${categoryLabel.toLowerCase()}-${rank}`;
+  return `${categoryLabel}-${rank}`;
 }
 
 function ScoreboardApp() {
@@ -399,6 +399,24 @@ function ScoreboardApp() {
                     </tr>
                   </thead>
                   <tbody>
+                    {group.items.map((row) => {
+                      const fallbackCode = createFallbackPatrolCode(
+                        group.category,
+                        group.sex,
+                        row.rankInBracket,
+                      );
+                      return (
+                        <tr key={row.patrolId}>
+                          <td>{row.rankInBracket}</td>
+                          <td className="scoreboard-team">
+                            <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
+                          </td>
+                          <td>{formatPoints(row.totalPoints)}</td>
+                          <td>{formatPoints(row.pointsNoT)}</td>
+                          <td>{formatSeconds(row.pureSeconds)}</td>
+                        </tr>
+                      );
+                    })}
                     {group.items.map((row) => {
                       const fallbackCode = createFallbackPatrolCode(
                         group.category,
