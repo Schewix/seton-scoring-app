@@ -4,6 +4,7 @@ import './index.css';
 import { AuthProvider } from './auth/context';
 import { registerSW } from 'virtual:pwa-register';
 import zelenaLigaLogo from './assets/znak_SPTO_transparent.png';
+import { isScoreboardPathname } from './routing';
 
 function applyBranding() {
   if (document.title !== 'Zelena liga') {
@@ -41,7 +42,7 @@ applyBranding();
 const params = new URLSearchParams(window.location.search);
 const view = params.get('view');
 const pathname = window.location.pathname;
-const isScoreboardPath = /^\/scoreboard(?:\b|\/)/i.test(pathname);
+const isScoreboardPath = isScoreboardPathname(pathname);
 
 function render(element: React.ReactNode) {
   root.render(
