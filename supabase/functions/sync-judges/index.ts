@@ -2,7 +2,7 @@
 
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { parse } from 'https://deno.land/std@0.224.0/csv/mod.ts';
-import { hash as argon2Hash, ArgonType } from 'https://deno.land/x/argon2@v0.3.2/mod.ts';
+
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -69,8 +69,38 @@ function generatePassword(length = 12): string {
   return output;
 }
 
+function toBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 async function hashPassword(password: string): Promise<string> {
-  return await argon2Hash(password, { type: ArgonType.Argon2id });
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iterations = 210_000; // OWASP range; adjust if too slow on Edge
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(password),
+    { name: "PBKDF2" },
+    false,
+    ["deriveBits"]
+  );
+  const derived = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      salt,
+      iterations,
+    },
+    key,
+    256 // 32 bytes
+  );
+  const encoded = `pbkdf2$sha256$${iterations}$${toBase64(salt.buffer)}$${toBase64(derived)}`;
+  return encoded;
 }
 
 function parseAllowedCategories(raw: string | undefined): string[] {
