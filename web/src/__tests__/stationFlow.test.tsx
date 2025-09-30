@@ -90,7 +90,30 @@ vi.mock('../supabaseClient', () => {
       case 'station_scores':
         return {
           upsert: () => Promise.resolve({ error: new Error('Offline') }),
-          select: () => listScores(),
+          update: () => ({
+            eq: () => ({
+              eq: () => Promise.resolve({ data: [], error: null }),
+            }),
+          }),
+          insert: () => Promise.resolve({ data: [], error: null }),
+          select: () => {
+            const finalResult = Promise.resolve({ data: [], error: null });
+            const orderObj = {
+              limit: () => finalResult,
+            };
+            const secondEqObj: any = {
+              order: () => orderObj,
+              then: finalResult.then.bind(finalResult),
+              catch: finalResult.catch.bind(finalResult),
+              finally: finalResult.finally?.bind(finalResult),
+            };
+            return {
+              eq: () => ({
+                eq: () => secondEqObj,
+                order: () => orderObj,
+              }),
+            };
+          },
         };
       case 'station_quiz_responses':
         return {
