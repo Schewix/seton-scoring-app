@@ -71,8 +71,9 @@ export function QRScanner({ active, onResult, onError }: QRScannerProps) {
   }, [active, onResult, onError]);
 
   return (
-    <div className="qr-scanner">
+    <div className={`qr-scanner${active ? '' : ' inactive'}`}>
       <video ref={videoRef} autoPlay playsInline muted />
+      {!active ? <div className="qr-scanner-overlay">Skener je vypnutý</div> : null}
       {permissionError ? <p className="qr-error">{permissionError}</p> : null}
     </div>
   );
