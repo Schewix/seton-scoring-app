@@ -283,7 +283,7 @@ function ScoreboardApp() {
   }, [loadData]);
 
   useEffect(() => {
-    document.title = 'Seton – Výsledky';
+    document.title = 'Seton';
   }, []);
 
   const groupedRanked = useMemo(() => {
