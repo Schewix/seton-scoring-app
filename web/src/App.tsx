@@ -583,7 +583,45 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
   }, [isTargetStation, loadCategoryAnswers]);
 
   const syncQueue = useCallback(async () => {
-    const queue = await readQueue(queueKey);
+    let queue = await readQueue(queueKey);
+
+    const staleIds = new Set<string>();
+    for (const op of queue) {
+      const payload = op.payload;
+      if (!payload) {
+        continue;
+      }
+      if (payload.station_id && payload.station_id !== stationId) {
+        staleIds.add(op.id);
+        continue;
+      }
+      if (payload.event_id && payload.event_id !== eventId) {
+        staleIds.add(op.id);
+        continue;
+      }
+      if (payload.session_id && payload.session_id !== auth.tokens.sessionId) {
+        staleIds.add(op.id);
+        continue;
+      }
+      if (
+        typeof payload.manifest_version === 'number' &&
+        payload.manifest_version !== manifest.manifestVersion
+      ) {
+        staleIds.add(op.id);
+      }
+    }
+
+    if (staleIds.size) {
+      const filtered = queue.filter((op) => !staleIds.has(op.id));
+      queue = filtered;
+      await writeQueue(queueKey, filtered);
+      pushAlert(
+        staleIds.size === 1
+          ? 'Odebrán 1 záznam z dřívější relace – nelze jej odeslat.'
+          : `Odebráno ${staleIds.size} záznamů z dřívější relace – nelze je odeslat.`,
+      );
+    }
+
     updateQueueState(queue);
     if (syncing) return;
 
@@ -700,7 +738,17 @@ function StationApp({ auth, refreshManifest }: { auth: AuthenticatedState; refre
     } finally {
       setSyncing(false);
     }
-  }, [auth.tokens.accessToken, queueKey, syncing, updateQueueState, pushAlert]);
+  }, [
+    auth.tokens.accessToken,
+    auth.tokens.sessionId,
+    eventId,
+    manifest.manifestVersion,
+    queueKey,
+    stationId,
+    syncing,
+    updateQueueState,
+    pushAlert,
+  ]);
 
   useEffect(() => {
     syncQueue();
