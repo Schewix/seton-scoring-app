@@ -487,7 +487,11 @@ Deno.serve(async (req) => {
             {
               judgeId: judgeResult.id,
               stationId: station.id,
-              metadata: { type: 'initial-password-issued' },
+              metadata: { 
+                type: 'initial-password-issued',
+                email: row.email,
+                password: judgeResult.generatedPassword
+              },
             },
             options,
           );
