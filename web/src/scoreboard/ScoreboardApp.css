@@ -46,11 +46,20 @@
 .scoreboard-meta {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 1rem;
   font-size: 0.95rem;
+  flex-wrap: wrap;
 }
 
-.scoreboard-meta button {
+.scoreboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.scoreboard-button {
   appearance: none;
   border: none;
   border-radius: 999px;
@@ -62,16 +71,31 @@
   transition: transform 0.1s ease, filter 0.2s ease;
 }
 
-.scoreboard-meta button:disabled {
+.scoreboard-button:disabled {
   cursor: default;
   opacity: 0.7;
 }
 
-.scoreboard-meta button:not(:disabled):hover {
+.scoreboard-button:not(:disabled):hover {
   filter: brightness(1.05);
 }
 
-.scoreboard-meta button:not(:disabled):active {
+.scoreboard-button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.scoreboard-button--secondary {
+  background: rgba(56, 189, 248, 0.16);
+  color: #e0f2fe;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+}
+
+.scoreboard-button--secondary:not(:disabled):hover {
+  filter: none;
+  background: rgba(56, 189, 248, 0.24);
+}
+
+.scoreboard-button--secondary:not(:disabled):active {
   transform: translateY(1px);
 }
 
@@ -191,6 +215,11 @@
   .scoreboard-meta {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .scoreboard-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .scoreboard-section {
