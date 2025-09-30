@@ -45,6 +45,16 @@ do $$ begin
   end if;
 exception when duplicate_object then null; end $$;
 
+do $$ begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'stations_id_event_key'
+  ) then
+    alter table stations add constraint stations_id_event_key unique (id, event_id);
+  end if;
+exception when duplicate_object then null; end $$;
+
 create table if not exists station_passages (
   id uuid primary key default gen_random_uuid(),
   event_id uuid not null references events(id) on delete cascade,
@@ -153,6 +163,20 @@ create table if not exists judge_assignments (
   created_at timestamptz not null default now(),
   unique (judge_id, station_id, event_id)
 );
+
+do $$ begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'judge_assignments_station_event_fkey'
+  ) then
+    alter table judge_assignments
+      add constraint judge_assignments_station_event_fkey
+      foreign key (station_id, event_id)
+      references stations(id, event_id)
+      on delete cascade;
+  end if;
+exception when duplicate_object then null; end $$;
 
 create table if not exists judge_sessions (
   id uuid primary key default gen_random_uuid(),
