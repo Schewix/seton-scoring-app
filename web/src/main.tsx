@@ -43,6 +43,7 @@ const params = new URLSearchParams(window.location.search);
 const view = params.get('view');
 const pathname = window.location.pathname;
 const isScoreboardPath = isScoreboardPathname(pathname);
+const scoreboardViews = new Set(['scoreboard', 'vysledky']);
 
 function render(element: React.ReactNode) {
   root.render(
@@ -52,7 +53,7 @@ function render(element: React.ReactNode) {
   );
 }
 
-if (view === 'scoreboard' || isScoreboardPath) {
+if ((view && scoreboardViews.has(view)) || isScoreboardPath) {
   import('./scoreboard/ScoreboardApp')
     .then(({ default: ScoreboardApp }) => {
       render(<ScoreboardApp />);
