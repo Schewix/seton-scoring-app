@@ -128,18 +128,21 @@ body {
 }
 
 .scoreboard-button--ghost {
-  background: rgba(255, 255, 255, 0.16);
-  color: #0b5346;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.22);
+  color: #fffdf7;
+  border: 1px solid rgba(255, 255, 255, 0.45);
   box-shadow: 0 16px 30px rgba(10, 78, 56, 0.25);
+  text-shadow: 0 1px 4px rgba(11, 68, 55, 0.35);
 }
 
 .scoreboard-button--ghost:not(:disabled):hover {
-  background: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.3);
+  filter: brightness(1.02);
 }
 
 .scoreboard-button--ghost:not(:disabled):active {
   transform: translateY(1px);
+  filter: brightness(0.98);
 }
 
 .scoreboard-hero-meta {

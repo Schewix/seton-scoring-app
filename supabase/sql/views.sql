@@ -2,6 +2,7 @@
 create or replace view results as
 select
   p.event_id,
+  e.name as event_name,
   p.id as patrol_id,
   p.patrol_code,
   p.team_name,
@@ -16,6 +17,7 @@ select
                      where sp.event_id=p.event_id and sp.patrol_id=p.id),0)
   )::bigint as pure_seconds
 from patrols p
+join events e on e.id = p.event_id
 left join station_scores s on s.patrol_id=p.id and s.event_id=p.event_id
 left join stations st on st.id = s.station_id
 left join timings t on t.event_id=p.event_id and t.patrol_id=p.id
