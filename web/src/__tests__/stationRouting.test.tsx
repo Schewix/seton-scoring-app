@@ -48,7 +48,13 @@ describe('useStationRouting', () => {
 
     rerender({ status: stationStatus });
 
-    expect(window.location.pathname).toBe(getStationPath('station-123'));
+    expect(window.location.pathname).toBe(getStationPath('Stanoviště X'));
+  });
+
+  it('creates slug from station name with diacritics', () => {
+    expect(getStationPath('Střelba z foukačky')).toBe(
+      '/setonuv-zavod/stanoviste/strelba-z-foukacky',
+    );
   });
 
   it('clears station path when returning to login', () => {
@@ -80,7 +86,7 @@ describe('useStationRouting', () => {
       initialProps: { status: stationStatus },
     });
 
-    expect(window.location.pathname).toBe(getStationPath('station-123'));
+    expect(window.location.pathname).toBe(getStationPath('Stanoviště X'));
 
     rerender({ status: unauthStatus });
 

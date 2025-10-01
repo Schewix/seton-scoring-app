@@ -13,8 +13,18 @@ const ADDITIONAL_SCOREBOARD_PREFIXES = [
   '/vysledky',
 ];
 
-export function getStationPath(stationId: string): string {
-  return `${STATION_ROUTE_PREFIX}/${encodeURIComponent(stationId)}`;
+function stripDiacritics(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+export function getStationSlug(stationName: string): string {
+  const withoutDiacritics = stripDiacritics(stationName).toLowerCase();
+  const slug = withoutDiacritics.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return slug || 'stanoviste';
+}
+
+export function getStationPath(stationName: string): string {
+  return `${STATION_ROUTE_PREFIX}/${getStationSlug(stationName)}`;
 }
 
 export function isStationAppPath(pathname: string): boolean {
