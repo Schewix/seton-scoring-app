@@ -1728,7 +1728,7 @@ function StationApp({
           </div>
           <div>
             <h1>Zelená liga - stanoviště</h1>
-            <p>Webová podpora rozhodčích s QR skenerem, automatickým hodnocením a offline frontou.</p>
+            <p>Webová podpora rozhodčích s automatickým hodnocením a offline frontou.</p>
           </div>
         </div>
         <div className="hero-meta">
