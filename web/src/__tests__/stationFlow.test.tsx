@@ -435,6 +435,30 @@ describe('station workflow', () => {
     expect(screen.getByText(/Chyba:/)).toBeInTheDocument();
   });
 
+  it('rejects decimal values for manual scoring input', async () => {
+    const user = userEvent.setup();
+
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+
+    await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
+    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+
+    const pointsInput = screen.getByLabelText('Body (0 až 12)');
+    await user.clear(pointsInput);
+    await user.type(pointsInput, '10.5');
+
+    await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
+
+    expect(
+      await screen.findByText('Body musí být celé číslo v rozsahu 0 až 12.'),
+    ).toBeInTheDocument();
+    expect(pointsInput).toHaveValue(10.5);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Záznam uložen do fronty/)).not.toBeInTheDocument();
+  });
+
   it('automatically scores target answers and saves quiz responses', async () => {
     mockedStationCode = 'T';
     supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Terčové stanoviště' }));

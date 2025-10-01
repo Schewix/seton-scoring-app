@@ -1471,9 +1471,16 @@ function StationApp({
       scorePoints = autoScore.correct;
       normalizedAnswers = autoScore.normalizedGiven;
     } else {
-      const parsed = parseInt(points, 10);
-      if (Number.isNaN(parsed) || parsed < 0 || parsed > 12) {
-        pushAlert('Body musí být číslo v rozsahu 0 až 12.');
+      const normalizedPoints = points.trim();
+      const parsed = Number(normalizedPoints);
+      if (
+        !normalizedPoints ||
+        Number.isNaN(parsed) ||
+        !Number.isInteger(parsed) ||
+        parsed < 0 ||
+        parsed > 12
+      ) {
+        pushAlert('Body musí být celé číslo v rozsahu 0 až 12.');
         return;
       }
       scorePoints = parsed;
