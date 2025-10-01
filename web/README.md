@@ -22,8 +22,9 @@ VITE_STATION_ID=<UUID stanoviště>
 VITE_ADMIN_MODE=1
 ```
 
-Spuštěním aplikace s parametrem `?view=scoreboard` v URL se načte výsledkový
-přehled, který využívá pohled `scoreboard_view` (stavějící na `results_ranked`).
+Spuštěním aplikace s parametrem `?view=vysledky` v URL se načte výsledkový
+přehled, který využívá pohled `scoreboard_view` (stavějící na `results_ranked`);
+starší parametr `?view=scoreboard` zůstává funkční.
 
 ## Scripts
 
