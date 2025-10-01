@@ -5,6 +5,10 @@
       "destination": "/api/auth/login"
     },
     {
+      "source": "/auth/sync",
+      "destination": "/api/auth/sync"
+    },
+    {
       "source": "/auth/change-password",
       "destination": "/api/auth/change-password"
     },
