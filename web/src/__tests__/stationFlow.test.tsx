@@ -294,8 +294,10 @@ async function loadPatrolAndOpenForm(user: ReturnType<typeof userEvent.setup>, c
   const serveButton = await screen.findByRole('button', { name: 'Obsluhovat' });
   await user.click(serveButton);
 
-  const doneButton = await screen.findByRole('button', { name: 'Hotovo' });
-  await user.click(doneButton);
+  if (mockedStationCode !== 'T') {
+    const doneButton = await screen.findByRole('button', { name: 'Hotovo' });
+    await user.click(doneButton);
+  }
 }
 
 type TableFactory = () => unknown;
