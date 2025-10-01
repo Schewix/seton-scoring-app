@@ -443,6 +443,8 @@ function StationApp({
     [],
   );
 
+  const previewPatrolCode = patrol ? resolvePatrolCode(patrol) : '';
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1905,6 +1907,17 @@ function StationApp({
               {patrol ? (
                 <div className="scanner-preview">
                   <strong>{patrol.team_name}</strong>
+                  {previewPatrolCode ? (
+                    <span
+                      className="scanner-code"
+                      aria-label={`Kód hlídky ${previewPatrolCode}`}
+                      data-code={previewPatrolCode}
+                    >
+                      <span className="scanner-code__label" aria-hidden="true">
+                        Kód
+                      </span>
+                    </span>
+                  ) : null}
                   <span>
                     {patrol.category}/{patrol.sex}
                   </span>
