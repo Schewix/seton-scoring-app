@@ -946,24 +946,64 @@ function StationApp({
     const staleIds = new Set<string>();
     for (const op of queue) {
       const payload = op.payload;
-      if (!payload) {
-        continue;
+      let signatureMetadata: {
+        station_id?: string;
+        event_id?: string;
+        session_id?: string;
+        manifest_version?: number;
+      } = {};
+
+      if (typeof op.signature_payload === 'string' && op.signature_payload.length) {
+        try {
+          const parsed = JSON.parse(op.signature_payload) as Record<string, unknown> | null;
+          if (parsed && typeof parsed === 'object') {
+            const manifestVersion = parsed.manifest_version;
+            if (typeof manifestVersion === 'number') {
+              signatureMetadata.manifest_version = manifestVersion;
+            }
+            const sessionId = parsed.session_id;
+            if (typeof sessionId === 'string') {
+              signatureMetadata.session_id = sessionId;
+            }
+            const stationFromSignature = parsed.station_id;
+            if (typeof stationFromSignature === 'string') {
+              signatureMetadata.station_id = stationFromSignature;
+            }
+            const eventFromSignature = parsed.event_id;
+            if (typeof eventFromSignature === 'string') {
+              signatureMetadata.event_id = eventFromSignature;
+            }
+          }
+        } catch (error) {
+          console.error('Failed to parse signature payload metadata', error);
+        }
       }
-      if (payload.station_id && payload.station_id !== stationId) {
+
+      const effectiveStationId = payload?.station_id ?? signatureMetadata.station_id;
+      if (effectiveStationId && effectiveStationId !== stationId) {
         staleIds.add(op.id);
         continue;
       }
-      if (payload.event_id && payload.event_id !== eventId) {
+
+      const effectiveEventId = payload?.event_id ?? signatureMetadata.event_id;
+      if (effectiveEventId && effectiveEventId !== eventId) {
         staleIds.add(op.id);
         continue;
       }
-      if (payload.session_id && payload.session_id !== auth.tokens.sessionId) {
+
+      const effectiveSessionId = payload?.session_id ?? signatureMetadata.session_id;
+      if (effectiveSessionId && effectiveSessionId !== auth.tokens.sessionId) {
         staleIds.add(op.id);
         continue;
       }
+
+      const manifestVersionFromPayload =
+        typeof payload?.manifest_version === 'number' ? payload.manifest_version : undefined;
+      const effectiveManifestVersion =
+        manifestVersionFromPayload ?? signatureMetadata.manifest_version;
       if (
-        typeof payload.manifest_version === 'number' &&
-        payload.manifest_version !== manifest.manifestVersion
+        typeof effectiveManifestVersion === 'number' &&
+        effectiveManifestVersion !== manifest.manifestVersion
       ) {
         staleIds.add(op.id);
       }

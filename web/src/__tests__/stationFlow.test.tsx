@@ -657,6 +657,80 @@ describe('station workflow', () => {
     });
   });
 
+  it('removes submissions from previous sessions using signature metadata when payload is missing', async () => {
+    const signaturePayload = {
+      version: 1,
+      manifest_version: 1,
+      session_id: 'other-session',
+      judge_id: 'judge-test',
+      station_id: 'station-test',
+      event_id: 'event-test',
+      signed_at: new Date('2024-03-01T09:00:00Z').toISOString(),
+      data: {
+        event_id: 'event-test',
+        station_id: 'station-test',
+        patrol_id: 'patrol-stale',
+        category: 'N',
+        arrived_at: new Date('2024-03-01T09:00:00Z').toISOString(),
+        wait_minutes: 3,
+        points: 5,
+        note: 'Stará relace',
+        use_target_scoring: false,
+        normalized_answers: null,
+        finish_time: null,
+        patrol_code: 'N-98',
+      },
+    };
+
+    const staleOperation = {
+      id: 'op-stale-session-signature',
+      type: 'submission' as const,
+      payload: {
+        event_id: 'event-test',
+        station_id: 'station-test',
+        patrol_id: 'patrol-stale',
+        category: 'N',
+        arrived_at: new Date('2024-03-01T09:00:00Z').toISOString(),
+        wait_minutes: 3,
+        points: 5,
+        judge: 'Test Judge',
+        note: 'Stará relace',
+        useTargetScoring: false,
+        normalizedAnswers: null,
+        shouldDeleteQuiz: true,
+        patrol_code: 'N-98',
+        team_name: 'Lišky',
+        sex: 'F',
+        finish_time: null,
+        judge_id: 'judge-test',
+        manifest_version: 1,
+      } as any,
+      signature: 'stale-signature',
+      signature_payload: JSON.stringify(signaturePayload),
+      created_at: new Date('2024-03-01T09:00:00Z').toISOString(),
+      inProgress: false,
+      retryCount: 0,
+      nextAttemptAt: Date.now(),
+    };
+
+    await localforage.setItem(QUEUE_KEY, [staleOperation]);
+
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
+
+    const alerts = await screen.findAllByText(
+      'Odebrán 1 záznam z dřívější relace – nelze jej odeslat.',
+    );
+    expect(alerts.length).toBeGreaterThanOrEqual(1);
+
+    await waitFor(async () => {
+      const storedQueue = await localforage.getItem(QUEUE_KEY);
+      expect(storedQueue).toBeNull();
+    });
+  });
+
   it('flushes queued target quiz submission via sync endpoint', async () => {
     const pendingOperation = {
       id: 'op-target-sync',
