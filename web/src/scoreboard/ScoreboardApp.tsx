@@ -407,7 +407,7 @@ function ScoreboardApp() {
       groupedRanked.forEach((group) => {
         const sheetName = formatCategoryLabel(group.category, group.sex);
         const rows = [
-          ['#', 'Hlídka', 'Tým', 'Body', 'Body bez T', 'Čistý čas'],
+          ['#', 'Hlídka', 'Tým', 'Body', 'Body bez T'],
           ...group.items.map((row) => {
             const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
             const fallbackCode = createFallbackPatrolCode(group.category, group.sex, displayRank);
@@ -417,7 +417,6 @@ function ScoreboardApp() {
               row.teamName,
               row.totalPoints ?? '',
               row.pointsNoT ?? '',
-              formatSeconds(row.pureSeconds),
             ];
           }),
         ];
@@ -534,7 +533,6 @@ function ScoreboardApp() {
                         <th>Hlídka</th>
                         <th>Body</th>
                         <th>Body bez T</th>
-                        <th>Čistý čas</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -553,7 +551,6 @@ function ScoreboardApp() {
                             </td>
                             <td>{formatPoints(row.totalPoints)}</td>
                             <td>{formatPoints(row.pointsNoT)}</td>
-                            <td>{formatSeconds(row.pureSeconds)}</td>
                           </tr>
                         );
                       })}
