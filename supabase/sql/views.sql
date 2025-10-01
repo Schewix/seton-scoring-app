@@ -1,3 +1,14 @@
+-- Public event metadata view for read-only clients
+create or replace view events_public as
+select
+  e.id,
+  e.name,
+  e.starts_at,
+  e.ends_at
+from events e;
+
+grant select on events_public to anon, authenticated;
+
 -- Results view (sum points, sum without 'T', pure time)
 create or replace view results as
 select
