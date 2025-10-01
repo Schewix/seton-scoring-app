@@ -70,5 +70,3 @@ select
   r.rank_in_bracket
 from results_ranked r
 join events e on e.id = r.event_id;
-
-grant select on scoreboard_view to anon, authenticated;
