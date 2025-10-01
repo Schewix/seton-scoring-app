@@ -5,6 +5,8 @@ import localforage from 'localforage';
 import type { ReactNode } from 'react';
 import { AuthProvider } from '../auth/context';
 
+const { logoutMock } = vi.hoisted(() => ({ logoutMock: vi.fn() }));
+
 vi.stubEnv('VITE_EVENT_ID', 'event-test');
 vi.stubEnv('VITE_STATION_ID', 'station-test');
 vi.stubEnv('VITE_SUPABASE_URL', 'http://localhost');
@@ -231,7 +233,7 @@ vi.mock('../auth/context', async () => {
   const contextValue = {
     login: vitest.fn(),
     unlock: vitest.fn(),
-    logout: vitest.fn(),
+    logout: logoutMock,
     updateManifest: vitest.fn(),
     refreshManifest: vitest.fn().mockResolvedValue(undefined),
     get status() {
@@ -511,6 +513,40 @@ describe('station workflow', () => {
     const [queued] = storedQueue!;
     expect(queued.retryCount).toBe(1);
     expect(queued.lastError).toBe('server-error');
+  });
+
+  it('forces logout when sync endpoint responds with unauthorized error', async () => {
+    const user = userEvent.setup();
+
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: 'Session revoked' }),
+    } as any);
+
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+
+    await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
+    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+
+    const pointsInput = screen.getByLabelText('Body (0 až 12)');
+    await user.clear(pointsInput);
+    await user.type(pointsInput, '10');
+
+    await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
+
+    expect(await screen.findByText(/Čeká na odeslání: 1/)).toBeInTheDocument();
+    expect(await screen.findByText(/Chyba: Session revoked/)).toBeInTheDocument();
+    expect(await screen.findByText('Přihlášení vypršelo, přihlas se prosím znovu.')).toBeInTheDocument();
+
+    const storedQueue = (await localforage.getItem(QUEUE_KEY)) as any[] | null;
+    expect(storedQueue).not.toBeNull();
+    expect(storedQueue).toHaveLength(1);
+    expect(storedQueue?.[0]?.lastError).toBe('Session revoked');
+
+    await waitFor(() => expect(logoutMock).toHaveBeenCalled());
   });
 
   it('synchronizes pending queue when connectivity is restored', async () => {
