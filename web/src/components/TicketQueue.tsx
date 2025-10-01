@@ -87,12 +87,14 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
                   </div>
                   <div className="ticket-meta">
                     <span>{formatDuration(waitMs)}</span>
-                    <button type="button" onClick={() => onChangeState(ticket.id, 'serving')}>
-                      Obsluhovat
-                    </button>
-                    <button type="button" onClick={() => onChangeState(ticket.id, 'paused')}>
-                      Pozastavit
-                    </button>
+                    <div className="ticket-actions">
+                      <button type="button" onClick={() => onChangeState(ticket.id, 'serving')}>
+                        Obsluhovat
+                      </button>
+                      <button type="button" onClick={() => onChangeState(ticket.id, 'paused')}>
+                        Pozastavit
+                      </button>
+                    </div>
                   </div>
                 </li>
               );
@@ -115,12 +117,14 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
                   </div>
                   <div className="ticket-meta">
                     <span>{formatDuration(serveMs)}</span>
-                    <button type="button" onClick={() => onChangeState(ticket.id, 'done')}>
-                      Hotovo
-                    </button>
-                    <button type="button" onClick={() => onChangeState(ticket.id, 'paused')}>
-                      Pozastavit
-                    </button>
+                    <div className="ticket-actions">
+                      <button type="button" onClick={() => onChangeState(ticket.id, 'done')}>
+                        Hotovo
+                      </button>
+                      <button type="button" onClick={() => onChangeState(ticket.id, 'paused')}>
+                        Pozastavit
+                      </button>
+                    </div>
                   </div>
                 </li>
               );
