@@ -854,48 +854,50 @@ function StationApp({
 
   const handleTicketStateChange = useCallback(
     (id: string, nextState: Ticket['state']) => {
-      let updated: Ticket | null = null;
+      const existingTicket = tickets.find((ticket) => ticket.id === id);
+      if (!existingTicket) {
+        return;
+      }
+
+      const nextTicket = transitionTicket(existingTicket, nextState);
+
       updateTickets((current) =>
-        current.map((ticket) => {
-          if (ticket.id !== id) {
-            return ticket;
-          }
-          const nextTicket = transitionTicket(ticket, nextState);
-          updated = nextTicket;
-          return nextTicket;
-        }),
+        current.map((ticket) => (ticket.id === id ? nextTicket : ticket)),
       );
 
-      if (nextState === 'done' && updated) {
-        const summary = patrolById.get(updated.patrolId);
-        const ticketPatrol: Patrol = summary
-          ? {
-              id: summary.id,
-              team_name: summary.team_name,
-              category: summary.category,
-              sex: summary.sex,
-              patrol_code: summary.patrol_code || updated.patrolCode || null,
-            }
-          : {
-              id: updated.patrolId,
-              team_name: updated.teamName,
-              category: updated.category,
-              sex: updated.sex,
-              patrol_code: updated.patrolCode || null,
-            };
-
-        if (!ticketPatrol.team_name) {
-          pushAlert('Hlídku se nepodařilo otevřít, není v manifestu.');
-          return;
-        }
-        const waitSeconds = Math.max(0, Math.round(updated.waitAccumMs / 1000));
-        initializeFormForPatrol(ticketPatrol, {
-          arrivedAt: updated.createdAt,
-          waitSeconds,
-        });
+      if (nextState !== 'done') {
+        return;
       }
+
+      const summary = patrolById.get(nextTicket.patrolId);
+      const ticketPatrol: Patrol = summary
+        ? {
+            id: summary.id,
+            team_name: summary.team_name,
+            category: summary.category,
+            sex: summary.sex,
+            patrol_code: summary.patrol_code || nextTicket.patrolCode || null,
+          }
+        : {
+            id: nextTicket.patrolId,
+            team_name: nextTicket.teamName,
+            category: nextTicket.category,
+            sex: nextTicket.sex,
+            patrol_code: nextTicket.patrolCode || null,
+          };
+
+      if (!ticketPatrol.team_name) {
+        pushAlert('Hlídku se nepodařilo otevřít, není v manifestu.');
+        return;
+      }
+
+      const waitSeconds = Math.max(0, Math.round(nextTicket.waitAccumMs / 1000));
+      initializeFormForPatrol(ticketPatrol, {
+        arrivedAt: nextTicket.createdAt,
+        waitSeconds,
+      });
     },
-    [initializeFormForPatrol, patrolById, pushAlert, updateTickets],
+    [initializeFormForPatrol, patrolById, pushAlert, tickets, updateTickets],
   );
 
   const handleResetTickets = useCallback(() => {
