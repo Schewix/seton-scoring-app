@@ -23,7 +23,7 @@ VITE_ADMIN_MODE=1
 ```
 
 Spuštěním aplikace s parametrem `?view=scoreboard` v URL se načte výsledkový
-přehled, který využívá pohledy `results` a `results_ranked`.
+přehled, který využívá pohled `scoreboard_view` (stavějící na `results_ranked`).
 
 ## Scripts
 
