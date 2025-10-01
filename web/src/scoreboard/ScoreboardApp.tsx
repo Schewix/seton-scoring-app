@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
+import AppFooter from '../components/AppFooter';
 import './ScoreboardApp.css';
 
 interface RawResult {
@@ -564,6 +565,7 @@ function ScoreboardApp() {
           )}
         </section>
       </main>
+      <AppFooter className="scoreboard-footer" />
     </div>
   );
 }
