@@ -232,7 +232,7 @@ vi.mock('../auth/context', async () => {
       station: {
         id: 'station-test',
         code: mockedStationCode,
-        name: mockedStationCode === 'T' ? 'Terčové stanoviště' : 'Stanoviště X',
+        name: mockedStationCode === 'T' ? 'Výpočetka' : 'Stanoviště X',
       },
       event: { id: 'event-test', name: 'Test Event' },
       allowedCategories: ['N', 'M', 'S', 'R'],
@@ -471,7 +471,7 @@ describe('station workflow', () => {
 
   it('automatically scores target answers and saves quiz responses', async () => {
     mockedStationCode = 'T';
-    supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Terčové stanoviště' }));
+    supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Výpočetka' }));
     supabaseMock.__setMock(
       'station_category_answers',
       () => createSelectResult([{ category: 'N', correct_answers: 'ABCDABCDABCD' }])
@@ -525,7 +525,7 @@ describe('station workflow', () => {
 
   it('queues submission when sync endpoint reports failure', async () => {
     mockedStationCode = 'T';
-    supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Terčové stanoviště' }));
+    supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Výpočetka' }));
     supabaseMock.__setMock(
       'station_category_answers',
       () => createSelectResult([{ category: 'N', correct_answers: 'ABCDABCDABCD' }])
