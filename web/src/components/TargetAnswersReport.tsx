@@ -38,9 +38,35 @@ function mapTargetRows(rows: TargetRowRecord[] = []): TargetRow[] {
 interface TargetAnswersReportProps {
   eventId: string;
   stationId: string;
+  stationName?: string;
+  stationCode?: string;
 }
 
-export default function TargetAnswersReport({ eventId, stationId }: TargetAnswersReportProps) {
+function createStationFileSegment(stationName?: string, stationCode?: string) {
+  const name = typeof stationName === 'string' ? stationName.trim() : '';
+  const code = typeof stationCode === 'string' ? stationCode.trim() : '';
+
+  if (!name && !code) {
+    return null;
+  }
+
+  const combined = [name, code].filter(Boolean).join('-');
+
+  const normalised = combined
+    .normalize('NFKD')
+    .replace(/[^0-9a-zA-Z\s-]+/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return normalised || null;
+}
+
+export default function TargetAnswersReport({
+  eventId,
+  stationId,
+  stationName,
+  stationCode,
+}: TargetAnswersReportProps) {
   const [rows, setRows] = useState<TargetRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +127,10 @@ export default function TargetAnswersReport({ eventId, stationId }: TargetAnswer
     return [header.join(','), ...csvRows].join('\n');
   }, [rows]);
 
+  const stationFileSegment = useMemo(() => {
+    return createStationFileSegment(stationName, stationCode) ?? stationId;
+  }, [stationName, stationCode, stationId]);
+
   const handleExport = useCallback(() => {
     if (!csvContent) {
       return;
@@ -109,12 +139,12 @@ export default function TargetAnswersReport({ eventId, stationId }: TargetAnswer
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `target-report-${eventId}-${stationId}.csv`;
+    anchor.download = `target-report-${eventId}-${stationFileSegment}.csv`;
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
-  }, [csvContent, eventId, stationId]);
+  }, [csvContent, eventId, stationFileSegment]);
 
   return (
     <section className="card target-report">

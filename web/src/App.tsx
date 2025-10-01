@@ -2319,7 +2319,14 @@ function StationApp({
           </section>
 
           <LastScoresList eventId={eventId} stationId={stationId} isTargetStation={isTargetStation} />
-          {isTargetStation ? <TargetAnswersReport eventId={eventId} stationId={stationId} /> : null}
+          {isTargetStation ? (
+            <TargetAnswersReport
+              eventId={eventId}
+              stationId={stationId}
+              stationName={stationDisplayName}
+              stationCode={stationCode}
+            />
+          ) : null}
         </>
       </main>
       <AppFooter />
