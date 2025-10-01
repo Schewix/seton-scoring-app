@@ -17,7 +17,7 @@ pro generování QR kódů.
 ## Přehled repozitáře
 
 - `web/` – webová aplikace pro rozhodčí a výsledkový přehled (React, Vite,
-  TypeScript).
+  TypeScript, PWA se service workerem).
 - `supabase/sql/` – schéma databáze, pohledy, RLS politiky a referenční seed.
 - `google-sheets/` – Apps Script pro import hlídek a popis šablony tabulky.
 - `scripts/` – nástroje pro generování QR kódů hlídek.
@@ -58,16 +58,21 @@ Server poskytuje endpointy:
 ### Hlavní funkce
 
 - Skenování QR kódů hlídek kamerou zařízení (ZXing) nebo ruční zadání kódu.
-- Formulář pro zápis bodů, čekací doby a poznámky ke stanovišti.
+- Formulář pro zápis bodů, čekací doby, poznámky a času doběhu (včetně
+  výpočtu penalizace za časové kategorie).
 - Automatické vyhodnocení terčového úseku včetně přepínače mezi manuálním a
-  automatickým režimem.
-- Editace a přehled správných odpovědí pro jednotlivé kategorie včetně tabulky.
+  automatickým režimem a validace vstupu.
+- Správa správných odpovědí pro jednotlivé kategorie s možností editace v
+  administrátorském režimu a přehledem uložených terčových výsledků.
+- Lokální fronta hlídek (čekají/obsluhované/hotové) pro řízení provozu
+  stanoviště, navázaná na skenování hlídky.
 - Offline fronta neodeslaných záznamů uložená v IndexedDB (`localforage`) s
-  náhledem a ruční synchronizací.
-- Přehled posledních výsledků s napojením na Supabase Realtime a detail terče.
-- Report terčových odpovědí s exportem do CSV.
-- Samostatný výsledkový přehled pro kancelář postavený na pohledech Supabase
-  `results` a `results_ranked` (stačí přidat `?view=scoreboard` do URL).
+  automatickými pokusy o synchronizaci a ručním přehledem.
+- Přehled posledních výsledků s napojením na Supabase Realtime, detailní
+  náhled terčových odpovědí a rychlé opravy bodů ostatních stanovišť.
+- Report terčových odpovědí s exportem do CSV a historie skenování pro audit.
+- Samostatný výsledkový přehled (scoreboard) pro kancelář s automatickým
+  obnovováním a exportem do XLSX.
 
 ### Instalace a spuštění
 
@@ -84,6 +89,8 @@ Server poskytuje endpointy:
    VITE_SUPABASE_URL=<url z projektu Supabase>
    VITE_SUPABASE_ANON_KEY=<anon klíč>
    VITE_EVENT_ID=<UUID aktuální akce>
+   # doporučeno: předvyplněné stanoviště pro bypass režim a přesměrování URL
+   VITE_STATION_ID=<UUID stanoviště>
    # volitelné: zapne administrátorský režim pro editaci správných odpovědí
    VITE_ADMIN_MODE=1
    # adresa backendu pro login/manifest (pokud běží samostatně)
@@ -116,22 +123,33 @@ Server poskytuje endpointy:
 
 - Stejné prostředí (`.env`) jako pro rozhodčí – je potřeba především
   `VITE_EVENT_ID`.
-- Při spuštění aplikace přidej do URL parametr `?view=scoreboard`. Dynamicky se
-  načte stránka s tabulkami z pohledů `results` a `results_ranked`.
+- Výsledkový přehled je dostupný na URL
+  `/setonuv-zavod/scoreboard` (nebo přidáním `?view=scoreboard` k libovolné
+  URL aplikace). Dynamicky se načte stránka s tabulkami z pohledů `results` a
+  `results_ranked`.
 - Stránka se automaticky obnovuje každých 30 sekund, případně lze použít ruční
   tlačítko „Aktualizovat“.
+- Lze exportovat kompletní výsledky do XLSX souboru – stačí kliknout na
+  tlačítko „Exportovat Excel“.
 
 ### Další poznámky
 
 - Offline fronta je per prohlížeč/stanici – při ztrátě sítě se záznamy ukládají
-  lokálně a po kliknutí na „Odeslat nyní“ (nebo po návratu připojení)
-  synchronizují.
+  lokálně, aplikace je průběžně zkouší odesílat a zobrazuje čas dalšího pokusu.
+  Ručně lze synchronizaci vyvolat z detailu fronty.
 - Zadané jméno rozhodčího se ukládá do `localStorage` pro další relaci.
 - Správné odpovědi lze hromadně upravit v horním panelu (vyžaduje administrátorský
   režim). Při zapnutí automatického hodnocení se odpovědi validují (12 otázek,
   pouze písmena A–D).
 - Každé stanoviště má vlastní URL tvaru `/stations/<station_id>` (alias `/stanoviste/<station_id>`);
-  pro scoreboard existuje krátká adresa `/scoreboard`.
+  aktuálně probíhající instalace je dostupná i na prefixu `/setonuv-zavod`.
+  Pro scoreboard existuje krátká adresa `/scoreboard` a zkrácený přepis
+  `/setonuv-zavod/scoreboard`.
+
+## Uživatelský manuál
+
+Detailní návod pro rozhodčí i kancelář je v souboru
+[`docs/USER_GUIDE.cs.md`](./docs/USER_GUIDE.cs.md).
 
 ## Supabase & Google Sheets
 
