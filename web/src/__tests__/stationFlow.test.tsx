@@ -287,6 +287,17 @@ async function renderApp() {
   });
 }
 
+async function loadPatrolAndOpenForm(user: ReturnType<typeof userEvent.setup>, code = 'N-01') {
+  await user.type(screen.getByPlaceholderText('např. NH-15'), code);
+  await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+
+  const serveButton = await screen.findByRole('button', { name: 'Obsluhovat' });
+  await user.click(serveButton);
+
+  const doneButton = await screen.findByRole('button', { name: 'Hotovo' });
+  await user.click(doneButton);
+}
+
 type TableFactory = () => unknown;
 
 interface SupabaseTestClient {
@@ -412,12 +423,11 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
 
-    await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
-    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+    await loadPatrolAndOpenForm(user);
 
-    const pointsInput = screen.getByLabelText('Body (0 až 12)');
+    const pointsInput = await screen.findByLabelText('Body (0 až 12)');
     await user.clear(pointsInput);
     await user.type(pointsInput, '10');
 
@@ -430,7 +440,6 @@ describe('station workflow', () => {
 
     const queueLabel = await screen.findByText('Vlci (N-01)');
     expect(queueLabel).toBeInTheDocument();
-    expect(screen.getByText(/N-01/)).toBeInTheDocument();
     expect(screen.getByText('Manuální body')).toBeInTheDocument();
     expect(screen.getByText(/Chyba:/)).toBeInTheDocument();
   });
@@ -440,12 +449,11 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
 
-    await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
-    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+    await loadPatrolAndOpenForm(user);
 
-    const pointsInput = screen.getByLabelText('Body (0 až 12)');
+    const pointsInput = await screen.findByLabelText('Body (0 až 12)');
     await user.clear(pointsInput);
     await user.type(pointsInput, '10.5');
 
@@ -481,11 +489,10 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
     await screen.findByText('Správné odpovědi');
 
-    await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
-    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+    await loadPatrolAndOpenForm(user);
 
     await screen.findAllByText(/Vlci/);
 
@@ -540,11 +547,10 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
     await screen.findByText('Správné odpovědi');
 
-    await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
-    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+    await loadPatrolAndOpenForm(user);
 
     await screen.findAllByText(/Vlci/);
 
@@ -577,12 +583,11 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
 
-    await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
-    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+    await loadPatrolAndOpenForm(user);
 
-    const pointsInput = screen.getByLabelText('Body (0 až 12)');
+    const pointsInput = await screen.findByLabelText('Body (0 až 12)');
     await user.clear(pointsInput);
     await user.type(pointsInput, '10');
 
@@ -645,7 +650,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await waitFor(() => {
@@ -690,7 +695,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
     await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
 
     const alerts = await screen.findAllByText(
@@ -762,7 +767,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
     await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
 
     const alerts = await screen.findAllByText(
@@ -821,7 +826,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await waitFor(() => {
@@ -838,7 +843,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Skener hlídek')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
 
     await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
