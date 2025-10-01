@@ -1103,8 +1103,7 @@ function StationApp({
         inProgress: false,
         lastError: 'missing-session',
       }));
-      pushAlert('Přihlášení vypršelo, přihlas se prosím znovu.');
-      void logout();
+      pushAlert('Přihlášení vypršelo, po obnovení připojení se znovu přihlas pro odeslání fronty.');
       return;
     }
 
@@ -1203,7 +1202,6 @@ function StationApp({
     auth.tokens.sessionId,
     eventId,
     manifest.manifestVersion,
-    logout,
     queueKey,
     stationId,
     syncing,
