@@ -53,3 +53,22 @@ select
     order by r.total_points desc, r.points_no_T desc, r.pure_seconds asc
   ) as rank_in_bracket
 from results r;
+
+-- Scoreboard view (ensures up-to-date event names without duplicating data)
+create or replace view scoreboard_view as
+select
+  r.event_id,
+  e.name as event_name,
+  r.patrol_id,
+  r.patrol_code,
+  r.team_name,
+  r.category,
+  r.sex,
+  r.total_points,
+  r.points_no_T,
+  r.pure_seconds,
+  r.rank_in_bracket
+from results_ranked r
+join events e on e.id = r.event_id;
+
+grant select on scoreboard_view to anon, authenticated;
