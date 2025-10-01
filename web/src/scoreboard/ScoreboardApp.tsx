@@ -260,17 +260,17 @@ function ScoreboardApp() {
     (async () => {
       try {
         const { data, error } = await supabase
-          .from('events')
+          .from('events_public')
           .select('name')
           .eq('id', rawEventId)
-          .limit(1);
+          .maybeSingle();
         if (!isMountedRef.current || cancelled) return;
         if (error) {
           console.error('Failed to load event name', error);
           return;
         }
-        const row = Array.isArray(data) && data.length ? data[0] : null;
-        const fetchedName = normaliseText((row as { name?: string | null } | null)?.name ?? null);
+        const row = data as { name?: string | null } | null;
+        const fetchedName = normaliseText(row?.name ?? null);
         if (fetchedName) {
           setEventName(fetchedName);
         }
