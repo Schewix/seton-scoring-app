@@ -67,6 +67,10 @@ function parseNumber(value: number | string | null, fallback: number | null = nu
   return fallback;
 }
 
+function hasPatrolCode(value: string | null | undefined) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 function normaliseResult(raw: RawResult): Result {
   return {
     eventId: raw.event_id,
@@ -226,11 +230,56 @@ function ScoreboardApp() {
         return;
       }
 
-      if (data) {
-        setRanked(data.map(normaliseRankedResult));
-      } else {
-        setRanked([]);
+      let normalised = Array.isArray(data) ? data.map(normaliseRankedResult) : [];
+
+      const missingIds = normalised
+        .filter((item) => !hasPatrolCode(item.patrolCode))
+        .map((item) => item.patrolId);
+
+      const uniqueMissingIds = Array.from(new Set(missingIds));
+
+      if (uniqueMissingIds.length) {
+        type PatrolCodeRow = { id: string; patrol_code: string | null };
+        const { data: patrolRows, error: patrolError } = await supabase
+          .from('patrols')
+          .select('id, patrol_code')
+          .eq('event_id', rawEventId)
+          .in('id', uniqueMissingIds);
+
+        if (!isMountedRef.current) {
+          return;
+        }
+
+        if (patrolError) {
+          console.error('Failed to load patrol codes for scoreboard', patrolError);
+        }
+
+        if (patrolRows && patrolRows.length) {
+          const codeMap = new Map<string, string>();
+          patrolRows.forEach((row: PatrolCodeRow) => {
+            if (hasPatrolCode(row.patrol_code)) {
+              codeMap.set(row.id, row.patrol_code!.trim());
+            }
+          });
+
+          if (codeMap.size) {
+            normalised = normalised.map((item) => {
+              if (hasPatrolCode(item.patrolCode)) {
+                return item;
+              }
+
+              const fallbackCode = codeMap.get(item.patrolId);
+              if (fallbackCode) {
+                return { ...item, patrolCode: fallbackCode };
+              }
+
+              return item;
+            });
+          }
+        }
       }
+
+      setRanked(normalised);
 
       if (error) {
         console.error('Failed to load ranked standings', error);
