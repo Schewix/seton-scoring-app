@@ -17,6 +17,7 @@ import TicketQueue from './components/TicketQueue';
 import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket } from './auth/tickets';
 import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord } from './storage/scanHistory';
+import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 
 
 interface Patrol {
@@ -327,6 +328,7 @@ function StationApp({
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [arrivedAt, setArrivedAt] = useState<string | null>(null);
   const [finishAt, setFinishAt] = useState<string | null>(null);
+  const [totalWaitMinutes, setTotalWaitMinutes] = useState<number | null>(null);
   const [isWaiting, setIsWaiting] = useState(false);
   const [waitDurationSeconds, setWaitDurationSeconds] = useState(0);
   const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -531,19 +533,29 @@ function StationApp({
       if (stationCode !== 'T') {
         setStartTime(null);
         setFinishAt(null);
+        setTotalWaitMinutes(null);
         return;
       }
 
-      const { data: timingRows, error: timingError } = await supabase
-        .from('timings')
-        .select('start_time, finish_time')
-        .eq('event_id', eventId)
-        .eq('patrol_id', patrolId);
+      const [{ data: timingRows, error: timingError }, { data: passageRows, error: waitError }] =
+        await Promise.all([
+          supabase
+            .from('timings')
+            .select('start_time, finish_time')
+            .eq('event_id', eventId)
+            .eq('patrol_id', patrolId),
+          supabase
+            .from('station_passages')
+            .select('wait_minutes')
+            .eq('event_id', eventId)
+            .eq('patrol_id', patrolId),
+        ]);
 
       if (timingError) {
         console.error('Failed to load finish time', timingError);
         setStartTime(null);
         setFinishAt(null);
+        setTotalWaitMinutes(null);
         return;
       }
 
@@ -551,6 +563,18 @@ function StationApp({
       const timing = row as { start_time?: string | null; finish_time?: string | null } | null;
       setStartTime(timing?.start_time ?? null);
       setFinishAt(timing?.finish_time ?? null);
+
+      if (waitError) {
+        console.error('Failed to load wait data', waitError);
+        setTotalWaitMinutes(null);
+      } else {
+        const rows = (passageRows as { wait_minutes?: number | null }[] | null) ?? [];
+        const total = rows.reduce((acc, current) => {
+          const value = Number(current?.wait_minutes ?? 0);
+          return Number.isFinite(value) ? acc + value : acc;
+        }, 0);
+        setTotalWaitMinutes(total);
+      }
     },
     [eventId, stationCode],
   );
@@ -1144,6 +1168,7 @@ function StationApp({
     setFinishAt(null);
     setFinishTimeInput('');
     setStartTime(null);
+    setTotalWaitMinutes(null);
     setScoreReviewRows([]);
     setScoreReviewState({});
     setScoreReviewError(null);
@@ -1553,16 +1578,48 @@ function StationApp({
     return formatDurationMs(ms);
   }, [startTime, finishAt]);
 
+  const pureCourseSeconds = useMemo(() => {
+    if (!startTime || !finishAt) {
+      return null;
+    }
+    const start = new Date(startTime);
+    const finish = new Date(finishAt);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(finish.getTime())) {
+      return null;
+    }
+    const waitMinutes = Number(totalWaitMinutes ?? 0);
+    return computePureCourseSeconds({ start, finish, waitMinutes });
+  }, [finishAt, startTime, totalWaitMinutes]);
+
+  const pureCourseLabel = useMemo(() => {
+    if (pureCourseSeconds === null) {
+      return '—';
+    }
+    return formatDurationMs(pureCourseSeconds * 1000);
+  }, [pureCourseSeconds]);
+
+  const timePoints = useMemo(() => {
+    if (!patrol) {
+      return null;
+    }
+    const category = patrol.category?.trim().toUpperCase();
+    if (!isTimeScoringCategory(category)) {
+      return null;
+    }
+    return computeTimePoints(category, pureCourseSeconds);
+  }, [patrol, pureCourseSeconds]);
+
   const controlChecks = useMemo(() => {
     const checks: { label: string; ok: boolean }[] = [];
     if (stationCode === 'T') {
       checks.push({ label: 'Čas doběhu vyplněn', ok: Boolean(finishAt && finishTimeInput) });
       checks.push({ label: 'Čas startu dostupný', ok: Boolean(startTime) });
+      checks.push({ label: 'Čistý čas vypočítán', ok: pureCourseSeconds !== null });
       const answersReady = autoScore.total > 0 ? autoScore.given === autoScore.total : false;
       checks.push({ label: 'Odpovědi zadány', ok: answersReady });
     }
     return checks;
-  }, [stationCode, finishAt, finishTimeInput, startTime, autoScore]);
+  }, [stationCode, finishAt, finishTimeInput, startTime, autoScore, pureCourseSeconds]);
 
   const isPatrolInQueue = useMemo(() => {
     if (!patrol) {
@@ -1869,6 +1926,9 @@ function StationApp({
                         <div className="calc-time-header">
                           <h3>Čas doběhu</h3>
                           <p className="card-hint">Zapiš čas doběhu na stanovišti. Přepočet vychází ze startovního času.</p>
+                          <p className="card-hint">
+                            12 bodů je za limitní čas dle kategorie, za každých započatých 10 minut navíc se odečte 1 bod.
+                          </p>
                         </div>
                         <div className="calc-time-input">
                           <label htmlFor="finish-time-input">Doběh (HH:MM)</label>
@@ -1889,6 +1949,22 @@ function StationApp({
                           <div>
                             <span className="calc-meta-label">Čas na trati:</span>
                             <strong>{timeOnCourse ?? '—'}</strong>
+                          </div>
+                          <div>
+                            <span className="calc-meta-label">Čekání:</span>
+                            <strong>
+                              {totalWaitMinutes !== null
+                                ? formatWaitDuration(totalWaitMinutes * 60)
+                                : '—'}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="calc-meta-label">Čistý čas:</span>
+                            <strong>{pureCourseLabel}</strong>
+                          </div>
+                          <div>
+                            <span className="calc-meta-label">Body za čas:</span>
+                            <strong>{timePoints ?? '—'}</strong>
                           </div>
                         </div>
                       </div>
