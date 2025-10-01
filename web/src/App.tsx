@@ -329,6 +329,10 @@ function waitSecondsToMinutes(seconds: number) {
   return Math.max(0, Math.round(seconds / 60));
 }
 
+function getStationDisplayName(name: string, code: string | null | undefined): string {
+  return code?.trim().toUpperCase() === 'T' ? 'Výpočetka' : name;
+}
+
 function StationApp({
   auth,
   refreshManifest,
@@ -342,7 +346,7 @@ function StationApp({
   const eventId = manifest.event.id;
   const stationId = manifest.station.id;
   const stationCode = manifest.station.code?.trim().toUpperCase() || '';
-  const stationDisplayName = stationCode === 'T' ? 'Výpočetka' : manifest.station.name;
+  const stationDisplayName = getStationDisplayName(manifest.station.name, manifest.station.code);
   const [activePatrol, setActivePatrol] = useState<Patrol | null>(null);
   const [scannerPatrol, setScannerPatrol] = useState<Patrol | null>(null);
   const [points, setPoints] = useState('');
@@ -948,12 +952,12 @@ function StationApp({
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const desiredPath = getStationPath(stationId);
+      const desiredPath = getStationPath(stationDisplayName);
       if (window.location.pathname !== desiredPath) {
         window.history.replaceState({}, '', desiredPath + window.location.search + window.location.hash);
       }
     }
-  }, [stationId]);
+  }, [stationDisplayName]);
 
   useEffect(() => {
     loadTickets(stationId).then((loaded) => {
@@ -2381,12 +2385,13 @@ export function useStationRouting(status: AuthStatus) {
     const hash = window.location.hash ?? '';
 
     if (status.state === 'authenticated') {
-      const stationId = status.manifest.station.id;
-      if (!stationId) {
+      const station = status.manifest.station;
+      const stationDisplayName = getStationDisplayName(station.name, station.code);
+      if (!stationDisplayName) {
         return;
       }
 
-      const canonicalPath = getStationPath(stationId);
+      const canonicalPath = getStationPath(stationDisplayName);
 
       if (pathname !== canonicalPath) {
         window.history.replaceState(window.history.state, '', `${canonicalPath}${search}${hash}`);
