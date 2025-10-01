@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
+import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import './ScoreboardApp.css';
 
 interface RawResult {
@@ -343,30 +344,40 @@ function ScoreboardApp() {
     }
   }, [eventName, exporting, groupedRanked]);
 
+  const eventLabel = eventName || 'Název závodu není k dispozici';
+  const lastUpdatedLabel = lastUpdatedAt
+    ? lastUpdatedAt.toLocaleTimeString('cs-CZ', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    : 'Čekám na data';
+  const lastUpdatedHint = refreshing
+    ? 'Načítám čerstvá data…'
+    : lastUpdatedAt
+    ? 'Automatická aktualizace každých 30 s.'
+    : 'Zobrazí se po načtení výsledků.';
+
   return (
     <div className="scoreboard-app">
-      <header className="scoreboard-header">
-        <div>
-          <h1>Výsledkový přehled</h1>
-          <p className={`scoreboard-subtitle${eventName ? '' : ' subtle'}`}>
-            {eventName || 'Název závodu není k dispozici'}
-          </p>
-          <p className="scoreboard-subtitle">
-            Data z pohledu Supabase <code>results_ranked</code>.
-          </p>
-        </div>
-        <div className="scoreboard-meta">
-          {lastUpdatedAt ? (
-            <span>
-              Aktualizováno: {lastUpdatedAt.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </span>
-          ) : (
-            <span>Čekám na první data…</span>
-          )}
-          <div className="scoreboard-actions">
+      <header className="scoreboard-hero">
+        <div className="scoreboard-hero-top">
+          <div className="scoreboard-hero-brand">
+            <div className="scoreboard-hero-logo">
+              <img src={zelenaLigaLogo} alt="Logo Zelená liga" />
+            </div>
+            <div>
+              <span className="scoreboard-hero-eyebrow">Zelená liga</span>
+              <h1>Výsledkový přehled</h1>
+              <p className="scoreboard-hero-description">
+                Živá tabulka výsledků závodu s automatickým obnovováním dat.
+              </p>
+            </div>
+          </div>
+          <div className="scoreboard-hero-actions">
             <button
               type="button"
-              className="scoreboard-button scoreboard-button--secondary"
+              className="scoreboard-button scoreboard-button--ghost"
               onClick={handleExport}
               disabled={!groupedRanked.length || loading || exporting}
             >
@@ -374,7 +385,7 @@ function ScoreboardApp() {
             </button>
             <button
               type="button"
-              className="scoreboard-button"
+              className="scoreboard-button scoreboard-button--primary"
               onClick={handleRefresh}
               disabled={refreshing}
             >
@@ -382,58 +393,81 @@ function ScoreboardApp() {
             </button>
           </div>
         </div>
+        <div className="scoreboard-hero-meta">
+          <div className="scoreboard-summary">
+            <span className="scoreboard-summary-label">Závod</span>
+            <strong>{eventLabel}</strong>
+            <span className="scoreboard-summary-sub">
+              Data pochází z tabulky Supabase <code>results_ranked</code>.
+            </span>
+          </div>
+          <div className="scoreboard-summary">
+            <span className="scoreboard-summary-label">Poslední aktualizace</span>
+            <strong>{lastUpdatedLabel}</strong>
+            <span className="scoreboard-summary-sub">{lastUpdatedHint}</span>
+          </div>
+        </div>
       </header>
 
-      {error && <div className="scoreboard-error">{error}</div>}
+      <main className="scoreboard-content">
+        {error && <div className="scoreboard-error">{error}</div>}
 
-      <section className="scoreboard-section">
-        <h2>Pořadí podle kategorií</h2>
-        {loading && !groupedRanked.length ? (
-          <div className="scoreboard-placeholder">Načítám data…</div>
-        ) : groupedRanked.length ? (
-          <div className="scoreboard-groups">
-            {groupedRanked.map((group) => (
-              <div key={group.key} className="scoreboard-group">
-                <h3>{formatCategoryLabel(group.category, group.sex)}</h3>
-                <table className="scoreboard-table scoreboard-table--compact">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Hlídka</th>
-                      <th>Body</th>
-                      <th>Body bez T</th>
-                      <th>Čistý čas</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.items.map((row, rowIndex) => {
-                      const displayRank = row.rankInBracket > 0 ? row.rankInBracket : rowIndex + 1;
-                      const fallbackCode = createFallbackPatrolCode(
-                        group.category,
-                        group.sex,
-                        displayRank,
-                      );
-                      return (
-                        <tr key={row.patrolId}>
-                          <td>{displayRank}</td>
-                          <td className="scoreboard-team">
-                            <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
-                          </td>
-                          <td>{formatPoints(row.totalPoints)}</td>
-                          <td>{formatPoints(row.pointsNoT)}</td>
-                          <td>{formatSeconds(row.pureSeconds)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ))}
+        <section className="scoreboard-section">
+          <div className="scoreboard-section-header">
+            <h2>Pořadí podle kategorií</h2>
+            {groupedRanked.length ? (
+              <p className="scoreboard-section-hint">
+                Přehled je seřazen podle předem definovaných kategorií závodu.
+              </p>
+            ) : null}
           </div>
-        ) : (
-          <div className="scoreboard-placeholder">Zatím nejsou žádné výsledky.</div>
-        )}
-      </section>
+          {loading && !groupedRanked.length ? (
+            <div className="scoreboard-placeholder">Načítám data…</div>
+          ) : groupedRanked.length ? (
+            <div className="scoreboard-groups">
+              {groupedRanked.map((group) => (
+                <div key={group.key} className="scoreboard-group">
+                  <h3>{formatCategoryLabel(group.category, group.sex)}</h3>
+                  <table className="scoreboard-table scoreboard-table--compact">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Hlídka</th>
+                        <th>Body</th>
+                        <th>Body bez T</th>
+                        <th>Čistý čas</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.items.map((row, rowIndex) => {
+                        const displayRank = row.rankInBracket > 0 ? row.rankInBracket : rowIndex + 1;
+                        const fallbackCode = createFallbackPatrolCode(
+                          group.category,
+                          group.sex,
+                          displayRank,
+                        );
+                        return (
+                          <tr key={row.patrolId}>
+                            <td>{displayRank}</td>
+                            <td className="scoreboard-team">
+                              <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
+                            </td>
+                            <td>{formatPoints(row.totalPoints)}</td>
+                            <td>{formatPoints(row.pointsNoT)}</td>
+                            <td>{formatSeconds(row.pureSeconds)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="scoreboard-placeholder">Zatím nejsou žádné výsledky.</div>
+          )}
+        </section>
+      </main>
     </div>
   );
 }
