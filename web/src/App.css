@@ -80,7 +80,7 @@ body {
 
 .hero-actions .logout-button {
   background: rgba(255, 255, 255, 0.18);
-  color: #0b5346;
+  color: #fefce8;
   border: 1px solid rgba(255, 255, 255, 0.24);
   box-shadow: 0 16px 30px rgba(10, 78, 56, 0.28);
 }
@@ -104,17 +104,18 @@ body {
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(11, 83, 70, 0.7);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .station-summary strong {
   font-size: 1.25rem;
-  color: #0b5346;
+  color: #fefce8;
+  text-shadow: 0 2px 6px rgba(10, 60, 46, 0.4);
 }
 
 .station-summary-sub {
   font-size: 0.9rem;
-  color: rgba(11, 83, 70, 0.68);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .hero-badges {
