@@ -116,6 +116,22 @@ function packAnswersForStorage(value = '') {
   return parseAnswerLetters(value).join('');
 }
 
+function formatPatrolMetaLabel(patrol: { patrol_code: string | null; category: string; sex: string } | null) {
+  if (!patrol) {
+    return '';
+  }
+  const code = patrol.patrol_code?.trim();
+  if (code) {
+    return code;
+  }
+  const category = patrol.category?.trim();
+  const sex = patrol.sex?.trim();
+  if (category && sex) {
+    return `${category}/${sex}`;
+  }
+  return category || sex || '';
+}
+
 async function readQueue(key: string): Promise<PendingOperation[]> {
   let raw = await localforage.getItem<(PendingOperation | LegacyPendingSubmission)[]>(key);
   let migratedFromLegacy = false;
@@ -326,7 +342,7 @@ function StationApp({
   const eventId = manifest.event.id;
   const stationId = manifest.station.id;
   const stationCode = manifest.station.code?.trim().toUpperCase() || '';
-  const stationDisplayName = stationCode === 'T' ? 'Výpočtka' : manifest.station.name;
+  const stationDisplayName = stationCode === 'T' ? 'Výpočetka' : manifest.station.name;
   const [activePatrol, setActivePatrol] = useState<Patrol | null>(null);
   const [scannerPatrol, setScannerPatrol] = useState<Patrol | null>(null);
   const [points, setPoints] = useState('');
@@ -376,6 +392,7 @@ function StationApp({
   const queueKey = useMemo(() => `${QUEUE_KEY_PREFIX}_${stationId}`, [stationId]);
 
   const isTargetStation = stationCode === 'T';
+  const enableTicketQueue = !isTargetStation;
   const updateTickets = useCallback(
     (updater: (current: Ticket[]) => Ticket[]) => {
       let nextTickets: Ticket[] = [];
@@ -721,6 +738,19 @@ function StationApp({
     },
     [categoryAnswers, clearWait, isTargetStation, loadTimingData, loadScoreReview],
   );
+
+  const handleServePatrol = useCallback(() => {
+    if (enableTicketQueue) {
+      handleAddTicket('serving');
+      return;
+    }
+    if (!scannerPatrol) {
+      pushAlert('Nejprve načti hlídku.');
+      return;
+    }
+    initializeFormForPatrol(scannerPatrol);
+    pushAlert(`Hlídka ${scannerPatrol.team_name} je připravena k obsluze.`);
+  }, [enableTicketQueue, handleAddTicket, initializeFormForPatrol, pushAlert, scannerPatrol]);
 
   const handleScoreOkToggle = useCallback(
     (stationId: string, ok: boolean) => {
@@ -1599,9 +1629,13 @@ function StationApp({
     [activePatrol, categoryAnswers]
   );
   const heroBadges = useMemo(() => {
-    const queueLabel = pendingCount ? `Offline fronta: ${pendingCount}` : 'Offline fronta prázdná';
-    return [`Event: ${manifest.event.name}`, queueLabel];
-  }, [manifest.event.name, pendingCount]);
+    const badges = [`Event: ${manifest.event.name}`];
+    if (enableTicketQueue) {
+      const queueLabel = pendingCount ? `Offline fronta: ${pendingCount}` : 'Offline fronta prázdná';
+      badges.push(queueLabel);
+    }
+    return badges;
+  }, [enableTicketQueue, manifest.event.name, pendingCount]);
 
   const failedCount = useMemo(() => pendingItems.filter((item) => Boolean(item.lastError)).length, [pendingItems]);
 
@@ -1877,7 +1911,9 @@ function StationApp({
               <div>
                 <h2>Načtení hlídek</h2>
                 <p className="card-subtitle">
-                  Zadej kód hlídky ručně. Hlídku pak přidej do fronty nebo rovnou obsluhuj.
+                  {enableTicketQueue
+                    ? 'Zadej kód hlídky ručně. Hlídku pak přidej do fronty nebo rovnou obsluhuj.'
+                    : 'Zadej kód hlídky ručně a obsluhuj ji.'}
                 </p>
               </div>
             </header>
@@ -1926,29 +1962,30 @@ function StationApp({
                       </span>
                     </span>
                   ) : null}
-                  <span>
-                    {scannerPatrol.patrol_code ? `${scannerPatrol.patrol_code} • ` : ''}
-                    {scannerPatrol.category}/{scannerPatrol.sex}
-                  </span>
+                  <span>{formatPatrolMetaLabel(scannerPatrol)}</span>
                   <div className="scanner-actions">
                     <button
                       type="button"
                       className="primary"
-                      onClick={() => handleAddTicket('serving')}
-                      disabled={isPatrolInQueue}
+                      onClick={handleServePatrol}
+                      disabled={enableTicketQueue && isPatrolInQueue}
                     >
                       Obsluhovat
                     </button>
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => handleAddTicket('waiting')}
-                      disabled={isPatrolInQueue}
-                    >
-                      Čekat
-                    </button>
+                    {enableTicketQueue ? (
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => handleAddTicket('waiting')}
+                        disabled={isPatrolInQueue}
+                      >
+                        Čekat
+                      </button>
+                    ) : null}
                   </div>
-                  {isPatrolInQueue ? <span className="scanner-note">Hlídka už čeká ve frontě.</span> : null}
+                  {enableTicketQueue && isPatrolInQueue ? (
+                    <span className="scanner-note">Hlídka už čeká ve frontě.</span>
+                  ) : null}
                 </div>
               ) : (
                 <p className="scanner-placeholder">
@@ -1958,12 +1995,14 @@ function StationApp({
             </div>
           </section>
 
-          <TicketQueue
-            tickets={tickets}
-            heartbeat={tick}
-            onChangeState={handleTicketStateChange}
-            onReset={handleResetTickets}
-          />
+          {enableTicketQueue ? (
+            <TicketQueue
+              tickets={tickets}
+              heartbeat={tick}
+              onChangeState={handleTicketStateChange}
+              onReset={handleResetTickets}
+            />
+          ) : null}
 
           <section ref={formRef} className="card form-card">
             <header className="card-header">
@@ -1985,10 +2024,7 @@ function StationApp({
               <div className="form-grid">
                 <div className="patrol-meta">
                   <strong>{activePatrol.team_name}</strong>
-                  <span>
-                    {activePatrol.patrol_code ? `${activePatrol.patrol_code} • ` : ''}
-                    {activePatrol.category}/{activePatrol.sex}
-                  </span>
+                  <span>{formatPatrolMetaLabel(activePatrol)}</span>
                 </div>
                 <div className="judge-display">
                   <span>Rozhodčí</span>

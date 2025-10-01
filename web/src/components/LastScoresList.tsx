@@ -210,8 +210,9 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
                 <div className="score-team-box">
                   <strong>{patrol.team_name}</strong>
                   <span className="score-team-meta">
-                    {patrol.patrol_code ? `${patrol.patrol_code} • ` : ''}
-                    {patrol.category}/{patrol.sex}
+                    {patrol.patrol_code
+                      ? patrol.patrol_code
+                      : `${patrol.category}/${patrol.sex}`}
                   </span>
                 </div>
               </div>
