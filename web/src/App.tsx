@@ -1035,7 +1035,26 @@ function StationApp({
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        let message = `HTTP ${response.status}`;
+        let shouldForceLogout = response.status === 401 || response.status === 403;
+        try {
+          const errorBody = await response.json();
+          const errorMessage = typeof errorBody?.error === 'string' ? errorBody.error.trim() : '';
+          if (errorMessage) {
+            message = errorMessage;
+          }
+          if (errorMessage && ['Missing token', 'Invalid token', 'Session revoked'].includes(errorMessage)) {
+            shouldForceLogout = true;
+          }
+        } catch (parseError) {
+          console.debug('Failed to parse sync error response', parseError);
+        }
+
+        const syncError = new Error(message) as Error & { shouldLogout?: boolean };
+        if (shouldForceLogout) {
+          syncError.shouldLogout = true;
+        }
+        throw syncError;
       }
 
       const resultBody: { results?: { id: string; status: 'done' | 'failed'; error?: string }[] } = await response.json();
@@ -1078,7 +1097,9 @@ function StationApp({
         setLastSavedAt(new Date().toISOString());
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown-error';
+      const syncError = error as Error & { shouldLogout?: boolean };
+      const message = syncError instanceof Error ? syncError.message : 'unknown-error';
+      const shouldForceLogout = Boolean(syncError?.shouldLogout);
       const rollbackQueue = queueWithLocks.map((op) => {
         if (!readyIds.has(op.id)) return op;
         const retryCount = op.retryCount + 1;
@@ -1093,6 +1114,10 @@ function StationApp({
       await writeQueue(queueKey, rollbackQueue);
       updateQueueState(rollbackQueue);
       pushAlert('Synchronizace selhala, zkusím to znovu později.');
+      if (shouldForceLogout) {
+        pushAlert('Přihlášení vypršelo, přihlas se prosím znovu.');
+        void logout();
+      }
     } finally {
       setSyncing(false);
     }
@@ -1101,6 +1126,7 @@ function StationApp({
     auth.tokens.sessionId,
     eventId,
     manifest.manifestVersion,
+    logout,
     queueKey,
     stationId,
     syncing,
