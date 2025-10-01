@@ -284,7 +284,11 @@ body {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #988c82;
-  padding: 0 0 12px;
+  padding: 0 10px 12px 0;
+}
+
+.scoreboard-table thead th:last-child {
+  padding-right: 0;
 }
 
 .scoreboard-table tbody tr {
@@ -292,7 +296,7 @@ body {
 }
 
 .scoreboard-table tbody td {
-  padding: 12px 0;
+  padding: 12px 10px 12px 0;
   font-size: 0.98rem;
   color: #2f2a25;
   font-weight: 500;
@@ -302,22 +306,40 @@ body {
   font-weight: 700;
   color: #0f766e;
   width: 52px;
+  text-align: center;
+  padding-left: 0;
 }
 
 .scoreboard-table--compact tbody td {
   font-size: 0.95rem;
 }
 
+.scoreboard-table thead th:nth-child(3),
+.scoreboard-table thead th:nth-child(4),
+.scoreboard-table tbody td:nth-child(3),
+.scoreboard-table tbody td:nth-child(4) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  padding-right: 0;
+}
+
+.scoreboard-table thead th:nth-child(2),
+.scoreboard-table tbody td:nth-child(2) {
+  padding-right: 12px;
+}
+
 .scoreboard-team {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  align-items: flex-start;
 }
 
 .scoreboard-team strong {
   font-size: 1.05rem;
   color: #0b5346;
   letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
 }
 
 .scoreboard-team-meta {
