@@ -1,8 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { createHmac } from 'node:crypto';
-import { createSupabaseServerClient } from '../_lib/supabaseServer.js';
 
-const REQUIRED_ENV_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_ANON_KEY'];
+const REQUIRED_ENV_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
 
 for (const name of REQUIRED_ENV_VARS) {
   if (!process.env[name]) {
@@ -218,21 +217,6 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const supabaseClient = createSupabaseServerClient(req, res);
-  const {
-    data: { user },
-    error: authError,
-  } = await supabaseClient.auth.getUser();
-
-  if (authError) {
-    console.error('Failed to read auth session', authError);
-    return res.status(500).json({ error: 'Auth error' });
-  }
-
-  if (!user) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
-
   const operations = parseOperations(req.body);
   if (!operations) {
     return res.status(400).json({ error: 'Invalid body' });
@@ -242,33 +226,14 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({ results: [] });
   }
 
-  const { data: judge, error: judgeError } = await supabaseAdmin
-    .from('judges')
-    .select('id, display_name')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  if (judgeError) {
-    console.error('Failed to load judge record', judgeError);
-    return res.status(500).json({ error: 'Failed to load judge' });
-  }
-
-  if (!judge) {
-    return res.status(403).json({ error: 'Judge not found' });
-  }
-
   const results: OperationResult[] = [];
   const sessionCache = new Map<string, any>();
   const assignmentCache = new Map<string, any>();
+  const judgeCache = new Map<string, { id: string; display_name: string }>();
 
   for (const operation of operations) {
     try {
       const parsed: SignedSubmissionPayload = JSON.parse(operation.signature_payload);
-
-      if (parsed.judge_id && parsed.judge_id !== user.id) {
-        results.push({ id: operation.id, status: 'failed', error: 'judge-mismatch' });
-        continue;
-      }
 
       let session = sessionCache.get(parsed.session_id);
       if (!session) {
@@ -276,7 +241,6 @@ export default async function handler(req: any, res: any) {
           .from('judge_sessions')
           .select('*')
           .eq('id', parsed.session_id)
-          .eq('judge_id', user.id)
           .maybeSingle();
 
         if (sessionError) {
@@ -290,6 +254,38 @@ export default async function handler(req: any, res: any) {
       if (!session || session.revoked_at) {
         results.push({ id: operation.id, status: 'failed', error: 'session-revoked' });
         continue;
+      }
+
+      if (parsed.judge_id && parsed.judge_id !== session.judge_id) {
+        results.push({ id: operation.id, status: 'failed', error: 'judge-mismatch' });
+        continue;
+      }
+
+      const judgeId: string | null = session.judge_id ?? null;
+      if (!judgeId) {
+        results.push({ id: operation.id, status: 'failed', error: 'missing-judge' });
+        continue;
+      }
+
+      let judge = judgeCache.get(judgeId);
+      if (!judge) {
+        const { data: judgeRow, error: judgeError } = await supabaseAdmin
+          .from('judges')
+          .select('id, display_name')
+          .eq('id', judgeId)
+          .maybeSingle();
+
+        if (judgeError) {
+          throw judgeError;
+        }
+
+        if (!judgeRow) {
+          results.push({ id: operation.id, status: 'failed', error: 'judge-not-found' });
+          continue;
+        }
+
+        judge = judgeRow;
+        judgeCache.set(judgeId, judgeRow);
       }
 
       if (!session.public_key) {
@@ -308,13 +304,13 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
-      const assignmentKey = `${parsed.station_id}:${parsed.event_id}`;
+      const assignmentKey = `${judgeId}:${parsed.station_id}:${parsed.event_id}`;
       let assignment = assignmentCache.get(assignmentKey);
       if (!assignment) {
         const { data: assignmentRow, error: assignmentError } = await supabaseAdmin
           .from('judge_assignments')
           .select('*')
-          .eq('judge_id', user.id)
+          .eq('judge_id', judgeId)
           .eq('station_id', parsed.station_id)
           .eq('event_id', parsed.event_id)
           .maybeSingle();
