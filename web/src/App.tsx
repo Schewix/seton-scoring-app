@@ -333,6 +333,9 @@ function StationApp({
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
   const tempCodesRef = useRef<Map<string, string>>(new Map());
   const tempCounterRef = useRef(1);
+  const formRef = useRef<HTMLElement | null>(null);
+  const pointsInputRef = useRef<HTMLInputElement | null>(null);
+  const answersInputRef = useRef<HTMLInputElement | null>(null);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [startTime, setStartTime] = useState<string | null>(null);
   const [finishTimeInput, setFinishTimeInput] = useState('');
@@ -672,6 +675,17 @@ function StationApp({
 
       void loadTimingData(data.id);
       void loadScoreReview(data.id);
+
+      if (typeof window !== 'undefined') {
+        window.requestAnimationFrame(() => {
+          formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          if (isTargetStation) {
+            answersInputRef.current?.focus();
+          } else {
+            pointsInputRef.current?.focus();
+          }
+        });
+      }
     },
     [categoryAnswers, clearWait, isTargetStation, loadTimingData, loadScoreReview],
   );
@@ -1906,7 +1920,7 @@ function StationApp({
             onReset={handleResetTickets}
           />
 
-          <section className="card form-card">
+          <section ref={formRef} className="card form-card">
             <header className="card-header">
               <div>
                 <h2>Stanovištní formulář</h2>
@@ -2136,11 +2150,12 @@ function StationApp({
                     <p className="card-hint">Terčový úsek se hodnotí automaticky podle zadaných odpovědí.</p>
                     <label>
                       Odpovědi hlídky ({totalAnswers || '–'})
-                      <input
-                        value={answersInput}
-                        onChange={(event) => setAnswersInput(event.target.value.toUpperCase())}
-                        placeholder="např. A B C D …"
-                      />
+                    <input
+                      ref={answersInputRef}
+                      value={answersInput}
+                      onChange={(event) => setAnswersInput(event.target.value.toUpperCase())}
+                      placeholder="např. A B C D …"
+                    />
                     </label>
                     <p className="auto-score">Správně: {autoScore.correct} / {autoScore.total}</p>
                     {answersError ? <p className="error-text">{answersError}</p> : null}
@@ -2149,6 +2164,7 @@ function StationApp({
                   <label>
                     Body (0 až 12)
                     <input
+                      ref={pointsInputRef}
                       value={points}
                       onChange={(event) => setPoints(event.target.value)}
                       type="number"
