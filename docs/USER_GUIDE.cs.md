@@ -85,10 +85,10 @@ praktický návod pro provoz na stanovišti i pro kancelář závodu.
 - Offline data jsou vázána na konkrétní prohlížeč a stanoviště. Po odhlášení se
   fronta i PIN odstraní.
 
-## 5. Scoreboard (kancelář)
+## 5. Výsledky (kancelář)
 
-1. Otevři `/setonuv-zavod/scoreboard` (nebo přidej `?view=scoreboard` za hlavní
-   URL).
+1. Otevři `/setonuv-zavod/vysledky` (nebo přidej `?view=vysledky` za hlavní URL;
+   starší parametr `?view=scoreboard` nadále funguje).
 2. Stránka zobrazí název závodu, čas poslední aktualizace a tabulky pro každou
    kategorii (N/M/S/R × H/D). Zobrazeny jsou celkové body, body bez trestů a
    čistý čas.

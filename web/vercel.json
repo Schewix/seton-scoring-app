@@ -30,11 +30,27 @@
       "destination": "https://vdkbdnxkpeeqxnruwiah.supabase.co/functions/v1/$1"
     },
     {
+      "source": "/setonuv-zavod/stanoviste",
+      "destination": "/"
+    },
+    {
+      "source": "/setonuv-zavod/stanoviste/(.*)",
+      "destination": "/"
+    },
+    {
       "source": "/setonuv-zavod/station",
       "destination": "/"
     },
     {
       "source": "/setonuv-zavod/station/(.*)",
+      "destination": "/"
+    },
+    {
+      "source": "/setonuv-zavod/vysledky",
+      "destination": "/"
+    },
+    {
+      "source": "/setonuv-zavod/vysledky/(.*)",
       "destination": "/"
     },
     {
@@ -50,7 +66,19 @@
       "destination": "/"
     },
     {
+      "source": "/stanoviste",
+      "destination": "/"
+    },
+    {
       "source": "/stanoviste/(.*)",
+      "destination": "/"
+    },
+    {
+      "source": "/vysledky",
+      "destination": "/"
+    },
+    {
+      "source": "/vysledky/(.*)",
       "destination": "/"
     },
     {

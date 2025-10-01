@@ -119,13 +119,14 @@ Server poskytuje endpointy:
    Test `stationFlow.test.tsx` kontroluje offline frontu a náhled čekajících
    záznamů.
 
-### Výsledkový přehled (scoreboard)
+### Výsledkový přehled
 
 - Stejné prostředí (`.env`) jako pro rozhodčí – je potřeba především
   `VITE_EVENT_ID`.
 - Výsledkový přehled je dostupný na URL
-  `/setonuv-zavod/scoreboard` (nebo přidáním `?view=scoreboard` k libovolné
-  URL aplikace). Dynamicky se načte stránka využívající pohled `scoreboard_view`
+  `/setonuv-zavod/vysledky` (nebo přidáním `?view=vysledky` k libovolné URL
+  aplikace; starší parametr `?view=scoreboard` zůstává funkční). Dynamicky se
+  načte stránka využívající pohled `scoreboard_view`
   (postavený nad `results_ranked`).
 - Stránka se automaticky obnovuje každých 30 sekund, případně lze použít ruční
   tlačítko „Aktualizovat“.
@@ -141,10 +142,13 @@ Server poskytuje endpointy:
 - Správné odpovědi lze hromadně upravit v horním panelu (vyžaduje administrátorský
   režim). Při zapnutí automatického hodnocení se odpovědi validují (12 otázek,
   pouze písmena A–D).
-- Každé stanoviště má vlastní URL tvaru `/stations/<station_id>` (alias `/stanoviste/<station_id>`);
+- Každé stanoviště má vlastní URL tvaru
+  `/setonuv-zavod/stanoviste/<station_id>` (s krátkým aliasem
+  `/stanoviste/<station_id>` a zpětně kompatibilním `/stations/<station_id>`);
   aktuálně probíhající instalace je dostupná i na prefixu `/setonuv-zavod`.
-  Pro scoreboard existuje krátká adresa `/scoreboard` a zkrácený přepis
-  `/setonuv-zavod/scoreboard`.
+  Pro výsledkový přehled existuje krátká adresa `/vysledky` a zkrácený přepis
+  `/setonuv-zavod/vysledky` (starší `/scoreboard` a `/setonuv-zavod/scoreboard`
+  zůstávají funkční).
 
 ## Uživatelský manuál
 
