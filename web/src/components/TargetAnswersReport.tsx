@@ -154,9 +154,6 @@ export default function TargetAnswersReport({
           <p className="card-subtitle">Přehled uložených terčových odpovědí a možnost exportu.</p>
         </div>
         <div className="target-report-actions">
-          <button type="button" onClick={load} disabled={loading}>
-            {loading ? 'Načítám…' : 'Obnovit'}
-          </button>
           <button type="button" onClick={handleExport} disabled={!rows.length}>
             Export CSV
           </button>
