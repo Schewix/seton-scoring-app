@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import localforage from 'localforage';
-import QRScanner from './components/QRScanner';
+// import QRScanner from './components/QRScanner';
 import LastScoresList from './components/LastScoresList';
 import TargetAnswersReport from './components/TargetAnswersReport';
 import PatrolCodeInput from './components/PatrolCodeInput';
@@ -326,7 +326,8 @@ function StationApp({
   const stationId = manifest.station.id;
   const stationCode = manifest.station.code?.trim().toUpperCase() || '';
   const stationDisplayName = stationCode === 'T' ? 'Výpočtka' : manifest.station.name;
-  const [patrol, setPatrol] = useState<Patrol | null>(null);
+  const [activePatrol, setActivePatrol] = useState<Patrol | null>(null);
+  const [scannerPatrol, setScannerPatrol] = useState<Patrol | null>(null);
   const [points, setPoints] = useState('');
   const [note, setNote] = useState('');
   const [answersInput, setAnswersInput] = useState('');
@@ -443,7 +444,7 @@ function StationApp({
     [],
   );
 
-  const previewPatrolCode = patrol ? resolvePatrolCode(patrol) : '';
+  const previewPatrolCode = scannerPatrol ? resolvePatrolCode(scannerPatrol) : '';
 
   useEffect(() => {
     let cancelled = false;
@@ -474,25 +475,25 @@ function StationApp({
 
   const handleAddTicket = useCallback(
     (initialState: Extract<TicketState, 'waiting' | 'serving'> = 'waiting') => {
-      if (!patrol) {
-        pushAlert('Nejprve naskenuj hlídku.');
+      if (!scannerPatrol) {
+        pushAlert('Nejprve načti hlídku.');
         return;
       }
 
       let addedState: TicketState | null = null;
-      const patrolCode = resolvePatrolCode(patrol);
+      const patrolCode = resolvePatrolCode(scannerPatrol);
 
       updateTickets((current) => {
-        const exists = current.some((ticket) => ticket.patrolId === patrol.id && ticket.state !== 'done');
+        const exists = current.some((ticket) => ticket.patrolId === scannerPatrol.id && ticket.state !== 'done');
         if (exists) {
           return current;
         }
         const newTicket = createTicket({
-          patrolId: patrol.id,
+          patrolId: scannerPatrol.id,
           patrolCode,
-          teamName: patrol.team_name,
-          category: patrol.category,
-          sex: patrol.sex,
+          teamName: scannerPatrol.team_name,
+          category: scannerPatrol.category,
+          sex: scannerPatrol.sex,
           initialState,
         });
         addedState = newTicket.state;
@@ -501,15 +502,15 @@ function StationApp({
 
       if (addedState) {
         if (initialState === 'serving') {
-          pushAlert(`Hlídka ${patrol.team_name} je připravena k obsluze.`);
+          pushAlert(`Hlídka ${scannerPatrol.team_name} je připravena k obsluze.`);
         } else {
-          pushAlert(`Do fronty přidána hlídka ${patrol.team_name}.`);
+          pushAlert(`Do fronty přidána hlídka ${scannerPatrol.team_name}.`);
         }
       } else {
         pushAlert('Hlídka už je ve frontě.');
       }
     },
-    [patrol, pushAlert, resolvePatrolCode, updateTickets],
+    [scannerPatrol, pushAlert, resolvePatrolCode, updateTickets],
   );
 
   const clearWait = useCallback(() => {
@@ -680,7 +681,8 @@ function StationApp({
 
   const initializeFormForPatrol = useCallback(
     (data: Patrol, options?: { arrivedAt?: string | null; waitSeconds?: number | null }) => {
-      setPatrol({ ...data });
+      setActivePatrol({ ...data });
+      setScannerPatrol({ ...data });
       setPoints('');
       setNote('');
       setAnswersInput('');
@@ -754,7 +756,7 @@ function StationApp({
 
   const handleSaveStationScore = useCallback(
     async (stationId: string) => {
-      if (!patrol) {
+      if (!activePatrol) {
         return;
       }
 
@@ -800,7 +802,7 @@ function StationApp({
             .update({ points: parsedValue })
             .eq('event_id', eventId)
             .eq('station_id', stationId)
-            .eq('patrol_id', patrol.id);
+            .eq('patrol_id', activePatrol.id);
           if (error) {
             throw error;
           }
@@ -808,7 +810,7 @@ function StationApp({
           const { error } = await supabase.from('station_scores').insert({
             event_id: eventId,
             station_id: stationId,
-            patrol_id: patrol.id,
+            patrol_id: activePatrol.id,
             points: parsedValue,
             judge: manifest.judge.displayName,
           });
@@ -818,7 +820,7 @@ function StationApp({
         }
 
         pushAlert(`Body pro stanoviště ${baseRow.stationCode || stationId} aktualizovány.`);
-        await loadScoreReview(patrol.id);
+        await loadScoreReview(activePatrol.id);
         setScoreReviewState((prev) => {
           const current = prev[stationId];
           if (!current) {
@@ -845,14 +847,14 @@ function StationApp({
         pushAlert('Nepodařilo se uložit body pro vybrané stanoviště.');
       }
     },
-    [eventId, loadScoreReview, manifest.judge.displayName, patrol, pushAlert, scoreReviewRows, scoreReviewState],
+    [eventId, loadScoreReview, manifest.judge.displayName, activePatrol, pushAlert, scoreReviewRows, scoreReviewState],
   );
 
   const handleRefreshScoreReview = useCallback(() => {
-    if (patrol) {
-      void loadScoreReview(patrol.id);
+    if (activePatrol) {
+      void loadScoreReview(activePatrol.id);
     }
-  }, [loadScoreReview, patrol]);
+  }, [loadScoreReview, activePatrol]);
 
   const handleTicketStateChange = useCallback(
     (id: string, nextState: Ticket['state']) => {
@@ -1225,7 +1227,8 @@ function StationApp({
   }, [syncQueue, tick]);
 
   const resetForm = useCallback(() => {
-    setPatrol(null);
+    setActivePatrol(null);
+    setScannerPatrol(null);
     setPoints('');
     setNote('');
     setAnswersInput('');
@@ -1268,14 +1271,14 @@ function StationApp({
 
   const cachedPatrolMap = useMemo(() => {
     const map = new Map<string, Patrol>();
-    auth.patrols.forEach((patrol) => {
-      if (patrol.patrol_code) {
-        map.set(patrol.patrol_code.trim().toUpperCase(), {
-          id: patrol.id,
-          team_name: patrol.team_name,
-          category: patrol.category,
-          sex: patrol.sex,
-          patrol_code: patrol.patrol_code,
+    auth.patrols.forEach((activePatrol) => {
+      if (activePatrol.patrol_code) {
+        map.set(activePatrol.patrol_code.trim().toUpperCase(), {
+          id: activePatrol.id,
+          team_name: activePatrol.team_name,
+          category: activePatrol.category,
+          sex: activePatrol.sex,
+          patrol_code: activePatrol.patrol_code,
         });
       }
     });
@@ -1308,7 +1311,9 @@ function StationApp({
         data = fetched as Patrol;
       }
 
-      initializeFormForPatrol(data, { arrivedAt: new Date().toISOString() });
+      setScannerPatrol({ ...data });
+      setScanActive(false);
+      setManualCode('');
 
       void appendScanRecord(eventId, stationId, {
         code: normalized,
@@ -1320,7 +1325,7 @@ function StationApp({
 
       return true;
     },
-    [cachedPatrolMap, eventId, initializeFormForPatrol, pushAlert, stationId]
+    [cachedPatrolMap, eventId, pushAlert, stationId]
   );
 
   const handleScanResult = useCallback(
@@ -1349,23 +1354,23 @@ function StationApp({
   );
 
   useEffect(() => {
-    if (!patrol) {
+    if (!activePatrol) {
       return;
     }
 
-    const stored = categoryAnswers[patrol.category] || '';
+    const stored = categoryAnswers[activePatrol.category] || '';
     const total = parseAnswerLetters(stored).length;
     setAutoScore((prev) => ({ ...prev, total }));
-  }, [categoryAnswers, patrol]);
+  }, [categoryAnswers, activePatrol]);
 
   useEffect(() => {
-    if (!patrol || !useTargetScoring) {
+    if (!activePatrol || !useTargetScoring) {
       setAnswersError('');
       setAutoScore((prev) => ({ ...prev, correct: 0, given: 0, normalizedGiven: '' }));
       return;
     }
 
-    const correctLetters = parseAnswerLetters(categoryAnswers[patrol.category] || '');
+    const correctLetters = parseAnswerLetters(categoryAnswers[activePatrol.category] || '');
     const givenLetters = parseAnswerLetters(answersInput);
     const correct = correctLetters.reduce((acc, letter, index) => (letter === givenLetters[index] ? acc + 1 : acc), 0);
     const normalizedGiven = packAnswersForStorage(answersInput);
@@ -1384,7 +1389,7 @@ function StationApp({
     if (total > 0) {
       setPoints(String(correct));
     }
-  }, [answersInput, useTargetScoring, patrol, categoryAnswers]);
+  }, [answersInput, useTargetScoring, activePatrol, categoryAnswers]);
 
   const handleLogout = useCallback(() => {
     void logout();
@@ -1447,7 +1452,7 @@ function StationApp({
   }, [answersForm, categoryAnswers, eventId, loadCategoryAnswers, pushAlert, stationId]);
 
   const handleSave = useCallback(async () => {
-    if (!patrol) return;
+    if (!activePatrol) return;
     if (!stationId || !queueKey) {
       pushAlert('Vyber stanoviště před uložením záznamu.');
       return;
@@ -1493,13 +1498,13 @@ function StationApp({
 
     const now = new Date().toISOString();
     const arrivalIso = arrivedAt || now;
-    const effectivePatrolCode = resolvePatrolCode(patrol);
+    const effectivePatrolCode = resolvePatrolCode(activePatrol);
 
     const submissionData = {
       event_id: eventId,
       station_id: stationId,
-      patrol_id: patrol.id,
-      category: patrol.category,
+      patrol_id: activePatrol.id,
+      category: activePatrol.category,
       arrived_at: arrivalIso,
       wait_minutes: waitMinutes,
       points: scorePoints,
@@ -1508,8 +1513,8 @@ function StationApp({
       normalized_answers: normalizedAnswers,
       finish_time: finishAt,
       patrol_code: effectivePatrolCode,
-      team_name: patrol.team_name,
-      sex: patrol.sex,
+      team_name: activePatrol.team_name,
+      sex: activePatrol.sex,
     };
 
     const signaturePayload = {
@@ -1569,7 +1574,7 @@ function StationApp({
   }, [
     autoScore,
     note,
-    patrol,
+    activePatrol,
     points,
     useTargetScoring,
     pushAlert,
@@ -1589,8 +1594,8 @@ function StationApp({
   ]);
 
   const totalAnswers = useMemo(
-    () => (patrol ? parseAnswerLetters(categoryAnswers[patrol.category] || '').length : 0),
-    [patrol, categoryAnswers]
+    () => (activePatrol ? parseAnswerLetters(categoryAnswers[activePatrol.category] || '').length : 0),
+    [activePatrol, categoryAnswers]
   );
   const heroBadges = useMemo(() => {
     const queueLabel = pendingCount ? `Offline fronta: ${pendingCount}` : 'Offline fronta prázdná';
@@ -1665,15 +1670,15 @@ function StationApp({
   }, [pureCourseSeconds]);
 
   const timePoints = useMemo(() => {
-    if (!patrol) {
+    if (!activePatrol) {
       return null;
     }
-    const category = patrol.category?.trim().toUpperCase();
+    const category = activePatrol.category?.trim().toUpperCase();
     if (!isTimeScoringCategory(category)) {
       return null;
     }
     return computeTimePoints(category, pureCourseSeconds);
-  }, [patrol, pureCourseSeconds]);
+  }, [activePatrol, pureCourseSeconds]);
 
   const controlChecks = useMemo(() => {
     const checks: { label: string; ok: boolean }[] = [];
@@ -1688,11 +1693,11 @@ function StationApp({
   }, [stationCode, finishAt, finishTimeInput, startTime, autoScore, pureCourseSeconds]);
 
   const isPatrolInQueue = useMemo(() => {
-    if (!patrol) {
+    if (!scannerPatrol) {
       return false;
     }
-    return tickets.some((ticket) => ticket.patrolId === patrol.id && ticket.state !== 'done');
-  }, [patrol, tickets]);
+    return tickets.some((ticket) => ticket.patrolId === scannerPatrol.id && ticket.state !== 'done');
+  }, [scannerPatrol, tickets]);
 
   const answersSummary = useMemo(
     () =>
@@ -1869,13 +1874,14 @@ function StationApp({
           <section className="card scanner-card">
             <header className="card-header">
               <div>
-                <h2>Skener hlídek</h2>
+                <h2>Načtení hlídek</h2>
                 <p className="card-subtitle">
-                  Naskenuj QR kód nebo zadej kód ručně. Hlídku pak přidej do fronty nebo rovnou obsluhuj.
+                  Zadej kód hlídky ručně. Hlídku pak přidej do fronty nebo rovnou obsluhuj.
                 </p>
               </div>
             </header>
             <div className="scanner-wrapper">
+              {/*
               <div className="scanner-controls">
                 <button
                   type="button"
@@ -1889,6 +1895,7 @@ function StationApp({
                 </span>
               </div>
               <QRScanner active={scanActive} onResult={handleScanResult} onError={(err) => console.error(err)} />
+              */}
               <div className="manual-entry">
                 <PatrolCodeInput
                   value={manualCode}
@@ -1904,9 +1911,9 @@ function StationApp({
                   Načíst hlídku
                 </button>
               </div>
-              {patrol ? (
+              {scannerPatrol ? (
                 <div className="scanner-preview">
-                  <strong>{patrol.team_name}</strong>
+                  <strong>{scannerPatrol.team_name}</strong>
                   {previewPatrolCode ? (
                     <span
                       className="scanner-code"
@@ -1919,8 +1926,8 @@ function StationApp({
                     </span>
                   ) : null}
                   <span>
-                    {patrol.patrol_code ? `${patrol.patrol_code} • ` : ''}
-                    {patrol.category}/{patrol.sex}
+                    {scannerPatrol.patrol_code ? `${scannerPatrol.patrol_code} • ` : ''}
+                    {scannerPatrol.category}/{scannerPatrol.sex}
                   </span>
                   <div className="scanner-actions">
                     <button
@@ -1944,9 +1951,7 @@ function StationApp({
                 </div>
               ) : (
                 <p className="scanner-placeholder">
-                  {scanActive
-                    ? 'Naskenuj QR kód hlídky nebo zadej kód ručně.'
-                    : 'Zapni skener a naskenuj QR kód nebo zadej kód ručně.'}
+                  Zadej kód hlídky ručně.
                 </p>
               )}
             </div>
@@ -1967,21 +1972,21 @@ function StationApp({
                   {stationCode === 'T'
                     ? 'Zapiš čas doběhu, zkontroluj terčové odpovědi a potvrď uložení.'
                     : useTargetScoring
-                        ? 'Zadej odpovědi, přidej poznámku a potvrď uložení.'
-                        : 'Vyplň body, poznámku a potvrď uložení.'}
+                        ? 'Zadej odpovědi a potvrď uložení.'
+                        : 'Vyplň body a potvrď uložení.'}
                 </p>
               </div>
               <button type="button" className="ghost" onClick={resetForm}>
                 Vymazat
               </button>
             </header>
-            {patrol ? (
+            {activePatrol ? (
               <div className="form-grid">
                 <div className="patrol-meta">
-                  <strong>{patrol.team_name}</strong>
+                  <strong>{activePatrol.team_name}</strong>
                   <span>
-                    {patrol.patrol_code ? `${patrol.patrol_code} • ` : ''}
-                    {patrol.category}/{patrol.sex}
+                    {activePatrol.patrol_code ? `${activePatrol.patrol_code} • ` : ''}
+                    {activePatrol.category}/{activePatrol.sex}
                   </span>
                 </div>
                 <div className="judge-display">
@@ -2180,10 +2185,6 @@ function StationApp({
                     </div>
                   </>
                 ) : null}
-                <label>
-                  Poznámka
-                  <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} />
-                </label>
                 {useTargetScoring ? (
                   <div className={`auto-section${stationCode === 'T' ? ' calc-auto' : ''}`}>
                     {stationCode === 'T' ? <h3>Odpovědi v terčovém úseku</h3> : null}
@@ -2208,6 +2209,7 @@ function StationApp({
                       value={points}
                       onChange={(event) => setPoints(event.target.value)}
                       type="number"
+                      inputMode="numeric"
                       min={0}
                       max={12}
                     />
@@ -2218,7 +2220,7 @@ function StationApp({
                 </button>
               </div>
             ) : (
-              <p className="form-placeholder">Nejprve naskenuj hlídku a otevři formulář.</p>
+              <p className="form-placeholder">Nejprve načti hlídku a otevři formulář.</p>
             )}
             {pendingCount > 0 ? (
               <div className="pending-banner">
