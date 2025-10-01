@@ -6,6 +6,7 @@ import './ScoreboardApp.css';
 
 interface RawResult {
   event_id: string;
+  event_name?: string | null;
   patrol_id: string;
   patrol_code: string | null;
   team_name: string;
@@ -22,6 +23,7 @@ interface RawRankedResult extends RawResult {
 
 interface Result {
   eventId: string;
+  eventName: string | null;
   patrolId: string;
   patrolCode: string | null;
   teamName: string;
@@ -59,6 +61,16 @@ const BRACKET_ORDER = ['N__H', 'N__D', 'M__H', 'M__D', 'S__H', 'S__D', 'R__H', '
 
 const BRACKET_ORDER_INDEX = new Map(BRACKET_ORDER.map((key, index) => [key, index] as const));
 
+function normaliseText(value: string | null | undefined) {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
 function parseNumber(value: number | string | null, fallback: number | null = null): number | null {
   if (value === null) return fallback;
   if (typeof value === 'number') {
@@ -78,6 +90,7 @@ function hasPatrolCode(value: string | null | undefined) {
 function normaliseResult(raw: RawResult): Result {
   return {
     eventId: raw.event_id,
+    eventName: normaliseText(raw.event_name ?? null),
     patrolId: raw.patrol_id,
     patrolCode: raw.patrol_code,
     teamName: raw.team_name,
@@ -224,7 +237,9 @@ function ScoreboardApp() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
-  const [eventName, setEventName] = useState<string>('');
+  const [eventName, setEventName] = useState<string>(() => {
+    return normaliseText((import.meta.env.VITE_EVENT_NAME as string | undefined) ?? null) ?? '';
+  });
   const [exporting, setExporting] = useState(false);
   const isMountedRef = useRef(true);
 
@@ -235,6 +250,12 @@ function ScoreboardApp() {
   }, []);
 
   useEffect(() => {
+    if (normaliseText(eventName)) {
+      return;
+    }
+
+    let cancelled = false;
+
     (async () => {
       try {
         const { data, error } = await supabase
@@ -242,21 +263,26 @@ function ScoreboardApp() {
           .select('name')
           .eq('id', rawEventId)
           .limit(1);
-        if (!isMountedRef.current) return;
+        if (!isMountedRef.current || cancelled) return;
         if (error) {
           console.error('Failed to load event name', error);
-          setEventName('');
           return;
         }
         const row = Array.isArray(data) && data.length ? data[0] : null;
-        setEventName((row as { name?: string } | null)?.name ?? '');
+        const fetchedName = normaliseText((row as { name?: string | null } | null)?.name ?? null);
+        if (fetchedName) {
+          setEventName(fetchedName);
+        }
       } catch (err) {
-        if (!isMountedRef.current) return;
+        if (!isMountedRef.current || cancelled) return;
         console.error('Failed to load event name', err);
-        setEventName('');
       }
     })();
-  }, [rawEventId]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [eventName, rawEventId]);
 
   const loadData = useCallback(async () => {
     setRefreshing(true);
@@ -323,6 +349,11 @@ function ScoreboardApp() {
       }
 
       setRanked(normalised);
+
+      const derivedEventName = normalised.find((item) => item.eventName)?.eventName;
+      if (derivedEventName) {
+        setEventName((prev) => (prev === derivedEventName ? prev : derivedEventName));
+      }
 
       if (error) {
         console.error('Failed to load ranked standings', error);
