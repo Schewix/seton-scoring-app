@@ -289,7 +289,7 @@ function ScoreboardApp() {
     setRefreshing(true);
     try {
       const { data, error } = await supabase
-        .from('results_ranked')
+        .from('scoreboard_view')
         .select('*')
         .eq('event_id', rawEventId)
         .order('category', { ascending: true })
@@ -528,7 +528,7 @@ function ScoreboardApp() {
             <span className="scoreboard-summary-label">Závod</span>
             <strong>{eventLabel}</strong>
             <span className="scoreboard-summary-sub">
-              Data pochází z tabulky Supabase <code>results_ranked</code>.
+              Data pochází z pohledu Supabase <code>scoreboard_view</code>.
             </span>
           </div>
           <div className="scoreboard-summary">

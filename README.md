@@ -125,8 +125,8 @@ Server poskytuje endpointy:
   `VITE_EVENT_ID`.
 - Výsledkový přehled je dostupný na URL
   `/setonuv-zavod/scoreboard` (nebo přidáním `?view=scoreboard` k libovolné
-  URL aplikace). Dynamicky se načte stránka s tabulkami z pohledů `results` a
-  `results_ranked`.
+  URL aplikace). Dynamicky se načte stránka využívající pohled `scoreboard_view`
+  (postavený nad `results_ranked`).
 - Stránka se automaticky obnovuje každých 30 sekund, případně lze použít ruční
   tlačítko „Aktualizovat“.
 - Lze exportovat kompletní výsledky do XLSX souboru – stačí kliknout na
