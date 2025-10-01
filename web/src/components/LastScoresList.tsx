@@ -11,6 +11,7 @@ interface ScoreRow {
   judge: string | null;
   patrol_id: string;
   patrols?: {
+    patrol_code: string | null;
     team_name: string;
     category: string;
     sex: string;
@@ -66,7 +67,9 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
 
       const scoresQuery = supabase
         .from('station_scores')
-        .select('id, created_at, points, note, judge, patrol_id, patrols(team_name, category, sex)')
+        .select(
+          'id, created_at, points, note, judge, patrol_id, patrols(patrol_code, team_name, category, sex)'
+        )
         .eq('event_id', eventId)
         .eq('station_id', stationId)
         .order('created_at', { ascending: false })
@@ -193,7 +196,9 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
       {rows.length === 0 && !loading ? <p>Žádné záznamy.</p> : null}
       <ul className="score-list">
         {rows.map((row) => {
-          const patrol = row.patrols || { team_name: 'Neznámá hlídka', category: '?', sex: '?' };
+          const patrol =
+            row.patrols ||
+            ({ patrol_code: null, team_name: 'Neznámá hlídka', category: '?', sex: '?' } satisfies ScoreRow['patrols']);
           const quizLetters = parseAnswerLetters(row.quiz?.answers);
           return (
             <li key={row.id} className="score-item">
@@ -205,6 +210,7 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
                 <div className="score-team-box">
                   <strong>{patrol.team_name}</strong>
                   <span className="score-team-meta">
+                    {patrol.patrol_code ? `${patrol.patrol_code} • ` : ''}
                     {patrol.category}/{patrol.sex}
                   </span>
                 </div>
