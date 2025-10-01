@@ -36,11 +36,15 @@ interface RankedResult extends Result {
   rankInBracket: number;
 }
 
+interface RankedGroupItem extends RankedResult {
+  displayRank: number;
+}
+
 interface RankedGroup {
   key: string;
   category: string;
   sex: string;
-  items: RankedResult[];
+  items: RankedGroupItem[];
 }
 
 const rawEventId = import.meta.env.VITE_EVENT_ID as string | undefined;
@@ -90,6 +94,45 @@ function normaliseRankedResult(raw: RawRankedResult): RankedResult {
     ...normaliseResult(raw),
     rankInBracket: parseNumber(raw.rank_in_bracket, 0) || 0,
   };
+}
+
+function hasAnyPoints(result: Result) {
+  return result.totalPoints !== null || result.pointsNoT !== null;
+}
+
+function compareRankedResults(a: RankedResult, b: RankedResult) {
+  const aHasPoints = hasAnyPoints(a);
+  const bHasPoints = hasAnyPoints(b);
+
+  if (aHasPoints !== bHasPoints) {
+    return aHasPoints ? -1 : 1;
+  }
+
+  const aRank = a.rankInBracket && a.rankInBracket > 0 ? a.rankInBracket : Number.POSITIVE_INFINITY;
+  const bRank = b.rankInBracket && b.rankInBracket > 0 ? b.rankInBracket : Number.POSITIVE_INFINITY;
+  if (aRank !== bRank) {
+    return aRank - bRank;
+  }
+
+  const aPoints = a.totalPoints ?? Number.NEGATIVE_INFINITY;
+  const bPoints = b.totalPoints ?? Number.NEGATIVE_INFINITY;
+  if (aPoints !== bPoints) {
+    return bPoints - aPoints;
+  }
+
+  const aPointsNoT = a.pointsNoT ?? Number.NEGATIVE_INFINITY;
+  const bPointsNoT = b.pointsNoT ?? Number.NEGATIVE_INFINITY;
+  if (aPointsNoT !== bPointsNoT) {
+    return bPointsNoT - aPointsNoT;
+  }
+
+  const aTime = a.pureSeconds ?? Number.POSITIVE_INFINITY;
+  const bTime = b.pureSeconds ?? Number.POSITIVE_INFINITY;
+  if (aTime !== bTime) {
+    return aTime - bTime;
+  }
+
+  return a.teamName.localeCompare(b.teamName, 'cs');
 }
 
 function formatSeconds(seconds: number | null) {
@@ -328,7 +371,7 @@ function ScoreboardApp() {
   }, []);
 
   const groupedRanked = useMemo(() => {
-    const groups = new Map<string, RankedGroup>();
+    const groups = new Map<string, { key: string; category: string; sex: string; items: RankedResult[] }>();
 
     ranked.forEach((item) => {
       const key = `${item.category}__${item.sex}`;
@@ -338,7 +381,14 @@ function ScoreboardApp() {
       groups.get(key)!.items.push(item);
     });
 
-    return Array.from(groups.values()).sort((a, b) => compareBrackets(a.category, a.sex, b.category, b.sex));
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        items: [...group.items]
+          .sort(compareRankedResults)
+          .map((item, index) => ({ ...item, displayRank: index + 1 })),
+      }))
+      .sort((a, b) => compareBrackets(a.category, a.sex, b.category, b.sex));
   }, [ranked]);
 
   const handleRefresh = useCallback(() => {
@@ -358,8 +408,8 @@ function ScoreboardApp() {
         const sheetName = formatCategoryLabel(group.category, group.sex);
         const rows = [
           ['#', 'Hlídka', 'Tým', 'Body', 'Body bez T', 'Čistý čas'],
-          ...group.items.map((row, rowIndex) => {
-            const displayRank = row.rankInBracket > 0 ? row.rankInBracket : rowIndex + 1;
+          ...group.items.map((row) => {
+            const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
             const fallbackCode = createFallbackPatrolCode(group.category, group.sex, displayRank);
             return [
               displayRank,
@@ -488,8 +538,8 @@ function ScoreboardApp() {
                       </tr>
                     </thead>
                     <tbody>
-                      {group.items.map((row, rowIndex) => {
-                        const displayRank = row.rankInBracket > 0 ? row.rankInBracket : rowIndex + 1;
+                      {group.items.map((row) => {
+                        const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
                         const fallbackCode = createFallbackPatrolCode(
                           group.category,
                           group.sex,
