@@ -1906,6 +1906,7 @@ function StationApp({
                 <div className="scanner-preview">
                   <strong>{patrol.team_name}</strong>
                   <span>
+                    {patrol.patrol_code ? `${patrol.patrol_code} • ` : ''}
                     {patrol.category}/{patrol.sex}
                   </span>
                   <div className="scanner-actions">
@@ -1966,6 +1967,7 @@ function StationApp({
                 <div className="patrol-meta">
                   <strong>{patrol.team_name}</strong>
                   <span>
+                    {patrol.patrol_code ? `${patrol.patrol_code} • ` : ''}
                     {patrol.category}/{patrol.sex}
                   </span>
                 </div>
