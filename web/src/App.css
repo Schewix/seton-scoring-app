@@ -692,8 +692,12 @@ textarea {
 .manual-entry {
   display: flex;
   gap: 16px;
-  align-items: flex-end;
+  align-items: flex-start;
   flex-wrap: wrap;
+}
+
+.manual-entry button {
+  align-self: flex-start;
 }
 
 .manual-entry input {
@@ -1409,6 +1413,12 @@ textarea {
   gap: 0.5rem;
 }
 
+.ticket-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .ticket-meta > span {
   font-variant-numeric: tabular-nums;
 }
@@ -1429,6 +1439,10 @@ textarea {
   .ticket-meta {
     flex-direction: row;
     align-items: center;
+  }
+
+  .ticket-actions {
+    flex-direction: column;
   }
 
   .ticket-meta button {
