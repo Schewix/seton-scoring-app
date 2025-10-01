@@ -86,6 +86,11 @@ vi.mock('../supabaseClient', () => {
       case 'station_passages':
         return {
           upsert: () => Promise.resolve({ error: new Error('Offline') }),
+          select: () => ({
+            eq: () => ({
+              eq: () => Promise.resolve({ data: [], error: null }),
+            }),
+          }),
         };
       case 'station_scores':
         return {
