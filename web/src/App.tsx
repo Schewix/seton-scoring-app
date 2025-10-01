@@ -14,7 +14,7 @@ import ChangePasswordScreen from './auth/ChangePasswordScreen';
 import type { AuthStatus } from './auth/types';
 import { signPayload } from './auth/crypto';
 import TicketQueue from './components/TicketQueue';
-import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket } from './auth/tickets';
+import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket, TicketState } from './auth/tickets';
 import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord } from './storage/scanHistory';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
@@ -329,10 +329,7 @@ function StationApp({
   const [arrivedAt, setArrivedAt] = useState<string | null>(null);
   const [finishAt, setFinishAt] = useState<string | null>(null);
   const [totalWaitMinutes, setTotalWaitMinutes] = useState<number | null>(null);
-  const [isWaiting, setIsWaiting] = useState(false);
-  const [waitDurationSeconds, setWaitDurationSeconds] = useState(0);
-  const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const waitStartRef = useRef<number | null>(null);
+  const [waitDurationSeconds, setWaitDurationSeconds] = useState<number | null>(null);
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
   const tempCodesRef = useRef<Map<string, string>>(new Map());
   const tempCounterRef = useRef(1);
@@ -443,75 +440,47 @@ function StationApp({
     setFinishTimeInput(toLocalTimeInput(finishAt));
   }, [finishAt, stationId]);
 
-  const handleAddTicket = useCallback(() => {
-    if (!patrol) {
-      pushAlert('Nejprve naskenuj hlídku.');
-      return;
-    }
-
-    let added = false;
-    const patrolCode = resolvePatrolCode(patrol);
-
-    updateTickets((current) => {
-      const exists = current.some((ticket) => ticket.patrolId === patrol.id && ticket.state !== 'done');
-      if (exists) {
-        return current;
-      }
-      added = true;
-      const newTicket = createTicket({
-        patrolId: patrol.id,
-        patrolCode,
-        teamName: patrol.team_name,
-        category: patrol.category,
-      });
-      return [...current, newTicket];
-    });
-
-    if (added) {
-      pushAlert(`Do fronty přidána hlídka ${patrol.team_name}.`);
-    } else {
-      pushAlert('Hlídka už je ve frontě.');
-    }
-  }, [patrol, pushAlert, resolvePatrolCode, updateTickets]);
-
-  const clearWait = useCallback(() => {
-    if (waitTimerRef.current) {
-      clearInterval(waitTimerRef.current);
-      waitTimerRef.current = null;
-    }
-    waitStartRef.current = null;
-    setIsWaiting(false);
-    setWaitDurationSeconds(0);
-  }, []);
-
-  const startWait = useCallback(() => {
-    const start = Date.now();
-    if (waitTimerRef.current) {
-      clearInterval(waitTimerRef.current);
-    }
-    waitStartRef.current = start;
-    setIsWaiting(true);
-    setWaitDurationSeconds(0);
-    waitTimerRef.current = setInterval(() => {
-      if (waitStartRef.current === null) {
+  const handleAddTicket = useCallback(
+    (initialState: Extract<TicketState, 'waiting' | 'serving'> = 'waiting') => {
+      if (!patrol) {
+        pushAlert('Nejprve naskenuj hlídku.');
         return;
       }
-      const elapsed = Math.floor((Date.now() - waitStartRef.current) / 1000);
-      setWaitDurationSeconds(elapsed);
-    }, 500);
-  }, []);
 
-  const stopWait = useCallback(() => {
-    if (waitTimerRef.current) {
-      clearInterval(waitTimerRef.current);
-      waitTimerRef.current = null;
-    }
-    if (waitStartRef.current !== null) {
-      const elapsed = Math.floor((Date.now() - waitStartRef.current) / 1000);
-      setWaitDurationSeconds(elapsed);
-    }
-    waitStartRef.current = null;
-    setIsWaiting(false);
+      let addedState: TicketState | null = null;
+      const patrolCode = resolvePatrolCode(patrol);
+
+      updateTickets((current) => {
+        const exists = current.some((ticket) => ticket.patrolId === patrol.id && ticket.state !== 'done');
+        if (exists) {
+          return current;
+        }
+        const newTicket = createTicket({
+          patrolId: patrol.id,
+          patrolCode,
+          teamName: patrol.team_name,
+          category: patrol.category,
+          initialState,
+        });
+        addedState = newTicket.state;
+        return [...current, newTicket];
+      });
+
+      if (addedState) {
+        if (initialState === 'serving') {
+          pushAlert(`Hlídka ${patrol.team_name} je připravena k obsluze.`);
+        } else {
+          pushAlert(`Do fronty přidána hlídka ${patrol.team_name}.`);
+        }
+      } else {
+        pushAlert('Hlídka už je ve frontě.');
+      }
+    },
+    [patrol, pushAlert, resolvePatrolCode, updateTickets],
+  );
+
+  const clearWait = useCallback(() => {
+    setWaitDurationSeconds(null);
   }, []);
 
   const patrolById = useMemo(() => {
@@ -855,10 +824,6 @@ function StationApp({
         }),
       );
 
-      if (nextState === 'serving') {
-        stopWait();
-      }
-
       if (nextState === 'done' && updated) {
         const summary = patrolById.get(updated.patrolId);
         if (!summary) {
@@ -879,7 +844,7 @@ function StationApp({
         });
       }
     },
-    [initializeFormForPatrol, patrolById, pushAlert, stopWait, updateTickets],
+    [initializeFormForPatrol, patrolById, pushAlert, updateTickets],
   );
 
   const handleResetTickets = useCallback(() => {
@@ -924,14 +889,6 @@ function StationApp({
       setShowAnswersEditor(false);
     }
   }, [canEditAnswers]);
-
-  useEffect(() => {
-    return () => {
-      if (waitTimerRef.current) {
-        clearInterval(waitTimerRef.current);
-      }
-    };
-  }, []);
 
   const loadCategoryAnswers = useCallback(async () => {
     if (!stationId) {
@@ -1411,14 +1368,7 @@ function StationApp({
       scorePoints = parsed;
     }
 
-    let effectiveWaitSeconds = waitDurationSeconds;
-    if (!useTargetScoring) {
-      if (waitStartRef.current !== null) {
-        effectiveWaitSeconds = Math.floor((Date.now() - waitStartRef.current) / 1000);
-      }
-      stopWait();
-    }
-
+    const effectiveWaitSeconds = useTargetScoring ? 0 : Math.max(0, waitDurationSeconds ?? 0);
     const waitMinutes = useTargetScoring ? 0 : waitSecondsToMinutes(effectiveWaitSeconds);
 
     const now = new Date().toISOString();
@@ -1508,7 +1458,6 @@ function StationApp({
     resetForm,
     updateQueueState,
     waitDurationSeconds,
-    stopWait,
     arrivedAt,
     stationId,
     queueKey,
@@ -1646,8 +1595,7 @@ function StationApp({
     [answersSummary]
   );
 
-  const waitSecondsDisplay = useTargetScoring ? 0 : waitDurationSeconds;
-  const hasWaitValue = useTargetScoring ? false : waitDurationSeconds > 0 || isWaiting;
+  const waitSecondsDisplay = useTargetScoring ? null : waitDurationSeconds;
 
   return (
     <div className="app-shell">
@@ -1801,21 +1749,15 @@ function StationApp({
             </section>
           ) : null}
 
-          <TicketQueue
-            tickets={tickets}
-            heartbeat={tick}
-            onChangeState={handleTicketStateChange}
-            onReset={handleResetTickets}
-          />
-
           <section className="card scanner-card">
-            <div className="scanner-icon" aria-hidden>
-              <span>📷</span>
-            </div>
-            <div className="scanner-copy">
-              <h2>Skener hlídek</h2>
-              <p>Naskenuj QR kód nebo zadej kód ručně. Po načtení se formulář otevře automaticky.</p>
-            </div>
+            <header className="card-header">
+              <div>
+                <h2>Skener hlídek</h2>
+                <p className="card-subtitle">
+                  Naskenuj QR kód nebo zadej kód ručně. Hlídku pak přidej do fronty nebo rovnou obsluhuj.
+                </p>
+              </div>
+            </header>
             <div className="scanner-wrapper">
               <div className="scanner-controls">
                 <button
@@ -1851,14 +1793,24 @@ function StationApp({
                   <span>
                     {patrol.category}/{patrol.sex}
                   </span>
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={handleAddTicket}
-                    disabled={isPatrolInQueue}
-                  >
-                    {isPatrolInQueue ? 'Ve frontě' : 'Přidat do fronty'}
-                  </button>
+                  <div className="scanner-actions">
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => handleAddTicket('serving')}
+                      disabled={isPatrolInQueue}
+                    >
+                      Obsluhovat
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => handleAddTicket('waiting')}
+                      disabled={isPatrolInQueue}
+                    >
+                      Čekat
+                    </button>
+                  </div>
                   {isPatrolInQueue ? <span className="scanner-note">Hlídka už čeká ve frontě.</span> : null}
                 </div>
               ) : (
@@ -1871,6 +1823,13 @@ function StationApp({
             </div>
           </section>
 
+          <TicketQueue
+            tickets={tickets}
+            heartbeat={tick}
+            onChangeState={handleTicketStateChange}
+            onReset={handleResetTickets}
+          />
+
           <section className="card form-card">
             <header className="card-header">
               <div>
@@ -1880,7 +1839,7 @@ function StationApp({
                     ? 'Zapiš čas doběhu, zkontroluj terčové odpovědi a potvrď uložení.'
                     : useTargetScoring
                         ? 'Zadej odpovědi, přidej poznámku a potvrď uložení.'
-                        : 'Vyplň body, čekání, poznámku a potvrď uložení.'}
+                        : 'Vyplň body, poznámku a potvrď uložení.'}
                 </p>
               </div>
               <button type="button" className="ghost" onClick={resetForm}>
@@ -1904,19 +1863,13 @@ function StationApp({
                   <div className="wait-field">
                     <span className="wait-label">Čekání</span>
                     <div className="wait-display">
-                      <strong>{formatWaitDuration(waitSecondsDisplay)}</strong>
+                      <strong>
+                        {typeof waitSecondsDisplay === 'number'
+                          ? formatWaitDuration(waitSecondsDisplay)
+                          : '—'}
+                      </strong>
                     </div>
-                    <div className="wait-actions">
-                      <button type="button" onClick={startWait} disabled={isWaiting}>
-                        {isWaiting ? 'Měřím…' : 'Začít čekání'}
-                      </button>
-                      <button type="button" onClick={stopWait} disabled={!isWaiting}>
-                        Ukončit čekání
-                      </button>
-                      <button type="button" className="ghost" onClick={clearWait} disabled={!hasWaitValue}>
-                        Vynulovat
-                      </button>
-                    </div>
+                    <p className="wait-hint">Čas čekání se načítá automaticky z fronty hlídek.</p>
                   </div>
                 ) : null}
                 {stationCode === 'T' ? (

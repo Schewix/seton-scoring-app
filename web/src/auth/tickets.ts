@@ -1,7 +1,7 @@
 import localforage from 'localforage';
 import { canonicalStringify } from './canonical';
 
-export type TicketState = 'waiting' | 'paused' | 'serving' | 'done';
+export type TicketState = 'waiting' | 'serving' | 'done';
 
 export interface Ticket {
   id: string;
@@ -23,9 +23,32 @@ function getTicketsKey(stationId: string) {
   return `${TICKETS_KEY_PREFIX}${stationId}`;
 }
 
+type StoredTicket = Ticket & { state?: TicketState | 'paused' };
+
+function sanitizeTicket(raw: StoredTicket): Ticket {
+  const state: TicketState = raw.state === 'serving' || raw.state === 'done' ? raw.state : 'waiting';
+  const waitStartedAt = state === 'waiting' ? raw.waitStartedAt : undefined;
+  return {
+    id: raw.id,
+    patrolId: raw.patrolId,
+    patrolCode: raw.patrolCode,
+    teamName: raw.teamName,
+    category: raw.category,
+    state,
+    createdAt: raw.createdAt,
+    waitStartedAt,
+    waitAccumMs: raw.waitAccumMs ?? 0,
+    serveStartedAt: undefined,
+    serveAccumMs: 0,
+  } satisfies Ticket;
+}
+
 export async function loadTickets(stationId: string) {
-  const list = await localforage.getItem<Ticket[]>(getTicketsKey(stationId));
-  return list ?? [];
+  const list = await localforage.getItem<StoredTicket[]>(getTicketsKey(stationId));
+  if (!list) {
+    return [];
+  }
+  return list.map(sanitizeTicket);
 }
 
 export async function saveTickets(stationId: string, tickets: Ticket[]) {
@@ -46,17 +69,21 @@ export function createTicket(data: {
   patrolCode: string;
   teamName: string;
   category: string;
+  initialState?: TicketState;
 }): Ticket {
+  const now = new Date().toISOString();
+  const state = data.initialState ?? 'waiting';
   return {
     id: generateTicketId(data.patrolId),
     patrolId: data.patrolId,
     patrolCode: data.patrolCode,
     teamName: data.teamName,
     category: data.category,
-    state: 'waiting',
-    createdAt: new Date().toISOString(),
-    waitStartedAt: new Date().toISOString(),
+    state,
+    createdAt: now,
+    waitStartedAt: state === 'waiting' ? now : undefined,
     waitAccumMs: 0,
+    serveStartedAt: undefined,
     serveAccumMs: 0,
   };
 }
@@ -65,14 +92,6 @@ export function computeWaitTime(ticket: Ticket) {
   const base = ticket.waitAccumMs;
   if (ticket.state === 'waiting' && ticket.waitStartedAt) {
     return base + (Date.now() - new Date(ticket.waitStartedAt).getTime());
-  }
-  return base;
-}
-
-export function computeServeTime(ticket: Ticket) {
-  const base = ticket.serveAccumMs;
-  if (ticket.state === 'serving' && ticket.serveStartedAt) {
-    return base + (Date.now() - new Date(ticket.serveStartedAt).getTime());
   }
   return base;
 }
@@ -101,13 +120,11 @@ export function transitionTicket(
   const nowMs = typeof timestamp === 'number' ? timestamp : timestamp.getTime();
   const nowIso = new Date(nowMs).toISOString();
   let waitAccum = ticket.waitAccumMs;
-  let serveAccum = ticket.serveAccumMs;
 
   const result: Ticket = {
     ...ticket,
     state: nextState,
     waitAccumMs: waitAccum,
-    serveAccumMs: serveAccum,
     waitStartedAt: ticket.waitStartedAt,
     serveStartedAt: ticket.serveStartedAt,
   };
@@ -121,30 +138,17 @@ export function transitionTicket(
     result.waitStartedAt = undefined;
   };
 
-  const flushServe = () => {
-    const startedMs = toTimestamp(ticket.serveStartedAt);
-    if (startedMs !== null) {
-      serveAccum += Math.max(0, nowMs - startedMs);
-      result.serveAccumMs = serveAccum;
-    }
-    result.serveStartedAt = undefined;
-  };
-
   switch (nextState) {
     case 'waiting': {
-      if (ticket.state === 'serving') {
-        flushServe();
-      }
       if (ticket.state !== 'waiting') {
         result.waitStartedAt = nowIso;
       } else {
         result.waitStartedAt = ticket.waitStartedAt ?? nowIso;
       }
-      result.serveStartedAt = undefined;
       break;
     }
     case 'serving': {
-      if (ticket.state === 'waiting' || ticket.state === 'paused') {
+      if (ticket.state === 'waiting') {
         const startedMs = toTimestamp(ticket.waitStartedAt);
         if (startedMs !== null) {
           waitAccum += Math.max(0, nowMs - startedMs);
@@ -152,36 +156,15 @@ export function transitionTicket(
         }
       }
       result.waitStartedAt = undefined;
-      if (ticket.state === 'serving' && ticket.serveStartedAt) {
-        result.serveStartedAt = ticket.serveStartedAt;
-      } else {
-        result.serveStartedAt = nowIso;
-      }
-      break;
-    }
-    case 'paused': {
-      if (ticket.state === 'waiting') {
-        flushWait();
-      } else {
-        result.waitStartedAt = undefined;
-      }
-      if (ticket.state === 'serving') {
-        flushServe();
-      } else {
-        result.serveStartedAt = undefined;
-      }
+      result.serveStartedAt = undefined;
       break;
     }
     case 'done': {
       if (ticket.state === 'waiting') {
         flushWait();
       }
-      if (ticket.state === 'serving') {
-        flushServe();
-      } else {
-        result.serveStartedAt = undefined;
-      }
       result.waitStartedAt = undefined;
+      result.serveStartedAt = undefined;
       break;
     }
     default:
