@@ -1,6 +1,6 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import type { CookieSerializeOptions } from 'cookie';
-import { serialize } from 'cookie';
+import { createServerClient, type CookieOptions } from '@supabase/ssr/dist/main/index.js';
+import type { CookieSerializeOptions } from 'cookie/index';
+import { serialize } from 'cookie/index';
 
 function parseCookieHeader(cookieHeader: string | undefined) {
   if (!cookieHeader) {

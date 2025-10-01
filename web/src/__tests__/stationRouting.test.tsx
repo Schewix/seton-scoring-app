@@ -5,6 +5,8 @@ import { getStationPath } from '../routing';
 
 let useStationRouting: (status: AuthStatus) => void;
 
+type HookProps = { status: AuthStatus };
+
 beforeAll(async () => {
   vi.stubEnv('VITE_SUPABASE_URL', 'http://localhost');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key');
@@ -38,7 +40,9 @@ describe('useStationRouting', () => {
       },
     };
 
-    const { rerender } = renderHook(({ status }) => useStationRouting(status), {
+    const { rerender } = renderHook<void, HookProps>(({ status }) => {
+      useStationRouting(status);
+    }, {
       initialProps: { status: initialStatus },
     });
 
@@ -70,7 +74,9 @@ describe('useStationRouting', () => {
 
     const unauthStatus: AuthStatus = { state: 'unauthenticated' };
 
-    const { rerender } = renderHook(({ status }) => useStationRouting(status), {
+    const { rerender } = renderHook<void, HookProps>(({ status }) => {
+      useStationRouting(status);
+    }, {
       initialProps: { status: stationStatus },
     });
 
