@@ -1095,19 +1095,9 @@ function StationApp({
       setSyncing(false);
     };
 
-    const sessionResult = await supabase.auth.getSession();
-    if (sessionResult.error) {
-      console.error('Failed to read Supabase session', sessionResult.error);
-      await releaseLocks((op) => ({
-        ...op,
-        inProgress: false,
-        lastError: 'session-error',
-      }));
-      pushAlert('Nepodařilo se ověřit přihlášení. Zkus to prosím znovu.');
-      return;
-    }
-
-    if (!sessionResult.data?.session) {
+    const hasSession = Boolean(auth.tokens.sessionId);
+    const expiresAt = auth.tokens.accessTokenExpiresAt;
+    if (!hasSession || (typeof expiresAt === 'number' && expiresAt <= Date.now())) {
       await releaseLocks((op) => ({
         ...op,
         inProgress: false,
