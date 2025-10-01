@@ -690,7 +690,7 @@ describe('station workflow', () => {
     await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
 
-    const quickAddButton = await screen.findByRole('button', { name: 'Přidat do fronty' });
+    const quickAddButton = await screen.findByRole('button', { name: 'Čekat' });
 
     await user.click(quickAddButton);
 

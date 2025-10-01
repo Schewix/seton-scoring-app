@@ -599,30 +599,16 @@ textarea {
   gap: 18px;
 }
 
-.scanner-icon {
-  width: 92px;
-  height: 92px;
-  border-radius: 26px;
-  background: #fff4e5;
-  color: #d97706;
-  display: grid;
-  place-items: center;
-  font-size: 40px;
-}
-
-.scanner-copy h2 {
-  margin: 0;
-}
-
-.scanner-copy p {
-  margin: 6px 0 0;
-  color: #6b5c50;
-}
-
 .scanner-wrapper {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.scanner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .scanner-controls {
@@ -895,10 +881,10 @@ textarea {
   font-size: 20px;
 }
 
-.wait-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.wait-hint {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin: 4px 0 0;
 }
 
 .error-text {
@@ -1383,10 +1369,6 @@ textarea {
 
 .ticket-serving {
   border: 2px solid rgba(56, 189, 248, 0.6);
-}
-
-.ticket-paused {
-  border: 2px dashed rgba(148, 163, 184, 0.6);
 }
 
 .ticket-done {
