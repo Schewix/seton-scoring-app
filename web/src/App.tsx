@@ -5,6 +5,7 @@ import LastScoresList from './components/LastScoresList';
 import TargetAnswersReport from './components/TargetAnswersReport';
 import PatrolCodeInput from './components/PatrolCodeInput';
 import OfflineHealth from './components/OfflineHealth';
+import AppFooter from './components/AppFooter';
 import { supabase } from './supabaseClient';
 import './App.css';
 import zelenaLigaLogo from './assets/znak_SPTO_transparent.png';
@@ -2321,6 +2322,7 @@ function StationApp({
           {isTargetStation ? <TargetAnswersReport eventId={eventId} stationId={stationId} /> : null}
         </>
       </main>
+      <AppFooter />
     </div>
   );
 }
@@ -2370,9 +2372,12 @@ function App() {
   if (status.state === 'loading') {
     return (
       <div className="auth-shell auth-overlay">
-        <div className="auth-card">
-          <h1>Načítám…</h1>
+        <div className="auth-shell-content">
+          <div className="auth-card">
+            <h1>Načítám…</h1>
+          </div>
         </div>
+        <AppFooter variant="dark" />
       </div>
     );
   }
@@ -2380,13 +2385,16 @@ function App() {
   if (status.state === 'error') {
     return (
       <div className="auth-shell auth-overlay">
-        <div className="auth-card">
-          <h1>Nelze načíst aplikaci</h1>
-          <p className="auth-description">{status.message || 'Zkontroluj připojení nebo konfiguraci a zkus to znovu.'}</p>
-          <button type="button" className="auth-primary" onClick={() => window.location.reload()}>
-            Zkusit znovu
-          </button>
+        <div className="auth-shell-content">
+          <div className="auth-card">
+            <h1>Nelze načíst aplikaci</h1>
+            <p className="auth-description">{status.message || 'Zkontroluj připojení nebo konfiguraci a zkus to znovu.'}</p>
+            <button type="button" className="auth-primary" onClick={() => window.location.reload()}>
+              Zkusit znovu
+            </button>
+          </div>
         </div>
+        <AppFooter variant="dark" />
       </div>
     );
   }

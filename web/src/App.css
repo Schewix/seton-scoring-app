@@ -1199,11 +1199,21 @@ textarea {
 .auth-shell {
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: clamp(2rem, 6vw, 4rem) clamp(1.5rem, 4vw, 3rem);
   background: linear-gradient(180deg, #f4efe6 0%, #f7f2eb 32%, #fefcf8 100%);
   color: #2f2a25;
+  gap: clamp(1.5rem, 4vw, 2rem);
+}
+
+.auth-shell-content {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .auth-overlay {
