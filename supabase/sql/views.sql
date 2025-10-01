@@ -9,6 +9,10 @@ from events e;
 
 grant select on events_public to anon, authenticated;
 
+drop view if exists scoreboard_view;
+drop view if exists results_ranked;
+drop view if exists results;
+
 -- Results view (sum points, sum without 'T', pure time)
 create or replace view results as
 select
@@ -35,6 +39,7 @@ left join timings t on t.event_id=p.event_id and t.patrol_id=p.id
 where p.active is true
 group by
   p.event_id,
+  e.name,
   p.id,
   p.patrol_code,
   p.team_name,
