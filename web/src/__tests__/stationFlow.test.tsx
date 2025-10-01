@@ -178,6 +178,17 @@ vi.mock('../supabaseClient', () => {
     },
     channel: () => realtimeChannel,
     removeChannel: () => undefined,
+    auth: {
+      getSession: vi.fn(async () => ({
+        data: {
+          session: {
+            access_token: 'session-token',
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+          },
+        },
+        error: null,
+      })),
+    },
     __setMock(table: string, factory: () => unknown) {
       tableFactories.set(table, factory);
     },
@@ -327,6 +338,7 @@ function createSelectResult<T>(data: T, error: unknown = null) {
 // Loosened typing to avoid Vitest version-specific type mismatches
 let timeoutSpy: any;
 let intervalSpy: any;
+let scrollIntoViewSpy: any;
 
 describe('station workflow', () => {
   beforeEach(async () => {
@@ -374,11 +386,25 @@ describe('station workflow', () => {
     (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
     await localforage.clear();
     window.localStorage.clear();
+    if (typeof Element !== 'undefined') {
+      const proto = Element.prototype as Element & { scrollIntoView?: () => void };
+      if (typeof proto.scrollIntoView !== 'function') {
+        Object.defineProperty(proto, 'scrollIntoView', {
+          value: () => {},
+          configurable: true,
+          writable: true,
+        });
+      }
+      scrollIntoViewSpy = vi.spyOn(proto, 'scrollIntoView').mockImplementation(() => {});
+    } else {
+      scrollIntoViewSpy = null;
+    }
   });
 
   afterEach(() => {
     timeoutSpy?.mockRestore();
     intervalSpy?.mockRestore();
+    scrollIntoViewSpy?.mockRestore();
   });
 
   it('stores offline submissions with queue preview details', async () => {
@@ -453,7 +479,8 @@ describe('station workflow', () => {
       expect(screen.queryByText(/Čeká na odeslání:/)).not.toBeInTheDocument();
     });
     const [, init] = fetchMock.mock.calls.at(-1)!;
-    expect(init?.headers?.Authorization).toContain('Bearer');
+    expect(init?.headers?.Authorization).toBeUndefined();
+    expect(init?.credentials).toBe('include');
     const body = JSON.parse((init?.body as string) ?? '{}');
     expect(body.operations).toHaveLength(1);
 
@@ -561,7 +588,6 @@ describe('station workflow', () => {
         arrived_at: new Date('2024-01-01T10:00:00Z').toISOString(),
         wait_minutes: 5,
         points: 7,
-        judge: 'Test Judge',
         note: 'Offline záznam',
         useTargetScoring: false,
         normalizedAnswers: null,
@@ -570,8 +596,6 @@ describe('station workflow', () => {
         team_name: 'Rysi',
         sex: 'F',
         finish_time: null,
-        judge_id: 'judge-test',
-        session_id: 'session-test',
         manifest_version: 1,
       },
       signature: 'offline-signature',
@@ -580,6 +604,7 @@ describe('station workflow', () => {
       inProgress: false,
       retryCount: 0,
       nextAttemptAt: Date.now(),
+      sessionId: 'session-test',
     };
 
     await localforage.setItem(QUEUE_KEY, [pendingOperation]);
@@ -618,7 +643,6 @@ describe('station workflow', () => {
         arrived_at: new Date('2024-03-01T09:00:00Z').toISOString(),
         wait_minutes: 3,
         points: 5,
-        judge: 'Test Judge',
         note: 'Stará relace',
         useTargetScoring: false,
         normalizedAnswers: null,
@@ -627,8 +651,6 @@ describe('station workflow', () => {
         team_name: 'Lišky',
         sex: 'F',
         finish_time: null,
-        judge_id: 'judge-test',
-        session_id: 'other-session',
         manifest_version: 1,
       },
       signature: 'stale-signature',
@@ -637,6 +659,7 @@ describe('station workflow', () => {
       inProgress: false,
       retryCount: 0,
       nextAttemptAt: Date.now(),
+      sessionId: 'other-session',
     };
 
     await localforage.setItem(QUEUE_KEY, [staleOperation]);
@@ -693,7 +716,6 @@ describe('station workflow', () => {
         arrived_at: new Date('2024-03-01T09:00:00Z').toISOString(),
         wait_minutes: 3,
         points: 5,
-        judge: 'Test Judge',
         note: 'Stará relace',
         useTargetScoring: false,
         normalizedAnswers: null,
@@ -702,7 +724,6 @@ describe('station workflow', () => {
         team_name: 'Lišky',
         sex: 'F',
         finish_time: null,
-        judge_id: 'judge-test',
         manifest_version: 1,
       } as any,
       signature: 'stale-signature',
@@ -743,7 +764,6 @@ describe('station workflow', () => {
         arrived_at: new Date('2024-02-01T09:15:00Z').toISOString(),
         wait_minutes: 0,
         points: 11,
-        judge: 'Test Judge',
         note: 'Terč offline',
         useTargetScoring: true,
         normalizedAnswers: 'ABCDABCDABCD',
@@ -752,8 +772,6 @@ describe('station workflow', () => {
         team_name: 'Ještěrky',
         sex: 'F',
         finish_time: null,
-        judge_id: 'judge-test',
-        session_id: 'session-test',
         manifest_version: 1,
       },
       signature: 'offline-signature',
@@ -762,6 +780,7 @@ describe('station workflow', () => {
       inProgress: false,
       retryCount: 0,
       nextAttemptAt: Date.now(),
+      sessionId: 'session-test',
     };
 
     await localforage.setItem(QUEUE_KEY, [pendingOperation]);
