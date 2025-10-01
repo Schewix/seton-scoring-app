@@ -36,7 +36,6 @@ interface PendingSubmissionPayload {
   arrived_at: string;
   wait_minutes: number;
   points: number;
-  judge: string;
   note: string;
   useTargetScoring: boolean;
   normalizedAnswers: string | null;
@@ -45,8 +44,6 @@ interface PendingSubmissionPayload {
   team_name?: string;
   sex?: string;
   finish_time?: string | null;
-  judge_id: string;
-  session_id: string;
   manifest_version: number;
 }
 
@@ -61,6 +58,7 @@ interface PendingOperation {
   retryCount: number;
   nextAttemptAt: number;
   lastError?: string;
+  sessionId?: string;
 }
 
 interface StationScoreRow {
@@ -81,6 +79,9 @@ interface StationScoreRowState {
 }
 
 type LegacyPendingSubmission = PendingSubmissionPayload & {
+  judge?: string;
+  judge_id?: string;
+  session_id?: string;
   signature: string;
   signature_payload: string;
 };
@@ -135,7 +136,32 @@ async function readQueue(key: string): Promise<PendingOperation[]> {
   let mutated = false;
   const mapped = raw.map((item) => {
     if (item && typeof item === 'object' && 'type' in item && 'payload' in item) {
-      return item as PendingOperation;
+      const operation = item as PendingOperation & {
+        payload: PendingSubmissionPayload & { judge?: string; judge_id?: string; session_id?: string };
+      };
+      const { judge: _legacyJudge, judge_id: _legacyJudgeId, session_id: _legacySessionId, ...rest } =
+        operation.payload as PendingSubmissionPayload & {
+          judge?: string;
+          judge_id?: string;
+          session_id?: string;
+        };
+      const legacySessionId =
+        typeof _legacySessionId === 'string' && _legacySessionId.length ? _legacySessionId : undefined;
+      const hasLegacyIdentity =
+        typeof _legacyJudge !== 'undefined' || typeof _legacyJudgeId !== 'undefined' || legacySessionId;
+      if (hasLegacyIdentity || typeof operation.sessionId === 'undefined') {
+        mutated = true;
+      }
+      return {
+        ...operation,
+        sessionId: typeof operation.sessionId === 'string' && operation.sessionId.length
+          ? operation.sessionId
+          : legacySessionId,
+        payload: {
+          ...rest,
+          manifest_version: typeof rest.manifest_version === 'number' ? rest.manifest_version : 0,
+        },
+      } satisfies PendingOperation;
     }
 
     mutated = true;
@@ -151,7 +177,6 @@ async function readQueue(key: string): Promise<PendingOperation[]> {
         arrived_at: legacy.arrived_at,
         wait_minutes: legacy.wait_minutes,
         points: legacy.points,
-        judge: legacy.judge,
         note: legacy.note,
         useTargetScoring: legacy.useTargetScoring,
         normalizedAnswers: legacy.normalizedAnswers,
@@ -160,8 +185,6 @@ async function readQueue(key: string): Promise<PendingOperation[]> {
         team_name: legacy.team_name,
         sex: legacy.sex,
         finish_time: legacy.finish_time,
-        judge_id: legacy.judge_id,
-        session_id: legacy.session_id,
         manifest_version: legacy.manifest_version,
       },
       signature: legacy.signature,
@@ -170,6 +193,10 @@ async function readQueue(key: string): Promise<PendingOperation[]> {
       inProgress: false,
       retryCount: 0,
       nextAttemptAt: Date.now(),
+      sessionId:
+        legacy.session_id && typeof legacy.session_id === 'string' && legacy.session_id.length
+          ? legacy.session_id
+          : undefined,
     } satisfies PendingOperation;
   });
 
@@ -1005,7 +1032,7 @@ function StationApp({
         continue;
       }
 
-      const effectiveSessionId = payload?.session_id ?? signatureMetadata.session_id;
+      const effectiveSessionId = op.sessionId ?? signatureMetadata.session_id;
       if (effectiveSessionId && effectiveSessionId !== auth.tokens.sessionId) {
         staleIds.add(op.id);
         continue;
@@ -1058,23 +1085,34 @@ function StationApp({
     }));
 
     const baseUrl = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
-    const accessToken = auth.tokens.accessToken;
 
-    if (!accessToken) {
-      const rollbackQueue = queueWithLocks.map((op) => {
-        if (!readyIds.has(op.id)) return op;
-        const retryCount = op.retryCount + 1;
-        return {
-          ...op,
-          inProgress: false,
-          retryCount,
-          nextAttemptAt: Date.now() + computeBackoffMs(retryCount),
-          lastError: 'missing-access-token',
-        };
-      });
+    const releaseLocks = async (updater: (op: PendingOperation) => PendingOperation) => {
+      const rollbackQueue = queueWithLocks.map((op) => (readyIds.has(op.id) ? updater(op) : op));
       await writeQueue(queueKey, rollbackQueue);
       updateQueueState(rollbackQueue);
       setSyncing(false);
+    };
+
+    const sessionResult = await supabase.auth.getSession();
+    if (sessionResult.error) {
+      console.error('Failed to read Supabase session', sessionResult.error);
+      await releaseLocks((op) => ({
+        ...op,
+        inProgress: false,
+        lastError: 'session-error',
+      }));
+      pushAlert('Nepodařilo se ověřit přihlášení. Zkus to prosím znovu.');
+      return;
+    }
+
+    if (!sessionResult.data?.session) {
+      await releaseLocks((op) => ({
+        ...op,
+        inProgress: false,
+        lastError: 'missing-session',
+      }));
+      pushAlert('Přihlášení vypršelo, přihlas se prosím znovu.');
+      void logout();
       return;
     }
 
@@ -1083,22 +1121,19 @@ function StationApp({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
         },
+        credentials: 'include',
         body: JSON.stringify({ operations: operationsPayload }),
       });
 
       if (!response.ok) {
         let message = `HTTP ${response.status}`;
-        let shouldForceLogout = response.status === 401 || response.status === 403;
+        const shouldForceLogout = response.status === 401 || response.status === 403;
         try {
           const errorBody = await response.json();
           const errorMessage = typeof errorBody?.error === 'string' ? errorBody.error.trim() : '';
           if (errorMessage) {
             message = errorMessage;
-          }
-          if (errorMessage && ['Missing token', 'Invalid token', 'Session revoked'].includes(errorMessage)) {
-            shouldForceLogout = true;
           }
         } catch (parseError) {
           console.debug('Failed to parse sync error response', parseError);
@@ -1154,8 +1189,7 @@ function StationApp({
       const syncError = error as Error & { shouldLogout?: boolean };
       const message = syncError instanceof Error ? syncError.message : 'unknown-error';
       const shouldForceLogout = Boolean(syncError?.shouldLogout);
-      const rollbackQueue = queueWithLocks.map((op) => {
-        if (!readyIds.has(op.id)) return op;
+      await releaseLocks((op) => {
         const retryCount = op.retryCount + 1;
         return {
           ...op,
@@ -1165,8 +1199,6 @@ function StationApp({
           lastError: message,
         };
       });
-      await writeQueue(queueKey, rollbackQueue);
-      updateQueueState(rollbackQueue);
       pushAlert('Synchronizace selhala, zkusím to znovu později.');
       if (shouldForceLogout) {
         pushAlert('Přihlášení vypršelo, přihlas se prosím znovu.');
@@ -1176,7 +1208,6 @@ function StationApp({
       setSyncing(false);
     }
   }, [
-    auth.tokens.accessToken,
     auth.tokens.sessionId,
     eventId,
     manifest.manifestVersion,
@@ -1503,7 +1534,6 @@ function StationApp({
       arrived_at: submissionData.arrived_at,
       wait_minutes: submissionData.wait_minutes,
       points: submissionData.points,
-      judge: manifest.judge.displayName,
       note: submissionData.note,
       useTargetScoring,
       normalizedAnswers,
@@ -1512,8 +1542,6 @@ function StationApp({
       team_name: submissionData.team_name,
       sex: submissionData.sex,
       finish_time: submissionData.finish_time,
-      judge_id: manifest.judge.id,
-      session_id: auth.tokens.sessionId,
       manifest_version: manifest.manifestVersion,
     };
 
@@ -1527,6 +1555,7 @@ function StationApp({
       inProgress: false,
       retryCount: 0,
       nextAttemptAt: Date.now(),
+      sessionId: auth.tokens.sessionId || undefined,
     };
 
     const queueBefore = await readQueue(queueKey);
@@ -1555,7 +1584,6 @@ function StationApp({
     manifest.judge.displayName,
     manifest.judge.id,
     manifest.manifestVersion,
-    auth.tokens.sessionId,
     auth.deviceKey,
     resolvePatrolCode,
     syncQueue,
@@ -2252,7 +2280,7 @@ function StationApp({
                                       ) : null}
                                     </div>
                                   </td>
-                                  <td>{payload.judge || '—'}</td>
+                                  <td>{manifest.judge.displayName || '—'}</td>
                                   <td>{payload.note ? payload.note : '—'}</td>
                                   <td>
                                     <div className="pending-status">

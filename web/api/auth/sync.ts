@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
-import jwt from 'jsonwebtoken';
 import { createHmac } from 'node:crypto';
+import { createSupabaseServerClient } from '../_lib/supabaseServer';
 
-const REQUIRED_ENV_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'JWT_SECRET'];
+const REQUIRED_ENV_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_ANON_KEY'];
 
 for (const name of REQUIRED_ENV_VARS) {
   if (!process.env[name]) {
@@ -12,9 +12,8 @@ for (const name of REQUIRED_ENV_VARS) {
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const JWT_SECRET = process.env.JWT_SECRET!;
 
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const corsHeaders = {
   'access-control-allow-origin': '*',
@@ -60,14 +59,6 @@ interface SignedSubmissionPayload {
     team_name?: string | null;
     sex?: string | null;
   };
-}
-
-interface TokenPayload {
-  sub: string;
-  stationId: string;
-  sessionId: string;
-  eventId: string;
-  type: 'access' | 'refresh';
 }
 
 interface OperationResult {
@@ -128,7 +119,7 @@ async function processSubmission(
 ) {
   const submission = signed.data;
 
-  const passageRes = await supabase
+  const passageRes = await supabaseAdmin
     .from('station_passages')
     .upsert(
       {
@@ -145,7 +136,7 @@ async function processSubmission(
     throw passageRes.error;
   }
 
-  const scoreRes = await supabase
+  const scoreRes = await supabaseAdmin
     .from('station_scores')
     .upsert(
       {
@@ -164,7 +155,7 @@ async function processSubmission(
   }
 
   if (submission.finish_time) {
-    const timingRes = await supabase
+    const timingRes = await supabaseAdmin
       .from('timings')
       .upsert(
         {
@@ -181,7 +172,7 @@ async function processSubmission(
   }
 
   if (submission.use_target_scoring && submission.normalized_answers) {
-    const quizRes = await supabase
+    const quizRes = await supabaseAdmin
       .from('station_quiz_responses')
       .upsert(
         {
@@ -199,7 +190,7 @@ async function processSubmission(
       throw quizRes.error;
     }
   } else {
-    const deleteRes = await supabase
+    const deleteRes = await supabaseAdmin
       .from('station_quiz_responses')
       .delete()
       .match({
@@ -227,20 +218,19 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const authHeader = req.headers?.authorization;
-  if (typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing token' });
+  const supabaseClient = createSupabaseServerClient(req, res);
+  const {
+    data: { user },
+    error: authError,
+  } = await supabaseClient.auth.getUser();
+
+  if (authError) {
+    console.error('Failed to read auth session', authError);
+    return res.status(500).json({ error: 'Auth error' });
   }
 
-  const tokenStr = authHeader.slice('Bearer '.length).trim();
-  let tokenPayload: TokenPayload;
-  try {
-    tokenPayload = jwt.verify(tokenStr, JWT_SECRET) as TokenPayload;
-    if (tokenPayload.type !== 'access') {
-      throw new Error('Invalid token type');
-    }
-  } catch (error) {
-    return res.status(401).json({ error: 'Invalid token' });
+  if (!user) {
+    return res.status(401).json({ error: 'Not authenticated' });
   }
 
   const operations = parseOperations(req.body);
@@ -252,53 +242,64 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({ results: [] });
   }
 
-  const [{ data: session }, { data: judge }, { data: assignment }] = await Promise.all([
-    supabase
-      .from('judge_sessions')
-      .select('*')
-      .eq('id', tokenPayload.sessionId)
-      .eq('judge_id', tokenPayload.sub)
-      .maybeSingle(),
-    supabase
-      .from('judges')
-      .select('id, display_name')
-      .eq('id', tokenPayload.sub)
-      .maybeSingle(),
-    supabase
-      .from('judge_assignments')
-      .select('*')
-      .eq('judge_id', tokenPayload.sub)
-      .eq('station_id', tokenPayload.stationId)
-      .eq('event_id', tokenPayload.eventId)
-      .maybeSingle(),
-  ]);
+  const { data: judge, error: judgeError } = await supabaseAdmin
+    .from('judges')
+    .select('id, display_name')
+    .eq('id', user.id)
+    .maybeSingle();
 
-  if (!session || session.revoked_at) {
-    return res.status(401).json({ error: 'Session revoked' });
+  if (judgeError) {
+    console.error('Failed to load judge record', judgeError);
+    return res.status(500).json({ error: 'Failed to load judge' });
   }
 
-  if (!judge || !assignment) {
-    return res.status(403).json({ error: 'Judge assignment not found' });
-  }
-
-  if (!session.public_key) {
-    return res.status(400).json({ error: 'Missing device key' });
+  if (!judge) {
+    return res.status(403).json({ error: 'Judge not found' });
   }
 
   const results: OperationResult[] = [];
+  const sessionCache = new Map<string, any>();
+  const assignmentCache = new Map<string, any>();
 
   for (const operation of operations) {
     try {
-      const expectedSignature = computeSignature(operation.signature_payload, session.public_key);
-      if (expectedSignature !== operation.signature) {
-        results.push({ id: operation.id, status: 'failed', error: 'invalid-signature' });
+      const parsed: SignedSubmissionPayload = JSON.parse(operation.signature_payload);
+
+      if (parsed.judge_id && parsed.judge_id !== user.id) {
+        results.push({ id: operation.id, status: 'failed', error: 'judge-mismatch' });
         continue;
       }
 
-      const parsed: SignedSubmissionPayload = JSON.parse(operation.signature_payload);
+      let session = sessionCache.get(parsed.session_id);
+      if (!session) {
+        const { data: sessionRow, error: sessionError } = await supabaseAdmin
+          .from('judge_sessions')
+          .select('*')
+          .eq('id', parsed.session_id)
+          .eq('judge_id', user.id)
+          .maybeSingle();
 
-      if (parsed.session_id !== session.id) {
-        results.push({ id: operation.id, status: 'failed', error: 'session-mismatch' });
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        session = sessionRow;
+        sessionCache.set(parsed.session_id, sessionRow);
+      }
+
+      if (!session || session.revoked_at) {
+        results.push({ id: operation.id, status: 'failed', error: 'session-revoked' });
+        continue;
+      }
+
+      if (!session.public_key) {
+        results.push({ id: operation.id, status: 'failed', error: 'missing-device-key' });
+        continue;
+      }
+
+      const expectedSignature = computeSignature(operation.signature_payload, session.public_key);
+      if (expectedSignature !== operation.signature) {
+        results.push({ id: operation.id, status: 'failed', error: 'invalid-signature' });
         continue;
       }
 
@@ -307,12 +308,34 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
-      if (parsed.station_id !== assignment.station_id || parsed.event_id !== assignment.event_id) {
-        results.push({ id: operation.id, status: 'failed', error: 'assignment-mismatch' });
+      const assignmentKey = `${parsed.station_id}:${parsed.event_id}`;
+      let assignment = assignmentCache.get(assignmentKey);
+      if (!assignment) {
+        const { data: assignmentRow, error: assignmentError } = await supabaseAdmin
+          .from('judge_assignments')
+          .select('*')
+          .eq('judge_id', user.id)
+          .eq('station_id', parsed.station_id)
+          .eq('event_id', parsed.event_id)
+          .maybeSingle();
+
+        if (assignmentError) {
+          throw assignmentError;
+        }
+
+        assignment = assignmentRow;
+        assignmentCache.set(assignmentKey, assignmentRow);
+      }
+
+      if (!assignment) {
+        results.push({ id: operation.id, status: 'failed', error: 'assignment-missing' });
         continue;
       }
 
-      if (parsed.data.station_id !== assignment.station_id || parsed.data.event_id !== assignment.event_id) {
+      if (
+        parsed.data.station_id !== assignment.station_id ||
+        parsed.data.event_id !== assignment.event_id
+      ) {
         results.push({ id: operation.id, status: 'failed', error: 'payload-mismatch' });
         continue;
       }
