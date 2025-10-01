@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { createHmac } from 'node:crypto';
-import { createSupabaseServerClient } from '../_lib/supabaseServer';
+import { createSupabaseServerClient } from '../_lib/supabaseServer.js';
 
 const REQUIRED_ENV_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_ANON_KEY'];
 
