@@ -460,6 +460,7 @@ function StationApp({
           patrolCode,
           teamName: patrol.team_name,
           category: patrol.category,
+          sex: patrol.sex,
           initialState,
         });
         addedState = newTicket.state;
@@ -826,17 +827,26 @@ function StationApp({
 
       if (nextState === 'done' && updated) {
         const summary = patrolById.get(updated.patrolId);
-        if (!summary) {
+        const ticketPatrol: Patrol = summary
+          ? {
+              id: summary.id,
+              team_name: summary.team_name,
+              category: summary.category,
+              sex: summary.sex,
+              patrol_code: summary.patrol_code || updated.patrolCode || null,
+            }
+          : {
+              id: updated.patrolId,
+              team_name: updated.teamName,
+              category: updated.category,
+              sex: updated.sex,
+              patrol_code: updated.patrolCode || null,
+            };
+
+        if (!ticketPatrol.team_name) {
           pushAlert('Hlídku se nepodařilo otevřít, není v manifestu.');
           return;
         }
-        const ticketPatrol: Patrol = {
-          id: summary.id,
-          team_name: summary.team_name,
-          category: summary.category,
-          sex: summary.sex,
-          patrol_code: summary.patrol_code || updated.patrolCode || null,
-        };
         const waitSeconds = Math.max(0, Math.round(updated.waitAccumMs / 1000));
         initializeFormForPatrol(ticketPatrol, {
           arrivedAt: updated.createdAt,

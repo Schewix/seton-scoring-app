@@ -9,6 +9,7 @@ export interface Ticket {
   patrolCode: string;
   teamName: string;
   category: string;
+  sex: string;
   state: TicketState;
   createdAt: string;
   waitStartedAt?: string;
@@ -34,6 +35,7 @@ function sanitizeTicket(raw: StoredTicket): Ticket {
     patrolCode: raw.patrolCode,
     teamName: raw.teamName,
     category: raw.category,
+    sex: typeof raw.sex === 'string' ? raw.sex : '',
     state,
     createdAt: raw.createdAt,
     waitStartedAt,
@@ -69,6 +71,7 @@ export function createTicket(data: {
   patrolCode: string;
   teamName: string;
   category: string;
+  sex: string;
   initialState?: TicketState;
 }): Ticket {
   const now = new Date().toISOString();
@@ -79,6 +82,7 @@ export function createTicket(data: {
     patrolCode: data.patrolCode,
     teamName: data.teamName,
     category: data.category,
+    sex: data.sex,
     state,
     createdAt: now,
     waitStartedAt: state === 'waiting' ? now : undefined,
