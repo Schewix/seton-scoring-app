@@ -109,7 +109,8 @@ praktický návod pro provoz na stanovišti i pro kancelář závodu.
   chyby a zkus **Odeslat nyní**. Při opakovaném selhání zkontroluj konfiguraci
   Supabase nebo API.
 - **Scoreboard je prázdný** – ověř, že je nastaveno `VITE_EVENT_ID` a že v
-  databázi existují data v pohledech `results` a `results_ranked`.
+  databázi existují data v pohledu `scoreboard_view` (postaveném nad `results`
+  a `results_ranked`).
 
 ## 7. Další tipy
 
