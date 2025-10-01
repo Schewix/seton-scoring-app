@@ -599,17 +599,6 @@ textarea {
   gap: 18px;
 }
 
-.scanner-icon {
-  width: 92px;
-  height: 92px;
-  border-radius: 26px;
-  background: #fff4e5;
-  color: #d97706;
-  display: grid;
-  place-items: center;
-  font-size: 40px;
-}
-
 .scanner-copy h2 {
   margin: 0;
 }
@@ -709,6 +698,16 @@ textarea {
   flex-direction: column;
   gap: 6px;
   font-size: 15px;
+}
+
+.scanner-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.scanner-preview .scanner-actions {
+  margin-top: 4px;
 }
 
 .scanner-note {
@@ -1377,12 +1376,9 @@ textarea {
   border: 2px solid rgba(13, 148, 136, 0.35);
 }
 
+
 .ticket-serving {
   border: 2px solid rgba(56, 189, 248, 0.6);
-}
-
-.ticket-paused {
-  border: 2px dashed rgba(148, 163, 184, 0.6);
 }
 
 .ticket-done {
