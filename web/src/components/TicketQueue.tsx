@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { Ticket } from '../auth/tickets';
-import { computeServeTime, computeWaitTime } from '../auth/tickets';
+import { computeWaitTime } from '../auth/tickets';
 
 interface TicketQueueProps {
   tickets: Ticket[];
@@ -28,7 +28,6 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
     const waiting: Ticket[] = [];
     const serving: Ticket[] = [];
     const done: Ticket[] = [];
-    const paused: Ticket[] = [];
 
     tickets.forEach((ticket) => {
       switch (ticket.state) {
@@ -38,9 +37,6 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
         case 'serving':
           serving.push(ticket);
           break;
-        case 'paused':
-          paused.push(ticket);
-          break;
         case 'done':
           done.push(ticket);
           break;
@@ -49,7 +45,7 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
       }
     });
 
-    return { waiting, serving, done, paused };
+    return { waiting, serving, done };
   }, [tickets, heartbeat]);
 
   const nextUp = grouped.waiting[0];
@@ -91,9 +87,6 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
                       <button type="button" onClick={() => onChangeState(ticket.id, 'serving')}>
                         Obsluhovat
                       </button>
-                      <button type="button" onClick={() => onChangeState(ticket.id, 'paused')}>
-                        Pozastavit
-                      </button>
                     </div>
                   </div>
                 </li>
@@ -108,7 +101,7 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
           </div>
           <ul>
             {grouped.serving.map((ticket) => {
-              const serveMs = computeServeTime(ticket);
+              const waitMs = computeWaitTime(ticket);
               return (
                 <li key={ticket.id} className="ticket ticket-serving">
                   <div>
@@ -116,40 +109,15 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
                     <span>{ticket.teamName}</span>
                   </div>
                   <div className="ticket-meta">
-                    <span>{formatDuration(serveMs)}</span>
+                    <span>{waitMs > 0 ? formatDuration(waitMs) : '—'}</span>
                     <div className="ticket-actions">
                       <button type="button" onClick={() => onChangeState(ticket.id, 'done')}>
                         Hotovo
                       </button>
-                      <button type="button" onClick={() => onChangeState(ticket.id, 'paused')}>
-                        Pozastavit
+                      <button type="button" onClick={() => onChangeState(ticket.id, 'waiting')}>
+                        Čekat
                       </button>
                     </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-        <div className="tickets-column">
-          <div className="tickets-column-header">
-            <h3>Pozastavené</h3>
-            <span>{grouped.paused.length}</span>
-          </div>
-          <ul>
-            {grouped.paused.map((ticket) => {
-              const waitMs = computeWaitTime(ticket);
-              return (
-                <li key={ticket.id} className="ticket ticket-paused">
-                  <div>
-                    <strong>{ticket.patrolCode}</strong>
-                    <span>{ticket.teamName}</span>
-                  </div>
-                  <div className="ticket-meta">
-                    <span>{formatDuration(waitMs)}</span>
-                    <button type="button" onClick={() => onChangeState(ticket.id, 'waiting')}>
-                      Čeká dál
-                    </button>
                   </div>
                 </li>
               );
@@ -163,7 +131,7 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
           </div>
           <ul>
             {grouped.done.map((ticket) => {
-              const serveMs = computeServeTime(ticket);
+              const waitMs = computeWaitTime(ticket);
               return (
                 <li key={ticket.id} className="ticket ticket-done">
                   <div>
@@ -171,7 +139,7 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
                     <span>{ticket.teamName}</span>
                   </div>
                   <div className="ticket-meta">
-                    <span>{formatDuration(serveMs)}</span>
+                    <span>{waitMs > 0 ? formatDuration(waitMs) : '—'}</span>
                   </div>
                 </li>
               );
