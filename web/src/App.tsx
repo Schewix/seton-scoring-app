@@ -3,7 +3,7 @@ import localforage from 'localforage';
 // import QRScanner from './components/QRScanner';
 import LastScoresList from './components/LastScoresList';
 import TargetAnswersReport from './components/TargetAnswersReport';
-import PatrolCodeInput from './components/PatrolCodeInput';
+import PatrolCodeInput, { normalisePatrolCode } from './components/PatrolCodeInput';
 import PointsInput from './components/PointsInput';
 import OfflineHealth from './components/OfflineHealth';
 import AppFooter from './components/AppFooter';
@@ -552,6 +552,22 @@ function StationApp({
       });
     });
     return map;
+  }, [auth.patrols]);
+
+  const availablePatrolCodes = useMemo(() => {
+    const unique = new Set<string>();
+    const codes: string[] = [];
+    auth.patrols.forEach((summary) => {
+      const normalised = normalisePatrolCode(summary.patrol_code ?? '');
+      if (!normalised) {
+        return;
+      }
+      if (!unique.has(normalised)) {
+        unique.add(normalised);
+        codes.push(normalised);
+      }
+    });
+    return codes;
   }, [auth.patrols]);
 
   const loadTimingData = useCallback(
@@ -1943,6 +1959,7 @@ function StationApp({
                   value={manualCode}
                   onChange={setManualCode}
                   label="Ruční kód"
+                  availableCodes={availablePatrolCodes}
                 />
                 <button
                   type="button"
