@@ -137,12 +137,50 @@ body {
 }
 
 .hero-panel--health .offline-health {
-  background: transparent;
-  border: none;
+  background: rgba(9, 66, 52, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   box-shadow: none;
-  padding: 0;
+  padding: 12px 16px;
   min-width: 0;
   width: 100%;
+  border-radius: 18px;
+}
+
+.hero-panel--health .offline-health-row {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.hero-panel--health .offline-health-label {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.hero-panel--health .offline-health-value {
+  color: #fffdf7;
+  text-shadow: 0 1px 4px rgba(4, 47, 35, 0.45);
+}
+
+.hero-panel--health .offline-health-value.info {
+  color: #bfdbfe;
+}
+
+.hero-panel--health .offline-health-value.warn {
+  color: #fed7aa;
+}
+
+.hero-panel--health .offline-health-value.ok {
+  color: #bbf7d0;
+}
+
+.hero-panel--health .offline-health-dot {
+  background: #bbf7d0;
+}
+
+.hero-panel--health .offline-health-dot.error {
+  background: #fecaca;
+}
+
+.hero-panel--health .offline-health-dot.ok {
+  background: #bbf7d0;
 }
 
 .hero-panel--actions {
