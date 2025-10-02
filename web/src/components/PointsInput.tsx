@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent, MutableRefObject } from 'react';
+import { triggerHaptic } from '../utils/haptics';
 
 type PointsOption = string;
 
@@ -40,19 +41,10 @@ function usePrefersReducedMotion() {
   return prefersReducedMotion;
 }
 
-function triggerHaptic(pattern: number | number[]) {
-  if (typeof navigator === 'undefined') {
-    return;
-  }
-
-  if ('vibrate' in navigator && typeof navigator.vibrate === 'function') {
-    try {
-      navigator.vibrate(pattern);
-    } catch (error) {
-      // Ignored – not all platforms allow vibration.
-    }
-  }
-}
+const DEFAULT_ROW_HEIGHT = 48;
+const HAPTIC_COOLDOWN_MS = 70;
+const SNAP_INACTIVITY_DELAY_MS = 100;
+const SNAP_COMPLETION_DELAY_MS = 220;
 
 function formatPointsForScreenReaders(value: number) {
   if (value === 1) {
@@ -137,6 +129,11 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const scrollTimeoutRef = useRef<number | null>(null);
   const programmaticScrollRef = useRef(false);
+  const rowHeightRef = useRef(DEFAULT_ROW_HEIGHT);
+  const lastIndexRef = useRef<number | null>(null);
+  const lastTickTimeRef = useRef(0);
+  const scrollRafRef = useRef<number | null>(null);
+  const pendingSnapHapticRef = useRef<number | null>(null);
   const isInitialRenderRef = useRef(true);
   const prefersReducedMotion = usePrefersReducedMotion();
 
@@ -168,7 +165,16 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
     if (wheelHeight <= 0) {
       return;
     }
-    const optionHeight = firstOption.offsetHeight || 0;
+    const optionHeight = firstOption.offsetHeight || DEFAULT_ROW_HEIGHT;
+    const firstIndex = optionRefs.current.findIndex((node) => node === firstOption);
+    const secondOption =
+      firstIndex >= 0
+        ? optionRefs.current.slice(firstIndex + 1).find((node) => node)
+        : undefined;
+    const rowHeightCandidate = secondOption
+      ? Math.abs(secondOption.offsetTop - firstOption.offsetTop) || optionHeight
+      : optionHeight;
+    rowHeightRef.current = Math.max(1, Math.round(rowHeightCandidate));
     const padding = Math.max(0, wheelHeight / 2 - optionHeight / 2);
     wheel.style.setProperty('--wheel-padding', `${padding}px`);
   }, []);
@@ -183,7 +189,28 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
     return () => window.removeEventListener('resize', handleResize);
   }, [updateWheelPadding]);
 
-  const scrollToOption = useCallback((index: number, behavior: ScrollBehavior = 'smooth') => {
+  const queueSnapHaptic = useCallback(
+    (delay = SNAP_COMPLETION_DELAY_MS) => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+      if (pendingSnapHapticRef.current !== null) {
+        window.clearTimeout(pendingSnapHapticRef.current);
+      }
+      pendingSnapHapticRef.current = window.setTimeout(() => {
+        pendingSnapHapticRef.current = null;
+        triggerHaptic('medium');
+      }, delay);
+    },
+    [],
+  );
+
+  const scrollToOption = useCallback(
+    (
+      index: number,
+      behavior: ScrollBehavior = 'smooth',
+      options?: { triggerSnapHaptic?: boolean; skipProgrammaticFlag?: boolean },
+    ) => {
     const wheel = wheelRef.current;
     const optionNode = optionRefs.current[index];
     if (!wheel || !optionNode) {
@@ -195,30 +222,40 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
     const optionHeight = optionNode.offsetHeight;
     const targetScrollTop = optionOffsetTop - wheelHeight / 2 + optionHeight / 2;
 
-    programmaticScrollRef.current = true;
+    if (!options?.skipProgrammaticFlag) {
+      programmaticScrollRef.current = true;
+    }
     if (typeof wheel.scrollTo === 'function') {
       wheel.scrollTo({ top: targetScrollTop, behavior });
     } else {
       wheel.scrollTop = targetScrollTop;
     }
-    if (behavior === 'auto') {
+    lastIndexRef.current = index;
+    if (behavior === 'auto' && !options?.skipProgrammaticFlag) {
       programmaticScrollRef.current = false;
     }
-  }, []);
+    if (options?.triggerSnapHaptic) {
+      queueSnapHaptic();
+    }
+  }, [queueSnapHaptic]);
 
   const handleSelect = useCallback(
     (option: PointsOption, behavior: ScrollBehavior = 'smooth') => {
       if (option === selectedOption) {
         const existingIndex = options.indexOf(option);
         if (existingIndex >= 0) {
-          scrollToOption(existingIndex, behavior);
+          scrollToOption(existingIndex, behavior, {
+            triggerSnapHaptic: behavior !== 'auto',
+          });
         }
         return;
       }
       onChange(option);
       const selectedIndex = options.indexOf(option);
       if (selectedIndex >= 0) {
-        scrollToOption(selectedIndex, behavior);
+        scrollToOption(selectedIndex, behavior, {
+          triggerSnapHaptic: behavior !== 'auto',
+        });
         if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
           window.requestAnimationFrame(() => {
             optionRefs.current[selectedIndex]?.focus({ preventScroll: true });
@@ -227,7 +264,7 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
           optionRefs.current[selectedIndex]?.focus({ preventScroll: true });
         }
       }
-      triggerHaptic(10);
+      triggerHaptic('selection');
     },
     [onChange, options, scrollToOption, selectedOption],
   );
@@ -265,64 +302,110 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
     [handleSelect, options],
   );
 
+  const processScroll = useCallback(() => {
+    scrollRafRef.current = null;
+    const wheel = wheelRef.current;
+    if (!wheel || options.length === 0) {
+      return;
+    }
+    const rowHeight = rowHeightRef.current || DEFAULT_ROW_HEIGHT;
+    if (rowHeight <= 0) {
+      return;
+    }
+    const rawIndex = Math.floor(wheel.scrollTop / rowHeight);
+    const clampedIndex = Math.max(0, Math.min(options.length - 1, rawIndex));
+    const previousIndex = lastIndexRef.current;
+    if (previousIndex === null) {
+      lastIndexRef.current = clampedIndex;
+      return;
+    }
+    if (clampedIndex === previousIndex) {
+      return;
+    }
+    lastIndexRef.current = clampedIndex;
+    if (programmaticScrollRef.current) {
+      return;
+    }
+    const direction = clampedIndex > previousIndex ? 1 : -1;
+    let currentIndex = previousIndex;
+    while ((direction > 0 && currentIndex < clampedIndex) || (direction < 0 && currentIndex > clampedIndex)) {
+      currentIndex += direction;
+      if (currentIndex < 0 || currentIndex >= options.length) {
+        continue;
+      }
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (now - lastTickTimeRef.current >= HAPTIC_COOLDOWN_MS) {
+        triggerHaptic('selection');
+        lastTickTimeRef.current = now;
+      }
+    }
+  }, [options.length]);
+
+  const scheduleScrollProcessing = useCallback(() => {
+    if (scrollRafRef.current !== null) {
+      return;
+    }
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+      processScroll();
+      return;
+    }
+    scrollRafRef.current = window.requestAnimationFrame(processScroll);
+  }, [processScroll]);
+
+  const finalizeScroll = useCallback(() => {
+    const wheel = wheelRef.current;
+    if (!wheel || options.length === 0) {
+      return;
+    }
+    const rowHeight = rowHeightRef.current || DEFAULT_ROW_HEIGHT;
+    if (rowHeight <= 0) {
+      return;
+    }
+    const rawIndex = Math.round(wheel.scrollTop / rowHeight);
+    const clampedIndex = Math.max(0, Math.min(options.length - 1, rawIndex));
+    const nextOption = options[clampedIndex];
+    if (!nextOption) {
+      return;
+    }
+    if (nextOption !== selectedOption) {
+      handleSelect(nextOption);
+      return;
+    }
+    scrollToOption(clampedIndex, 'smooth', { triggerSnapHaptic: true });
+  }, [handleSelect, options, scrollToOption, selectedOption]);
+
   const handleWheelScroll = useCallback(() => {
     if (!wheelRef.current || options.length === 0) {
       return;
     }
-
+    scheduleScrollProcessing();
+    if (typeof window === 'undefined') {
+      finalizeScroll();
+      return;
+    }
     if (scrollTimeoutRef.current !== null) {
       window.clearTimeout(scrollTimeoutRef.current);
     }
-
-    const programmaticScroll = programmaticScrollRef.current;
     scrollTimeoutRef.current = window.setTimeout(() => {
-      if (programmaticScroll) {
+      if (programmaticScrollRef.current) {
         programmaticScrollRef.current = false;
         return;
       }
-
-      const wheel = wheelRef.current;
-      if (!wheel) {
-        return;
-      }
-
-      const { top, height } = wheel.getBoundingClientRect();
-      const centerY = top + height / 2;
-      let closestIndex = -1;
-      let shortestDistance = Number.POSITIVE_INFINITY;
-
-      optionRefs.current.forEach((node, index) => {
-        if (!node) {
-          return;
-        }
-        const rect = node.getBoundingClientRect();
-        const optionCenter = rect.top + rect.height / 2;
-        const distance = Math.abs(optionCenter - centerY);
-        if (distance < shortestDistance) {
-          shortestDistance = distance;
-          closestIndex = index;
-        }
-      });
-
-      if (closestIndex >= 0) {
-        const nextOption = options[closestIndex];
-        if (nextOption !== selectedOption) {
-          handleSelect(nextOption);
-        } else {
-          scrollToOption(closestIndex);
-        }
-      }
-    }, 80);
-  }, [handleSelect, options, scrollToOption, selectedOption]);
+      finalizeScroll();
+    }, SNAP_INACTIVITY_DELAY_MS);
+  }, [finalizeScroll, options.length, scheduleScrollProcessing]);
 
   useEffect(() => {
     if (options.length === 0) {
+      lastIndexRef.current = null;
       return;
     }
     const nextIndex = selectedOption ? options.indexOf(selectedOption) : 0;
     if (nextIndex < 0) {
+      lastIndexRef.current = 0;
       return;
     }
+    lastIndexRef.current = nextIndex;
     const behavior = isInitialRenderRef.current ? 'auto' : 'smooth';
     isInitialRenderRef.current = false;
     scrollToOption(nextIndex, behavior);
@@ -332,6 +415,12 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
     return () => {
       if (scrollTimeoutRef.current !== null) {
         window.clearTimeout(scrollTimeoutRef.current);
+      }
+      if (scrollRafRef.current !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(scrollRafRef.current);
+      }
+      if (pendingSnapHapticRef.current !== null && typeof window !== 'undefined') {
+        window.clearTimeout(pendingSnapHapticRef.current);
       }
     };
   }, []);
