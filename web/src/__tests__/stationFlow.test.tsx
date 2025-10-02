@@ -53,7 +53,7 @@ vi.mock('../supabaseClient', () => {
                     data: {
                       id: 'patrol-1',
                       team_name: 'Vlci',
-                      category: 'N',
+                      category: mockedPatrolCategory,
                       sex: 'H',
                       patrol_code: mockedPatrolCode,
                     },
@@ -207,8 +207,12 @@ vi.mock('../components/QRScanner', () => ({
   default: () => <div data-testid="qr-scanner" />,
 }));
 
+type CategoryKey = 'N' | 'M' | 'S' | 'R';
+
 let mockedStationCode = 'X';
 let mockedPatrolCode: string | null = 'N-01';
+let mockedPatrolCategory: CategoryKey = 'N';
+let mockedAllowedCategories: CategoryKey[] = ['N', 'M', 'S', 'R'];
 let mockedStartTime: string | null = '2024-02-01T08:00:00Z';
 let mockedFinishTime: string | null = '2024-02-01T08:45:00Z';
 const mockDeviceKey = new Uint8Array(32);
@@ -220,7 +224,7 @@ vi.mock('../auth/context', async () => {
     {
       id: 'patrol-1',
       team_name: 'Vlci',
-      category: 'N',
+      category: mockedPatrolCategory,
       sex: 'H',
       patrol_code: mockedPatrolCode,
     },
@@ -235,7 +239,7 @@ vi.mock('../auth/context', async () => {
         name: mockedStationCode === 'T' ? 'Výpočetka' : 'Stanoviště X',
       },
       event: { id: 'event-test', name: 'Test Event' },
-      allowedCategories: ['N', 'M', 'S', 'R'],
+      allowedCategories: mockedAllowedCategories,
       allowedTasks: [],
       manifestVersion: 1,
     };
@@ -419,6 +423,8 @@ describe('station workflow', () => {
 
     mockedStationCode = 'X';
     mockedPatrolCode = 'N-01';
+    mockedPatrolCategory = 'N';
+    mockedAllowedCategories = ['N', 'M', 'S', 'R'];
     mockedStartTime = '2024-02-01T08:00:00Z';
     mockedFinishTime = '2024-02-01T08:45:00Z';
     supabaseMock.__resetMocks();
@@ -471,6 +477,32 @@ describe('station workflow', () => {
     expect(queueLabel).toBeInTheDocument();
     expect(screen.getByText('Manuální body')).toBeInTheDocument();
     expect(screen.getByText(/Chyba:/)).toBeInTheDocument();
+  });
+
+  it('prevents loading patrols from disallowed categories', async () => {
+    mockedStationCode = 'A';
+    mockedAllowedCategories = ['M', 'S', 'R'];
+    mockedPatrolCategory = 'N';
+    mockedPatrolCode = 'NH-1';
+
+    const user = userEvent.setup();
+
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+
+    await selectPatrolCode(user, { category: 'M', type: 'H', number: '1' });
+
+    const categoryGroup = screen.getByRole('radiogroup', { name: 'Kategorie hlídky' });
+    await user.click(within(categoryGroup).getByRole('radio', { name: 'N' }));
+
+    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Hlídka této kategorie na stanoviště nepatří.')).toBeInTheDocument(),
+    );
+
+    expect(screen.queryByRole('button', { name: 'Obsluhovat' })).not.toBeInTheDocument();
   });
 
   it('rejects decimal values for manual scoring input', async () => {
