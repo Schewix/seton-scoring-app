@@ -103,14 +103,14 @@ function formatDisplayValue(normalised: string) {
   }
   const fullMatch = normalised.match(/^([NMSR])([HD])-(\d{1,2})$/);
   if (fullMatch) {
-    return `${fullMatch[1]}-${fullMatch[2]}-${fullMatch[3].padStart(2, '0')}`;
+    return `${fullMatch[1]}${fullMatch[2]}-${fullMatch[3].padStart(2, '0')}`;
   }
   const partialGender = normalised.match(/^([NMSR])([HD])$/);
   if (partialGender) {
-    return `${partialGender[1]}-${partialGender[2]}`;
+    return `${partialGender[1]}${partialGender[2]}`;
   }
   if (/^([NMSR])([HD])-$/.test(normalised)) {
-    return `${normalised[0]}-${normalised[1]}-`;
+    return `${normalised[0]}${normalised[1]}-`;
   }
   if (/^([NMSR])-$/.test(normalised)) {
     return `${normalised[0]}-`;
@@ -541,7 +541,7 @@ export default function PatrolCodeInput({
           onChange={handleFallbackChange}
           onFocus={handleFallbackFocus}
           onBlur={handleFallbackBlur}
-          placeholder="N-H-07"
+          placeholder="NH-07"
           aria-describedby={feedbackId}
           aria-invalid={!validationState.valid}
         />
