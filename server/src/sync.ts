@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { verifyAccessToken } from './tokens.js';
 import { supabase } from './supabase.js';
+import { normalizeAllowedCategories, normalizeCategory, CategoryKey } from './categories.js';
 
 const syncRouter = Router();
 
@@ -211,6 +212,24 @@ async function handleSyncRequest(req: Request, res: Response) {
     return res.status(400).json({ error: 'Missing device key' });
   }
 
+  const { data: station, error: stationError } = await supabase
+    .from('stations')
+    .select('id, code')
+    .eq('id', assignment.station_id)
+    .maybeSingle();
+
+  if (stationError || !station) {
+    return res.status(500).json({ error: 'Failed to resolve station' });
+  }
+
+  const allowedCategories = normalizeAllowedCategories(assignment.allowed_categories, station.code);
+  const allowedCategorySet = new Set<CategoryKey>(allowedCategories);
+  const allowAllCategories = allowedCategorySet.size === 0;
+  const isCategoryAllowed = (category: CategoryKey | null) =>
+    !!category && (allowAllCategories || allowedCategorySet.has(category));
+
+  const patrolCategoryCache = new Map<string, CategoryKey>();
+
   const results: OperationResult[] = [];
 
   for (const operation of operations) {
@@ -240,6 +259,58 @@ async function handleSyncRequest(req: Request, res: Response) {
 
       if (parsed.data.station_id !== assignment.station_id || parsed.data.event_id !== assignment.event_id) {
         results.push({ id: operation.id, status: 'failed', error: 'payload-mismatch' });
+        continue;
+      }
+
+      const normalizedSubmissionCategory = normalizeCategory(parsed.data.category);
+      if (!normalizedSubmissionCategory) {
+        results.push({ id: operation.id, status: 'failed', error: 'invalid-category' });
+        continue;
+      }
+
+      if (!isCategoryAllowed(normalizedSubmissionCategory)) {
+        results.push({ id: operation.id, status: 'failed', error: 'category-not-allowed' });
+        continue;
+      }
+
+      const patrolId = parsed.data.patrol_id;
+      let patrolCategory = patrolCategoryCache.get(patrolId);
+
+      if (!patrolCategory) {
+        const { data: patrol, error: patrolError } = await supabase
+          .from('patrols')
+          .select('category')
+          .eq('id', patrolId)
+          .maybeSingle();
+
+        if (patrolError) {
+          results.push({ id: operation.id, status: 'failed', error: 'patrol-fetch-failed' });
+          continue;
+        }
+
+        if (!patrol) {
+          results.push({ id: operation.id, status: 'failed', error: 'patrol-not-found' });
+          continue;
+        }
+
+        const normalizedPatrolCategory = normalizeCategory(patrol.category);
+
+        if (!normalizedPatrolCategory) {
+          results.push({ id: operation.id, status: 'failed', error: 'patrol-category-invalid' });
+          continue;
+        }
+
+        if (!isCategoryAllowed(normalizedPatrolCategory)) {
+          results.push({ id: operation.id, status: 'failed', error: 'category-not-allowed' });
+          continue;
+        }
+
+        patrolCategory = normalizedPatrolCategory;
+        patrolCategoryCache.set(patrolId, normalizedPatrolCategory);
+      }
+
+      if (patrolCategory !== normalizedSubmissionCategory) {
+        results.push({ id: operation.id, status: 'failed', error: 'category-mismatch' });
         continue;
       }
 
