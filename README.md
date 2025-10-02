@@ -142,13 +142,14 @@ Server poskytuje endpointy:
 - Správné odpovědi lze hromadně upravit v horním panelu (vyžaduje administrátorský
   režim). Při zapnutí automatického hodnocení se odpovědi validují (12 otázek,
   pouze písmena A–D).
+- Přihlašovací obrazovka a hlavní rozhraní jsou dostupné na adrese
+  `/setonuv-zavod`.
 - Každé stanoviště má vlastní URL tvaru
   `/setonuv-zavod/stanoviste/<station_id>` (s krátkým aliasem
-  `/stanoviste/<station_id>` a zpětně kompatibilním `/stations/<station_id>`);
-  aktuálně probíhající instalace je dostupná i na prefixu `/setonuv-zavod`.
-  Pro výsledkový přehled existuje krátká adresa `/vysledky` a zkrácený přepis
-  `/setonuv-zavod/vysledky` (starší `/scoreboard` a `/setonuv-zavod/scoreboard`
-  zůstávají funkční).
+  `/stanoviste/<station_id>` a zpětně kompatibilním `/stations/<station_id>`).
+- Výsledkový přehled má kanonickou adresu `/setonuv-zavod/vysledky`;
+  zachovány jsou i zkrácené aliasy `/vysledky`, `/scoreboard` a
+  `/setonuv-zavod/scoreboard`.
 
 ## Uživatelský manuál
 

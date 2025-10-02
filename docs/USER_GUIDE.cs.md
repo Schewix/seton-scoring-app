@@ -6,8 +6,8 @@ praktický návod pro provoz na stanovišti i pro kancelář závodu.
 
 ## 1. Přístup a přihlášení
 
-1. Otevři adresu nasazené aplikace. Aplikace běží jako PWA a po prvním načtení
-   funguje i bez připojení.
+1. Otevři `/setonuv-zavod` (nasazená instance může mít i vlastní doménu).
+   Aplikace běží jako PWA a po prvním načtení funguje i bez připojení.
 2. Zadej e-mail a heslo rozhodčího. Přístupové údaje spravuje hlavní rozhodčí.
 3. Volitelně můžeš při přihlášení nastavit vlastní PIN (4–6 číslic). PIN se uloží
    jen lokálně do prohlížeče a umožní zařízení odemknout bez zadávání hesla.

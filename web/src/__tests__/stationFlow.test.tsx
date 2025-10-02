@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import localforage from 'localforage';
 import type { ReactNode } from 'react';
 import { AuthProvider } from '../auth/context';
+import { ROUTE_PREFIX } from '../routing';
 
 const { logoutMock } = vi.hoisted(() => ({ logoutMock: vi.fn() }));
 
@@ -37,32 +38,59 @@ vi.mock('../supabaseClient', () => {
   realtimeChannel.on = () => realtimeChannel;
   realtimeChannel.subscribe = () => realtimeChannel;
 
+  const registryRows = [
+    { id: 'reg-nh-01', patrol_code: 'NH-01', category: 'N', sex: 'H', active: true },
+    { id: 'reg-nd-01', patrol_code: 'ND-01', category: 'N', sex: 'D', active: true },
+    { id: 'reg-mh-01', patrol_code: 'MH-01', category: 'M', sex: 'H', active: true },
+    { id: 'reg-md-01', patrol_code: 'MD-01', category: 'M', sex: 'D', active: true },
+    { id: 'reg-sh-01', patrol_code: 'SH-01', category: 'S', sex: 'H', active: true },
+    { id: 'reg-sd-01', patrol_code: 'SD-01', category: 'S', sex: 'D', active: true },
+    { id: 'reg-rh-01', patrol_code: 'RH-01', category: 'R', sex: 'H', active: true },
+    { id: 'reg-rd-01', patrol_code: 'RD-01', category: 'R', sex: 'D', active: true },
+  ];
+
   const buildDefault = (table: string) => {
     switch (table) {
       case 'station_category_answers':
         return {
           select: () => selectEmpty(),
         };
-      case 'patrols':
+      case 'patrols': {
+        const createOrderChain = () => {
+          const result = Promise.resolve({ data: registryRows, error: null });
+          const chain: any = {
+            order: () => chain,
+            then: result.then.bind(result),
+            catch: result.catch.bind(result),
+            finally: result.finally?.bind(result),
+          };
+          return chain;
+        };
+
+        const createMaybeSingle = () =>
+          Promise.resolve({
+            data: {
+              id: 'patrol-1',
+              team_name: 'Vlci',
+              category: mockedPatrolCategory,
+              sex: 'H',
+              patrol_code: mockedPatrolCode,
+            },
+            error: null,
+          });
+
         return {
           select: () => ({
             eq: () => ({
               eq: () => ({
-                maybeSingle: () =>
-                  Promise.resolve({
-                    data: {
-                      id: 'patrol-1',
-                      team_name: 'Vlci',
-                      category: mockedPatrolCategory,
-                      sex: 'H',
-                      patrol_code: mockedPatrolCode,
-                    },
-                    error: null,
-                  }),
+                maybeSingle: () => createMaybeSingle(),
               }),
+              order: () => createOrderChain(),
             }),
+            order: () => createOrderChain(),
           }),
         };
+      }
       case 'stations':
         return {
           select: () => {
@@ -387,6 +415,7 @@ let scrollIntoViewSpy: any;
 
 describe('station workflow', () => {
   beforeEach(async () => {
+    window.history.replaceState({}, '', ROUTE_PREFIX);
     timeoutSpy = vi
       .spyOn(global, 'setTimeout')
       .mockImplementation(((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {

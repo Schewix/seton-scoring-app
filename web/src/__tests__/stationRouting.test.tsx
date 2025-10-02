@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { AuthStatus } from '../auth/types';
-import { getStationPath } from '../routing';
+import { getStationPath, ROUTE_PREFIX } from '../routing';
 
 let useStationRouting: (status: AuthStatus) => void;
 
@@ -15,7 +15,7 @@ beforeAll(async () => {
 
 describe('useStationRouting', () => {
   beforeEach(() => {
-    window.history.replaceState({}, '', '/');
+    window.history.replaceState({}, '', ROUTE_PREFIX);
   });
 
   it('redirects to station path after authentication', () => {
@@ -90,6 +90,6 @@ describe('useStationRouting', () => {
 
     rerender({ status: unauthStatus });
 
-    expect(window.location.pathname).toBe('/');
+    expect(window.location.pathname).toBe(ROUTE_PREFIX);
   });
 });

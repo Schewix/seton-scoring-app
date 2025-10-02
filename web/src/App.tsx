@@ -25,6 +25,7 @@ import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord } from './storage/scanHistory';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
+import { ROUTE_PREFIX } from './routing';
 
 
 interface Patrol {
@@ -2614,7 +2615,7 @@ export function useStationRouting(status: AuthStatus) {
       status.state === 'error'
     ) {
       if (isStationAppPath(pathname)) {
-        window.history.replaceState(window.history.state, '', '/');
+        window.history.replaceState(window.history.state, '', ROUTE_PREFIX);
       }
     }
   }, [status]);
