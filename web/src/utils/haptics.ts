@@ -8,6 +8,15 @@ type ExpoHapticsModule = {
   impactAsync?: (options: { style: 'light' | 'medium' | 'heavy' }) => Promise<void>;
 };
 
+type WebkitHapticsBridge = {
+  postMessage: (message: { type: HapticType } | HapticType) => void;
+};
+
+type AndroidHapticsBridge = {
+  trigger?: (type: HapticType) => void;
+  vibrate?: (pattern: HapticType | number | number[]) => void;
+};
+
 export type HapticType = 'selection' | 'light' | 'medium' | 'heavy';
 
 interface HapticTelemetryCounters {
@@ -127,6 +136,48 @@ export function triggerHaptic(type: HapticType) {
     }
   }
 
+  const webkitBridge = resolveWebkitHaptics();
+  if (webkitBridge) {
+    const triggered = invokeWebkitHaptics(webkitBridge, type);
+    if (triggered === 'selection') {
+      telemetry.selection += 1;
+      return;
+    }
+    if (triggered === 'light') {
+      telemetry.light += 1;
+      return;
+    }
+    if (triggered === 'medium') {
+      telemetry.medium += 1;
+      return;
+    }
+    if (triggered === 'heavy') {
+      telemetry.heavy += 1;
+      return;
+    }
+  }
+
+  const androidBridge = resolveAndroidHaptics();
+  if (androidBridge) {
+    const triggered = invokeAndroidHaptics(androidBridge, type);
+    if (triggered === 'selection') {
+      telemetry.selection += 1;
+      return;
+    }
+    if (triggered === 'light') {
+      telemetry.light += 1;
+      return;
+    }
+    if (triggered === 'medium') {
+      telemetry.medium += 1;
+      return;
+    }
+    if (triggered === 'heavy') {
+      telemetry.heavy += 1;
+      return;
+    }
+  }
+
   if (type === 'selection' || type === 'light') {
     if (vibrate(15)) {
       telemetry.light += 1;
@@ -179,13 +230,48 @@ function resolveCapacitorHaptics(): CapacitorHapticsPlugin | null {
     };
   };
   return global.Capacitor?.Plugins?.Haptics ?? null;
-}
+} 
 
 function resolveExpoHaptics(): ExpoHapticsModule | null {
   const global = window as unknown as {
     ExpoHaptics?: ExpoHapticsModule;
   };
   return global.ExpoHaptics ?? null;
+}
+
+function resolveWebkitHaptics(): WebkitHapticsBridge | null {
+  const global = window as unknown as {
+    webkit?: {
+      messageHandlers?: Record<string, WebkitHapticsBridge | undefined>;
+    };
+  };
+  const handlers = global.webkit?.messageHandlers;
+  if (!handlers) {
+    return null;
+  }
+  return (
+    handlers.haptics ??
+    handlers.Haptics ??
+    handlers.SetonHaptics ??
+    handlers.setonHaptics ??
+    null
+  );
+}
+
+function resolveAndroidHaptics(): AndroidHapticsBridge | null {
+  const global = window as unknown as {
+    AndroidHaptics?: AndroidHapticsBridge;
+    androidHaptics?: AndroidHapticsBridge;
+    SetonHaptics?: AndroidHapticsBridge;
+    setonHaptics?: AndroidHapticsBridge;
+  };
+  return (
+    global.AndroidHaptics ??
+    global.androidHaptics ??
+    global.SetonHaptics ??
+    global.setonHaptics ??
+    null
+  );
 }
 
 function invokeSelectionHaptic(plugin: CapacitorHapticsPlugin) {
@@ -198,6 +284,59 @@ function invokeSelectionHaptic(plugin: CapacitorHapticsPlugin) {
   } catch (error) {
     return false;
   }
+}
+
+function invokeWebkitHaptics(
+  bridge: WebkitHapticsBridge,
+  type: HapticType,
+): HapticType | null {
+  if (!bridge || typeof bridge.postMessage !== 'function') {
+    return null;
+  }
+  try {
+    bridge.postMessage({ type });
+    return type;
+  } catch (error) {
+    try {
+      bridge.postMessage(type);
+      return type;
+    } catch (_error) {
+      return null;
+    }
+  }
+}
+
+function invokeAndroidHaptics(
+  bridge: AndroidHapticsBridge,
+  type: HapticType,
+): HapticType | null {
+  if (!bridge) {
+    return null;
+  }
+  try {
+    if (typeof bridge.trigger === 'function') {
+      bridge.trigger(type);
+      return type;
+    }
+    if (typeof bridge.vibrate === 'function') {
+      try {
+        bridge.vibrate(type);
+        return type;
+      } catch (_error) {
+        const fallbackPattern =
+          type === 'selection' || type === 'light'
+            ? 15
+            : type === 'medium'
+              ? [18, 32, 18]
+              : [25, 45, 25];
+        bridge.vibrate(fallbackPattern);
+        return type;
+      }
+    }
+  } catch (error) {
+    return null;
+  }
+  return null;
 }
 
 function invokeImpactHaptic(
