@@ -223,12 +223,12 @@ body {
   background: #ffffff;
   border-radius: 28px;
   box-shadow: 0 28px 60px rgba(17, 24, 39, 0.12);
-  padding: 32px 28px;
+  padding: clamp(24px, 3vw, 48px);
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: clamp(20px, 3vw, 32px);
   width: 100%;
-  max-width: 960px;
+  max-width: 1280px;
 }
 
 .scoreboard-section-header {
@@ -265,8 +265,8 @@ body {
 
 .scoreboard-groups {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: clamp(16px, 2.5vw, 32px);
 }
 
 .scoreboard-group {
