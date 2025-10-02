@@ -675,7 +675,16 @@ body {
 
 .points-input__fallback {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.points-input__fallback label {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(11, 83, 70, 0.7);
 }
 
 .points-input__fallback input {
