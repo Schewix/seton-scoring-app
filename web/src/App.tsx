@@ -24,7 +24,7 @@ import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket, Ticke
 import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord } from './storage/scanHistory';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
-import { triggerConfirmationHaptic } from './utils/haptics';
+import { triggerHaptic } from './utils/haptics';
 
 
 interface Patrol {
@@ -2157,7 +2157,7 @@ function StationApp({
                       code: manualValidation.code,
                       patrolId: manualValidation.patrolId,
                     });
-                    triggerConfirmationHaptic();
+                    triggerHaptic('heavy');
                     void fetchPatrol(manualValidation.code.trim());
                   }}
                   disabled={!manualValidation.valid || patrolRegistryLoading}
