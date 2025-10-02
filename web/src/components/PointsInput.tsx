@@ -43,7 +43,7 @@ function usePrefersReducedMotion() {
 
 const DEFAULT_ROW_HEIGHT = 48;
 const HAPTIC_COOLDOWN_MS = 70;
-const SNAP_INACTIVITY_DELAY_MS = 100;
+const SNAP_INACTIVITY_DELAY_MS = 110;
 const SNAP_COMPLETION_DELAY_MS = 220;
 
 function formatPointsForScreenReaders(value: number) {
@@ -135,6 +135,11 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
   const lastTickTimeRef = useRef(0);
   const scrollRafRef = useRef<number | null>(null);
   const pendingSnapHapticRef = useRef<number | null>(null);
+  const lastScrollInfoRef = useRef<{ top: number; timestamp: number; velocity: number }>({
+    top: 0,
+    timestamp: 0,
+    velocity: 0,
+  });
   const isInitialRenderRef = useRef(true);
   const prefersReducedMotion = usePrefersReducedMotion();
 
@@ -387,13 +392,35 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
     if (scrollTimeoutRef.current !== null) {
       window.clearTimeout(scrollTimeoutRef.current);
     }
-    scrollTimeoutRef.current = window.setTimeout(() => {
+    const wheel = wheelRef.current;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const currentTop = wheel.scrollTop;
+    const last = lastScrollInfoRef.current;
+    const deltaTime = Math.max(1, now - last.timestamp);
+    const velocity = (currentTop - last.top) / deltaTime;
+    lastScrollInfoRef.current = {
+      top: currentTop,
+      timestamp: now,
+      velocity,
+    };
+    const attemptSettle = () => {
       if (programmaticScrollRef.current) {
         programmaticScrollRef.current = false;
         return;
       }
+      const nowCheck = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const timeSinceLastScroll = nowCheck - lastScrollInfoRef.current.timestamp;
+      const latestVelocity = Math.abs(lastScrollInfoRef.current.velocity);
+      if (timeSinceLastScroll < SNAP_INACTIVITY_DELAY_MS || latestVelocity > 0.05) {
+        scrollTimeoutRef.current = window.setTimeout(
+          attemptSettle,
+          Math.max(40, Math.floor(SNAP_INACTIVITY_DELAY_MS / 2)),
+        );
+        return;
+      }
       finalizeScroll();
-    }, SNAP_INACTIVITY_DELAY_MS);
+    };
+    scrollTimeoutRef.current = window.setTimeout(attemptSettle, SNAP_INACTIVITY_DELAY_MS);
   }, [finalizeScroll, options.length, scheduleScrollProcessing]);
 
   useEffect(() => {
