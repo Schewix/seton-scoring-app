@@ -51,13 +51,13 @@ body {
 }
 
 .hero-logo {
-  width: 96px;
-  height: 96px;
-  border-radius: 28px;
+  width: 88px;
+  height: 88px;
+  border-radius: 24px;
   background: rgba(255, 255, 255, 0.12);
   display: grid;
   place-items: center;
-  padding: 12px;
+  padding: 10px;
   box-shadow: 0 8px 18px rgba(15, 118, 110, 0.24);
 }
 
