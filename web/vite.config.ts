@@ -11,7 +11,7 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.ts',
       registerType: 'autoUpdate',
-      includeAssets: ['icon-192.png', 'icon-512.png'],
+      includeAssets: ['znak_SPTO_transparent.png'],
       manifest: {
         name: 'Zelená liga - Stanoviště',
         short_name: 'Zelená liga',
@@ -19,19 +19,15 @@ export default defineConfig({
         theme_color: '#0b5d44',
         background_color: '#0b5d44',
         display: 'standalone',
-        scope: `${ROUTE_PREFIX}/`,
-        start_url: STATION_ROUTE_PREFIX,
+        scope: `${STATION_ROUTE_PREFIX}/`,
+        start_url: `${STATION_ROUTE_PREFIX}/`,
         lang: 'cs',
         icons: [
           {
-            src: 'icon-192.png',
-            sizes: '192x192',
+            src: 'znak_SPTO_transparent.png',
+            sizes: '1200x881',
             type: 'image/png',
-          },
-          {
-            src: 'icon-512.png',
-            sizes: '512x512',
-            type: 'image/png',
+            purpose: 'any',
           },
         ],
       },
