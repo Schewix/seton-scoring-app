@@ -1,7 +1,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
-import { triggerSelectionHaptic } from '../utils/haptics';
+import { triggerHaptic } from '../utils/haptics';
 
 const PATROL_CODE_REGEX = /^[NMSR][HD]-(?:0?[1-9]|[1-3][0-9]|40)$/;
 
@@ -9,6 +9,10 @@ const CATEGORY_OPTIONS = ['N', 'M', 'S', 'R'] as const;
 const GENDER_OPTIONS = ['H', 'D'] as const;
 const PAGE_JUMP = 5;
 const WHEEL_ITEM_HEIGHT = 48;
+const DEFAULT_ROW_HEIGHT = WHEEL_ITEM_HEIGHT;
+const WHEEL_HAPTIC_COOLDOWN_MS = 70;
+const WHEEL_SNAP_INACTIVITY_DELAY_MS = 110;
+const WHEEL_SNAP_COMPLETION_DELAY_MS = 220;
 
 export type CategoryOption = (typeof CATEGORY_OPTIONS)[number];
 export type GenderOption = (typeof GENDER_OPTIONS)[number];
@@ -563,6 +567,11 @@ function WheelColumn({
     timestamp: 0,
     velocity: 0,
   });
+  const rowHeightRef = useRef(DEFAULT_ROW_HEIGHT);
+  const lastIndexRef = useRef<number | null>(null);
+  const lastTickTimeRef = useRef(0);
+  const scrollRafRef = useRef<number | null>(null);
+  const pendingSnapHapticRef = useRef<number | null>(null);
   const isInitialRenderRef = useRef(true);
 
   useEffect(() => {
@@ -582,7 +591,16 @@ function WheelColumn({
     if (wheelHeight <= 0) {
       return;
     }
-    const optionHeight = firstOption.offsetHeight || WHEEL_ITEM_HEIGHT;
+    const optionHeight = firstOption.offsetHeight || DEFAULT_ROW_HEIGHT;
+    const firstIndex = optionRefs.current.findIndex((node) => node === firstOption);
+    const secondOption =
+      firstIndex >= 0
+        ? optionRefs.current.slice(firstIndex + 1).find((node) => node)
+        : undefined;
+    const rowHeightCandidate = secondOption
+      ? Math.abs(secondOption.offsetTop - firstOption.offsetTop) || optionHeight
+      : optionHeight;
+    rowHeightRef.current = Math.max(1, Math.round(rowHeightCandidate));
     const padding = Math.max(0, wheelHeight / 2 - optionHeight / 2);
     wheel.style.setProperty('--wheel-padding', `${padding}px`);
   }, []);
@@ -602,10 +620,37 @@ function WheelColumn({
       if (scrollTimeoutRef.current !== null) {
         window.clearTimeout(scrollTimeoutRef.current);
       }
+      if (scrollRafRef.current !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(scrollRafRef.current);
+      }
+      if (pendingSnapHapticRef.current !== null && typeof window !== 'undefined') {
+        window.clearTimeout(pendingSnapHapticRef.current);
+      }
     };
   }, []);
 
-  const scrollToOption = useCallback((index: number, behavior: ScrollBehavior = 'smooth') => {
+  const queueSnapHaptic = useCallback(
+    (delay = WHEEL_SNAP_COMPLETION_DELAY_MS) => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+      if (pendingSnapHapticRef.current !== null) {
+        window.clearTimeout(pendingSnapHapticRef.current);
+      }
+      pendingSnapHapticRef.current = window.setTimeout(() => {
+        pendingSnapHapticRef.current = null;
+        triggerHaptic('medium');
+      }, delay);
+    },
+    [],
+  );
+
+  const scrollToOption = useCallback(
+    (
+      index: number,
+      behavior: ScrollBehavior = 'smooth',
+      options?: { triggerSnapHaptic?: boolean; skipProgrammaticFlag?: boolean },
+    ) => {
     const wheel = wheelRef.current;
     const optionNode = optionRefs.current[index];
     if (!wheel || !optionNode) {
@@ -615,7 +660,9 @@ function WheelColumn({
     const optionOffsetTop = optionNode.offsetTop;
     const optionHeight = optionNode.offsetHeight || WHEEL_ITEM_HEIGHT;
     const targetScrollTop = optionOffsetTop - wheelHeight / 2 + optionHeight / 2;
-    programmaticScrollRef.current = true;
+    if (!options?.skipProgrammaticFlag) {
+      programmaticScrollRef.current = true;
+    }
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     lastScrollInfoRef.current = {
       top: targetScrollTop,
@@ -627,10 +674,14 @@ function WheelColumn({
     } else {
       wheel.scrollTop = targetScrollTop;
     }
-    if (behavior === 'auto') {
+    lastIndexRef.current = index;
+    if (behavior === 'auto' && !options?.skipProgrammaticFlag) {
       programmaticScrollRef.current = false;
     }
-  }, []);
+    if (options?.triggerSnapHaptic) {
+      queueSnapHaptic();
+    }
+  }, [queueSnapHaptic]);
 
   const findNextEnabled = useCallback(
     (startIndex: number, direction: 1 | -1, wrap: boolean) => {
@@ -662,15 +713,15 @@ function WheelColumn({
       if (option.value === selected) {
         const existingIndex = options.findIndex((item) => item.value === option.value);
         if (existingIndex >= 0) {
-          scrollToOption(existingIndex);
+          scrollToOption(existingIndex, 'smooth', { triggerSnapHaptic: true });
         }
         return;
       }
       onSelect(option.value);
       const selectedIndex = options.findIndex((item) => item.value === option.value);
       if (selectedIndex >= 0) {
-        scrollToOption(selectedIndex);
-        triggerSelectionHaptic();
+        scrollToOption(selectedIndex, 'smooth', { triggerSnapHaptic: true });
+        triggerHaptic('selection');
       }
     },
     [disabled, onSelect, options, scrollToOption, selected],
@@ -724,69 +775,112 @@ function WheelColumn({
     [disabled, findNextEnabled, handleOptionSelect, options],
   );
 
+  const processScroll = useCallback(() => {
+    scrollRafRef.current = null;
+    const wheel = wheelRef.current;
+    if (!wheel || options.length === 0) {
+      return;
+    }
+    const rowHeight = rowHeightRef.current || DEFAULT_ROW_HEIGHT;
+    if (rowHeight <= 0) {
+      return;
+    }
+    const rawIndex = Math.floor(wheel.scrollTop / rowHeight);
+    const clampedIndex = Math.max(0, Math.min(options.length - 1, rawIndex));
+    const previousIndex = lastIndexRef.current;
+    if (previousIndex === null) {
+      lastIndexRef.current = clampedIndex;
+      return;
+    }
+    if (clampedIndex === previousIndex) {
+      return;
+    }
+    lastIndexRef.current = clampedIndex;
+    if (programmaticScrollRef.current || disabled) {
+      return;
+    }
+    const direction = clampedIndex > previousIndex ? 1 : -1;
+    let currentIndex = previousIndex;
+    while ((direction > 0 && currentIndex < clampedIndex) || (direction < 0 && currentIndex > clampedIndex)) {
+      currentIndex += direction;
+      if (currentIndex < 0 || currentIndex >= options.length) {
+        continue;
+      }
+      if (options[currentIndex]?.disabled) {
+        continue;
+      }
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (now - lastTickTimeRef.current >= WHEEL_HAPTIC_COOLDOWN_MS) {
+        triggerHaptic('selection');
+        lastTickTimeRef.current = now;
+      }
+    }
+  }, [disabled, options]);
+
+  const scheduleScrollProcessing = useCallback(() => {
+    if (scrollRafRef.current !== null) {
+      return;
+    }
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+      processScroll();
+      return;
+    }
+    scrollRafRef.current = window.requestAnimationFrame(processScroll);
+  }, [processScroll]);
+
   const finalizeScroll = useCallback(() => {
     const wheel = wheelRef.current;
     if (!wheel || options.length === 0) {
       return;
     }
-    const { top, height } = wheel.getBoundingClientRect();
-    const centerY = top + height / 2;
-    let closestIndex = -1;
-    let shortestDistance = Number.POSITIVE_INFINITY;
-    optionRefs.current.forEach((node, index) => {
-      if (!node) {
+    const rowHeight = rowHeightRef.current || DEFAULT_ROW_HEIGHT;
+    if (rowHeight <= 0) {
+      return;
+    }
+    const rawIndex = Math.round(wheel.scrollTop / rowHeight);
+    let targetIndex = Math.max(0, Math.min(options.length - 1, rawIndex));
+    if (options[targetIndex]?.disabled) {
+      const forward = findNextEnabled(targetIndex + 1, 1, true);
+      const backward = findNextEnabled(targetIndex - 1, -1, true);
+      if (forward < 0 && backward < 0) {
         return;
       }
-      const rect = node.getBoundingClientRect();
-      const optionCenter = rect.top + rect.height / 2;
-      const distance = Math.abs(optionCenter - centerY);
-      if (distance < shortestDistance) {
-        shortestDistance = distance;
-        closestIndex = index;
-      }
-    });
-    if (closestIndex >= 0) {
-      let targetIndex = closestIndex;
-      if (options[targetIndex]?.disabled) {
-        const forward = findNextEnabled(targetIndex + 1, 1, true);
-        const backward = findNextEnabled(targetIndex - 1, -1, true);
+      if (forward < 0) {
+        targetIndex = backward;
+      } else if (backward < 0) {
+        targetIndex = forward;
+      } else {
+        const baseNode = optionRefs.current[targetIndex];
         const forwardNode = forward >= 0 ? optionRefs.current[forward] : null;
         const backwardNode = backward >= 0 ? optionRefs.current[backward] : null;
+        const baseTop = baseNode ? baseNode.offsetTop : targetIndex * rowHeight;
         const forwardDistance = forwardNode
-          ? Math.abs(
-              forwardNode.getBoundingClientRect().top +
-                forwardNode.offsetHeight / 2 -
-                centerY,
-            )
-          : Number.POSITIVE_INFINITY;
+          ? Math.abs(forwardNode.offsetTop - baseTop)
+          : Math.abs(forward - targetIndex) * rowHeight;
         const backwardDistance = backwardNode
-          ? Math.abs(
-              backwardNode.getBoundingClientRect().top +
-                backwardNode.offsetHeight / 2 -
-                centerY,
-            )
-          : Number.POSITIVE_INFINITY;
-        if (forwardDistance === Number.POSITIVE_INFINITY && backwardDistance === Number.POSITIVE_INFINITY) {
-          return;
-        }
-        targetIndex =
-          forwardDistance <= backwardDistance
-            ? forward >= 0
-              ? forward
-              : backward
-            : backward >= 0
-            ? backward
-            : forward;
-      }
-      const targetOption = options[targetIndex];
-      if (targetOption) {
-        handleOptionSelect(targetOption);
+          ? Math.abs(backwardNode.offsetTop - baseTop)
+          : Math.abs(backward - targetIndex) * rowHeight;
+        targetIndex = forwardDistance <= backwardDistance ? forward : backward;
       }
     }
-  }, [findNextEnabled, handleOptionSelect, options]);
+    const targetOption = options[targetIndex];
+    if (!targetOption || targetOption.disabled) {
+      return;
+    }
+    if (targetOption.value !== selected) {
+      handleOptionSelect(targetOption);
+      return;
+    }
+    scrollToOption(targetIndex, 'smooth', { triggerSnapHaptic: true });
+  }, [findNextEnabled, handleOptionSelect, optionRefs, options, scrollToOption, selected]);
 
   const handleScroll = useCallback(() => {
     if (disabled || !wheelRef.current || options.length === 0) {
+      return;
+    }
+    scheduleScrollProcessing();
+    if (typeof window === 'undefined') {
+      finalizeScroll();
       return;
     }
     if (scrollTimeoutRef.current !== null) {
@@ -811,23 +905,29 @@ function WheelColumn({
       const nowCheck = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const timeSinceLastScroll = nowCheck - lastScrollInfoRef.current.timestamp;
       const latestVelocity = Math.abs(lastScrollInfoRef.current.velocity);
-      if (timeSinceLastScroll < 120 && latestVelocity > 0.05) {
-        scrollTimeoutRef.current = window.setTimeout(attemptSettle, 80);
+      if (timeSinceLastScroll < WHEEL_SNAP_INACTIVITY_DELAY_MS || latestVelocity > 0.05) {
+        scrollTimeoutRef.current = window.setTimeout(
+          attemptSettle,
+          Math.max(40, Math.floor(WHEEL_SNAP_INACTIVITY_DELAY_MS / 2)),
+        );
         return;
       }
       finalizeScroll();
     };
-    scrollTimeoutRef.current = window.setTimeout(attemptSettle, 140);
-  }, [disabled, finalizeScroll, options.length]);
+    scrollTimeoutRef.current = window.setTimeout(attemptSettle, WHEEL_SNAP_INACTIVITY_DELAY_MS);
+  }, [disabled, finalizeScroll, options.length, scheduleScrollProcessing]);
 
   useEffect(() => {
     if (options.length === 0) {
+      lastIndexRef.current = null;
       return;
     }
     const nextIndex = selected ? options.findIndex((option) => option.value === selected) : 0;
     if (nextIndex < 0) {
+      lastIndexRef.current = 0;
       return;
     }
+    lastIndexRef.current = nextIndex;
     const behavior = isInitialRenderRef.current ? 'auto' : 'smooth';
     isInitialRenderRef.current = false;
     scrollToOption(nextIndex, behavior);

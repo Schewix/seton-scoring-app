@@ -1,100 +1,235 @@
-export function triggerSelectionHaptic() {
-  if (typeof window === 'undefined') {
-    return;
-  }
+type CapacitorHapticsPlugin = {
+  selectionChanged?: () => Promise<void> | void;
+  impact?: (options: { style: 'LIGHT' | 'MEDIUM' | 'HEAVY' }) => Promise<void> | void;
+};
 
-  const plugin = resolveCapacitorHaptics();
-  if (plugin?.selectionChanged) {
-    try {
-      plugin.selectionChanged();
-      return;
-    } catch (error) {
-      // ignore missing haptics support
-    }
-  }
-  if (plugin?.impact) {
-    try {
-      plugin.impact({ style: 'LIGHT' });
-      return;
-    } catch (error) {
-      // ignore
-    }
-  }
+type ExpoHapticsModule = {
+  selectionAsync?: () => Promise<void>;
+  impactAsync?: (options: { style: 'light' | 'medium' | 'heavy' }) => Promise<void>;
+};
 
-  const expo = resolveExpoHaptics();
-  if (expo?.selectionAsync) {
-    expo.selectionAsync().catch(() => undefined);
-    return;
-  }
+export type HapticType = 'selection' | 'light' | 'medium' | 'heavy';
 
-  vibrate(15);
+interface HapticTelemetryCounters {
+  selection: number;
+  light: number;
+  medium: number;
+  heavy: number;
+  suppressed: number;
 }
 
-export function triggerConfirmationHaptic() {
+let userEnabled = true;
+let screenReaderSuppressed = false;
+let reduceMotionPreferred = false;
+let telemetry: HapticTelemetryCounters = {
+  selection: 0,
+  light: 0,
+  medium: 0,
+  heavy: 0,
+  suppressed: 0,
+};
+
+const REDUCE_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+
+if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+  const query = window.matchMedia(REDUCE_MOTION_QUERY);
+  reduceMotionPreferred = query.matches;
+  const handleChange = (event: MediaQueryListEvent) => {
+    reduceMotionPreferred = event.matches;
+  };
+  try {
+    query.addEventListener('change', handleChange);
+  } catch (error) {
+    // Older browsers use addListener; ignore failures silently.
+    if (typeof query.addListener === 'function') {
+      query.addListener(handleChange);
+    }
+  }
+}
+
+export function setHapticsEnabled(enabled: boolean) {
+  userEnabled = enabled;
+}
+
+export function suppressHapticsForScreenReader(suppressed: boolean) {
+  screenReaderSuppressed = suppressed;
+}
+
+export function getHapticsTelemetry(): Readonly<HapticTelemetryCounters> {
+  return telemetry;
+}
+
+export function resetHapticsTelemetry() {
+  telemetry = {
+    selection: 0,
+    light: 0,
+    medium: 0,
+    heavy: 0,
+    suppressed: 0,
+  };
+}
+
+export function triggerHaptic(type: HapticType) {
+  if (!shouldTriggerHaptics()) {
+    telemetry.suppressed += 1;
+    return;
+  }
+
   if (typeof window === 'undefined') {
     return;
   }
 
   const plugin = resolveCapacitorHaptics();
-  if (plugin?.impact) {
-    try {
-      plugin.impact({ style: 'MEDIUM' });
-      return;
-    } catch (error) {
-      // ignore
+  if (plugin) {
+    if (type === 'selection' || type === 'light') {
+      if (invokeSelectionHaptic(plugin)) {
+        telemetry.selection += 1;
+        return;
+      }
+      if (invokeImpactHaptic(plugin, 'LIGHT')) {
+        telemetry.light += 1;
+        return;
+      }
+    } else if (type === 'medium') {
+      if (invokeImpactHaptic(plugin, 'MEDIUM')) {
+        telemetry.medium += 1;
+        return;
+      }
+    } else if (type === 'heavy') {
+      if (invokeImpactHaptic(plugin, 'HEAVY')) {
+        telemetry.heavy += 1;
+        return;
+      }
     }
   }
 
   const expo = resolveExpoHaptics();
-  if (expo?.impactAsync) {
-    expo.impactAsync({ style: 'medium' }).catch(() => undefined);
+  if (expo) {
+    if (type === 'selection' || type === 'light') {
+      if (invokeExpoSelection(expo)) {
+        telemetry.selection += 1;
+        return;
+      }
+      if (invokeExpoImpact(expo, 'light')) {
+        telemetry.light += 1;
+        return;
+      }
+    } else if (type === 'medium') {
+      if (invokeExpoImpact(expo, 'medium')) {
+        telemetry.medium += 1;
+        return;
+      }
+    } else if (type === 'heavy') {
+      if (invokeExpoImpact(expo, 'heavy')) {
+        telemetry.heavy += 1;
+        return;
+      }
+    }
+  }
+
+  if (type === 'selection' || type === 'light') {
+    if (vibrate(15)) {
+      telemetry.light += 1;
+    }
     return;
   }
 
-  vibrate([20, 40, 20]);
+  if (type === 'medium') {
+    if (vibrate([18, 32, 18])) {
+      telemetry.medium += 1;
+    }
+    return;
+  }
+
+  if (type === 'heavy') {
+    if (vibrate([25, 45, 25])) {
+      telemetry.heavy += 1;
+    }
+  }
+}
+
+function shouldTriggerHaptics() {
+  if (!userEnabled || screenReaderSuppressed || reduceMotionPreferred) {
+    return false;
+  }
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+  return true;
 }
 
 function vibrate(pattern: number | number[]) {
   if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') {
-    return;
+    return false;
   }
   try {
     navigator.vibrate(pattern);
+    return true;
   } catch (error) {
-    // ignore vibration errors
+    return false;
   }
 }
 
-function resolveCapacitorHaptics():
-  | {
-      selectionChanged?: () => Promise<void> | void;
-      impact?: (options: { style: string }) => Promise<void> | void;
-    }
-  | null {
+function resolveCapacitorHaptics(): CapacitorHapticsPlugin | null {
   const global = window as unknown as {
     Capacitor?: {
       Plugins?: {
-        Haptics?: {
-          selectionChanged?: () => Promise<void> | void;
-          impact?: (options: { style: string }) => Promise<void> | void;
-        };
+        Haptics?: CapacitorHapticsPlugin;
       };
     };
   };
   return global.Capacitor?.Plugins?.Haptics ?? null;
 }
 
-function resolveExpoHaptics():
-  | {
-      selectionAsync?: () => Promise<void>;
-      impactAsync?: (options: { style: string }) => Promise<void>;
-    }
-  | null {
+function resolveExpoHaptics(): ExpoHapticsModule | null {
   const global = window as unknown as {
-    ExpoHaptics?: {
-      selectionAsync?: () => Promise<void>;
-      impactAsync?: (options: { style: string }) => Promise<void>;
-    };
+    ExpoHaptics?: ExpoHapticsModule;
   };
   return global.ExpoHaptics ?? null;
+}
+
+function invokeSelectionHaptic(plugin: CapacitorHapticsPlugin) {
+  if (!plugin.selectionChanged) {
+    return false;
+  }
+  try {
+    plugin.selectionChanged();
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function invokeImpactHaptic(
+  plugin: CapacitorHapticsPlugin,
+  style: 'LIGHT' | 'MEDIUM' | 'HEAVY',
+) {
+  if (!plugin.impact) {
+    return false;
+  }
+  try {
+    plugin.impact({ style });
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function invokeExpoSelection(expo: ExpoHapticsModule) {
+  if (!expo.selectionAsync) {
+    return false;
+  }
+  expo.selectionAsync().catch(() => undefined);
+  return true;
+}
+
+function invokeExpoImpact(
+  expo: ExpoHapticsModule,
+  style: 'light' | 'medium' | 'heavy',
+) {
+  if (!expo.impactAsync) {
+    return false;
+  }
+  expo.impactAsync({ style }).catch(() => undefined);
+  return true;
 }
