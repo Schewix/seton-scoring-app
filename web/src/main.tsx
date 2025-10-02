@@ -3,32 +3,79 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { AuthProvider } from './auth/context';
 import { registerSW } from 'virtual:pwa-register';
-import zelenaLigaLogo from './assets/znak_SPTO_transparent.png';
 import { isScoreboardPathname } from './routing';
+
+type IconLinkConfig = {
+  rel: string;
+  href: string;
+  sizes?: string;
+  type?: string;
+};
+
+const ICON_LINKS: IconLinkConfig[] = [
+  {
+    rel: 'icon',
+    type: 'image/png',
+    sizes: '32x32',
+    href: '/favicon-32.png',
+  },
+  {
+    rel: 'icon',
+    type: 'image/png',
+    sizes: '192x192',
+    href: '/icon-192.png',
+  },
+  {
+    rel: 'shortcut icon',
+    type: 'image/png',
+    sizes: '32x32',
+    href: '/favicon-32.png',
+  },
+  {
+    rel: 'apple-touch-icon',
+    sizes: '180x180',
+    href: '/apple-touch-icon.png',
+  },
+];
+
+function upsertIconLink(config: IconLinkConfig) {
+  const { rel, href, sizes, type } = config;
+  let selector = `link[rel='${rel}']`;
+  if (sizes) {
+    selector += `[sizes='${sizes}']`;
+  }
+
+  let link = document.head.querySelector<HTMLLinkElement>(selector);
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = rel;
+    if (sizes) {
+      link.sizes = sizes;
+    }
+    document.head.appendChild(link);
+  }
+
+  if (type) {
+    link.type = type;
+  } else {
+    link.removeAttribute('type');
+  }
+
+  if (sizes) {
+    link.sizes = sizes;
+  } else {
+    link.removeAttribute('sizes');
+  }
+
+  link.href = href;
+}
 
 function applyBranding() {
   if (document.title !== 'Zelena liga') {
     document.title = 'Zelena liga';
   }
 
-  const existingLinks = Array.from(
-    document.querySelectorAll<HTMLLinkElement>("link[rel~='icon']"),
-  );
-
-  if (existingLinks.length > 0) {
-    existingLinks.forEach((link) => {
-      link.rel = 'icon';
-      link.type = 'image/png';
-      link.href = zelenaLigaLogo;
-    });
-    return;
-  }
-
-  const link = document.createElement('link');
-  link.rel = 'icon';
-  link.type = 'image/png';
-  link.href = zelenaLigaLogo;
-  document.head.appendChild(link);
+  ICON_LINKS.forEach(upsertIconLink);
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
