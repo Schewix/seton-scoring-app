@@ -1,5 +1,5 @@
-import { forwardRef, useCallback, useEffect, useId, useMemo, useRef } from 'react';
-import type { KeyboardEvent, MutableRefObject } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent, KeyboardEvent, MutableRefObject } from 'react';
 
 type PointsOption = string;
 
@@ -12,6 +12,56 @@ interface PointsInputProps {
   max?: number;
   helperText?: string;
   clearLabel?: string;
+}
+
+function usePrefersReducedMotion() {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return false;
+    }
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handleChange = (event: MediaQueryListEvent) => {
+      setPrefersReducedMotion(event.matches);
+    };
+
+    setPrefersReducedMotion(mediaQuery.matches);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  return prefersReducedMotion;
+}
+
+function triggerHaptic(pattern: number | number[]) {
+  if (typeof navigator === 'undefined') {
+    return;
+  }
+
+  if ('vibrate' in navigator && typeof navigator.vibrate === 'function') {
+    try {
+      navigator.vibrate(pattern);
+    } catch (error) {
+      // Ignored – not all platforms allow vibration.
+    }
+  }
+}
+
+function formatPointsForScreenReaders(value: number) {
+  if (value === 1) {
+    return '1 bod';
+  }
+  if (value >= 2 && value <= 4) {
+    return `${value} body`;
+  }
+  return `${value} bodů`;
 }
 
 function normaliseBounds(min: number | undefined, max: number | undefined) {
@@ -72,7 +122,8 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
 
   const helperMessage = helperText ?? `Vyber body v rozsahu ${resolvedMin} až ${resolvedMax}.`;
   const isValidSelection = selectedOption !== '';
-  const displayValue = selectedOption ? `${selectedOption} b` : '—';
+  const displayNumber = selectedOption || '—';
+  const displayUnit = selectedOption ? 'B' : '';
 
   const focusIndex = (() => {
     if (!selectedOption) {
@@ -87,6 +138,7 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
   const scrollTimeoutRef = useRef<number | null>(null);
   const programmaticScrollRef = useRef(false);
   const isInitialRenderRef = useRef(true);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     optionRefs.current = optionRefs.current.slice(0, options.length);
@@ -155,19 +207,27 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
   }, []);
 
   const handleSelect = useCallback(
-    (option: PointsOption) => {
+    (option: PointsOption, behavior: ScrollBehavior = 'smooth') => {
       if (option === selectedOption) {
         const existingIndex = options.indexOf(option);
         if (existingIndex >= 0) {
-          scrollToOption(existingIndex);
+          scrollToOption(existingIndex, behavior);
         }
         return;
       }
       onChange(option);
       const selectedIndex = options.indexOf(option);
       if (selectedIndex >= 0) {
-        scrollToOption(selectedIndex);
+        scrollToOption(selectedIndex, behavior);
+        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+          window.requestAnimationFrame(() => {
+            optionRefs.current[selectedIndex]?.focus({ preventScroll: true });
+          });
+        } else {
+          optionRefs.current[selectedIndex]?.focus({ preventScroll: true });
+        }
       }
+      triggerHaptic(10);
     },
     [onChange, options, scrollToOption, selectedOption],
   );
@@ -180,12 +240,26 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
     (event: KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
       if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
         event.preventDefault();
-        const nextIndex = currentIndex === 0 ? options.length - 1 : currentIndex - 1;
-        handleSelect(options[nextIndex]);
+        const nextIndex = Math.max(0, currentIndex - 1);
+        handleSelect(options[nextIndex], 'auto');
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
         event.preventDefault();
-        const nextIndex = currentIndex === options.length - 1 ? 0 : currentIndex + 1;
-        handleSelect(options[nextIndex]);
+        const nextIndex = Math.min(options.length - 1, currentIndex + 1);
+        handleSelect(options[nextIndex], 'auto');
+      } else if (event.key === 'PageUp') {
+        event.preventDefault();
+        const nextIndex = Math.max(0, currentIndex - 3);
+        handleSelect(options[nextIndex], 'auto');
+      } else if (event.key === 'PageDown') {
+        event.preventDefault();
+        const nextIndex = Math.min(options.length - 1, currentIndex + 3);
+        handleSelect(options[nextIndex], 'auto');
+      } else if (event.key === 'Home') {
+        event.preventDefault();
+        handleSelect(options[0], 'auto');
+      } else if (event.key === 'End') {
+        event.preventDefault();
+        handleSelect(options[options.length - 1], 'auto');
       }
     },
     [handleSelect, options],
@@ -268,12 +342,32 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
       if (index === focusIndex) {
         setFocusRef(node);
       }
-      if (node) {
-        updateWheelPadding();
-      }
     },
-    [focusIndex, setFocusRef, updateWheelPadding],
+    [focusIndex, setFocusRef],
   );
+
+  const handleFallbackChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const nextValue = event.target.value;
+      if (nextValue === '') {
+        onChange('');
+        return;
+      }
+
+      const parsed = Number.parseInt(nextValue, 10);
+      if (!Number.isInteger(parsed)) {
+        return;
+      }
+
+      const clamped = Math.min(resolvedMax, Math.max(resolvedMin, parsed));
+      onChange(String(clamped));
+    },
+    [onChange, resolvedMax, resolvedMin],
+  );
+
+  const selectedForScreenReader = selectedOption
+    ? formatPointsForScreenReaders(Number(selectedOption))
+    : 'Bez výběru';
 
   return (
     <div className="points-input">
@@ -282,43 +376,74 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
           {label}
         </span>
       ) : null}
-      <div className="points-input__wheel-group">
-        <div
-          className="points-input__wheel"
-          role="radiogroup"
-          aria-labelledby={labelId}
-          aria-describedby={helperId}
-          ref={wheelRef}
-          onScroll={handleWheelScroll}
-        >
-          {options.map((option, index) => {
-            const isSelected = selectedOption === option;
-            const className = [
-              'points-input__wheel-option',
-              isSelected ? 'points-input__wheel-option--selected' : '',
-            ]
-              .filter(Boolean)
-              .join(' ');
-
-            return (
-              <button
-                type="button"
-                role="radio"
-                aria-checked={isSelected}
-                key={option}
-                className={className}
-                onClick={() => handleSelect(option)}
-                onKeyDown={(event) => handleKeyDown(event, index)}
-                ref={registerOptionRef(index)}
-              >
-                {option}
-              </button>
-            );
-          })}
+      {prefersReducedMotion ? (
+        <div className="points-input__fallback">
+          <input
+            id={inputId}
+            type="number"
+            inputMode="numeric"
+            min={resolvedMin}
+            max={resolvedMax}
+            value={selectedOption}
+            onChange={handleFallbackChange}
+            aria-describedby={helperId}
+            aria-labelledby={labelId}
+            placeholder="—"
+            step={1}
+          />
         </div>
-      </div>
+      ) : (
+        <div className="points-input__wheel-group">
+          <div
+            className="points-input__wheel"
+            role="listbox"
+            aria-labelledby={labelId}
+            aria-describedby={helperId}
+            aria-activedescendant={selectedOption ? `${inputId}-${selectedOption}` : undefined}
+            ref={wheelRef}
+            onScroll={handleWheelScroll}
+          >
+            {options.map((option, index) => {
+              const isSelected = selectedOption === option;
+              const className = [
+                'points-input__wheel-option',
+                isSelected ? 'points-input__wheel-option--selected' : '',
+              ]
+                .filter(Boolean)
+                .join(' ');
+
+              return (
+                <button
+                  type="button"
+                  id={`${inputId}-${option}`}
+                  role="option"
+                  aria-selected={isSelected}
+                  aria-label={formatPointsForScreenReaders(Number(option))}
+                  key={option}
+                  className={className}
+                  onClick={() => handleSelect(option, 'auto')}
+                  onKeyDown={(event) => handleKeyDown(event, index)}
+                  ref={registerOptionRef(index)}
+                  tabIndex={isSelected ? 0 : -1}
+                >
+                  {option}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div className="points-input__value" aria-live="polite">
-        {displayValue}
+        <strong>
+          <span className="points-input__value-number">{displayNumber}</span>
+          {displayUnit ? (
+            <>
+              {' '}
+              <span className="points-input__value-unit">{displayUnit}</span>
+            </>
+          ) : null}
+        </strong>
+        <span className="sr-only">{selectedForScreenReader}</span>
       </div>
       <div className="points-input__actions">
         <small id={helperId} className={isValidSelection ? undefined : 'invalid'}>
