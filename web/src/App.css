@@ -374,6 +374,7 @@ body {
   flex-direction: column;
   gap: 12px;
   flex: 1 1 220px;
+  --wheel-row-height: 48px;
 }
 
 .patrol-code-input__label,
@@ -405,7 +406,7 @@ body {
   left: 12px;
   right: 12px;
   transform: translateY(-50%);
-  height: 38px;
+  height: var(--wheel-row-height);
   border-radius: 14px;
   background: rgba(13, 124, 84, 0.12);
   pointer-events: none;
@@ -423,8 +424,8 @@ body {
 .points-input__wheel {
   position: relative;
   flex: 1 1 0;
-  max-height: 220px;
-  --wheel-padding: 72px;
+  max-height: calc(var(--wheel-row-height) * 5);
+  --wheel-padding: calc(var(--wheel-row-height) * 2);
   padding-block: var(--wheel-padding);
   padding-inline: 0;
   display: flex;
@@ -510,8 +511,8 @@ body {
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  padding: 8px 0;
-  margin: 4px 0;
+  padding: 0;
+  margin: 6px 0;
   border-radius: 14px;
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
@@ -523,7 +524,8 @@ body {
   align-items: center;
   justify-content: center;
   width: 100%;
-  line-height: 1.1;
+  line-height: 1;
+  min-height: var(--wheel-row-height);
 }
 
 .patrol-code-input__wheel-option {
@@ -556,6 +558,12 @@ body {
 .patrol-code-input__wheel-option:disabled,
 .points-input__wheel-option:disabled {
   cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.patrol-code-input__wheel-option[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .patrol-code-input__value,
@@ -573,9 +581,52 @@ body {
   color: rgba(11, 83, 70, 0.6);
 }
 
+.patrol-code-input small.valid {
+  color: #047857;
+}
+
 .patrol-code-input small.invalid,
 .points-input small.invalid {
   color: #b91c1c;
+}
+
+.patrol-code-input__fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.patrol-code-input__fallback label {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(11, 83, 70, 0.6);
+}
+
+.patrol-code-input__fallback input {
+  border: 1px solid rgba(11, 83, 70, 0.24);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0a4236;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.patrol-code-input__fallback input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(13, 124, 84, 0.35);
+}
+
+.patrol-code-input__error {
+  font-size: 0.75rem;
+  color: #b91c1c;
+}
+
+.patrol-code-input__actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .points-input__value {

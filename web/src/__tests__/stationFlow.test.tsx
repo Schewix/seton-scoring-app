@@ -44,24 +44,91 @@ vi.mock('../supabaseClient', () => {
           select: () => selectEmpty(),
         };
       case 'patrols':
+        const canonicalPatrolCode = () => {
+          const raw = mockedPatrolCode;
+          if (!raw) {
+            return 'NH-1';
+          }
+          const trimmed = raw.trim().toUpperCase();
+          const match = trimmed.match(/^([NMSR])[-]?([HD])[-]?(\d{1,2})$/);
+          if (!match) {
+            return 'NH-1';
+          }
+          const [, cat, sex, digits] = match;
+          const numeric = Number.parseInt(digits, 10);
+          return `${cat}${sex}-${Number.isFinite(numeric) ? numeric : 1}`;
+        };
         return {
-          select: () => ({
-            eq: () => ({
-              eq: () => ({
-                maybeSingle: () =>
-                  Promise.resolve({
-                    data: {
-                      id: 'patrol-1',
-                      team_name: 'Vlci',
-                      category: mockedPatrolCategory,
-                      sex: 'H',
-                      patrol_code: mockedPatrolCode,
-                    },
-                    error: null,
-                  }),
-              }),
-            }),
-          }),
+          select: () => {
+            const canonical = canonicalPatrolCode();
+            const [, , numberDigits] = canonical.split('-');
+            const baseNumber = Number.parseInt(numberDigits ?? '1', 10) || 1;
+            const directoryRows = [
+              {
+                id: 'directory-1',
+                team_name: 'Vlci',
+                category: mockedPatrolCategory,
+                sex: 'H',
+                patrol_code: canonical,
+                active: true,
+              },
+              {
+                id: 'directory-2',
+                team_name: 'Lišky',
+                category: mockedPatrolCategory,
+                sex: 'D',
+                patrol_code: `${mockedPatrolCategory}D-${Math.min(40, baseNumber + 1)}`,
+                active: true,
+              },
+              {
+                id: 'directory-3',
+                team_name: 'Rysi',
+                category: 'M',
+                sex: 'H',
+                patrol_code: 'MH-5',
+                active: true,
+              },
+              {
+                id: 'directory-4',
+                team_name: 'Jeleni',
+                category: 'S',
+                sex: 'H',
+                patrol_code: 'SH-7',
+                active: false,
+              },
+            ];
+            const listResult = Promise.resolve({ data: directoryRows, error: null });
+            const singleResult = Promise.resolve({
+              data: {
+                id: 'patrol-1',
+                team_name: 'Vlci',
+                category: mockedPatrolCategory,
+                sex: 'H',
+                patrol_code: mockedPatrolCode,
+              },
+              error: null,
+            });
+            const singleQuery = { maybeSingle: () => singleResult };
+            const eventQuery: any = {
+              eq: () => singleQuery,
+              maybeSingle: () => singleResult,
+              then: listResult.then.bind(listResult),
+              catch: listResult.catch.bind(listResult),
+              finally: listResult.finally?.bind(listResult),
+            };
+            const baseQuery: any = {
+              eq: (column: string) => {
+                if (column === 'event_id') {
+                  return eventQuery;
+                }
+                return singleQuery;
+              },
+              then: listResult.then.bind(listResult),
+              catch: listResult.catch.bind(listResult),
+              finally: listResult.finally?.bind(listResult),
+            };
+            return baseQuery;
+          },
         };
       case 'stations':
         return {
@@ -210,7 +277,7 @@ vi.mock('../components/QRScanner', () => ({
 type CategoryKey = 'N' | 'M' | 'S' | 'R';
 
 let mockedStationCode = 'X';
-let mockedPatrolCode: string | null = 'N-01';
+let mockedPatrolCode: string | null = 'NH-01';
 let mockedPatrolCategory: CategoryKey = 'N';
 let mockedAllowedCategories: CategoryKey[] = ['N', 'M', 'S', 'R'];
 let mockedStartTime: string | null = '2024-02-01T08:00:00Z';
@@ -303,13 +370,22 @@ async function selectPatrolCode(
     number: string;
   },
 ) {
-  const categoryGroup = screen.getByRole('radiogroup', { name: 'Kategorie hlídky' });
-  const typeGroup = screen.getByRole('radiogroup', { name: 'Družina nebo hlídka' });
-  const numberGroup = screen.getByRole('radiogroup', { name: 'Číslo hlídky' });
+  const categoryGroup = screen.getByRole('listbox', { name: 'Kategorie' });
+  const typeGroup = screen.getByRole('listbox', { name: 'Pohlaví' });
+  const numberGroup = screen.getByRole('listbox', { name: 'Číslo hlídky' });
 
-  await user.click(within(categoryGroup).getByRole('radio', { name: category }));
-  await user.click(within(typeGroup).getByRole('radio', { name: type }));
-  await user.click(within(numberGroup).getByRole('radio', { name: number }));
+  const categoryOption = await within(categoryGroup).findByRole('option', { name: category });
+  await waitFor(() => expect(categoryOption).not.toHaveAttribute('aria-disabled', 'true'));
+  await user.click(categoryOption);
+
+  const typeOption = await within(typeGroup).findByRole('option', { name: type });
+  await waitFor(() => expect(typeOption).not.toHaveAttribute('aria-disabled', 'true'));
+  await user.click(typeOption);
+
+  const formattedNumber = number.padStart(2, '0');
+  const numberOption = await within(numberGroup).findByRole('option', { name: formattedNumber });
+  await waitFor(() => expect(numberOption).not.toHaveAttribute('aria-disabled', 'true'));
+  await user.click(numberOption);
 }
 
 async function loadPatrolAndOpenForm(
@@ -422,7 +498,7 @@ describe('station workflow', () => {
       }) as typeof setInterval);
 
     mockedStationCode = 'X';
-    mockedPatrolCode = 'N-01';
+    mockedPatrolCode = 'NH-01';
     mockedPatrolCategory = 'N';
     mockedAllowedCategories = ['N', 'M', 'S', 'R'];
     mockedStartTime = '2024-02-01T08:00:00Z';
@@ -473,7 +549,7 @@ describe('station workflow', () => {
     expect(await screen.findByText(/Záznam uložen do fronty/)).toBeInTheDocument();
     expect(await screen.findByText(/Čeká na odeslání: 1/)).toBeInTheDocument();
 
-    const queueLabel = await screen.findByText('Vlci (N-01)');
+    const queueLabel = await screen.findByText('Vlci (NH-01)');
     expect(queueLabel).toBeInTheDocument();
     expect(screen.getByText('Manuální body')).toBeInTheDocument();
     expect(screen.getByText(/Chyba:/)).toBeInTheDocument();
@@ -491,10 +567,11 @@ describe('station workflow', () => {
 
     await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
 
-    await selectPatrolCode(user, { category: 'M', type: 'H', number: '1' });
+    await selectPatrolCode(user, { category: 'M', type: 'H', number: '5' });
 
-    const categoryGroup = screen.getByRole('radiogroup', { name: 'Kategorie hlídky' });
-    await user.click(within(categoryGroup).getByRole('radio', { name: 'N' }));
+    const manualInput = screen.getByLabelText('Textové zadání (např. N-H-07)');
+    await user.clear(manualInput);
+    await user.type(manualInput, 'N-H-01');
 
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
 

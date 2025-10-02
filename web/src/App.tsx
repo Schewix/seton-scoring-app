@@ -388,7 +388,6 @@ function StationApp({
   const [pendingItems, setPendingItems] = useState<PendingOperation[]>([]);
   const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [manualCode, setManualCode] = useState('');
   const [scanActive, setScanActive] = useState(false);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [tick, setTick] = useState(0);
@@ -603,25 +602,6 @@ function StationApp({
     return map;
   }, [auth.patrols, isCategoryAllowed]);
 
-  const availablePatrolCodes = useMemo(() => {
-    const unique = new Set<string>();
-    const codes: string[] = [];
-    auth.patrols.forEach((summary) => {
-      if (!isCategoryAllowed(summary.category)) {
-        return;
-      }
-      const normalised = normalisePatrolCode(summary.patrol_code ?? '');
-      if (!normalised) {
-        return;
-      }
-      if (!unique.has(normalised)) {
-        unique.add(normalised);
-        codes.push(normalised);
-      }
-    });
-    return codes;
-  }, [auth.patrols, isCategoryAllowed]);
-
   const loadTimingData = useCallback(
     async (patrolId: string) => {
       if (stationCode !== 'T') {
@@ -779,7 +759,6 @@ function StationApp({
       setAnswersInput('');
       setAnswersError('');
       setScanActive(false);
-      setManualCode('');
       setUseTargetScoring(isTargetStation);
 
       const arrival = options?.arrivedAt ?? new Date().toISOString();
@@ -1340,7 +1319,6 @@ function StationApp({
     setAutoScore({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
     setUseTargetScoring(isTargetStation);
     setScanActive(false);
-    setManualCode('');
     setArrivedAt(null);
     setFinishAt(null);
     setFinishTimeInput('');
@@ -1392,18 +1370,38 @@ function StationApp({
     return map;
   }, [auth.patrols, isCategoryAllowed]);
 
+  type PatrolLookupInput = string | { code: string; patrolId?: string | null };
+
   const fetchPatrol = useCallback(
-    async (patrolCode: string) => {
-      const normalized = patrolCode.trim().toUpperCase();
-      let data = cachedPatrolMap.get(normalized) || null;
+    async (input: PatrolLookupInput) => {
+      const rawCode = typeof input === 'string' ? input : input.code;
+      const providedId = typeof input === 'string' ? null : input.patrolId ?? null;
+      const normalized = normalisePatrolCode(rawCode);
+
+      if (!normalized) {
+        pushAlert('Neplatný kód hlídky.');
+        return false;
+      }
+
+      let data: Patrol | null = null;
+
+      if (providedId) {
+        data = patrolById.get(providedId) ?? null;
+      }
 
       if (!data) {
-        const { data: fetched, error } = await supabase
+        data = cachedPatrolMap.get(normalized) ?? null;
+      }
+
+      if (!data) {
+        const baseQuery = supabase
           .from('patrols')
           .select('id, team_name, category, sex, patrol_code')
-          .eq('event_id', eventId)
-          .eq('patrol_code', normalized)
-          .maybeSingle();
+          .eq('event_id', eventId);
+
+        const { data: fetched, error } = providedId
+          ? await baseQuery.eq('id', providedId).maybeSingle()
+          : await baseQuery.eq('patrol_code', normalized).maybeSingle();
 
         if (error || !fetched) {
           pushAlert('Hlídka nenalezena.');
@@ -1412,6 +1410,7 @@ function StationApp({
             scannedAt: new Date().toISOString(),
             status: 'failed',
             reason: error ? 'fetch-error' : 'not-found',
+            patrolId: providedId ?? undefined,
           }).catch((err) => console.debug('scan history store failed', err));
           return false;
         }
@@ -1433,7 +1432,6 @@ function StationApp({
 
       setScannerPatrol({ ...data });
       setScanActive(false);
-      setManualCode('');
 
       void appendScanRecord(eventId, stationId, {
         code: normalized,
@@ -1445,7 +1443,7 @@ function StationApp({
 
       return true;
     },
-    [cachedPatrolMap, eventId, isCategoryAllowed, pushAlert, stationId]
+    [appendScanRecord, cachedPatrolMap, eventId, isCategoryAllowed, patrolById, pushAlert, stationId]
   );
 
   const handleScanResult = useCallback(
@@ -2033,19 +2031,12 @@ function StationApp({
               */}
               <div className="manual-entry">
                 <PatrolCodeInput
-                  value={manualCode}
-                  onChange={setManualCode}
-                  label="Ruční kód"
-                  availableCodes={availablePatrolCodes}
+                  eventId={eventId}
+                  allowedCategories={allowedCategorySet}
+                  onConfirm={({ code, patrolId }) => fetchPatrol({ code, patrolId })}
+                  label="Ruční načtení"
+                  disabled={syncing}
                 />
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => manualCode.trim() && fetchPatrol(manualCode.trim())}
-                  disabled={!manualCode}
-                >
-                  Načíst hlídku
-                </button>
               </div>
               {scannerPatrol ? (
                 <div className="scanner-preview">
