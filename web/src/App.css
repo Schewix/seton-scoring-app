@@ -239,6 +239,9 @@ body {
   color: #fefce8;
   border: 1px solid rgba(255, 255, 255, 0.24);
   box-shadow: 0 16px 30px rgba(10, 78, 56, 0.28);
+  max-width: 240px;
+  width: 100%;
+  align-self: center;
 }
 
 .hero-panel--actions .logout-button:hover {
