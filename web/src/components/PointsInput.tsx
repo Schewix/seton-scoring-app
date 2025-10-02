@@ -99,6 +99,7 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
   const inputId = id ?? generatedId;
   const labelId = label ? `${inputId}-label` : undefined;
   const helperId = `${inputId}-helper`;
+  const fallbackId = `${inputId}-fallback`;
 
   const options = useMemo(() => {
     return Array.from(
@@ -458,6 +459,8 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
     ? formatPointsForScreenReaders(Number(selectedOption))
     : 'Bez výběru';
 
+  const showWheel = !prefersReducedMotion;
+
   return (
     <div className="points-input">
       {label ? (
@@ -465,23 +468,7 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
           {label}
         </span>
       ) : null}
-      {prefersReducedMotion ? (
-        <div className="points-input__fallback">
-          <input
-            id={inputId}
-            type="number"
-            inputMode="numeric"
-            min={resolvedMin}
-            max={resolvedMax}
-            value={selectedOption}
-            onChange={handleFallbackChange}
-            aria-describedby={helperId}
-            aria-labelledby={labelId}
-            placeholder="—"
-            step={1}
-          />
-        </div>
-      ) : (
+      {showWheel ? (
         <div className="points-input__wheel-group">
           <div
             className="points-input__wheel"
@@ -521,7 +508,23 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
             })}
           </div>
         </div>
-      )}
+      ) : null}
+      <div className="points-input__fallback">
+        <label htmlFor={fallbackId}>Zadat body ručně</label>
+        <input
+          id={fallbackId}
+          type="number"
+          inputMode="numeric"
+          min={resolvedMin}
+          max={resolvedMax}
+          value={value || ''}
+          onChange={handleFallbackChange}
+          aria-describedby={helperId}
+          aria-labelledby={labelId}
+          placeholder="—"
+          step={1}
+        />
+      </div>
       <div className="points-input__value" aria-live="polite">
         <strong>
           <span className="points-input__value-number">{displayNumber}</span>
