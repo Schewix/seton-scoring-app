@@ -18,9 +18,9 @@ export default defineConfig({
         'apple-touch-icon.png',
       ],
       manifest: {
-        name: 'Zelená liga - Stanoviště',
-        short_name: 'Zelená liga',
-        description: 'Offline scoring aplikace pro rozhodčí Zelené ligy.',
+        name: 'Setonův závod – Stanoviště',
+        short_name: 'Setonův závod',
+        description: 'Offline scoring aplikace pro rozhodčí Setonova závodu.',
         theme_color: '#0b5d44',
         background_color: '#0b5d44',
         display: 'standalone',

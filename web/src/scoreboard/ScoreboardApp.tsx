@@ -494,13 +494,13 @@ function ScoreboardApp() {
         <div className="scoreboard-hero-top">
           <div className="scoreboard-hero-brand">
             <div className="scoreboard-hero-logo">
-              <img src={zelenaLigaLogo} alt="Logo Zelená liga" />
+              <img src={zelenaLigaLogo} alt="Logo Setonův závod" />
             </div>
             <div>
-              <span className="scoreboard-hero-eyebrow">Zelená liga</span>
+              <span className="scoreboard-hero-eyebrow">Setonův závod</span>
               <h1>Výsledkový přehled</h1>
               <p className="scoreboard-hero-description">
-                Živá tabulka výsledků závodu s automatickým obnovováním dat.
+                Živá tabulka výsledků Setonova závodu s automatickým obnovováním dat.
               </p>
             </div>
           </div>

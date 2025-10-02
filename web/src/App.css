@@ -51,13 +51,13 @@ body {
 }
 
 .hero-logo {
-  width: 88px;
-  height: 88px;
-  border-radius: 24px;
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
   background: rgba(255, 255, 255, 0.12);
   display: grid;
   place-items: center;
-  padding: 10px;
+  padding: 8px;
   box-shadow: 0 8px 18px rgba(15, 118, 110, 0.24);
 }
 
@@ -261,10 +261,15 @@ body {
 
 .offline-health-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   font-size: 0.85rem;
   color: #0b5346;
+}
+
+.offline-health-network {
+  align-items: center;
 }
 
 .offline-health-label {
@@ -278,6 +283,8 @@ body {
 .offline-health-value {
   font-weight: 600;
   color: #0b3d33;
+  flex: 1 1 160px;
+  min-width: 0;
 }
 
 .offline-health-value.info {

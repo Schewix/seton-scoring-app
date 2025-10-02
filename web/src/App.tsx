@@ -1957,11 +1957,11 @@ function StationApp({
         <div className="hero-inner">
           <div className="hero-brand">
             <div className="hero-logo">
-              <img src={zelenaLigaLogo} alt="Logo Zelená liga" />
+              <img src={zelenaLigaLogo} alt="Logo Setonův závod" />
             </div>
             <div>
-              <h1>Zelená liga - stanoviště</h1>
-              <p>Webová podpora rozhodčích s automatickým hodnocením a offline frontou.</p>
+              <h1>Setonův závod – stanoviště</h1>
+              <p>Spravuj průběh Setonova závodu s automatickým hodnocením a offline frontou.</p>
             </div>
           </div>
           <div className="hero-meta">

@@ -74,8 +74,8 @@ export default function LoginScreen({ requirePinOnly }: Props) {
   const formTitle = requirePinOnly ? 'Odemknutí stanoviště' : 'Přihlášení rozhodčího';
   const heroTitle = requirePinOnly ? 'Stanoviště' : 'Rozhodčí';
   const heroDescription = requirePinOnly
-    ? 'Odemkni uložené stanoviště pomocí PINu a pokračuj i bez připojení.'
-    : 'Spravuj průběh závodu, výsledky a offline frontu přímo ze stanoviště.';
+    ? 'Odemkni uložené stanoviště Setonova závodu pomocí PINu a pokračuj i bez připojení.'
+    : 'Spravuj průběh Setonova závodu, výsledky a offline frontu přímo ze stanoviště.';
 
   return (
     <div className="auth-shell">
@@ -83,10 +83,10 @@ export default function LoginScreen({ requirePinOnly }: Props) {
         <div className="auth-layout">
           <div className="auth-hero">
             <div className="auth-hero-logo">
-              <img src={zelenaLigaLogo} alt="Logo Zelená liga" />
+              <img src={zelenaLigaLogo} alt="Logo Setonův závod" />
             </div>
             <div className="auth-hero-copy">
-              <span className="auth-hero-eyebrow">Zelená liga</span>
+              <span className="auth-hero-eyebrow">Setonův závod</span>
               <h1>{heroTitle}</h1>
               <p>{heroDescription}</p>
             </div>
