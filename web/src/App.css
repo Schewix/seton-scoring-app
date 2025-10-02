@@ -389,7 +389,9 @@ body {
   display: flex;
   gap: 0;
   align-items: stretch;
-  padding-inline: 8px;
+  justify-content: center;
+  padding-inline: 12px;
+  margin-inline: auto;
   border-radius: 20px;
   border: 1px solid rgba(11, 83, 70, 0.24);
   background: rgba(255, 255, 255, 0.92);
@@ -400,8 +402,8 @@ body {
   content: '';
   position: absolute;
   top: 50%;
-  left: 8px;
-  right: 8px;
+  left: 12px;
+  right: 12px;
   transform: translateY(-50%);
   height: 38px;
   border-radius: 14px;
@@ -440,7 +442,7 @@ body {
 }
 
 .patrol-code-input__wheel {
-  min-width: 60px;
+  min-width: 72px;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -508,8 +510,8 @@ body {
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  padding: 6px 0;
-  margin: 2px 10px;
+  padding: 8px 0;
+  margin: 4px 0;
   border-radius: 14px;
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
@@ -517,10 +519,20 @@ body {
   z-index: 3;
   scroll-snap-align: center;
   scroll-snap-stop: always;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  line-height: 1.1;
 }
 
 .patrol-code-input__wheel-option {
-  margin-inline: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.points-input__wheel-option {
+  margin-inline: 10px;
+  padding-block: 6px;
 }
 
 .patrol-code-input__wheel-option:focus-visible,
