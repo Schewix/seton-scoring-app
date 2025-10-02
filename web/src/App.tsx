@@ -3,7 +3,11 @@ import localforage from 'localforage';
 // import QRScanner from './components/QRScanner';
 import LastScoresList from './components/LastScoresList';
 import TargetAnswersReport from './components/TargetAnswersReport';
-import PatrolCodeInput, { normalisePatrolCode } from './components/PatrolCodeInput';
+import PatrolCodeInput, {
+  normalisePatrolCode,
+  PatrolRegistryEntry,
+  PatrolValidationState,
+} from './components/PatrolCodeInput';
 import PointsInput from './components/PointsInput';
 import OfflineHealth from './components/OfflineHealth';
 import AppFooter from './components/AppFooter';
@@ -20,6 +24,7 @@ import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket, Ticke
 import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord } from './storage/scanHistory';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
+import { triggerConfirmationHaptic } from './utils/haptics';
 
 
 interface Patrol {
@@ -389,6 +394,15 @@ function StationApp({
   const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [manualCode, setManualCode] = useState('');
+  const [patrolRegistryEntries, setPatrolRegistryEntries] = useState<PatrolRegistryEntry[]>([]);
+  const [patrolRegistryLoading, setPatrolRegistryLoading] = useState(true);
+  const [patrolRegistryError, setPatrolRegistryError] = useState<string | null>(null);
+  const [manualValidation, setManualValidation] = useState<PatrolValidationState>({
+    code: '',
+    valid: false,
+    reason: 'loading',
+    message: 'Načítám dostupná čísla hlídek…',
+  });
   const [scanActive, setScanActive] = useState(false);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [tick, setTick] = useState(0);
@@ -443,6 +457,118 @@ function StationApp({
       return allowedCategorySet.has(normalized);
     },
     [allowedCategorySet],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    type RawRegistryRow = {
+      id: string;
+      patrol_code: string | null;
+      category: string | null;
+      sex: string | null;
+      active: boolean | null;
+    };
+
+    const loadRegistry = async () => {
+      setPatrolRegistryLoading(true);
+      setPatrolRegistryError(null);
+
+      const { data, error } = await supabase
+        .from('patrols')
+        .select('id, patrol_code, category, sex, active')
+        .eq('event_id', eventId)
+        .order('category')
+        .order('sex')
+        .order('patrol_code');
+
+      if (cancelled) {
+        return;
+      }
+
+      if (error) {
+        console.error('Failed to load patrol registry', error);
+        setPatrolRegistryEntries([]);
+        setPatrolRegistryError('Nepodařilo se načíst dostupná čísla hlídek.');
+        setPatrolRegistryLoading(false);
+        return;
+      }
+
+      const rows = (data ?? []) as RawRegistryRow[];
+      const entries: PatrolRegistryEntry[] = [];
+      const availabilityStats = new Map<string, { total: number; inactive: number }>();
+      let totalInactive = 0;
+      rows.forEach((row) => {
+        const normalized = normalisePatrolCode(row.patrol_code ?? '');
+        const match = normalized.match(/^([NMSR])([HD])-(\d{1,2})$/);
+        if (!match) {
+          return;
+        }
+        const [, category, gender, digits] = match;
+        if (!isCategoryAllowed(category)) {
+          return;
+        }
+        const numeric = Number.parseInt(digits, 10);
+        if (!Number.isFinite(numeric)) {
+          return;
+        }
+        const statsKey = `${category}-${gender}`;
+        const stats = availabilityStats.get(statsKey) ?? { total: 0, inactive: 0 };
+        stats.total += 1;
+        const isActive = row.active !== false;
+        if (!isActive) {
+          stats.inactive += 1;
+          totalInactive += 1;
+        }
+        availabilityStats.set(statsKey, stats);
+        entries.push({
+          id: row.id,
+          code: normalized,
+          category,
+          gender,
+          number: String(numeric),
+          active: isActive,
+        });
+      });
+
+      setPatrolRegistryEntries(entries);
+      const ratio = entries.length > 0 ? totalInactive / entries.length : 0;
+      const breakdown = Array.from(availabilityStats.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([group, stats]) => {
+          const [category, gender] = group.split('-');
+          const groupRatio = stats.total > 0 ? stats.inactive / stats.total : 0;
+          return {
+            category,
+            gender,
+            total: stats.total,
+            inactive: stats.inactive,
+            inactiveRatio: Number(groupRatio.toFixed(3)),
+          };
+        });
+      console.info('[patrol-code-input] registry-loaded', {
+        total: entries.length,
+        inactive: totalInactive,
+        inactiveRatio: Number(ratio.toFixed(3)),
+        breakdown,
+      });
+      setPatrolRegistryLoading(false);
+    };
+
+    void loadRegistry();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, isCategoryAllowed]);
+
+  const patrolRegistryState = useMemo(
+    () => ({
+      loading: patrolRegistryLoading,
+      entries: patrolRegistryEntries,
+      error: patrolRegistryError,
+    }),
+    [patrolRegistryEntries, patrolRegistryError, patrolRegistryLoading],
   );
   const updateTickets = useCallback(
     (updater: (current: Ticket[]) => Ticket[]) => {
@@ -601,25 +727,6 @@ function StationApp({
       });
     });
     return map;
-  }, [auth.patrols, isCategoryAllowed]);
-
-  const availablePatrolCodes = useMemo(() => {
-    const unique = new Set<string>();
-    const codes: string[] = [];
-    auth.patrols.forEach((summary) => {
-      if (!isCategoryAllowed(summary.category)) {
-        return;
-      }
-      const normalised = normalisePatrolCode(summary.patrol_code ?? '');
-      if (!normalised) {
-        return;
-      }
-      if (!unique.has(normalised)) {
-        unique.add(normalised);
-        codes.push(normalised);
-      }
-    });
-    return codes;
   }, [auth.patrols, isCategoryAllowed]);
 
   const loadTimingData = useCallback(
@@ -2036,13 +2143,24 @@ function StationApp({
                   value={manualCode}
                   onChange={setManualCode}
                   label="Ruční kód"
-                  availableCodes={availablePatrolCodes}
+                  registry={patrolRegistryState}
+                  onValidationChange={setManualValidation}
                 />
                 <button
                   type="button"
                   className="primary"
-                  onClick={() => manualCode.trim() && fetchPatrol(manualCode.trim())}
-                  disabled={!manualCode}
+                  onClick={() => {
+                    if (!manualValidation.valid || !manualValidation.code.trim()) {
+                      return;
+                    }
+                    console.info('[patrol-code-input] confirm', {
+                      code: manualValidation.code,
+                      patrolId: manualValidation.patrolId,
+                    });
+                    triggerConfirmationHaptic();
+                    void fetchPatrol(manualValidation.code.trim());
+                  }}
+                  disabled={!manualValidation.valid || patrolRegistryLoading}
                 >
                   Načíst hlídku
                 </button>
