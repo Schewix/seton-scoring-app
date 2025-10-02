@@ -92,6 +92,8 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow: 0 18px 36px rgba(8, 54, 40, 0.22);
   backdrop-filter: blur(6px);
+  align-items: center;
+  text-align: center;
 }
 
 .hero-panel-label {
@@ -123,10 +125,11 @@ body {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  justify-content: center;
 }
 
 .hero-panel--status .hero-badges {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .hero-panel--health {
@@ -145,10 +148,13 @@ body {
   min-width: 0;
   width: 100%;
   border-radius: 18px;
+  align-items: center;
+  text-align: center;
 }
 
 .hero-panel--health .offline-health-row {
   color: rgba(255, 255, 255, 0.88);
+  justify-content: center;
 }
 
 .hero-panel--health .offline-health-label {
@@ -302,7 +308,7 @@ body {
 
 .offline-health-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   flex-wrap: wrap;
   gap: 6px 8px;
   font-size: 0.85rem;
