@@ -7,6 +7,45 @@ interface Props {
   requirePinOnly?: boolean;
 }
 
+function translateLoginError(error: unknown) {
+  const message = (error instanceof Error ? error.message : String(error)).trim();
+  if (!message) {
+    return 'Nepodařilo se dokončit přihlášení. Zkus to prosím znovu.';
+  }
+
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('invalid credentials')) {
+    return 'Nesprávný e-mail, heslo nebo PIN.';
+  }
+
+  if (normalized.includes('invalid login response')) {
+    return 'Server vrátil neplatnou odpověď. Kontaktuj prosím administrátora.';
+  }
+
+  if (normalized.includes('missing session identifier')) {
+    return 'Chybí identifikátor relace. Kontaktuj prosím administrátora.';
+  }
+
+  if (normalized.includes('failed to fetch') || normalized.includes('request failed')) {
+    return 'Nepodařilo se spojit se serverem. Zkontroluj připojení a zkus to znovu.';
+  }
+
+  if (normalized.includes('pin required')) {
+    return 'Zadej prosím PIN.';
+  }
+
+  if (normalized.includes('invalid pin')) {
+    return 'Zadaný PIN není správný.';
+  }
+
+  if (normalized.includes('invalid token')) {
+    return 'Server vrátil neplatný přístupový token. Kontaktuj prosím administrátora.';
+  }
+
+  return 'Nepodařilo se dokončit přihlášení. Zkus to prosím znovu.';
+}
+
 export default function LoginScreen({ requirePinOnly }: Props) {
   const { login, unlock } = useAuth();
   const [email, setEmail] = useState('');
@@ -26,7 +65,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
         await login({ email, password, pin: pin || undefined });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(translateLoginError(err));
     } finally {
       setLoading(false);
     }
@@ -106,7 +145,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
               />
             </label>
 
-            {error ? <p className="auth-error">{error}</p> : null}
+            {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
             <button type="submit" disabled={loading} className="auth-primary">
               {loading ? 'Pracuji…' : requirePinOnly ? 'Odemknout' : 'Přihlásit'}
