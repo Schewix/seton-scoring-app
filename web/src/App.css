@@ -21,18 +21,33 @@ body {
   background: linear-gradient(180deg, #f4efe6 0%, #f7f2eb 32%, #fefcf8 100%);
 }
 
+
 .hero {
-  padding: 56px 24px 96px;
+  padding: 48px 20px 110px;
   background: linear-gradient(160deg, #0d7c54 0%, #0b5d44 60%, #0a4e38 100%);
   color: #fffdf7;
+}
+
+.hero-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: grid;
+  gap: 32px;
 }
 
 .hero-brand {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 18px;
   text-align: center;
+}
+
+.hero-brand > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
 }
 
 .hero-logo {
@@ -66,63 +81,132 @@ body {
 }
 
 .hero-meta {
-  margin-top: 28px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 16px;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-.hero-actions {
+.hero-panel {
   display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 18px 36px rgba(8, 54, 40, 0.22);
+  backdrop-filter: blur(6px);
+}
+
+.hero-panel-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.hero-panel-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #fffdf7;
+  text-shadow: 0 2px 8px rgba(5, 46, 35, 0.45);
+}
+
+.hero-panel-sub {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.hero-panel--status {
+  gap: 12px;
+}
+
+.hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
 }
 
-.hero-actions .logout-button {
+.hero-panel--status .hero-badges {
+  align-items: flex-start;
+}
+
+.hero-panel--health {
+  gap: 14px;
+}
+
+.hero-panel--health .offline-health {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.hero-panel--actions {
+  gap: 16px;
+}
+
+.hero-panel--actions .logout-button {
   background: rgba(255, 255, 255, 0.18);
   color: #fefce8;
   border: 1px solid rgba(255, 255, 255, 0.24);
   box-shadow: 0 16px 30px rgba(10, 78, 56, 0.28);
 }
 
-.hero-actions .logout-button:hover {
+.hero-panel--actions .logout-button:hover {
   background: rgba(255, 255, 255, 0.28);
 }
 
-.station-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 200px;
-  padding: 10px 16px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.14);
-  box-shadow: 0 18px 30px rgba(15, 118, 110, 0.2);
+.hero-panel--actions .logout-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.35);
 }
 
-.station-summary-label {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.7);
+.hero-panel--actions .logout-button:active {
+  transform: translateY(1px);
 }
 
-.station-summary strong {
-  font-size: 1.25rem;
-  color: #fefce8;
-  text-shadow: 0 2px 6px rgba(10, 60, 46, 0.4);
+.hero-panel--actions .logout-button {
+  width: 100%;
 }
 
-.station-summary-sub {
-  font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.82);
+@media (min-width: 720px) {
+  .hero {
+    padding: 56px 32px 120px;
+  }
+
+  .hero-inner {
+    gap: 36px;
+  }
+
+  .hero-brand {
+    flex-direction: row;
+    align-items: center;
+    text-align: left;
+  }
+
+  .hero-brand > div {
+    align-items: flex-start;
+  }
+
+  .hero-panel--actions .logout-button {
+    width: auto;
+    align-self: flex-start;
+  }
 }
 
-.hero-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
+@media (min-width: 960px) {
+  .hero-inner {
+    grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .hero-meta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .offline-health {
@@ -1287,12 +1371,25 @@ textarea {
 
 @media (max-width: 720px) {
   .hero {
-    padding: 44px 20px 84px;
+    padding: 40px 18px 84px;
+  }
+
+  .hero-inner {
+    gap: 28px;
   }
 
   .hero-meta {
-    flex-direction: column;
-    gap: 10px;
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .hero-panel {
+    padding: 16px 18px;
+  }
+
+  .card {
+    padding: 24px 20px;
+    border-radius: 24px;
   }
 
   .content {
@@ -1302,6 +1399,19 @@ textarea {
 
   button {
     width: 100%;
+  }
+
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .card-actions {
+    width: 100%;
+  }
+
+  .card-actions button {
+    flex: 1 1 0;
   }
 
   .manual-entry {

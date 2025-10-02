@@ -1778,49 +1778,58 @@ function StationApp({
   return (
     <div className="app-shell">
       <header className="hero">
-        <div className="hero-brand">
-          <div className="hero-logo">
-            <img src={zelenaLigaLogo} alt="Logo Zelená liga" />
+        <div className="hero-inner">
+          <div className="hero-brand">
+            <div className="hero-logo">
+              <img src={zelenaLigaLogo} alt="Logo Zelená liga" />
+            </div>
+            <div>
+              <h1>Zelená liga - stanoviště</h1>
+              <p>Webová podpora rozhodčích s automatickým hodnocením a offline frontou.</p>
+            </div>
           </div>
-          <div>
-            <h1>Zelená liga - stanoviště</h1>
-            <p>Webová podpora rozhodčích s automatickým hodnocením a offline frontou.</p>
-          </div>
-        </div>
-        <div className="hero-meta">
-          <div className="station-summary">
-            <span className="station-summary-label">Stanoviště</span>
-            <strong>{stationCode || '—'}</strong>
-            {stationDisplayName ? <span className="station-summary-sub">{stationDisplayName}</span> : null}
-          </div>
-          <div className="station-summary">
-            <span className="station-summary-label">Rozhodčí</span>
-            <strong>{manifest.judge.displayName}</strong>
-            <span className="station-summary-sub">{manifest.judge.email}</span>
-          </div>
-          <div className="hero-badges">
-            {heroBadges.map((badge) => (
-              <span key={badge} className="meta-pill">
-                {badge}
-              </span>
-            ))}
-            {lastSavedAt ? (
-              <span className="meta-pill subtle">Poslední záznam: {formatTime(lastSavedAt)}</span>
-            ) : null}
-            {syncing ? <span className="meta-pill subtle">Synchronizuji frontu…</span> : null}
-          </div>
-          <OfflineHealth
-            isOnline={isOnline}
-            pendingCount={pendingCount}
-            failedCount={failedCount}
-            syncing={syncing}
-            nextAttemptAt={nextAttemptAtIso}
-            lastSyncedAt={lastSavedAt}
-          />
-          <div className="hero-actions">
-            <button type="button" className="logout-button" onClick={handleLogout}>
-              Odhlásit se
-            </button>
+          <div className="hero-meta">
+            <div className="hero-panel hero-panel--station">
+              <span className="hero-panel-label">Stanoviště</span>
+              <strong className="hero-panel-value">{stationCode || '—'}</strong>
+              {stationDisplayName ? <span className="hero-panel-sub">{stationDisplayName}</span> : null}
+            </div>
+            <div className="hero-panel hero-panel--judge">
+              <span className="hero-panel-label">Rozhodčí</span>
+              <strong className="hero-panel-value">{manifest.judge.displayName}</strong>
+              <span className="hero-panel-sub">{manifest.judge.email}</span>
+            </div>
+            <div className="hero-panel hero-panel--status">
+              <span className="hero-panel-label">Stav závodu</span>
+              <div className="hero-badges">
+                {heroBadges.map((badge) => (
+                  <span key={badge} className="meta-pill">
+                    {badge}
+                  </span>
+                ))}
+                {lastSavedAt ? (
+                  <span className="meta-pill subtle">Poslední záznam: {formatTime(lastSavedAt)}</span>
+                ) : null}
+                {syncing ? <span className="meta-pill subtle">Synchronizuji frontu…</span> : null}
+              </div>
+            </div>
+            <div className="hero-panel hero-panel--health">
+              <span className="hero-panel-label">Offline fronta</span>
+              <OfflineHealth
+                isOnline={isOnline}
+                pendingCount={pendingCount}
+                failedCount={failedCount}
+                syncing={syncing}
+                nextAttemptAt={nextAttemptAtIso}
+                lastSyncedAt={lastSavedAt}
+              />
+            </div>
+            <div className="hero-panel hero-panel--actions">
+              <span className="hero-panel-label">Účet</span>
+              <button type="button" className="logout-button" onClick={handleLogout}>
+                Odhlásit se
+              </button>
+            </div>
           </div>
         </div>
       </header>
