@@ -14,6 +14,7 @@ interface PatrolCodeInputProps {
   onChange: (value: string) => void;
   id?: string;
   label?: string;
+  availableCodes?: readonly string[];
 }
 
 export function normalisePatrolCode(raw: string) {
@@ -57,7 +58,13 @@ export function normalisePatrolCode(raw: string) {
   return result;
 }
 
-export default function PatrolCodeInput({ value, onChange, id, label }: PatrolCodeInputProps) {
+export default function PatrolCodeInput({
+  value,
+  onChange,
+  id,
+  label,
+  availableCodes,
+}: PatrolCodeInputProps) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const labelId = label ? `${inputId}-label` : undefined;
@@ -83,6 +90,78 @@ export default function PatrolCodeInput({ value, onChange, id, label }: PatrolCo
     };
   }, [value]);
 
+  const availableNumbersByGroup = useMemo(() => {
+    if (!availableCodes || availableCodes.length === 0) {
+      return null;
+    }
+
+    const groups = new Map<string, string[]>();
+
+    availableCodes.forEach((raw) => {
+      if (!raw) {
+        return;
+      }
+      const normalised = normalisePatrolCode(raw);
+      const match = normalised.match(/^([NMSR])([HD])-(\d{1,2})$/);
+      if (!match) {
+        return;
+      }
+      const [, category, type, digits] = match;
+      const parsedNumber = Number.parseInt(digits, 10);
+      if (!Number.isFinite(parsedNumber)) {
+        return;
+      }
+      const key = `${category}${type}`;
+      const bucket = groups.get(key) ?? [];
+      const normalizedNumber = String(parsedNumber);
+      if (!bucket.includes(normalizedNumber)) {
+        bucket.push(normalizedNumber);
+      }
+      groups.set(key, bucket);
+    });
+
+    groups.forEach((numbers, key) => {
+      const sorted = numbers
+        .slice()
+        .sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10));
+      groups.set(key, sorted);
+    });
+
+    return groups;
+  }, [availableCodes]);
+
+  const numberOptions = useMemo(() => {
+    if (!availableNumbersByGroup || availableNumbersByGroup.size === 0) {
+      return NUMBER_OPTIONS;
+    }
+
+    if (selectedCategory && selectedType) {
+      const key = `${selectedCategory}${selectedType}`;
+      const scoped = availableNumbersByGroup.get(key);
+      if (scoped && scoped.length > 0) {
+        return scoped as readonly string[];
+      }
+      return selectedNumber ? ([selectedNumber] as readonly string[]) : ([] as readonly string[]);
+    }
+
+    if (selectedCategory) {
+      const aggregated = new Set<string>();
+      availableNumbersByGroup.forEach((numbers, key) => {
+        if (key.startsWith(selectedCategory)) {
+          numbers.forEach((n) => aggregated.add(n));
+        }
+      });
+      if (aggregated.size > 0) {
+        return Array.from(aggregated).sort(
+          (a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10),
+        ) as readonly string[];
+      }
+      return selectedNumber ? ([selectedNumber] as readonly string[]) : ([] as readonly string[]);
+    }
+
+    return NUMBER_OPTIONS;
+  }, [availableNumbersByGroup, selectedCategory, selectedNumber, selectedType]);
+
   const handleCategorySelect = useCallback(
     (option: CategoryOption) => {
       if (option === selectedCategory) {
@@ -93,14 +172,21 @@ export default function PatrolCodeInput({ value, onChange, id, label }: PatrolCo
 
       if (selectedType) {
         nextValue += selectedType;
-        nextValue += selectedNumber ? `-${selectedNumber}` : '-';
+        const scopedNumbers = availableNumbersByGroup?.get(`${option}${selectedType}`);
+        const nextNumber =
+          selectedNumber && scopedNumbers && scopedNumbers.includes(selectedNumber)
+            ? selectedNumber
+            : scopedNumbers && scopedNumbers.length > 0
+              ? scopedNumbers[0]
+              : selectedNumber;
+        nextValue += nextNumber ? `-${nextNumber}` : '-';
       } else if (selectedNumber) {
         nextValue += `-${selectedNumber}`;
       }
 
       onChange(nextValue);
     },
-    [onChange, selectedCategory, selectedNumber, selectedType],
+    [availableNumbersByGroup, onChange, selectedCategory, selectedNumber, selectedType],
   );
 
   const handleTypeSelect = useCallback(
@@ -110,11 +196,18 @@ export default function PatrolCodeInput({ value, onChange, id, label }: PatrolCo
       }
 
       let nextValue = `${selectedCategory}${option}`;
-      nextValue += selectedNumber ? `-${selectedNumber}` : '-';
+      const scopedNumbers = availableNumbersByGroup?.get(`${selectedCategory}${option}`);
+      const nextNumber =
+        selectedNumber && scopedNumbers && scopedNumbers.includes(selectedNumber)
+          ? selectedNumber
+          : scopedNumbers && scopedNumbers.length > 0
+            ? scopedNumbers[0]
+            : selectedNumber;
+      nextValue += nextNumber ? `-${nextNumber}` : '-';
 
       onChange(nextValue);
     },
-    [onChange, selectedCategory, selectedNumber, selectedType],
+    [availableNumbersByGroup, onChange, selectedCategory, selectedNumber, selectedType],
   );
 
   const handleNumberSelect = useCallback(
@@ -158,7 +251,7 @@ export default function PatrolCodeInput({ value, onChange, id, label }: PatrolCo
           disabled={!selectedCategory}
         />
         <WheelColumn
-          options={NUMBER_OPTIONS}
+          options={numberOptions}
           selected={selectedNumber}
           onSelect={handleNumberSelect}
           ariaLabel="Číslo hlídky"
@@ -195,6 +288,11 @@ function WheelColumn<Option extends string>({
   const scrollTimeoutRef = useRef<number | null>(null);
   const programmaticScrollRef = useRef(false);
   const isInitialRenderRef = useRef(true);
+  const lastScrollInfoRef = useRef<{ top: number; timestamp: number; velocity: number }>({
+    top: 0,
+    timestamp: 0,
+    velocity: 0,
+  });
 
   useEffect(() => {
     optionRefs.current = optionRefs.current.slice(0, options.length);
@@ -249,6 +347,12 @@ function WheelColumn<Option extends string>({
     const targetScrollTop = optionOffsetTop - wheelHeight / 2 + optionHeight / 2;
 
     programmaticScrollRef.current = true;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    lastScrollInfoRef.current = {
+      top: targetScrollTop,
+      timestamp: now,
+      velocity: 0,
+    };
     if (typeof wheel.scrollTo === 'function') {
       wheel.scrollTo({ top: targetScrollTop, behavior });
     } else {
@@ -300,6 +404,40 @@ function WheelColumn<Option extends string>({
     [disabled, handleOptionSelect, options],
   );
 
+  const finalizeScroll = useCallback(() => {
+    const wheel = wheelRef.current;
+    if (!wheel || options.length === 0) {
+      return;
+    }
+
+    const { top, height } = wheel.getBoundingClientRect();
+    const centerY = top + height / 2;
+    let closestIndex = -1;
+    let shortestDistance = Number.POSITIVE_INFINITY;
+
+    optionRefs.current.forEach((node, index) => {
+      if (!node) {
+        return;
+      }
+      const rect = node.getBoundingClientRect();
+      const optionCenter = rect.top + rect.height / 2;
+      const distance = Math.abs(optionCenter - centerY);
+      if (distance < shortestDistance) {
+        shortestDistance = distance;
+        closestIndex = index;
+      }
+    });
+
+    if (closestIndex >= 0) {
+      const nextOption = options[closestIndex];
+      if (nextOption !== selected) {
+        handleOptionSelect(nextOption);
+      } else {
+        scrollToOption(closestIndex);
+      }
+    }
+  }, [handleOptionSelect, options, scrollToOption, selected]);
+
   const handleScroll = useCallback(() => {
     if (disabled || !wheelRef.current || options.length === 0) {
       return;
@@ -309,46 +447,37 @@ function WheelColumn<Option extends string>({
       window.clearTimeout(scrollTimeoutRef.current);
     }
 
-    const programmaticScroll = programmaticScrollRef.current;
-    scrollTimeoutRef.current = window.setTimeout(() => {
-      if (programmaticScroll) {
+    const wheel = wheelRef.current;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const currentTop = wheel.scrollTop;
+    const last = lastScrollInfoRef.current;
+    const deltaTime = Math.max(1, now - last.timestamp);
+    const velocity = (currentTop - last.top) / deltaTime;
+    lastScrollInfoRef.current = {
+      top: currentTop,
+      timestamp: now,
+      velocity,
+    };
+
+    const attemptSettle = () => {
+      if (programmaticScrollRef.current) {
         programmaticScrollRef.current = false;
         return;
       }
 
-      const wheel = wheelRef.current;
-      if (!wheel) {
+      const nowCheck = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const timeSinceLastScroll = nowCheck - lastScrollInfoRef.current.timestamp;
+      const latestVelocity = Math.abs(lastScrollInfoRef.current.velocity);
+      if (timeSinceLastScroll < 120 && latestVelocity > 0.05) {
+        scrollTimeoutRef.current = window.setTimeout(attemptSettle, 80);
         return;
       }
 
-      const { top, height } = wheel.getBoundingClientRect();
-      const centerY = top + height / 2;
-      let closestIndex = -1;
-      let shortestDistance = Number.POSITIVE_INFINITY;
+      finalizeScroll();
+    };
 
-      optionRefs.current.forEach((node, index) => {
-        if (!node) {
-          return;
-        }
-        const rect = node.getBoundingClientRect();
-        const optionCenter = rect.top + rect.height / 2;
-        const distance = Math.abs(optionCenter - centerY);
-        if (distance < shortestDistance) {
-          shortestDistance = distance;
-          closestIndex = index;
-        }
-      });
-
-      if (closestIndex >= 0) {
-        const nextOption = options[closestIndex];
-        if (nextOption !== selected) {
-          handleOptionSelect(nextOption);
-        } else {
-          scrollToOption(closestIndex);
-        }
-      }
-    }, 80);
-  }, [disabled, handleOptionSelect, options, scrollToOption, selected]);
+    scrollTimeoutRef.current = window.setTimeout(attemptSettle, 140);
+  }, [disabled, finalizeScroll, options]);
 
   useEffect(() => {
     if (options.length === 0) {
