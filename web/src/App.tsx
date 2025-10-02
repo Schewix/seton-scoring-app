@@ -92,8 +92,30 @@ type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 
 const ANSWER_CATEGORIES = ['N', 'M', 'S', 'R'] as const;
 type CategoryKey = (typeof ANSWER_CATEGORIES)[number];
+function isCategoryKey(value: string): value is CategoryKey {
+  return (ANSWER_CATEGORIES as readonly string[]).includes(value);
+}
 const QUEUE_KEY_PREFIX = 'web_pending_ops_v1';
 const LEGACY_QUEUE_KEY_PREFIX = 'web_pending_station_submissions_v1';
+
+const DEFAULT_ALLOWED_CATEGORIES: Record<string, CategoryKey[]> = {
+  A: ['M', 'S', 'R'],
+  B: ['N', 'M', 'S', 'R'],
+  C: ['N', 'M', 'S', 'R'],
+  D: ['R'],
+  F: ['N', 'M', 'S', 'R'],
+  J: ['N', 'M', 'S', 'R'],
+  K: ['N', 'M'],
+  M: ['M', 'S', 'R'],
+  N: ['S', 'R'],
+  O: ['N', 'M', 'S', 'R'],
+  P: ['N', 'M', 'S', 'R'],
+  S: ['M', 'S', 'R'],
+  T: ['N', 'M', 'S', 'R'],
+  U: ['N', 'M', 'S', 'R'],
+  V: ['S', 'R'],
+  Z: ['N', 'M', 'S', 'R'],
+};
 
 import { env } from './envVars';
 import { getStationPath, isStationAppPath } from './routing';
@@ -398,6 +420,30 @@ function StationApp({
 
   const isTargetStation = stationCode === 'T';
   const enableTicketQueue = !isTargetStation;
+  const allowedCategorySet = useMemo(() => {
+    const manifestCategories = Array.isArray(manifest.allowedCategories)
+      ? manifest.allowedCategories
+      : [];
+    const normalizedManifest = manifestCategories
+      .map((category) => (typeof category === 'string' ? category.trim().toUpperCase() : ''))
+      .filter((category): category is CategoryKey => category.length > 0 && isCategoryKey(category));
+    const fallbackCategories = DEFAULT_ALLOWED_CATEGORIES[stationCode] ?? ANSWER_CATEGORIES;
+    const effectiveCategories = normalizedManifest.length ? normalizedManifest : fallbackCategories;
+    return new Set<CategoryKey>(effectiveCategories);
+  }, [manifest.allowedCategories, stationCode]);
+  const isCategoryAllowed = useCallback(
+    (category: string | null | undefined) => {
+      if (allowedCategorySet.size === 0) {
+        return true;
+      }
+      const normalized = category?.trim().toUpperCase() ?? '';
+      if (!isCategoryKey(normalized)) {
+        return false;
+      }
+      return allowedCategorySet.has(normalized);
+    },
+    [allowedCategorySet],
+  );
   const updateTickets = useCallback(
     (updater: (current: Ticket[]) => Ticket[]) => {
       let nextTickets: Ticket[] = [];
@@ -543,6 +589,9 @@ function StationApp({
   const patrolById = useMemo(() => {
     const map = new Map<string, Patrol>();
     auth.patrols.forEach((summary) => {
+      if (!isCategoryAllowed(summary.category)) {
+        return;
+      }
       map.set(summary.id, {
         id: summary.id,
         team_name: summary.team_name,
@@ -552,12 +601,15 @@ function StationApp({
       });
     });
     return map;
-  }, [auth.patrols]);
+  }, [auth.patrols, isCategoryAllowed]);
 
   const availablePatrolCodes = useMemo(() => {
     const unique = new Set<string>();
     const codes: string[] = [];
     auth.patrols.forEach((summary) => {
+      if (!isCategoryAllowed(summary.category)) {
+        return;
+      }
       const normalised = normalisePatrolCode(summary.patrol_code ?? '');
       if (!normalised) {
         return;
@@ -568,7 +620,7 @@ function StationApp({
       }
     });
     return codes;
-  }, [auth.patrols]);
+  }, [auth.patrols, isCategoryAllowed]);
 
   const loadTimingData = useCallback(
     async (patrolId: string) => {
@@ -1325,6 +1377,9 @@ function StationApp({
     const map = new Map<string, Patrol>();
     auth.patrols.forEach((activePatrol) => {
       if (activePatrol.patrol_code) {
+        if (!isCategoryAllowed(activePatrol.category)) {
+          return;
+        }
         map.set(activePatrol.patrol_code.trim().toUpperCase(), {
           id: activePatrol.id,
           team_name: activePatrol.team_name,
@@ -1335,7 +1390,7 @@ function StationApp({
       }
     });
     return map;
-  }, [auth.patrols]);
+  }, [auth.patrols, isCategoryAllowed]);
 
   const fetchPatrol = useCallback(
     async (patrolCode: string) => {
@@ -1363,6 +1418,19 @@ function StationApp({
         data = fetched as Patrol;
       }
 
+      if (!isCategoryAllowed(data.category)) {
+        pushAlert('Hlídka této kategorie na stanoviště nepatří.');
+        void appendScanRecord(eventId, stationId, {
+          code: normalized,
+          scannedAt: new Date().toISOString(),
+          status: 'failed',
+          reason: 'category-not-allowed',
+          patrolId: data.id,
+          teamName: data.team_name,
+        }).catch((err) => console.debug('scan history store failed', err));
+        return false;
+      }
+
       setScannerPatrol({ ...data });
       setScanActive(false);
       setManualCode('');
@@ -1377,7 +1445,7 @@ function StationApp({
 
       return true;
     },
-    [cachedPatrolMap, eventId, pushAlert, stationId]
+    [cachedPatrolMap, eventId, isCategoryAllowed, pushAlert, stationId]
   );
 
   const handleScanResult = useCallback(
