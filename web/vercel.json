@@ -30,6 +30,10 @@
       "destination": "https://vdkbdnxkpeeqxnruwiah.supabase.co/functions/v1/$1"
     },
     {
+      "source": "/setonuv-zavod",
+      "destination": "/"
+    },
+    {
       "source": "/setonuv-zavod/stanoviste",
       "destination": "/"
     },
