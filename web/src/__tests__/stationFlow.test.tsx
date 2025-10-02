@@ -287,8 +287,36 @@ async function renderApp() {
   });
 }
 
-async function loadPatrolAndOpenForm(user: ReturnType<typeof userEvent.setup>, code = 'N-01') {
-  await user.type(screen.getByPlaceholderText('např. NH-15'), code);
+async function selectPatrolCode(
+  user: ReturnType<typeof userEvent.setup>,
+  {
+    category,
+    type,
+    number,
+  }: {
+    category: 'N' | 'M' | 'S' | 'R';
+    type: 'H' | 'D';
+    number: string;
+  },
+) {
+  const categoryGroup = screen.getByRole('radiogroup', { name: 'Kategorie hlídky' });
+  const typeGroup = screen.getByRole('radiogroup', { name: 'Družina nebo hlídka' });
+  const numberGroup = screen.getByRole('radiogroup', { name: 'Číslo hlídky' });
+
+  await user.click(within(categoryGroup).getByRole('radio', { name: category }));
+  await user.click(within(typeGroup).getByRole('radio', { name: type }));
+  await user.click(within(numberGroup).getByRole('radio', { name: number }));
+}
+
+async function loadPatrolAndOpenForm(
+  user: ReturnType<typeof userEvent.setup>,
+  code: { category: 'N' | 'M' | 'S' | 'R'; type: 'H' | 'D'; number: string } = {
+    category: 'N',
+    type: 'H',
+    number: '1',
+  },
+) {
+  await selectPatrolCode(user, code);
   await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
 
   const serveButton = await screen.findByRole('button', { name: 'Obsluhovat' });
@@ -429,9 +457,8 @@ describe('station workflow', () => {
 
     await loadPatrolAndOpenForm(user);
 
-    const pointsInput = await screen.findByLabelText('Body (0 až 12)');
-    await user.clear(pointsInput);
-    await user.type(pointsInput, '10');
+    const pointsPicker = await screen.findByRole('radiogroup', { name: 'Body (0 až 12)' });
+    await user.click(within(pointsPicker).getByRole('radio', { name: '10' }));
 
     fetchMock.mockRejectedValueOnce(new Error('offline'));
 
@@ -455,16 +482,14 @@ describe('station workflow', () => {
 
     await loadPatrolAndOpenForm(user);
 
-    const pointsInput = await screen.findByLabelText('Body (0 až 12)');
-    await user.clear(pointsInput);
-    await user.type(pointsInput, '10.5');
+    const pointsPicker = await screen.findByRole('radiogroup', { name: 'Body (0 až 12)' });
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
     expect(
       await screen.findByText('Body musí být celé číslo v rozsahu 0 až 12.'),
     ).toBeInTheDocument();
-    expect(pointsInput).toHaveValue(10.5);
+    expect(within(pointsPicker).queryByRole('radio', { checked: true })).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.queryByText(/Záznam uložen do fronty/)).not.toBeInTheDocument();
   });
@@ -589,9 +614,8 @@ describe('station workflow', () => {
 
     await loadPatrolAndOpenForm(user);
 
-    const pointsInput = await screen.findByLabelText('Body (0 až 12)');
-    await user.clear(pointsInput);
-    await user.type(pointsInput, '10');
+    const pointsPicker = await screen.findByRole('radiogroup', { name: 'Body (0 až 12)' });
+    await user.click(within(pointsPicker).getByRole('radio', { name: '10' }));
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
@@ -847,7 +871,7 @@ describe('station workflow', () => {
 
     await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
 
-    await user.type(screen.getByPlaceholderText('např. NH-15'), 'N-01');
+    await selectPatrolCode(user, { category: 'N', type: 'H', number: '1' });
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
 
     const quickAddButton = await screen.findByRole('button', { name: 'Čekat' });

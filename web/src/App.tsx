@@ -4,6 +4,7 @@ import localforage from 'localforage';
 import LastScoresList from './components/LastScoresList';
 import TargetAnswersReport from './components/TargetAnswersReport';
 import PatrolCodeInput from './components/PatrolCodeInput';
+import PointsInput from './components/PointsInput';
 import OfflineHealth from './components/OfflineHealth';
 import AppFooter from './components/AppFooter';
 import { supabase } from './supabaseClient';
@@ -383,7 +384,7 @@ function StationApp({
   const tempCodesRef = useRef<Map<string, string>>(new Map());
   const tempCounterRef = useRef(1);
   const formRef = useRef<HTMLElement | null>(null);
-  const pointsInputRef = useRef<HTMLInputElement | null>(null);
+  const pointsInputRef = useRef<HTMLButtonElement | null>(null);
   const answersInputRef = useRef<HTMLInputElement | null>(null);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [startTime, setStartTime] = useState<string | null>(null);
@@ -2243,18 +2244,13 @@ function StationApp({
                     {answersError ? <p className="error-text">{answersError}</p> : null}
                   </div>
                 ) : (
-                  <label>
-                    Body (0 až 12)
-                    <input
-                      ref={pointsInputRef}
-                      value={points}
-                      onChange={(event) => setPoints(event.target.value)}
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      max={12}
-                    />
-                  </label>
+                  <PointsInput
+                    ref={pointsInputRef}
+                    value={points}
+                    onChange={setPoints}
+                    label="Body (0 až 12)"
+                    helperText="Vyber počet bodů, které hlídka získala."
+                  />
                 )}
                 <button type="button" className="primary" onClick={handleSave}>
                   Uložit záznam
