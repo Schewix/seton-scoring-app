@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, KeyboardEvent, MutableRefObject } from 'react';
+import type { KeyboardEvent, MutableRefObject } from 'react';
 import { triggerHaptic } from '../utils/haptics';
 
 type PointsOption = string;
@@ -99,7 +99,6 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
   const inputId = id ?? generatedId;
   const labelId = label ? `${inputId}-label` : undefined;
   const helperId = `${inputId}-helper`;
-  const fallbackId = `${inputId}-fallback`;
 
   const options = useMemo(() => {
     return Array.from(
@@ -463,25 +462,6 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
     [focusIndex, setFocusRef],
   );
 
-  const handleFallbackChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const nextValue = event.target.value;
-      if (nextValue === '') {
-        onChange('');
-        return;
-      }
-
-      const parsed = Number.parseInt(nextValue, 10);
-      if (!Number.isInteger(parsed)) {
-        return;
-      }
-
-      const clamped = Math.min(resolvedMax, Math.max(resolvedMin, parsed));
-      onChange(String(clamped));
-    },
-    [onChange, resolvedMax, resolvedMin],
-  );
-
   const selectedForScreenReader = selectedOption
     ? formatPointsForScreenReaders(Number(selectedOption))
     : 'Bez výběru';
@@ -536,22 +516,6 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
           </div>
         </div>
       ) : null}
-      <div className="points-input__fallback">
-        <label htmlFor={fallbackId}>Zadat body ručně</label>
-        <input
-          id={fallbackId}
-          type="number"
-          inputMode="numeric"
-          min={resolvedMin}
-          max={resolvedMax}
-          value={value || ''}
-          onChange={handleFallbackChange}
-          aria-describedby={helperId}
-          aria-labelledby={labelId}
-          placeholder="—"
-          step={1}
-        />
-      </div>
       <div className="points-input__value" aria-live="polite">
         <strong>
           <span className="points-input__value-number">{displayNumber}</span>

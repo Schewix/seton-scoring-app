@@ -512,8 +512,8 @@ body {
     (var(--points-wheel-item-height) * var(--points-wheel-visible-count) - var(--points-wheel-item-height)) /
       2
   );
-  min-width: 96px;
-  max-width: 128px;
+  min-width: 80px;
+  max-width: 104px;
   height: calc(var(--points-wheel-item-height) * var(--points-wheel-visible-count) + 16px);
   min-height: calc(var(--points-wheel-item-height) * var(--points-wheel-visible-count) + 16px);
   max-height: calc(var(--points-wheel-item-height) * var(--points-wheel-visible-count) + 16px);
@@ -671,44 +671,6 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: rgba(10, 66, 54, 0.72);
-}
-
-.points-input__fallback {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding-top: 16px;
-  margin-top: 12px;
-  border-top: 1px solid rgba(11, 83, 70, 0.18);
-}
-
-.points-input__fallback label {
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(11, 83, 70, 0.7);
-}
-
-.points-input__fallback input {
-  width: 100%;
-  max-width: 128px;
-  border-radius: 12px;
-  border: 1px solid rgba(11, 83, 70, 0.18);
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 12px 32px rgba(10, 66, 54, 0.14);
-  font-size: 1.125rem;
-  font-weight: 600;
-  line-height: 1;
-  padding: 12px 16px;
-  text-align: center;
-  color: #0b5346;
-}
-
-.points-input__fallback input:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(13, 124, 84, 0.35);
 }
 
 .points-input__actions {
