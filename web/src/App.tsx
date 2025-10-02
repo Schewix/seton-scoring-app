@@ -25,7 +25,7 @@ import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord } from './storage/scanHistory';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
-import { ROUTE_PREFIX } from './routing';
+import { ROUTE_PREFIX, SCOREBOARD_ROUTE_PREFIX } from './routing';
 
 
 interface Patrol {
@@ -1999,6 +1999,18 @@ function StationApp({
                 nextAttemptAt={nextAttemptAtIso}
                 lastSyncedAt={lastSavedAt}
               />
+            </div>
+            <div className="hero-panel hero-panel--results">
+              <span className="hero-panel-label">Výsledky</span>
+              <a
+                className="hero-panel-link"
+                href={SCOREBOARD_ROUTE_PREFIX}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Otevřít výsledkovou tabuli
+              </a>
+              <span className="hero-panel-sub">Přehled výsledků v novém okně.</span>
             </div>
             <div className="hero-panel hero-panel--actions">
               <span className="hero-panel-label">Účet</span>
