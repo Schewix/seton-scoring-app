@@ -678,6 +678,10 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  width: 100%;
+  padding-top: 16px;
+  margin-top: 12px;
+  border-top: 1px solid rgba(11, 83, 70, 0.18);
 }
 
 .points-input__fallback label {
