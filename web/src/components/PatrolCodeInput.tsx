@@ -1,20 +1,125 @@
-import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
 
-const PATROL_CODE_REGEX = /^[NMSR][HD]-(?:[1-9]|[1-3][0-9]|40)$/;
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent, KeyboardEvent } from 'react';
+import { triggerSelectionHaptic } from '../utils/haptics';
+
+const PATROL_CODE_REGEX = /^[NMSR][HD]-(?:0?[1-9]|[1-3][0-9]|40)$/;
 
 const CATEGORY_OPTIONS = ['N', 'M', 'S', 'R'] as const;
-const TYPE_OPTIONS = ['H', 'D'] as const;
-const NUMBER_OPTIONS = Array.from({ length: 40 }, (_, index) => String(index + 1)) as const;
+const GENDER_OPTIONS = ['H', 'D'] as const;
+const PAGE_JUMP = 5;
+const WHEEL_ITEM_HEIGHT = 48;
 
-type CategoryOption = (typeof CATEGORY_OPTIONS)[number];
-type TypeOption = (typeof TYPE_OPTIONS)[number];
+export type CategoryOption = (typeof CATEGORY_OPTIONS)[number];
+export type GenderOption = (typeof GENDER_OPTIONS)[number];
+
+function isCategoryOption(value: string): value is CategoryOption {
+  return (CATEGORY_OPTIONS as readonly string[]).includes(value);
+}
+
+function isGenderOption(value: string): value is GenderOption {
+  return (GENDER_OPTIONS as readonly string[]).includes(value);
+}
+
+export interface PatrolRegistryEntry {
+  id: string;
+  code: string;
+  category: string;
+  gender: string;
+  number: string;
+  active: boolean;
+}
+
+export interface PatrolCodeRegistryState {
+  loading: boolean;
+  entries: readonly PatrolRegistryEntry[];
+  error?: string | null;
+}
+
+export type PatrolValidationReason =
+  | 'loading'
+  | 'error'
+  | 'incomplete'
+  | 'format'
+  | 'not-found'
+  | 'inactive'
+  | 'valid';
+
+export interface PatrolValidationState {
+  code: string;
+  valid: boolean;
+  patrolId?: string;
+  reason: PatrolValidationReason;
+  message: string;
+}
+
+interface WheelColumnOption {
+  value: string;
+  label: string;
+  title?: string;
+  disabled?: boolean;
+}
+
+interface WheelColumnProps {
+  options: readonly WheelColumnOption[];
+  selected: string;
+  onSelect: (option: string) => void;
+  ariaLabel: string;
+  optionIdPrefix: string;
+  disabled?: boolean;
+}
 
 interface PatrolCodeInputProps {
   value: string;
   onChange: (value: string) => void;
+  registry: PatrolCodeRegistryState;
+  onValidationChange?: (state: PatrolValidationState) => void;
   id?: string;
   label?: string;
-  availableCodes?: readonly string[];
+}
+
+function logInteraction(event: string, payload: Record<string, unknown>) {
+  if (typeof console === 'undefined') {
+    return;
+  }
+  console.info(`[patrol-code-input] ${event}`, payload);
+}
+
+function formatNumberLabel(raw: string) {
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) {
+    return raw;
+  }
+  return parsed.toString().padStart(2, '0');
+}
+
+function formatDisplayValue(normalised: string) {
+  if (!normalised) {
+    return '';
+  }
+  const fullMatch = normalised.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  if (fullMatch) {
+    return `${fullMatch[1]}-${fullMatch[2]}-${fullMatch[3].padStart(2, '0')}`;
+  }
+  const partialGender = normalised.match(/^([NMSR])([HD])$/);
+  if (partialGender) {
+    return `${partialGender[1]}-${partialGender[2]}`;
+  }
+  if (/^([NMSR])([HD])-$/.test(normalised)) {
+    return `${normalised[0]}-${normalised[1]}-`;
+  }
+  if (/^([NMSR])-$/.test(normalised)) {
+    return `${normalised[0]}-`;
+  }
+  return normalised;
+}
+
+function normaliseNumber(raw: string) {
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return '';
+  }
+  return String(parsed);
 }
 
 export function normalisePatrolCode(raw: string) {
@@ -32,7 +137,7 @@ export function normalisePatrolCode(raw: string) {
   const compact = remainder.replace(/-/g, '');
 
   if (!compact) {
-    return category;
+    return trailingHyphen ? `${category}-` : category;
   }
 
   const letterMatchIndex = compact.search(/[HD]/);
@@ -50,7 +155,10 @@ export function normalisePatrolCode(raw: string) {
   }
 
   if (digits) {
-    result += `-${digits}`;
+    const parsedDigits = Number.parseInt(digits, 10);
+    if (Number.isFinite(parsedDigits) && parsedDigits > 0) {
+      result += `-${parsedDigits}`;
+    }
   } else if (letter || (trailingHyphen && category)) {
     result += '-';
   }
@@ -61,169 +169,301 @@ export function normalisePatrolCode(raw: string) {
 export default function PatrolCodeInput({
   value,
   onChange,
+  registry,
+  onValidationChange,
   id,
   label,
-  availableCodes,
 }: PatrolCodeInputProps) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const labelId = label ? `${inputId}-label` : undefined;
   const feedbackId = `${inputId}-feedback`;
+  const fallbackId = `${inputId}-fallback`;
 
-  const { normalisedValue, selectedCategory, selectedType, selectedNumber } = useMemo(() => {
-    const normalised = normalisePatrolCode(value);
-    const categoryOption = CATEGORY_OPTIONS.find((option) => normalised.startsWith(option)) ?? '';
-    const typeCandidate = normalised.charAt(1);
-    const typeOption =
-      categoryOption && TYPE_OPTIONS.includes(typeCandidate as TypeOption)
-        ? (typeCandidate as TypeOption)
-        : '';
-    const digitsMatch = normalised.match(/-(\d{1,2})$/);
+  const normalisedValue = useMemo(() => normalisePatrolCode(value), [value]);
+
+  const { selectedCategory, selectedGender, selectedNumber } = useMemo(() => {
+    const category = CATEGORY_OPTIONS.find((option) => normalisedValue.startsWith(option)) ?? '';
+    const genderCandidate = normalisedValue.charAt(1);
+    const gender =
+      category && isGenderOption(genderCandidate) ? (genderCandidate as GenderOption) : '';
+    const digitsMatch = normalisedValue.match(/-(\d{1,2})$/);
     const parsedNumber = digitsMatch ? Number.parseInt(digitsMatch[1], 10) : NaN;
-    const numberOption = Number.isNaN(parsedNumber) ? '' : String(parsedNumber);
-
+    const number = Number.isNaN(parsedNumber) ? '' : String(parsedNumber);
     return {
-      normalisedValue: normalised,
-      selectedCategory: categoryOption,
-      selectedType: typeOption,
-      selectedNumber: numberOption,
+      selectedCategory: category ?? '',
+      selectedGender: gender ?? '',
+      selectedNumber: number ?? '',
     };
-  }, [value]);
+  }, [normalisedValue]);
 
-  const availableNumbersByGroup = useMemo(() => {
-    if (!availableCodes || availableCodes.length === 0) {
-      return null;
-    }
+  const registryEntries = registry.entries ?? [];
 
-    const groups = new Map<string, string[]>();
-
-    availableCodes.forEach((raw) => {
-      if (!raw) {
+  const registryMap = useMemo(() => {
+    const map = new Map<string, PatrolRegistryEntry>();
+    registryEntries.forEach((entry) => {
+      const normalized = normalisePatrolCode(entry.code ?? '');
+      if (!normalized) {
         return;
       }
-      const normalised = normalisePatrolCode(raw);
-      const match = normalised.match(/^([NMSR])([HD])-(\d{1,2})$/);
-      if (!match) {
-        return;
-      }
-      const [, category, type, digits] = match;
-      const parsedNumber = Number.parseInt(digits, 10);
-      if (!Number.isFinite(parsedNumber)) {
-        return;
-      }
-      const key = `${category}${type}`;
-      const bucket = groups.get(key) ?? [];
-      const normalizedNumber = String(parsedNumber);
-      if (!bucket.includes(normalizedNumber)) {
-        bucket.push(normalizedNumber);
-      }
-      groups.set(key, bucket);
+      map.set(normalized, entry);
     });
+    return map;
+  }, [registryEntries]);
 
-    groups.forEach((numbers, key) => {
-      const sorted = numbers
-        .slice()
-        .sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10));
-      groups.set(key, sorted);
-    });
+  const numbersByGroup = useMemo(() => {
+    const map = new Map<string, WheelColumnOption[]>();
 
-    return groups;
-  }, [availableCodes]);
-
-  const numberOptions = useMemo(() => {
-    if (!availableNumbersByGroup || availableNumbersByGroup.size === 0) {
-      return NUMBER_OPTIONS;
-    }
-
-    if (selectedCategory && selectedType) {
-      const key = `${selectedCategory}${selectedType}`;
-      const scoped = availableNumbersByGroup.get(key);
-      if (scoped && scoped.length > 0) {
-        return scoped as readonly string[];
+    registryEntries.forEach((entry) => {
+      const category = entry.category?.trim().toUpperCase() ?? '';
+      const gender = entry.gender?.trim().toUpperCase() ?? '';
+      if (!isCategoryOption(category) || !isGenderOption(gender)) {
+        return;
       }
-      return selectedNumber ? ([selectedNumber] as readonly string[]) : ([] as readonly string[]);
-    }
-
-    if (selectedCategory) {
-      const aggregated = new Set<string>();
-      availableNumbersByGroup.forEach((numbers, key) => {
-        if (key.startsWith(selectedCategory)) {
-          numbers.forEach((n) => aggregated.add(n));
+      const numberValue = normaliseNumber(entry.number ?? '');
+      if (!numberValue) {
+        return;
+      }
+      const key = `${category}${gender}`;
+      const bucket = map.get(key) ?? [];
+      const isInactive = entry.active === false;
+      const option: WheelColumnOption = {
+        value: numberValue,
+        label: formatNumberLabel(numberValue),
+        disabled: isInactive,
+        title: isInactive ? 'Číslo je obsazené' : undefined,
+      };
+      const existingIndex = bucket.findIndex((item) => item.value === option.value);
+      if (existingIndex >= 0) {
+        if (bucket[existingIndex].disabled && entry.active !== false) {
+          bucket[existingIndex] = option;
         }
-      });
-      if (aggregated.size > 0) {
-        return Array.from(aggregated).sort(
-          (a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10),
-        ) as readonly string[];
+      } else {
+        bucket.push(option);
       }
-      return selectedNumber ? ([selectedNumber] as readonly string[]) : ([] as readonly string[]);
-    }
+      map.set(key, bucket);
+    });
 
-    return NUMBER_OPTIONS;
-  }, [availableNumbersByGroup, selectedCategory, selectedNumber, selectedType]);
+    map.forEach((bucket, key) => {
+      const sorted = bucket
+        .slice()
+        .sort((a, b) => Number.parseInt(a.value, 10) - Number.parseInt(b.value, 10));
+      map.set(key, sorted);
+    });
+
+    return map;
+  }, [registryEntries]);
+
+  const availableNumberOptions = useMemo<WheelColumnOption[]>(() => {
+    if (!selectedCategory || !selectedGender) {
+      return [];
+    }
+    const key = `${selectedCategory}${selectedGender}`;
+    return numbersByGroup.get(key) ?? [];
+  }, [numbersByGroup, selectedCategory, selectedGender]);
+
+  useEffect(() => {
+    if (!selectedCategory || !selectedGender) {
+      return;
+    }
+    const key = `${selectedCategory}${selectedGender}`;
+    const scoped = numbersByGroup.get(key);
+    if (!scoped || scoped.length === 0) {
+      if (selectedNumber) {
+        onChange(`${selectedCategory}${selectedGender}-`);
+      }
+      return;
+    }
+    const match = scoped.find((option) => option.value === selectedNumber);
+    if (!match || match.disabled) {
+      const fallback = scoped.find((option) => !option.disabled) ?? null;
+      if (fallback) {
+        onChange(`${selectedCategory}${selectedGender}-${fallback.value}`);
+      } else if (selectedNumber) {
+        onChange(`${selectedCategory}${selectedGender}-`);
+      }
+    }
+  }, [numbersByGroup, onChange, selectedCategory, selectedGender, selectedNumber]);
+
+  const [fallbackText, setFallbackText] = useState(() => formatDisplayValue(normalisedValue));
+  const isFallbackEditingRef = useRef(false);
+
+  useEffect(() => {
+    if (isFallbackEditingRef.current) {
+      return;
+    }
+    setFallbackText(formatDisplayValue(normalisedValue));
+  }, [normalisedValue]);
 
   const handleCategorySelect = useCallback(
-    (option: CategoryOption) => {
-      if (option === selectedCategory) {
+    (option: string) => {
+      if (!isCategoryOption(option) || option === selectedCategory) {
         return;
       }
-
       let nextValue = option;
-
-      if (selectedType) {
-        nextValue += selectedType;
-        const scopedNumbers = availableNumbersByGroup?.get(`${option}${selectedType}`);
-        const nextNumber =
-          selectedNumber && scopedNumbers && scopedNumbers.includes(selectedNumber)
-            ? selectedNumber
-            : scopedNumbers && scopedNumbers.length > 0
-              ? scopedNumbers[0]
-              : selectedNumber;
-        nextValue += nextNumber ? `-${nextNumber}` : '-';
-      } else if (selectedNumber) {
-        nextValue += `-${selectedNumber}`;
+      if (selectedGender) {
+        nextValue += selectedGender;
+        const scoped = numbersByGroup.get(`${option}${selectedGender}`);
+        const preferred = scoped?.find((item) => !item.disabled) ?? null;
+        nextValue += preferred ? `-${preferred.value}` : '-';
       }
-
+      logInteraction('category-change', { category: option });
       onChange(nextValue);
     },
-    [availableNumbersByGroup, onChange, selectedCategory, selectedNumber, selectedType],
+    [numbersByGroup, onChange, selectedCategory, selectedGender],
   );
 
-  const handleTypeSelect = useCallback(
-    (option: TypeOption) => {
-      if (!selectedCategory || option === selectedType) {
+  const handleGenderSelect = useCallback(
+    (option: string) => {
+      if (!selectedCategory || !isGenderOption(option) || option === selectedGender) {
         return;
       }
-
+      const scoped = numbersByGroup.get(`${selectedCategory}${option}`);
+      const preferred = scoped?.find((item) => !item.disabled) ?? null;
       let nextValue = `${selectedCategory}${option}`;
-      const scopedNumbers = availableNumbersByGroup?.get(`${selectedCategory}${option}`);
-      const nextNumber =
-        selectedNumber && scopedNumbers && scopedNumbers.includes(selectedNumber)
-          ? selectedNumber
-          : scopedNumbers && scopedNumbers.length > 0
-            ? scopedNumbers[0]
-            : selectedNumber;
-      nextValue += nextNumber ? `-${nextNumber}` : '-';
-
+      nextValue += preferred ? `-${preferred.value}` : '-';
+      logInteraction('gender-change', { category: selectedCategory, gender: option });
       onChange(nextValue);
     },
-    [availableNumbersByGroup, onChange, selectedCategory, selectedNumber, selectedType],
+    [numbersByGroup, onChange, selectedCategory, selectedGender],
   );
 
   const handleNumberSelect = useCallback(
     (option: string) => {
-      if (!selectedCategory || !selectedType) {
+      if (!selectedCategory || !selectedGender || option === selectedNumber) {
         return;
       }
-
-      onChange(`${selectedCategory}${selectedType}-${option}`);
+      logInteraction('number-change', {
+        category: selectedCategory,
+        gender: selectedGender,
+        number: option,
+      });
+      onChange(`${selectedCategory}${selectedGender}-${option}`);
     },
-    [onChange, selectedCategory, selectedType],
+    [onChange, selectedCategory, selectedGender, selectedNumber],
   );
 
-  const isValid = PATROL_CODE_REGEX.test(normalisedValue.trim().toUpperCase());
+  const handleFallbackFocus = useCallback(() => {
+    isFallbackEditingRef.current = true;
+  }, []);
 
-  const displayValue = normalisedValue || '—';
+  const handleFallbackBlur = useCallback(() => {
+    isFallbackEditingRef.current = false;
+    setFallbackText(formatDisplayValue(normalisedValue));
+  }, [normalisedValue]);
+
+  const handleFallbackChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const raw = event.target.value.toUpperCase();
+      setFallbackText(raw);
+      const next = normalisePatrolCode(raw);
+      logInteraction('manual-input', { raw, next });
+      onChange(next);
+    },
+    [onChange],
+  );
+
+  const validationState = useMemo<PatrolValidationState>(() => {
+    const canonical = normalisedValue;
+    if (registry.loading) {
+      return {
+        code: canonical,
+        valid: false,
+        reason: 'loading',
+        message: 'Načítám dostupná čísla hlídek…',
+      };
+    }
+    if (registry.error) {
+      return {
+        code: canonical,
+        valid: false,
+        reason: 'error',
+        message: registry.error || 'Nepodařilo se načíst dostupná čísla hlídek.',
+      };
+    }
+    if (!selectedCategory || !selectedGender || !selectedNumber) {
+      return {
+        code: canonical,
+        valid: false,
+        reason: 'incomplete',
+        message: 'Vyber kategorii, pohlaví a číslo hlídky.',
+      };
+    }
+    if (!PATROL_CODE_REGEX.test(canonical)) {
+      return {
+        code: canonical,
+        valid: false,
+        reason: 'format',
+        message: 'Formát kódu je neplatný.',
+      };
+    }
+    const entry = registryMap.get(canonical);
+    if (!entry) {
+      return {
+        code: canonical,
+        valid: false,
+        reason: 'not-found',
+        message: 'Tato kombinace neexistuje. Zvol jiné číslo hlídky.',
+      };
+    }
+    if (entry.active === false) {
+      return {
+        code: canonical,
+        valid: false,
+        patrolId: entry.id,
+        reason: 'inactive',
+        message: 'Tato kombinace neexistuje. Zvol jiné číslo hlídky.',
+      };
+    }
+    return {
+      code: canonical,
+      valid: true,
+      patrolId: entry.id,
+      reason: 'valid',
+      message: 'Kód je platný',
+    };
+  }, [normalisedValue, registry.error, registry.loading, registryMap, selectedCategory, selectedGender, selectedNumber]);
+
+  const lastValidationRef = useRef<PatrolValidationState | null>(null);
+  useEffect(() => {
+    if (!onValidationChange) {
+      return;
+    }
+    const prev = lastValidationRef.current;
+    if (
+      !prev ||
+      prev.code !== validationState.code ||
+      prev.valid !== validationState.valid ||
+      prev.reason !== validationState.reason ||
+      prev.patrolId !== validationState.patrolId ||
+      prev.message !== validationState.message
+    ) {
+      onValidationChange(validationState);
+      logInteraction('validation', {
+        code: validationState.code,
+        valid: validationState.valid,
+        reason: validationState.reason,
+      });
+      lastValidationRef.current = validationState;
+    }
+  }, [onValidationChange, validationState]);
+
+  const wheelOptionsCategory = useMemo(
+    () => CATEGORY_OPTIONS.map((value) => ({ value, label: value })),
+    [],
+  );
+  const wheelOptionsGender = useMemo(
+    () =>
+      GENDER_OPTIONS.map((value) => ({
+        value,
+        label: value,
+        title: value === 'H' ? 'Hoši' : 'Dívky',
+      })),
+    [],
+  );
+
+  const displayValue = formatDisplayValue(normalisedValue) || '—';
+  const wheelIsDisabled = registry.loading || Boolean(registry.error);
 
   return (
     <div className="patrol-code-input">
@@ -232,67 +472,98 @@ export default function PatrolCodeInput({
           {label}
         </span>
       ) : null}
+      <div className="patrol-code-input__wheel-headings" aria-hidden="true">
+        <span>Kategorie</span>
+        <span>Pohlaví</span>
+        <span>Číslo hlídky</span>
+      </div>
       <div
-        className="patrol-code-input__wheel-group"
+        className={`patrol-code-input__wheel-group${wheelIsDisabled ? ' is-disabled' : ''}`}
         role="group"
         aria-labelledby={labelId}
       >
         <WheelColumn
-          options={CATEGORY_OPTIONS}
+          options={wheelOptionsCategory}
           selected={selectedCategory}
           onSelect={handleCategorySelect}
-          ariaLabel="Kategorie hlídky"
+          ariaLabel="Kategorie"
+          optionIdPrefix={`${inputId}-category-option`}
+          disabled={wheelIsDisabled}
         />
         <WheelColumn
-          options={TYPE_OPTIONS}
-          selected={selectedType}
-          onSelect={handleTypeSelect}
-          ariaLabel="Družina nebo hlídka"
-          disabled={!selectedCategory}
+          options={wheelOptionsGender}
+          selected={selectedGender}
+          onSelect={handleGenderSelect}
+          ariaLabel="Pohlaví (H = hoši, D = dívky)"
+          optionIdPrefix={`${inputId}-gender-option`}
+          disabled={wheelIsDisabled || !selectedCategory}
         />
         <WheelColumn
-          options={numberOptions}
+          options={availableNumberOptions}
           selected={selectedNumber}
           onSelect={handleNumberSelect}
           ariaLabel="Číslo hlídky"
-          disabled={!selectedCategory || !selectedType}
+          optionIdPrefix={`${inputId}-number-option`}
+          disabled={wheelIsDisabled || !selectedCategory || !selectedGender}
         />
+        {wheelIsDisabled ? (
+          <div className="patrol-code-input__wheel-skeleton" aria-hidden="true">
+            <div />
+            <div />
+            <div />
+          </div>
+        ) : null}
       </div>
       <div className="patrol-code-input__value" aria-live="polite">
         {displayValue}
       </div>
-      <small id={feedbackId} className={isValid ? 'valid' : 'invalid'}>
-        {isValid ? 'Kód je platný' : 'Formát: N/M/S/R + H/D + číslo 1–40 (např. NH-5)'}
+      <small
+        id={feedbackId}
+        className={validationState.valid ? 'valid' : 'invalid'}
+        aria-live="polite"
+      >
+        {validationState.message}
       </small>
+      <div className="patrol-code-input__fallback">
+        <label htmlFor={fallbackId}>Zadat kód ručně</label>
+        <input
+          id={fallbackId}
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          spellCheck="false"
+          autoCapitalize="characters"
+          value={fallbackText}
+          onChange={handleFallbackChange}
+          onFocus={handleFallbackFocus}
+          onBlur={handleFallbackBlur}
+          placeholder="N-H-07"
+          aria-describedby={feedbackId}
+          aria-invalid={!validationState.valid}
+        />
+      </div>
     </div>
   );
 }
 
-interface WheelColumnProps<Option extends string> {
-  options: readonly Option[];
-  selected: Option | '';
-  onSelect: (option: Option) => void;
-  ariaLabel: string;
-  disabled?: boolean;
-}
-
-function WheelColumn<Option extends string>({
+function WheelColumn({
   options,
   selected,
   onSelect,
   ariaLabel,
+  optionIdPrefix,
   disabled = false,
-}: WheelColumnProps<Option>) {
+}: WheelColumnProps) {
   const wheelRef = useRef<HTMLDivElement | null>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const scrollTimeoutRef = useRef<number | null>(null);
   const programmaticScrollRef = useRef(false);
-  const isInitialRenderRef = useRef(true);
   const lastScrollInfoRef = useRef<{ top: number; timestamp: number; velocity: number }>({
     top: 0,
     timestamp: 0,
     velocity: 0,
   });
+  const isInitialRenderRef = useRef(true);
 
   useEffect(() => {
     optionRefs.current = optionRefs.current.slice(0, options.length);
@@ -311,7 +582,7 @@ function WheelColumn<Option extends string>({
     if (wheelHeight <= 0) {
       return;
     }
-    const optionHeight = firstOption.offsetHeight || 0;
+    const optionHeight = firstOption.offsetHeight || WHEEL_ITEM_HEIGHT;
     const padding = Math.max(0, wheelHeight / 2 - optionHeight / 2);
     wheel.style.setProperty('--wheel-padding', `${padding}px`);
   }, []);
@@ -340,12 +611,10 @@ function WheelColumn<Option extends string>({
     if (!wheel || !optionNode) {
       return;
     }
-
     const wheelHeight = wheel.clientHeight;
     const optionOffsetTop = optionNode.offsetTop;
-    const optionHeight = optionNode.offsetHeight;
+    const optionHeight = optionNode.offsetHeight || WHEEL_ITEM_HEIGHT;
     const targetScrollTop = optionOffsetTop - wheelHeight / 2 + optionHeight / 2;
-
     programmaticScrollRef.current = true;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     lastScrollInfoRef.current = {
@@ -363,45 +632,96 @@ function WheelColumn<Option extends string>({
     }
   }, []);
 
+  const findNextEnabled = useCallback(
+    (startIndex: number, direction: 1 | -1, wrap: boolean) => {
+      if (!options.length) {
+        return -1;
+      }
+      let index = startIndex;
+      for (let i = 0; i < options.length; i += 1) {
+        if (!wrap && (index < 0 || index >= options.length)) {
+          return -1;
+        }
+        const currentIndex = wrap ? (index + options.length) % options.length : index;
+        const option = options[currentIndex];
+        if (option && !option.disabled) {
+          return currentIndex;
+        }
+        index += direction;
+      }
+      return -1;
+    },
+    [options],
+  );
+
   const handleOptionSelect = useCallback(
-    (option: Option) => {
-      if (disabled) {
+    (option: WheelColumnOption) => {
+      if (disabled || option.disabled) {
         return;
       }
-      if (option === selected) {
-        const existingIndex = options.indexOf(option);
+      if (option.value === selected) {
+        const existingIndex = options.findIndex((item) => item.value === option.value);
         if (existingIndex >= 0) {
           scrollToOption(existingIndex);
         }
         return;
       }
-
-      onSelect(option);
-      const selectedIndex = options.indexOf(option);
+      onSelect(option.value);
+      const selectedIndex = options.findIndex((item) => item.value === option.value);
       if (selectedIndex >= 0) {
         scrollToOption(selectedIndex);
+        triggerSelectionHaptic();
       }
     },
     [disabled, onSelect, options, scrollToOption, selected],
   );
 
   const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    (event: KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
       if (disabled) {
         return;
       }
-
       if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
         event.preventDefault();
-        const nextIndex = currentIndex === 0 ? options.length - 1 : currentIndex - 1;
-        handleOptionSelect(options[nextIndex]);
+        const nextIndex = findNextEnabled(currentIndex - 1, -1, true);
+        if (nextIndex >= 0 && nextIndex !== currentIndex) {
+          handleOptionSelect(options[nextIndex]);
+        }
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
         event.preventDefault();
-        const nextIndex = currentIndex === options.length - 1 ? 0 : currentIndex + 1;
-        handleOptionSelect(options[nextIndex]);
+        const nextIndex = findNextEnabled(currentIndex + 1, 1, true);
+        if (nextIndex >= 0 && nextIndex !== currentIndex) {
+          handleOptionSelect(options[nextIndex]);
+        }
+      } else if (event.key === 'PageUp') {
+        event.preventDefault();
+        const target = Math.max(0, currentIndex - PAGE_JUMP);
+        const nextIndex = findNextEnabled(target, -1, false);
+        if (nextIndex >= 0 && nextIndex !== currentIndex) {
+          handleOptionSelect(options[nextIndex]);
+        }
+      } else if (event.key === 'PageDown') {
+        event.preventDefault();
+        const target = Math.min(options.length - 1, currentIndex + PAGE_JUMP);
+        const nextIndex = findNextEnabled(target, 1, false);
+        if (nextIndex >= 0 && nextIndex !== currentIndex) {
+          handleOptionSelect(options[nextIndex]);
+        }
+      } else if (event.key === 'Home') {
+        event.preventDefault();
+        const nextIndex = findNextEnabled(0, 1, false);
+        if (nextIndex >= 0) {
+          handleOptionSelect(options[nextIndex]);
+        }
+      } else if (event.key === 'End') {
+        event.preventDefault();
+        const nextIndex = findNextEnabled(options.length - 1, -1, false);
+        if (nextIndex >= 0) {
+          handleOptionSelect(options[nextIndex]);
+        }
       }
     },
-    [disabled, handleOptionSelect, options],
+    [disabled, findNextEnabled, handleOptionSelect, options],
   );
 
   const finalizeScroll = useCallback(() => {
@@ -409,12 +729,10 @@ function WheelColumn<Option extends string>({
     if (!wheel || options.length === 0) {
       return;
     }
-
     const { top, height } = wheel.getBoundingClientRect();
     const centerY = top + height / 2;
     let closestIndex = -1;
     let shortestDistance = Number.POSITIVE_INFINITY;
-
     optionRefs.current.forEach((node, index) => {
       if (!node) {
         return;
@@ -427,26 +745,53 @@ function WheelColumn<Option extends string>({
         closestIndex = index;
       }
     });
-
     if (closestIndex >= 0) {
-      const nextOption = options[closestIndex];
-      if (nextOption !== selected) {
-        handleOptionSelect(nextOption);
-      } else {
-        scrollToOption(closestIndex);
+      let targetIndex = closestIndex;
+      if (options[targetIndex]?.disabled) {
+        const forward = findNextEnabled(targetIndex + 1, 1, true);
+        const backward = findNextEnabled(targetIndex - 1, -1, true);
+        const forwardNode = forward >= 0 ? optionRefs.current[forward] : null;
+        const backwardNode = backward >= 0 ? optionRefs.current[backward] : null;
+        const forwardDistance = forwardNode
+          ? Math.abs(
+              forwardNode.getBoundingClientRect().top +
+                forwardNode.offsetHeight / 2 -
+                centerY,
+            )
+          : Number.POSITIVE_INFINITY;
+        const backwardDistance = backwardNode
+          ? Math.abs(
+              backwardNode.getBoundingClientRect().top +
+                backwardNode.offsetHeight / 2 -
+                centerY,
+            )
+          : Number.POSITIVE_INFINITY;
+        if (forwardDistance === Number.POSITIVE_INFINITY && backwardDistance === Number.POSITIVE_INFINITY) {
+          return;
+        }
+        targetIndex =
+          forwardDistance <= backwardDistance
+            ? forward >= 0
+              ? forward
+              : backward
+            : backward >= 0
+            ? backward
+            : forward;
+      }
+      const targetOption = options[targetIndex];
+      if (targetOption) {
+        handleOptionSelect(targetOption);
       }
     }
-  }, [handleOptionSelect, options, scrollToOption, selected]);
+  }, [findNextEnabled, handleOptionSelect, options]);
 
   const handleScroll = useCallback(() => {
     if (disabled || !wheelRef.current || options.length === 0) {
       return;
     }
-
     if (scrollTimeoutRef.current !== null) {
       window.clearTimeout(scrollTimeoutRef.current);
     }
-
     const wheel = wheelRef.current;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const currentTop = wheel.scrollTop;
@@ -458,13 +803,11 @@ function WheelColumn<Option extends string>({
       timestamp: now,
       velocity,
     };
-
     const attemptSettle = () => {
       if (programmaticScrollRef.current) {
         programmaticScrollRef.current = false;
         return;
       }
-
       const nowCheck = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const timeSinceLastScroll = nowCheck - lastScrollInfoRef.current.timestamp;
       const latestVelocity = Math.abs(lastScrollInfoRef.current.velocity);
@@ -472,18 +815,16 @@ function WheelColumn<Option extends string>({
         scrollTimeoutRef.current = window.setTimeout(attemptSettle, 80);
         return;
       }
-
       finalizeScroll();
     };
-
     scrollTimeoutRef.current = window.setTimeout(attemptSettle, 140);
-  }, [disabled, finalizeScroll, options]);
+  }, [disabled, finalizeScroll, options.length]);
 
   useEffect(() => {
     if (options.length === 0) {
       return;
     }
-    const nextIndex = selected ? options.indexOf(selected) : 0;
+    const nextIndex = selected ? options.findIndex((option) => option.value === selected) : 0;
     if (nextIndex < 0) {
       return;
     }
@@ -505,34 +846,37 @@ function WheelColumn<Option extends string>({
   return (
     <div
       className="patrol-code-input__wheel"
-      role="radiogroup"
+      role="listbox"
       aria-label={ariaLabel}
       aria-disabled={disabled || undefined}
       ref={wheelRef}
       onScroll={handleScroll}
     >
       {options.map((option, index) => {
-        const isSelected = selected === option;
+        const isSelected = selected === option.value;
+        const optionId = `${optionIdPrefix}-${index}`;
         const className = [
           'patrol-code-input__wheel-option',
           isSelected ? 'patrol-code-input__wheel-option--selected' : '',
+          option.disabled ? 'patrol-code-input__wheel-option--disabled' : '',
         ]
           .filter(Boolean)
           .join(' ');
-
         return (
           <button
             type="button"
-            role="radio"
-            aria-checked={isSelected}
-            key={option}
+            role="option"
+            aria-selected={isSelected}
+            id={optionId}
+            key={`${optionId}-${option.value}`}
             className={className}
             onClick={() => handleOptionSelect(option)}
             onKeyDown={(event) => handleKeyDown(event, index)}
-            disabled={disabled}
+            disabled={disabled || option.disabled}
             ref={registerOptionRef(index)}
+            title={option.title}
           >
-            {option}
+            {option.label}
           </button>
         );
       })}
