@@ -61,6 +61,49 @@ function hashRefreshToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
 }
 
+const ALL_CATEGORIES = ['N', 'M', 'S', 'R'] as const;
+const DEFAULT_ALLOWED_CATEGORIES: Record<string, string[]> = {
+  A: ['M', 'S', 'R'],
+  B: ['N', 'M', 'S', 'R'],
+  C: ['N', 'M', 'S', 'R'],
+  D: ['R'],
+  F: ['N', 'M', 'S', 'R'],
+  J: ['N', 'M', 'S', 'R'],
+  K: ['N', 'M'],
+  M: ['M', 'S', 'R'],
+  N: ['S', 'R'],
+  O: ['N', 'M', 'S', 'R'],
+  P: ['N', 'M', 'S', 'R'],
+  S: ['M', 'S', 'R'],
+  T: ['N', 'M', 'S', 'R'],
+  U: ['N', 'M', 'S', 'R'],
+  V: ['S', 'R'],
+  Z: ['N', 'M', 'S', 'R'],
+};
+
+function normalizeAllowedCategories(
+  raw: unknown,
+  stationCode: string | null | undefined,
+): string[] {
+  const values = Array.isArray(raw) ? raw : [];
+  const normalized = values
+    .map((value) => (typeof value === 'string' ? value.trim().toUpperCase() : ''))
+    .filter((value): value is (typeof ALL_CATEGORIES)[number] =>
+      value.length > 0 && (ALL_CATEGORIES as readonly string[]).includes(value),
+    );
+  if (normalized.length > 0) {
+    const unique = Array.from(new Set(normalized));
+    unique.sort();
+    return unique;
+  }
+  const fallbackKey = stationCode?.trim().toUpperCase() ?? '';
+  const fallback = fallbackKey ? DEFAULT_ALLOWED_CATEGORIES[fallbackKey] : undefined;
+  if (fallback && fallback.length > 0) {
+    return [...fallback];
+  }
+  return [...ALL_CATEGORIES];
+}
+
 function isPbkdf2Hash(hash: string) {
   return hash.startsWith('pbkdf2$');
 }
@@ -190,12 +233,21 @@ export default async function handler(req: any, res: any) {
       return res.status(500).json({ error: 'Failed to resolve assignment details' });
     }
 
-    const { data: patrolsData, error: patrolsError } = await supabase
+    const allowedCategories = normalizeAllowedCategories(assignment.allowed_categories, station.code);
+
+    let patrolQuery = supabase
       .from('patrols')
       .select('id, team_name, category, sex, patrol_code')
       .eq('event_id', assignment.event_id)
-      .eq('active', true)
-      .order('patrol_code', { ascending: true });
+      .eq('active', true);
+
+    if (allowedCategories.length > 0) {
+      patrolQuery = patrolQuery.in('category', allowedCategories);
+    }
+
+    const { data: patrolsData, error: patrolsError } = await patrolQuery.order('patrol_code', {
+      ascending: true,
+    });
 
     if (patrolsError) {
       console.error('Failed to load patrols', patrolsError);
@@ -217,7 +269,7 @@ export default async function handler(req: any, res: any) {
         id: event.id,
         name: event.name,
       },
-      allowedCategories: assignment.allowed_categories ?? [],
+      allowedCategories,
       allowedTasks: assignment.allowed_tasks ?? [],
       manifestVersion: 1,
     };
