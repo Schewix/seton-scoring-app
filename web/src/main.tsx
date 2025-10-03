@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { AuthProvider } from './auth/context';
 import { registerSW } from 'virtual:pwa-register';
-import { isScoreboardPathname } from './routing';
+import { ROUTE_PREFIX, isScoreboardPathname, isStationAppPath } from './routing';
 
 type IconLinkConfig = {
   rel: string;
@@ -89,7 +89,13 @@ applyBranding();
 const params = new URLSearchParams(window.location.search);
 const view = params.get('view');
 const pathname = window.location.pathname;
+const normalizedPath = pathname.replace(/\/$/, '') || '/';
 const isScoreboardPath = isScoreboardPathname(pathname);
+const isHomepagePath = normalizedPath === '/' || normalizedPath === '/draci-smycka';
+const isSetonNamespace =
+  normalizedPath === ROUTE_PREFIX ||
+  normalizedPath.startsWith(`${ROUTE_PREFIX}/`) ||
+  isStationAppPath(normalizedPath);
 const scoreboardViews = new Set(['scoreboard', 'vysledky']);
 
 function render(element: React.ReactNode) {
@@ -108,12 +114,28 @@ if ((view && scoreboardViews.has(view)) || isScoreboardPath) {
     .catch((error) => {
       console.error('Failed to load scoreboard view', error);
     });
-} else {
+} else if (isHomepagePath && !isSetonNamespace) {
+  import('./homepage/Homepage')
+    .then(({ default: Homepage }) => {
+      render(<Homepage />);
+    })
+    .catch((error) => {
+      console.error('Failed to load homepage', error);
+    });
+} else if (isSetonNamespace || normalizedPath === ROUTE_PREFIX) {
   import('./App')
     .then(({ default: App }) => {
       render(<App />);
     })
     .catch((error) => {
       console.error('Failed to load scoring app', error);
+    });
+} else {
+  import('./homepage/Homepage')
+    .then(({ default: Homepage }) => {
+      render(<Homepage />);
+    })
+    .catch((error) => {
+      console.error('Failed to load homepage', error);
     });
 }
