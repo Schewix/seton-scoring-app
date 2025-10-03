@@ -13,14 +13,14 @@ const EVENTS: EventLink[] = [
   {
     slug: 'setonuv-zavod',
     name: 'Setonův závod',
-    description: 'Stanoviště, výsledky a kompletní servis pro celostátní závod skautských oddílů.',
+    description: 'Stanoviště, výsledky a kompletní servis pro celostátní soutěž SPTO vedenou vedoucími pro vedoucí.',
     href: '/setonuv-zavod',
     status: 'available',
   },
   {
     slug: 'draci-smycka',
     name: 'Dračí smyčka',
-    description: 'Legendární noční výzva pro patrole. Připravujeme nové ročníky v digitální podobě.',
+    description: 'Soutěž jednotlivců ve vázání uzlů. Nové ročníky připravujeme na stejném digitálním zázemí.',
     href: '/draci-smycka',
     status: 'coming-soon',
   },
@@ -35,18 +35,18 @@ function Homepage() {
         </div>
         <div className="homepage-hero-copy">
           <p className="homepage-eyebrow">Zelená liga</p>
-          <h1>Digitální podpora skautských závodů</h1>
+          <h1>Digitální podpora soutěží SPTO</h1>
           <p className="homepage-lead">
-            Zajišťujeme techniku, aplikace a výsledkový servis pro závody s tradiční atmosférou i moderním
-            průběhem.
+            Jako vedoucí pro vedoucí zajišťujeme techniku, aplikace a výsledkový servis pro soutěže se
+            skutečnou táborovou atmosférou.
           </p>
         </div>
       </header>
 
       <main className="homepage-main" aria-labelledby="homepage-events-heading">
         <div className="homepage-section-header">
-          <h2 id="homepage-events-heading">Závody v naší péči</h2>
-          <p>Vyber si závod a přejdi na přihlášení stanovišť, výsledkovou tabuli nebo další informace.</p>
+          <h2 id="homepage-events-heading">Soutěže v naší péči</h2>
+          <p>Vyber si soutěž a přejdi na přihlášení stanovišť, výsledkovou tabuli nebo další informace.</p>
         </div>
         <div className="homepage-event-grid">
           {EVENTS.map((event) => (
@@ -57,7 +57,7 @@ function Homepage() {
               aria-describedby={`${event.slug}-description`}
             >
               <div className="homepage-event-card-body">
-                <span className="homepage-event-label">Závod</span>
+                <span className="homepage-event-label">Soutěž</span>
                 <h3>{event.name}</h3>
                 <p id={`${event.slug}-description`}>{event.description}</p>
               </div>
@@ -70,7 +70,7 @@ function Homepage() {
       </main>
 
       <footer className="homepage-footer">
-        <p>&copy; {new Date().getFullYear()} Zelená liga. Vzniká ve spolupráci oddílů z celé republiky.</p>
+        <p>&copy; 32. PTO Severka a Ševa</p>
       </footer>
     </div>
   );
@@ -105,7 +105,7 @@ function EventPage({ slug }: EventPageProps) {
         <p className="homepage-lead">{event.description}</p>
         <div className="homepage-card">
           <p>
-            Elektronické rozhraní pro {event.name.toLowerCase()} právě připravujeme. Než spustíme plnou verzi,
+            Elektronické rozhraní pro tuto soutěž právě připravujeme. Než spustíme plnou verzi,
             sleduj novinky na našem Facebooku nebo se ozvi na <a href="mailto:zavody@zelenaliga.cz">zavody@zelenaliga.cz</a>.
           </p>
         </div>

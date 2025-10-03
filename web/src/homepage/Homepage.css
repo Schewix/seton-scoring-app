@@ -21,18 +21,15 @@
 }
 
 .homepage-hero-logo {
-  width: clamp(96px, 14vw, 140px);
-  height: clamp(96px, 14vw, 140px);
-  border-radius: 32px;
-  background: rgba(2, 44, 34, 0.08);
-  display: grid;
-  place-items: center;
-  box-shadow: 0 30px 60px rgba(4, 55, 44, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .homepage-hero-logo img {
-  width: 70%;
+  width: clamp(96px, 14vw, 140px);
   height: auto;
+  display: block;
 }
 
 .homepage-hero-copy h1 {
@@ -220,6 +217,8 @@
 
   .homepage-hero-logo {
     justify-self: flex-end;
+    align-self: center;
+    margin-top: clamp(-16px, -2vw, -6px);
   }
 
   .homepage-hero-copy {
