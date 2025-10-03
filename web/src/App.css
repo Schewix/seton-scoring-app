@@ -282,7 +282,7 @@ body {
 
   .hero-panel--actions .logout-button {
     width: auto;
-    align-self: flex-start;
+    align-self: center;
   }
 }
 
