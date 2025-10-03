@@ -1,0 +1,7 @@
+.git
+.gitignore
+node_modules
+web/node_modules
+web/dist
+supabase
+**/__pycache__
