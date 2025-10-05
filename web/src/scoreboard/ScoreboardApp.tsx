@@ -493,9 +493,14 @@ function ScoreboardApp() {
       <header className="scoreboard-hero">
         <div className="scoreboard-hero-top">
           <div className="scoreboard-hero-brand">
-            <div className="scoreboard-hero-logo">
+            <a
+              className="scoreboard-hero-logo"
+              href="https://zelenaliga.cz"
+              target="_blank"
+              rel="noreferrer"
+            >
               <img src={zelenaLigaLogo} alt="Logo Setonův závod" />
-            </div>
+            </a>
             <div>
               <span className="scoreboard-hero-eyebrow">Setonův závod</span>
               <h1>Výsledkový přehled</h1>

@@ -60,9 +60,14 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin }: Pro
       <div className="auth-shell-content">
         <div className="auth-layout">
           <div className="auth-hero">
-            <div className="auth-hero-logo">
+            <a
+              className="auth-hero-logo"
+              href="https://zelenaliga.cz"
+              target="_blank"
+              rel="noreferrer"
+            >
               <img src={zelenaLigaLogo} alt="Logo Setonův závod" />
-            </div>
+            </a>
             <div className="auth-hero-copy">
               <span className="auth-hero-eyebrow">Setonův závod</span>
               <h1>Obnova přístupu</h1>

@@ -30,9 +30,15 @@ function Homepage() {
   return (
     <div className="homepage-shell">
       <header className="homepage-hero">
-        <div className="homepage-hero-logo" aria-hidden="true">
+        <a
+          className="homepage-hero-logo"
+          href="https://zelenaliga.cz"
+          target="_blank"
+          rel="noreferrer"
+          aria-hidden="true"
+        >
           <img src={logo} alt="Logo Zelená liga" />
-        </div>
+        </a>
         <div className="homepage-hero-copy">
           <p className="homepage-eyebrow">Zelená liga</p>
           <h1>Digitální podpora soutěží SPTO</h1>
