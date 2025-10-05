@@ -55,6 +55,7 @@ body {
   place-items: center;
   padding: 10px;
   box-shadow: 0 18px 34px rgba(15, 118, 110, 0.28);
+  text-decoration: none;
 }
 
 .scoreboard-hero-logo img {
