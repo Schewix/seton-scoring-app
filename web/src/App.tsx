@@ -1117,13 +1117,18 @@ function StationApp({
   );
 
   const handleResetTickets = useCallback(() => {
-    let hadTickets = false;
-    updateTickets((current) => {
-      hadTickets = current.length > 0;
-      return [];
-    });
-    if (hadTickets) {
-      pushAlert('Fronta byla vymazána.');
+    let removedTickets = 0;
+    updateTickets((current) =>
+      current.filter((ticket) => {
+        const keep = ticket.state !== 'done';
+        if (!keep) {
+          removedTickets += 1;
+        }
+        return keep;
+      }),
+    );
+    if (removedTickets > 0) {
+      pushAlert('Dokončené hlídky byly odebrány z fronty.');
     }
   }, [pushAlert, updateTickets]);
 

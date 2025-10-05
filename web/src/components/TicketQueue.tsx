@@ -61,7 +61,7 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
         </div>
         <div className="card-actions">
           <button type="button" className="ghost" onClick={onReset}>
-            Resetovat frontu
+            Odebrat dokončené hlídky
           </button>
         </div>
       </header>
