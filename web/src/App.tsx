@@ -1961,9 +1961,15 @@ function StationApp({
       <header className="hero">
         <div className="hero-inner">
           <div className="hero-brand">
-            <div className="hero-logo">
+            <a
+              className="hero-logo"
+              href="https://zelenaliga.cz"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Zelená liga"
+            >
               <img src={zelenaLigaLogo} alt="Logo Setonův závod" />
-            </div>
+            </a>
             <div>
               <h1>Setonův závod – stanoviště</h1>
               <p>Spravuj průběh Setonova závodu s automatickým hodnocením a offline frontou.</p>
