@@ -1674,6 +1674,7 @@ textarea {
   place-items: center;
   padding: 12px;
   box-shadow: 0 18px 34px rgba(15, 118, 110, 0.28);
+  text-decoration: none;
 }
 
 .auth-hero-logo img {
