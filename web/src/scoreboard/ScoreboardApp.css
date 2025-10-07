@@ -86,9 +86,11 @@
 .scoreboard-hero-actions {
   width: 100%;
   max-width: 1040px;
-  display: grid;
-  grid-template-columns: minmax(0, auto) auto;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 16px;
 }
 
@@ -97,7 +99,7 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  justify-content: flex-start;
+  justify-content: center;
 }
 
 .scoreboard-button {
@@ -182,8 +184,12 @@
   gap: 10px;
   font-weight: 600;
   font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.85);
-  justify-self: flex-end;
+  color: rgba(255, 255, 255, 0.92);
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(11, 24, 51, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 12px 28px rgba(5, 12, 28, 0.28);
 }
 
 .scoreboard-status-dot {
@@ -521,20 +527,11 @@
   }
 
   .scoreboard-hero-actions {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    gap: 16px;
+    gap: 12px;
   }
 
   .scoreboard-status {
-    justify-self: center;
-    color: rgba(255, 255, 255, 0.9);
-  }
-
-  .scoreboard-button {
-    flex: 1 1 100%;
-    width: 100%;
-    text-align: center;
+    padding: 8px 14px;
   }
 
   .scoreboard-content {
