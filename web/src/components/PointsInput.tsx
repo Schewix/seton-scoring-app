@@ -477,6 +477,7 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
       ) : null}
       {showWheel ? (
         <div className="points-input__wheel-group">
+          <div className="picker-highlight" aria-hidden="true" />
           <div
             className="points-input__wheel"
             role="listbox"
