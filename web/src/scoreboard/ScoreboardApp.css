@@ -362,6 +362,8 @@
 .scoreboard-groups {
   display: grid;
   gap: clamp(18px, 2.4vw, 28px);
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 }
 
 .scoreboard-group {
@@ -416,6 +418,13 @@
 
 .scoreboard-table tbody tr:nth-child(even) {
   background: #fffbe5;
+}
+
+.scoreboard-table-empty td {
+  padding: 16px 0 12px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .scoreboard-table tbody tr:nth-child(-n + 3)::before {
