@@ -2032,7 +2032,6 @@ function StationApp({
               >
                 Otevřít výsledky
               </a>
-              <span className="hero-panel-sub">Přehled výsledků v novém okně.</span>
               <div className="hero-panel-links">
                 <a
                   className="hero-panel-link"
