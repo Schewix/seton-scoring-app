@@ -416,12 +416,18 @@ function ScoreboardApp() {
   }, []);
 
   const groupedRanked = useMemo(() => {
-    const groups = new Map<string, { key: string; category: string; sex: string; items: RankedResult[] }>();
+    const groups = new Map<string, RankedGroup>();
 
     ranked.forEach((item) => {
-      const key = `${item.category}__${item.sex}`;
+      const key = normaliseBracketKey(item.category, item.sex);
       if (!groups.has(key)) {
-        groups.set(key, { key, category: item.category, sex: item.sex, items: [] });
+        groups.set(key, {
+          key,
+          category: item.category,
+          sex: item.sex,
+          items: [],
+          visibleItems: [],
+        });
       }
       groups.get(key)!.items.push(item);
     });
@@ -429,39 +435,39 @@ function ScoreboardApp() {
     return Array.from(groups.values())
       .map((group) => {
         const rankedItems = [...group.items]
-          .map((group) => {
-            const rankedItems = [...group.items]
-              .sort(compareRankedResults)
-              .map((item, index) => ({ ...item, displayRank: index + 1 }));
-            return {
-              ...group,
-              items: rankedItems,
-            };
-          })
-          .sort((a, b) => compareBrackets(a.category, a.sex, b.category, b.sex));
-      }, [ranked]);
+          .sort(compareRankedResults)
+          .map((item, index) => ({ ...item, displayRank: index + 1 }));
+        const visibleItems = rankedItems;
+        return {
+          ...group,
+          items: rankedItems,
+          visibleItems,
+        };
+      })
+      .sort((a, b) => compareBrackets(a.category, a.sex, b.category, b.sex));
+  }, [ranked]);
 
-    const handleRefresh = useCallback(() => {
-      loadData();
-    }, [loadData]);
+  const handleRefresh = useCallback(() => {
+    loadData();
+  }, [loadData]);
 
-    const handleExport = useCallback(() => {
-      if (!groupedRanked.length || exporting) {
-        return;
-      }
+  const handleExport = useCallback(() => {
+    if (!groupedRanked.length || exporting) {
+      return;
+    }
 
-      try {
-        setExporting(true);
-        const workbook = XLSX.utils.book_new();
+    try {
+      setExporting(true);
+      const workbook = XLSX.utils.book_new();
 
-        groupedRanked.forEach((group) => {
-          const sheetName = formatCategoryLabel(group.category, group.sex);
-          const rows = [
-            ['#', 'Hlídka', 'Tým', 'Body', 'Body bez T'],
-            ...group.visibleItems.map((row) => {
-              const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
-              const fallbackCode = createFallbackPatrolCode(group.category, group.sex, displayRank);
-              return [
+      groupedRanked.forEach((group) => {
+        const sheetName = formatCategoryLabel(group.category, group.sex);
+        const rows = [
+          ['#', 'Hlídka', 'Tým', 'Body', 'Body bez T'],
+          ...group.visibleItems.map((row) => {
+            const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
+            const fallbackCode = createFallbackPatrolCode(group.category, group.sex, displayRank);
+            return [
                 displayRank,
                 formatPatrolNumber(row.patrolCode, fallbackCode),
                 row.teamName,
