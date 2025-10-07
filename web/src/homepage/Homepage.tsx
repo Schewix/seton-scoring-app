@@ -14,7 +14,8 @@ const EVENTS: EventLink[] = [
   {
     slug: 'setonuv-zavod',
     name: 'Setonův závod',
-    description: 'Stanoviště, výsledky a kompletní servis pro celostátní soutěž SPTO vedenou vedoucími pro vedoucí.',
+    description:
+      'Tábornická soutěž, která spojuje všechny naše oddíly. Na trati se potkávají hlídky všech věkových kategorií a prověřují se ve znalostech i dovednostech, které běžně používáme v oddílech. Stejně jako vždy – mapa, buzola, uzly, první pomoc, týmová spolupráce. Každý rok trochu jinak, ale s tím samým duchem.',
     href: '/setonuv-zavod',
     status: 'available',
   },
@@ -48,17 +49,21 @@ function Homepage() {
             Projekt <a href="https://jihomoravsky.pionyr.cz/pto/" target="_blank" rel="noreferrer">Sdružení pionýrských turistických oddílů Brno</a>
           </p>
           <p className="homepage-lead">
-            Jako vedoucí pro vedoucí zajišťujeme techniku, aplikace a výsledkový servis pro soutěže se
-            skutečnou táborovou atmosférou.
+            Naše soutěže mají pořád stejný základ – táborový duch, parta lidí z oddílů, co si umí poradit v lese i za počítačem.
+            Jen jsme k tomu přidali trochu techniky, aby se závody daly připravit i vyhodnotit snadněji.
+          </p>
+          <p className="homepage-lead">
+            Všechno vzniklo mezi vedoucími, kteří soutěže sami pořádají. Snažíme se, aby organizace byla co nejjednodušší,
+            přehledná a aby zůstalo víc času na samotnou činnost – ne na papírování.
           </p>
         </div>
       </header>
 
       <main className="homepage-main" aria-labelledby="homepage-events-heading">
         <div className="homepage-section-header">
-          <h2 id="homepage-events-heading">Soutěže v naší péči</h2>
+          <h2 id="homepage-events-heading">Naše soutěže</h2>
           <span className="homepage-section-accent" aria-hidden="true" />
-          <p>Vyber si soutěž a přejdi na přihlášení stanovišť, výsledkovou tabuli nebo další informace.</p>
+          <p>Najdeš tu odkazy na systémy, přes které rozhodčí zapisují body a vedoucí sledují výsledky jednotlivých závodů.</p>
         </div>
         <div className="homepage-event-grid">
           {EVENTS.map((event) => (
@@ -79,6 +84,18 @@ function Homepage() {
               </span>
             </a>
           ))}
+        </div>
+
+        <div className="homepage-section-header">
+          <h2>Proč to používáme</h2>
+          <span className="homepage-section-accent" aria-hidden="true" />
+        </div>
+        <div className="homepage-card">
+          <ul className="homepage-list">
+            <li>výsledky se sčítají automaticky, ale kontrolu držíme v rukou,</li>
+            <li>systém funguje i bez signálu, takže se neztratíme ani v lese,</li>
+            <li>každý rozhodčí má svůj přístup ke stanovišti a vše potřebné na jednom místě.</li>
+          </ul>
         </div>
       </main>
 
