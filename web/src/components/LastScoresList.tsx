@@ -56,6 +56,7 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
   const [rows, setRows] = useState<ScoreRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [hidden, setHidden] = useState(false);
 
   const refreshTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -188,49 +189,69 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
           Poslední záznamy{' '}
           <span className="card-hint">({countLabel})</span>
         </h2>
-        <button onClick={handleRefresh} disabled={loading || refreshing}>
-          {refreshing ? 'Obnovuji…' : 'Obnovit'}
-        </button>
+        <div className="card-actions">
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setHidden((prev) => !prev)}
+          >
+            {hidden ? 'Zobrazit záznamy' : 'Skrýt záznamy'}
+          </button>
+          <button type="button" onClick={handleRefresh} disabled={loading || refreshing}>
+            {refreshing ? 'Obnovuji…' : 'Obnovit'}
+          </button>
+        </div>
       </header>
-      {loading && rows.length === 0 ? <p>Načítání…</p> : null}
-      {rows.length === 0 && !loading ? <p>Žádné záznamy.</p> : null}
-      <ul className="score-list">
-        {rows.map((row) => {
-          const patrol =
-            row.patrols ||
-            ({ patrol_code: null, team_name: 'Neznámá hlídka', category: '?', sex: '?' } satisfies ScoreRow['patrols']);
-          const quizLetters = parseAnswerLetters(row.quiz?.answers);
-          return (
-            <li key={row.id} className="score-item">
-              <div className="score-split">
-                <div className="score-points-box">
-                  <span className="score-points-value">{row.points}</span>
-                  <span className="score-points-label">body</span>
-                </div>
-                <div className="score-team-box">
-                  <strong>{patrol.team_name}</strong>
-                  <span className="score-team-meta">
-                    {patrol.patrol_code
-                      ? patrol.patrol_code
-                      : `${patrol.category}/${patrol.sex}`}
-                  </span>
-                </div>
-              </div>
-              <div className="score-meta">
-                <span>{new Date(row.created_at).toLocaleString()}</span>
-                {row.judge ? <span>{row.judge}</span> : null}
-              </div>
-              {row.note ? <p className="score-note">„{row.note}“</p> : null}
-              {isTargetStation && row.quiz ? (
-                <div className="score-quiz">
-                  Terčový úsek: {row.quiz.correct_count}
-                  {quizLetters.length ? `/${quizLetters.length} • ${quizLetters.join(' ')}` : ''}
-                </div>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
+      {hidden ? (
+        <p>Poslední záznamy jsou skryté.</p>
+      ) : (
+        <>
+          {loading && rows.length === 0 ? <p>Načítání…</p> : null}
+          {rows.length === 0 && !loading ? <p>Žádné záznamy.</p> : null}
+          <ul className="score-list">
+            {rows.map((row) => {
+              const patrol =
+                row.patrols ||
+                ({
+                  patrol_code: null,
+                  team_name: 'Neznámá hlídka',
+                  category: '?',
+                  sex: '?',
+                } satisfies ScoreRow['patrols']);
+              const quizLetters = parseAnswerLetters(row.quiz?.answers);
+              return (
+                <li key={row.id} className="score-item">
+                  <div className="score-split">
+                    <div className="score-points-box">
+                      <span className="score-points-value">{row.points}</span>
+                      <span className="score-points-label">body</span>
+                    </div>
+                    <div className="score-team-box">
+                      <strong>{patrol.team_name}</strong>
+                      <span className="score-team-meta">
+                        {patrol.patrol_code
+                          ? patrol.patrol_code
+                          : `${patrol.category}/${patrol.sex}`}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="score-meta">
+                    <span>{new Date(row.created_at).toLocaleString()}</span>
+                    {row.judge ? <span>{row.judge}</span> : null}
+                  </div>
+                  {row.note ? <p className="score-note">„{row.note}“</p> : null}
+                  {isTargetStation && row.quiz ? (
+                    <div className="score-quiz">
+                      Terčový úsek: {row.quiz.correct_count}
+                      {quizLetters.length ? `/${quizLetters.length} • ${quizLetters.join(' ')}` : ''}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
     </section>
   );
 }
