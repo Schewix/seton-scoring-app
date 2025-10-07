@@ -532,7 +532,7 @@ function ScoreboardApp() {
                 onClick={handleExport}
                 disabled={!groupedRanked.length || loading || exporting}
               >
-                {exporting ? 'Exportuji…' : 'Exportovat Excel'}
+                {exporting ? 'Exportuji…' : 'Exportovat výsledky'}
               </button>
               <button
                 type="button"
