@@ -297,7 +297,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
           </form>
         </div>
       </div>
-      <AppFooter className="app-footer--minimal auth-footer" />
+      <AppFooter variant="minimal" className="auth-footer" />
     </div>
   );
 }
