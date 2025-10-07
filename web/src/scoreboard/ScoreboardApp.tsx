@@ -622,7 +622,7 @@ function ScoreboardApp() {
           )}
         </section>
       </main>
-      <AppFooter className="app-footer--minimal scoreboard-footer" />
+      <AppFooter variant="minimal" className="scoreboard-footer" />
     </div>
   );
 }
