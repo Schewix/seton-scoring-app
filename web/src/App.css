@@ -42,7 +42,7 @@ body {
   text-align: center;
 }
 
-.hero-brand > div {
+.hero-brand>div {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -208,6 +208,17 @@ body {
   gap: 16px;
 }
 
+.hero-panel--rules {
+  gap: 16px;
+}
+
+.hero-panel--rules .hero-panel-links {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
 .hero-panel-link {
   display: inline-flex;
   align-items: center;
@@ -280,7 +291,7 @@ body {
     text-align: left;
   }
 
-  .hero-brand > div {
+  .hero-brand>div {
     align-items: flex-start;
   }
 
@@ -617,16 +628,13 @@ body {
   z-index: 2;
 }
 
-.patrol-code-input__wheel + .patrol-code-input__wheel {
+.patrol-code-input__wheel+.patrol-code-input__wheel {
   border-left: 1px solid var(--border);
 }
 
 .points-input__wheel {
   --points-wheel-visible-count: 3;
-  --wheel-padding: calc(
-    (var(--points-wheel-item-height) * var(--points-wheel-visible-count) - var(--points-wheel-item-height)) /
-      2
-  );
+  --wheel-padding: calc((var(--points-wheel-item-height) * var(--points-wheel-visible-count) - var(--points-wheel-item-height)) / 2);
   flex: 0 0 var(--points-wheel-width);
   width: var(--points-wheel-width);
   min-width: var(--points-wheel-width);
@@ -840,6 +848,7 @@ body {
 }
 
 @supports not (overflow: clip) {
+
   .hero-panel,
   .card {
     overflow: hidden;
@@ -2187,7 +2196,7 @@ textarea {
   gap: 0.5rem;
 }
 
-.ticket-meta > span {
+.ticket-meta>span {
   font-variant-numeric: tabular-nums;
 }
 
