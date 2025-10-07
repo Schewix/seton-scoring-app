@@ -166,7 +166,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
             <ul className="auth-hero-list">
               <li>Přihlášení pro rozhodčí stanovišť</li>
               <li>Offline režim se synchronizací výsledků</li>
-              <li>Export přehledů do tabulek</li>
+              <li>Export výsledků do tabulek</li>
             </ul>
             <a className="auth-hero-link" href={SCOREBOARD_ROUTE_PREFIX}>
               Zobrazit výsledky Setonova závodu
