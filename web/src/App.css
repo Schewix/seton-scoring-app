@@ -549,7 +549,7 @@ body {
   align-items: center;
   padding: 8px 0 12px;
   border-radius: 16px;
-  border: 1px solid var(--border);
+  border: none;
   background: var(--surface);
   box-shadow: var(--shadow-soft);
   --points-wheel-item-height: 48px;
