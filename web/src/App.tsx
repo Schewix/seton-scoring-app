@@ -2016,26 +2016,23 @@ function StationApp({
                 lastSyncedAt={lastSavedAt}
               />
             </div>
-            <div className="hero-panel hero-panel--results">
-              <span className="hero-panel-label">Výsledky</span>
-              <a
-                className="hero-panel-link"
-                href={SCOREBOARD_ROUTE_PREFIX}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Otevřít výsledkovou tabuli
-              </a>
-              <span className="hero-panel-sub">Přehled výsledků v novém okně.</span>
-            </div>
             <div className="hero-panel hero-panel--actions">
               <span className="hero-panel-label">Účet</span>
               <button type="button" className="logout-button" onClick={handleLogout}>
                 Odhlásit se
               </button>
             </div>
-            <div className="hero-panel hero-panel--rules">
-              <span className="hero-panel-label">Pravidla</span>
+            <div className="hero-panel hero-panel--links">
+              <span className="hero-panel-label">Odkazy</span>
+              <a
+                className="hero-panel-link"
+                href={SCOREBOARD_ROUTE_PREFIX}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Otevřít výsledky
+              </a>
+              <span className="hero-panel-sub">Přehled výsledků v novém okně.</span>
               <div className="hero-panel-links">
                 <a
                   className="hero-panel-link"
