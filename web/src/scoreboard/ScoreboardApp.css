@@ -86,9 +86,10 @@
 .scoreboard-hero-actions {
   width: 100%;
   max-width: 1040px;
-  display: grid;
-  grid-template-columns: minmax(0, auto) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 16px;
 }
 
@@ -97,7 +98,7 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  justify-content: flex-start;
+  justify-content: center;
 }
 
 .scoreboard-button {
@@ -178,17 +179,32 @@
   align-items: center;
   gap: 10px;
   font-weight: 600;
-  font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.85);
-  justify-self: flex-end;
+  font-size: 0.92rem;
+  color: var(--text);
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 32px rgba(39, 74, 43, 0.22);
 }
 
 .scoreboard-status-dot {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   position: relative;
   color: inherit;
+}
+
+.scoreboard-status[data-state='online'] {
+  color: var(--text);
+}
+
+.scoreboard-status[data-state='offline'] {
+  color: #4c4c4c;
+}
+
+.scoreboard-status[data-state='error'] {
+  color: var(--py-flame);
 }
 
 .scoreboard-status[data-state='online'] .scoreboard-status-dot {
@@ -215,7 +231,7 @@
   border-radius: 50%;
   animation: scoreboard-pulse 1.5s infinite ease-in-out;
   background: currentColor;
-  opacity: 0.3;
+  opacity: 0.35;
 }
 
 @keyframes scoreboard-pulse {
@@ -352,6 +368,8 @@
 .scoreboard-groups {
   display: grid;
   gap: clamp(18px, 2.4vw, 28px);
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-items: stretch;
 }
 
 .scoreboard-group {
@@ -362,6 +380,7 @@
   border-radius: 18px;
   box-shadow: var(--shadow-soft);
   padding: 20px;
+  height: 100%;
 }
 
 .scoreboard-group h3 {
@@ -396,18 +415,18 @@
 }
 
 .scoreboard-table tbody tr:nth-child(even) {
-  background: #fffbe5;
+  background: rgba(87, 170, 39, 0.05);
 }
 
 .scoreboard-table tbody tr:nth-child(-n + 3)::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
   border-radius: 0 2px 2px 0;
-  background: var(--zl-yellow);
+  background: rgba(87, 170, 39, 0.18);
 }
 
 .scoreboard-table tbody td {
@@ -515,7 +534,6 @@
 
   .scoreboard-status {
     justify-self: center;
-    color: rgba(255, 255, 255, 0.9);
   }
 
   .scoreboard-button {
