@@ -582,7 +582,7 @@ body {
   top: 50%;
   left: 50%;
   height: var(--points-wheel-item-height);
-  width: calc(var(--points-wheel-width) - 16px);
+  width: calc(var(--points-wheel-width) - 4px);
   transform: translate(-50%, -50%);
   border-radius: 12px;
 }
