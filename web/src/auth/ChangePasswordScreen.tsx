@@ -150,7 +150,7 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin }: Pro
           </form>
         </div>
       </div>
-      <AppFooter className="auth-footer" />
+      <AppFooter className="app-footer--minimal auth-footer" />
     </div>
   );
 }

@@ -465,31 +465,24 @@
 
 .scoreboard-footer {
   margin-top: auto;
-  padding: 32px 24px 48px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  align-items: center;
-  text-align: center;
-  font-size: 0.9rem;
-  color: var(--text-muted);
+  width: 100%;
 }
 
 .scoreboard-footer .app-footer-content {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: clamp(4px, 1.8vw, 8px);
 }
 
 .scoreboard-footer .app-footer-logos {
   display: flex;
-  gap: 24px;
   align-items: center;
   justify-content: center;
+  gap: clamp(22px, 7vw, 56px);
 }
 
 .scoreboard-footer .app-footer-logos img {
-  width: 32px;
+  width: clamp(30px, 7vw, 42px);
   height: auto;
 }
 
