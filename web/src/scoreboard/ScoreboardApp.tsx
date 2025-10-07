@@ -429,221 +429,221 @@ function ScoreboardApp() {
     return Array.from(groups.values())
       .map((group) => {
         const rankedItems = [...group.items]
-          .sort(compareRankedResults)
-          .map((item, index) => ({ ...item, displayRank: index + 1 }));
-        const visibleItems = rankedItems.filter((item) => item.displayRank > 3);
-        return {
-          ...group,
-          items: rankedItems,
-          visibleItems,
-        };
-      })
-      .sort((a, b) => compareBrackets(a.category, a.sex, b.category, b.sex));
-  }, [ranked]);
+          .map((group) => {
+            const rankedItems = [...group.items]
+              .sort(compareRankedResults)
+              .map((item, index) => ({ ...item, displayRank: index + 1 }));
+            return {
+              ...group,
+              items: rankedItems,
+            };
+          })
+          .sort((a, b) => compareBrackets(a.category, a.sex, b.category, b.sex));
+      }, [ranked]);
 
-  const handleRefresh = useCallback(() => {
-    loadData();
-  }, [loadData]);
+    const handleRefresh = useCallback(() => {
+      loadData();
+    }, [loadData]);
 
-  const handleExport = useCallback(() => {
-    if (!groupedRanked.length || exporting) {
-      return;
-    }
+    const handleExport = useCallback(() => {
+      if (!groupedRanked.length || exporting) {
+        return;
+      }
 
-    try {
-      setExporting(true);
-      const workbook = XLSX.utils.book_new();
+      try {
+        setExporting(true);
+        const workbook = XLSX.utils.book_new();
 
-      groupedRanked.forEach((group) => {
-        const sheetName = formatCategoryLabel(group.category, group.sex);
-        const rows = [
-          ['#', 'Hlídka', 'Tým', 'Body', 'Body bez T'],
-          ...group.visibleItems.map((row) => {
-            const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
-            const fallbackCode = createFallbackPatrolCode(group.category, group.sex, displayRank);
-            return [
-              displayRank,
-              formatPatrolNumber(row.patrolCode, fallbackCode),
-              row.teamName,
-              row.totalPoints ?? '',
-              row.pointsNoT ?? '',
-            ];
-          }),
-        ];
-        if (rows.length === 1) {
-          rows.push(['—', '—', 'Žádné výsledky mimo první tři místa.', '', '']);
-        }
-        const worksheet = XLSX.utils.aoa_to_sheet(rows);
-        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName || '—');
-      });
+        groupedRanked.forEach((group) => {
+          const sheetName = formatCategoryLabel(group.category, group.sex);
+          const rows = [
+            ['#', 'Hlídka', 'Tým', 'Body', 'Body bez T'],
+            ...group.visibleItems.map((row) => {
+              const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
+              const fallbackCode = createFallbackPatrolCode(group.category, group.sex, displayRank);
+              return [
+                displayRank,
+                formatPatrolNumber(row.patrolCode, fallbackCode),
+                row.teamName,
+                row.totalPoints ?? '',
+                row.pointsNoT ?? '',
+              ];
+            }),
+          ];
+          if (rows.length === 1) {
+            rows.push(['—', '—', 'Žádné výsledky v této kategorii.', '', '']);
+          }
+          const worksheet = XLSX.utils.aoa_to_sheet(rows);
+          XLSX.utils.book_append_sheet(workbook, worksheet, sheetName || '—');
+        });
 
-      const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
-      const rawName = eventName || 'vysledky';
-      const safeName = rawName
-        .trim()
-        .replace(/[\\/?%*:|"<>]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .replace(/ /g, '-');
-      const fileName = `${safeName || 'vysledky'}-${timestamp}.xlsx`;
+        const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
+        const rawName = eventName || 'vysledky';
+        const safeName = rawName
+          .trim()
+          .replace(/[\\/?%*:|"<>]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .replace(/ /g, '-');
+        const fileName = `${safeName || 'vysledky'}-${timestamp}.xlsx`;
 
-      XLSX.writeFile(workbook, fileName);
-    } catch (err) {
-      console.error('Failed to export scoreboard data', err);
-    } finally {
-      setExporting(false);
-    }
-  }, [eventName, exporting, groupedRanked]);
+        XLSX.writeFile(workbook, fileName);
+      } catch (err) {
+        console.error('Failed to export scoreboard data', err);
+      } finally {
+        setExporting(false);
+      }
+    }, [eventName, exporting, groupedRanked]);
 
-  const eventLabel = eventName || 'Název závodu není k dispozici';
-  const lastUpdatedLabel = lastUpdatedAt
-    ? lastUpdatedAt.toLocaleTimeString('cs-CZ', {
+    const eventLabel = eventName || 'Název závodu není k dispozici';
+    const lastUpdatedLabel = lastUpdatedAt
+      ? lastUpdatedAt.toLocaleTimeString('cs-CZ', {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
       })
-    : 'Čekám na data';
-  const lastUpdatedHint = refreshing
-    ? 'Načítám čerstvá data…'
-    : lastUpdatedAt
-    ? 'Automatická aktualizace každých 30 s.'
-    : 'Zobrazí se po načtení výsledků.';
+      : 'Čekám na data';
+    const lastUpdatedHint = refreshing
+      ? 'Načítám čerstvá data…'
+      : lastUpdatedAt
+        ? 'Automatická aktualizace každých 30 s.'
+        : 'Zobrazí se po načtení výsledků.';
 
-  const statusState = error ? 'error' : isOnline ? 'online' : 'offline';
-  const statusLabel = error ? 'Chyba synchronizace' : isOnline ? 'Online' : 'Offline';
+    const statusState = error ? 'error' : isOnline ? 'online' : 'offline';
+    const statusLabel = error ? 'Chyba synchronizace' : isOnline ? 'Online' : 'Offline';
 
-  return (
-    <div className="scoreboard-app">
-      <header className="scoreboard-hero">
-        <div className="scoreboard-hero-top">
-          <div className="scoreboard-hero-brand">
-            <a
-              className="scoreboard-hero-logo"
-              href="https://zelenaliga.cz"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <img src={zelenaLigaLogo} alt="Logo Setonův závod" />
-            </a>
-            <div>
-              <span className="scoreboard-hero-eyebrow">Setonův závod</span>
-              <h1>Výsledkový přehled</h1>
-              <p className="scoreboard-hero-description">
-                Živá tabulka výsledků Setonova závodu s automatickým obnovováním dat.
-              </p>
-            </div>
-          </div>
-          <div className="scoreboard-hero-actions">
-            <div className="scoreboard-action-buttons">
-              <button
-                type="button"
-                className="scoreboard-button scoreboard-button--ghost"
-                onClick={handleExport}
-                disabled={!groupedRanked.length || loading || exporting}
+    return (
+      <div className="scoreboard-app">
+        <header className="scoreboard-hero">
+          <div className="scoreboard-hero-top">
+            <div className="scoreboard-hero-brand">
+              <a
+                className="scoreboard-hero-logo"
+                href="https://zelenaliga.cz"
+                target="_blank"
+                rel="noreferrer"
               >
-                {exporting ? 'Exportuji…' : 'Exportovat výsledky'}
-              </button>
-              <button
-                type="button"
-                className="scoreboard-button scoreboard-button--primary"
-                onClick={handleRefresh}
-                disabled={refreshing}
-              >
-                {refreshing ? 'Aktualizuji…' : 'Aktualizovat'}
-              </button>
+                <img src={zelenaLigaLogo} alt="Logo Setonův závod" />
+              </a>
+              <div>
+                <span className="scoreboard-hero-eyebrow">Setonův závod</span>
+                <h1>Výsledkový přehled</h1>
+                <p className="scoreboard-hero-description">
+                  Živá tabulka výsledků Setonova závodu s automatickým obnovováním dat.
+                </p>
+              </div>
             </div>
-            <div className="scoreboard-status" data-state={statusState}>
-              <span className="scoreboard-status-dot" aria-hidden="true" />
-              <span>{statusLabel}</span>
+            <div className="scoreboard-hero-actions">
+              <div className="scoreboard-action-buttons">
+                <button
+                  type="button"
+                  className="scoreboard-button scoreboard-button--ghost"
+                  onClick={handleExport}
+                  disabled={!groupedRanked.length || loading || exporting}
+                >
+                  {exporting ? 'Exportuji…' : 'Exportovat výsledky'}
+                </button>
+                <button
+                  type="button"
+                  className="scoreboard-button scoreboard-button--primary"
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                >
+                  {refreshing ? 'Aktualizuji…' : 'Aktualizovat'}
+                </button>
+              </div>
+              <div className="scoreboard-status" data-state={statusState}>
+                <span className="scoreboard-status-dot" aria-hidden="true" />
+                <span>{statusLabel}</span>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="scoreboard-hero-meta">
-          <div className="scoreboard-summary">
-            <span className="scoreboard-summary-label">Závod</span>
-            <strong>{eventLabel}</strong>
-            <span className="scoreboard-summary-sub">
-              Data pochází z pohledu Supabase <code>scoreboard_view</code>.
-            </span>
+          <div className="scoreboard-hero-meta">
+            <div className="scoreboard-summary">
+              <span className="scoreboard-summary-label">Závod</span>
+              <strong>{eventLabel}</strong>
+              <span className="scoreboard-summary-sub">
+                Data pochází z pohledu Supabase <code>scoreboard_view</code>.
+              </span>
+            </div>
+            <div className="scoreboard-summary">
+              <span className="scoreboard-summary-label">Poslední aktualizace</span>
+              <strong>{lastUpdatedLabel}</strong>
+              <span className="scoreboard-summary-sub">{lastUpdatedHint}</span>
+            </div>
           </div>
-          <div className="scoreboard-summary">
-            <span className="scoreboard-summary-label">Poslední aktualizace</span>
-            <strong>{lastUpdatedLabel}</strong>
-            <span className="scoreboard-summary-sub">{lastUpdatedHint}</span>
-          </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="scoreboard-content">
-        {error && <div className="scoreboard-error">{error}</div>}
+        <main className="scoreboard-content">
+          {error && <div className="scoreboard-error">{error}</div>}
 
-        <section className="scoreboard-section">
-          <div className="scoreboard-section-header">
-            <h2>Pořadí podle kategorií</h2>
-            {groupedRanked.length ? (
-              <p className="scoreboard-section-hint">
-                Přehled je seřazen podle předem definovaných kategorií závodu.
-              </p>
-            ) : null}
-          </div>
-          {loading && !groupedRanked.length ? (
-            <div className="scoreboard-placeholder">Načítám data…</div>
-          ) : groupedRanked.length ? (
-            <div className="scoreboard-groups">
-              {groupedRanked.map((group) => {
-                const visibleRows = group.visibleItems;
-                return (
-                  <div key={group.key} className="scoreboard-group">
-                    <h3>{formatCategoryLabel(group.category, group.sex)}</h3>
-                    <table className="scoreboard-table scoreboard-table--compact">
-                      <thead>
-                        <tr>
-                          <th>#</th>
-                          <th>Hlídka</th>
-                          <th>Body</th>
-                          <th>Body bez T</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {visibleRows.length ? (
-                          visibleRows.map((row) => {
-                            const displayRank =
-                              row.displayRank > 0 ? row.displayRank : row.rankInBracket;
-                            const fallbackCode = createFallbackPatrolCode(
-                              group.category,
-                              group.sex,
-                              displayRank,
-                            );
-                            return (
-                              <tr key={row.patrolId}>
-                                <td>{displayRank}</td>
-                                <td className="scoreboard-team">
-                                  <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
-                                </td>
-                                <td>{formatPoints(row.totalPoints)}</td>
-                                <td>{formatPoints(row.pointsNoT)}</td>
-                              </tr>
-                            );
-                          })
-                        ) : (
-                          <tr className="scoreboard-table-empty">
-                            <td colSpan={4}>Žádné výsledky mimo první tři místa.</td>
+          <section className="scoreboard-section">
+            <div className="scoreboard-section-header">
+              <h2>Pořadí podle kategorií</h2>
+              {groupedRanked.length ? (
+                <p className="scoreboard-section-hint">
+                  Přehled je seřazen podle předem definovaných kategorií závodu.
+                </p>
+              ) : null}
+            </div>
+            {loading && !groupedRanked.length ? (
+              <div className="scoreboard-placeholder">Načítám data…</div>
+            ) : groupedRanked.length ? (
+              <div className="scoreboard-groups">
+                {groupedRanked.map((group) => {
+                  const displayRows = group.items;
+                  return (
+                    <div key={group.key} className="scoreboard-group">
+                      <h3>{formatCategoryLabel(group.category, group.sex)}</h3>
+                      <table className="scoreboard-table scoreboard-table--compact">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Hlídka</th>
+                            <th>Body</th>
+                            <th>Body bez T</th>
                           </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="scoreboard-placeholder">Zatím nejsou žádné výsledky.</div>
-          )}
-        </section>
-      </main>
-      <AppFooter variant="minimal" className="scoreboard-footer" />
-    </div>
-  );
-}
+                        </thead>
+                        <tbody>
+                          {displayRows.length ? (
+                            displayRows.map((row) => {
+                              const displayRank =
+                                row.displayRank > 0 ? row.displayRank : row.rankInBracket;
+                              const fallbackCode = createFallbackPatrolCode(
+                                group.category,
+                                group.sex,
+                                displayRank,
+                              );
+                              return (
+                                <tr key={row.patrolId}>
+                                  <td>{displayRank}</td>
+                                  <td className="scoreboard-team">
+                                    <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
+                                  </td>
+                                  <td>{formatPoints(row.totalPoints)}</td>
+                                  <td>{formatPoints(row.pointsNoT)}</td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            <tr className="scoreboard-table-empty">
+                              <td colSpan={4}>Žádné výsledky v této kategorii.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="scoreboard-placeholder">Zatím nejsou žádné výsledky.</div>
+            )}
+          </section>
+        </main>
+        <AppFooter variant="minimal" className="scoreboard-footer" />
+      </div>
+    );
+  }
 
 export default ScoreboardApp;
