@@ -4,10 +4,11 @@ import pionyrLogo from '../assets/pionyr1_vert_rgb.png';
 
 interface AppFooterProps {
   className?: string;
+  variant?: 'minimal' | 'dark';
 }
 
-export default function AppFooter({ className }: AppFooterProps) {
-  const classes = ['app-footer'];
+export default function AppFooter({ className, variant = 'minimal' }: AppFooterProps) {
+  const classes = ['app-footer', `app-footer--${variant}`];
 
   if (className) {
     classes.push(className);

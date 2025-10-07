@@ -1,24 +1,19 @@
 .app-footer {
   margin-top: auto;
   width: 100%;
-  padding: 32px 24px 48px;
+  padding: clamp(32px, 5vw, 48px) clamp(20px, 6vw, 32px) clamp(48px, 7vw, 72px);
   text-align: center;
   font-size: 0.9rem;
-  color: var(--text-muted);
-  background: var(--surface);
-  border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: clamp(16px, 4vw, 24px);
   align-items: center;
 }
 
 .app-footer--minimal {
+  color: var(--text-muted);
   background: transparent;
   border-top: none;
-  padding: clamp(32px, 5vw, 48px) clamp(20px, 6vw, 32px) clamp(48px, 7vw, 72px);
-  gap: clamp(16px, 4vw, 24px);
-  color: var(--text-muted);
 }
 
 .app-footer--minimal .app-footer-content {
@@ -31,6 +26,25 @@
 
 .app-footer--minimal .app-footer-logos img {
   width: clamp(30px, 7vw, 42px);
+}
+
+.app-footer--dark {
+  color: rgba(245, 255, 242, 0.88);
+  background: transparent;
+  border-top: none;
+}
+
+.app-footer--dark .app-footer-content {
+  gap: clamp(4px, 1.8vw, 8px);
+}
+
+.app-footer--dark .app-footer-logos {
+  gap: clamp(22px, 7vw, 56px);
+}
+
+.app-footer--dark .app-footer-logos img {
+  width: clamp(30px, 7vw, 42px);
+  filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.2));
 }
 
 .app-footer-content {
@@ -46,13 +60,13 @@
 
 .app-footer-logos {
   display: flex;
-  gap: clamp(18px, 6vw, 80px);
+  gap: clamp(22px, 7vw, 56px);
   align-items: center;
   justify-content: center;
 }
 
 .app-footer-logos img {
-  width: clamp(28px, 4vw, 32px);
+  width: clamp(30px, 7vw, 42px);
   height: auto;
   display: block;
   transition: transform 0.2s ease;
