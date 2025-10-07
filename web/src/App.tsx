@@ -26,6 +26,8 @@ import { appendScanRecord } from './storage/scanHistory';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
 import { ROUTE_PREFIX, SCOREBOARD_ROUTE_PREFIX } from './routing';
+import competitionRulesPdf from './assets/pravidla-souteze.pdf';
+import stationRulesPdf from './assets/pravidla-stanovist.pdf';
 
 
 interface Patrol {
@@ -1088,19 +1090,19 @@ function StationApp({
       const summary = patrolById.get(nextTicket.patrolId);
       const ticketPatrol: Patrol = summary
         ? {
-            id: summary.id,
-            team_name: summary.team_name,
-            category: summary.category,
-            sex: summary.sex,
-            patrol_code: summary.patrol_code || nextTicket.patrolCode || null,
-          }
+          id: summary.id,
+          team_name: summary.team_name,
+          category: summary.category,
+          sex: summary.sex,
+          patrol_code: summary.patrol_code || nextTicket.patrolCode || null,
+        }
         : {
-            id: nextTicket.patrolId,
-            team_name: nextTicket.teamName,
-            category: nextTicket.category,
-            sex: nextTicket.sex,
-            patrol_code: nextTicket.patrolCode || null,
-          };
+          id: nextTicket.patrolId,
+          team_name: nextTicket.teamName,
+          category: nextTicket.category,
+          sex: nextTicket.sex,
+          patrol_code: nextTicket.patrolCode || null,
+        };
 
       if (!ticketPatrol.team_name) {
         pushAlert('Hlídku se nepodařilo otevřít, není v manifestu.');
@@ -2032,6 +2034,27 @@ function StationApp({
                 Odhlásit se
               </button>
             </div>
+            <div className="hero-panel hero-panel--rules">
+              <span className="hero-panel-label">Pravidla</span>
+              <div className="hero-panel-links">
+                <a
+                  className="hero-panel-link"
+                  href={competitionRulesPdf}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Pravidla soutěže
+                </a>
+                <a
+                  className="hero-panel-link"
+                  href={stationRulesPdf}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Pravidla stanovišť
+                </a>
+              </div>
+            </div>
           </div>
           {alerts.length ? (
             <div className="hero-alerts">
@@ -2255,8 +2278,8 @@ function StationApp({
                   {stationCode === 'T'
                     ? 'Zapiš čas doběhu, zkontroluj terčové odpovědi a potvrď uložení.'
                     : useTargetScoring
-                        ? 'Zadej odpovědi a potvrď uložení.'
-                        : 'Vyplň body a potvrď uložení.'}
+                      ? 'Zadej odpovědi a potvrď uložení.'
+                      : 'Vyplň body a potvrď uložení.'}
                 </p>
               </div>
               <button type="button" className="ghost" onClick={resetForm}>
@@ -2471,12 +2494,12 @@ function StationApp({
                     <p className="card-hint">Terčový úsek se hodnotí automaticky podle zadaných odpovědí.</p>
                     <label>
                       Odpovědi hlídky ({totalAnswers || '–'})
-                    <input
-                      ref={answersInputRef}
-                      value={answersInput}
-                      onChange={(event) => setAnswersInput(event.target.value.toUpperCase())}
-                      placeholder="např. A B C D …"
-                    />
+                      <input
+                        ref={answersInputRef}
+                        value={answersInput}
+                        onChange={(event) => setAnswersInput(event.target.value.toUpperCase())}
+                        placeholder="např. A B C D …"
+                      />
                     </label>
                     <p className="auto-score">Správně: {autoScore.correct} / {autoScore.total}</p>
                     {answersError ? <p className="error-text">{answersError}</p> : null}
