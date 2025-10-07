@@ -109,6 +109,7 @@ body {
   align-items: center;
   text-align: center;
   color: var(--text);
+  overflow: clip;
 }
 
 .hero-panel-label {
@@ -224,7 +225,7 @@ body {
   text-decoration: none;
   letter-spacing: 0.02em;
   border: 1px solid rgba(255, 216, 79, 0.55);
-  box-shadow: 0 20px 46px rgba(52, 100, 60, 0.22);
+  box-shadow: 0 16px 34px rgba(52, 100, 60, 0.18);
   transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, color 0.2s ease,
     border-color 0.2s ease;
 }
@@ -241,11 +242,12 @@ body {
   color: var(--text);
   border-color: rgba(255, 204, 51, 0.7);
   transform: translateY(-1px) scale(1.01);
-  box-shadow: var(--focus-ring), 0 26px 50px rgba(52, 100, 60, 0.25);
+  box-shadow: 0 22px 42px rgba(52, 100, 60, 0.22);
 }
 
 .hero-panel-link:focus-visible {
   outline: none;
+  border-color: var(--py-blue);
 }
 
 .hero-panel-link:hover::after,
@@ -834,6 +836,15 @@ body {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  overflow: clip;
+}
+
+@supports not (overflow: clip) {
+  .hero-panel,
+  .card {
+    overflow: hidden;
+    -webkit-mask-image: -webkit-radial-gradient(white, black);
+  }
 }
 
 .card-header {
@@ -876,24 +887,25 @@ button {
   text-transform: uppercase;
   background: var(--zl-yellow);
   color: var(--text);
-  box-shadow: 0 18px 32px rgba(255, 216, 79, 0.3);
+  box-shadow: 0 12px 26px rgba(255, 216, 79, 0.22);
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
 button:hover {
   transform: translateY(-1px) scale(1.01);
   background: var(--zl-yellow-600);
-  box-shadow: 0 22px 36px rgba(255, 204, 51, 0.34);
+  box-shadow: 0 16px 30px rgba(255, 204, 51, 0.26);
 }
 
 button:focus-visible {
   outline: none;
-  box-shadow: var(--focus-ring);
+  box-shadow: none;
+  border-color: var(--py-blue);
 }
 
 button:active {
   transform: translateY(1px);
-  box-shadow: 0 4px 12px rgba(255, 216, 79, 0.24);
+  box-shadow: 0 6px 16px rgba(255, 216, 79, 0.18);
 }
 
 button:disabled {
@@ -919,13 +931,13 @@ button.primary {
 button.ghost {
   background: rgba(255, 216, 79, 0.16);
   color: var(--text);
-  border-color: rgba(255, 216, 79, 0.55);
-  box-shadow: 0 16px 30px rgba(255, 216, 79, 0.18);
+  border-color: rgba(255, 216, 79, 0.48);
+  box-shadow: 0 10px 22px rgba(255, 216, 79, 0.16);
 }
 
 button.ghost:hover {
   background: rgba(255, 204, 51, 0.28);
-  border-color: rgba(255, 204, 51, 0.7);
+  border-color: rgba(255, 204, 51, 0.62);
 }
 
 button:disabled {
