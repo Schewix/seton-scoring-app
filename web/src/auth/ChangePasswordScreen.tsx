@@ -60,14 +60,17 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin }: Pro
       <div className="auth-shell-content">
         <div className="auth-layout">
           <div className="auth-hero">
-            <a
-              className="auth-hero-logo"
-              href="https://zelenaliga.cz"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <img src={zelenaLigaLogo} alt="Logo Setonův závod" />
-            </a>
+            <div className="auth-hero-brand">
+              <a
+                className="auth-hero-logo"
+                href="https://zelenaliga.cz"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <img src={zelenaLigaLogo} alt="Logo SPTO Brno" />
+              </a>
+              <span className="auth-hero-caption">SPTO Brno</span>
+            </div>
             <div className="auth-hero-copy">
               <span className="auth-hero-eyebrow">Setonův závod</span>
               <h1>Obnova přístupu</h1>
@@ -86,29 +89,50 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin }: Pro
               Účet <strong>{email}</strong> vyžaduje nastavení nového hesla.
             </p>
 
-            <label className="auth-field">
-              <span>Nové heslo</span>
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(event) => setNewPassword(event.target.value)}
-                required
-              />
-            </label>
+            <div className="auth-field-group">
+              <label className="auth-field" htmlFor="change-password-new">
+                <span>Nové heslo</span>
+                <input
+                  id="change-password-new"
+                  type="password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(event) => {
+                    setNewPassword(event.target.value);
+                    setError('');
+                  }}
+                  required
+                  aria-invalid={Boolean(error) ? 'true' : 'false'}
+                />
+              </label>
+            </div>
 
-            <label className="auth-field">
-              <span>Potvrzení hesla</span>
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                required
-              />
-            </label>
+            <div className="auth-field-group">
+              <label className="auth-field" htmlFor="change-password-confirm">
+                <span>Potvrzení hesla</span>
+                <input
+                  id="change-password-confirm"
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(event) => {
+                    setConfirmPassword(event.target.value);
+                    setError('');
+                  }}
+                  required
+                  aria-invalid={Boolean(error) ? 'true' : 'false'}
+                />
+              </label>
+            </div>
 
-            {error ? <p className="auth-error">{error}</p> : null}
+            {error ? (
+              <div className="auth-alert auth-alert--error" role="alert">
+                <span className="auth-alert-icon" aria-hidden="true">
+                  !
+                </span>
+                <span>{error}</span>
+              </div>
+            ) : null}
 
             <button type="submit" className="auth-primary" disabled={loading}>
               {loading ? 'Ukládám…' : 'Nastavit heslo'}

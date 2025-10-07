@@ -56,7 +56,9 @@ const OfflineHealth: FC<OfflineHealthProps> = ({
     syncClass = 'ok';
   }
 
-  const networkClass = isOnline ? 'ok' : 'error';
+  const networkClass = isOnline ? 'online' : 'offline';
+  const queueDotClass = failedCount > 0 ? 'warn' : pendingCount > 0 ? 'online' : 'sync';
+  const syncDotClass = syncClass === 'ok' ? 'sync' : syncClass === 'info' ? 'online' : 'warn';
 
   return (
     <section className="offline-health" aria-label="Stav offline fronty">
@@ -68,10 +70,12 @@ const OfflineHealth: FC<OfflineHealthProps> = ({
         </span>
       </div>
       <div className="offline-health-row">
+        <span className={`offline-health-dot ${queueDotClass}`} aria-hidden="true" />
         <span className="offline-health-label">Fronta:</span>
         <span className={`offline-health-value ${queueClass}`}>{queueLabel}</span>
       </div>
       <div className="offline-health-row">
+        <span className={`offline-health-dot ${syncDotClass}`} aria-hidden="true" />
         <span className="offline-health-label">Synchronizace:</span>
         <span className={`offline-health-value ${syncClass}`}>{syncLabel}</span>
       </div>

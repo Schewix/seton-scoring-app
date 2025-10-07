@@ -242,11 +242,23 @@ function ScoreboardApp() {
     return normaliseText((import.meta.env.VITE_EVENT_NAME as string | undefined) ?? null) ?? '';
   });
   const [exporting, setExporting] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
@@ -488,6 +500,9 @@ function ScoreboardApp() {
     ? 'Automatická aktualizace každých 30 s.'
     : 'Zobrazí se po načtení výsledků.';
 
+  const statusState = error ? 'error' : isOnline ? 'online' : 'offline';
+  const statusLabel = error ? 'Chyba synchronizace' : isOnline ? 'Online' : 'Offline';
+
   return (
     <div className="scoreboard-app">
       <header className="scoreboard-hero">
@@ -510,22 +525,28 @@ function ScoreboardApp() {
             </div>
           </div>
           <div className="scoreboard-hero-actions">
-            <button
-              type="button"
-              className="scoreboard-button scoreboard-button--ghost"
-              onClick={handleExport}
-              disabled={!groupedRanked.length || loading || exporting}
-            >
-              {exporting ? 'Exportuji…' : 'Exportovat Excel'}
-            </button>
-            <button
-              type="button"
-              className="scoreboard-button scoreboard-button--primary"
-              onClick={handleRefresh}
-              disabled={refreshing}
-            >
-              {refreshing ? 'Aktualizuji…' : 'Aktualizovat'}
-            </button>
+            <div className="scoreboard-action-buttons">
+              <button
+                type="button"
+                className="scoreboard-button scoreboard-button--ghost"
+                onClick={handleExport}
+                disabled={!groupedRanked.length || loading || exporting}
+              >
+                {exporting ? 'Exportuji…' : 'Exportovat Excel'}
+              </button>
+              <button
+                type="button"
+                className="scoreboard-button scoreboard-button--primary"
+                onClick={handleRefresh}
+                disabled={refreshing}
+              >
+                {refreshing ? 'Aktualizuji…' : 'Aktualizovat'}
+              </button>
+            </div>
+            <div className="scoreboard-status" data-state={statusState}>
+              <span className="scoreboard-status-dot" aria-hidden="true" />
+              <span>{statusLabel}</span>
+            </div>
           </div>
         </div>
         <div className="scoreboard-hero-meta">
