@@ -81,6 +81,22 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.hero-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hero-alert {
+  background: rgba(0, 85, 164, 0.12);
+  color: #f5fff2;
+  padding: 12px 16px;
+  border-radius: 18px;
+  font-weight: 600;
+  border: 1px solid rgba(0, 85, 164, 0.24);
+  box-shadow: 0 18px 38px rgba(0, 85, 164, 0.22);
+}
+
 .hero-panel {
   display: flex;
   flex-direction: column;
@@ -802,22 +818,6 @@ body {
   max-width: 960px;
   width: 100%;
   margin: -72px auto 0;
-}
-
-.alerts {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.alert {
-  background: rgba(0, 85, 164, 0.08);
-  color: var(--py-blue);
-  padding: 12px 16px;
-  border-radius: 18px;
-  font-weight: 600;
-  border: 1px solid rgba(0, 85, 164, 0.18);
-  box-shadow: 0 18px 38px rgba(0, 85, 164, 0.12);
 }
 
 .card {
