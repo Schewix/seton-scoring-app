@@ -486,6 +486,7 @@ export default function PatrolCodeInput({
         role="group"
         aria-labelledby={labelId}
       >
+        <div className="picker-highlight" aria-hidden="true" />
         <WheelColumn
           options={wheelOptionsCategory}
           selected={selectedCategory}
