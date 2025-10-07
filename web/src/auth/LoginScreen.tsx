@@ -99,7 +99,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
   const heroTitle = requirePinOnly ? 'Stanoviště' : 'Rozhodčí';
   const heroDescription = requirePinOnly
     ? 'Odemkni uložené stanoviště Setonova závodu pomocí PINu a pokračuj i bez připojení.'
-    : 'Tady spravuješ průběh závodu na svém stanovišti. Zapisuj výsledky hlídek, kontroluj průchody a nech aplikaci, aby se o zbytek postarala. Když není signál, vše se uloží a po připojení se automaticky odešle.';
+    : null;
   const descriptionText = requirePinOnly
     ? 'Zadej PIN pro odemknutí uloženého stanoviště.'
     : 'Přihlašovací údaje získáš od hlavního rozhodčího.';
@@ -161,7 +161,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
             <div className="auth-hero-copy">
               <span className="auth-hero-eyebrow">Setonův závod</span>
               <h1>{heroTitle}</h1>
-              <p>{heroDescription}</p>
+              {heroDescription && <p>{heroDescription}</p>}
             </div>
             <ul className="auth-hero-list">
               <li>Přihlášení pro rozhodčí stanovišť</li>
