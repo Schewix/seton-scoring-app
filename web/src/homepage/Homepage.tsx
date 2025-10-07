@@ -15,7 +15,7 @@ const EVENTS: EventLink[] = [
     slug: 'setonuv-zavod',
     name: 'Setonův závod',
     description:
-      'Tábornická soutěž, která spojuje všechny naše oddíly. Na trati se potkávají hlídky všech věkových kategorií a prověřují se ve znalostech i dovednostech, které běžně používáme v oddílech. Stejně jako vždy – mapa, buzola, uzly, první pomoc, týmová spolupráce. Každý rok trochu jinak, ale s tím samým duchem.',
+      'Tábornická soutěž pro všechny oddíly SPTO. Hlídky prověřují dovednosti z oddílové praxe – mapa, buzola, uzly, první pomoc, spolupráce.',
     href: '/setonuv-zavod',
     status: 'available',
   },
