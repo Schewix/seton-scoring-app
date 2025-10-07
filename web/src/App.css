@@ -535,6 +535,9 @@ body {
   background: var(--surface);
   box-shadow: var(--shadow-soft);
   --points-wheel-item-height: 48px;
+  --points-wheel-width: 88px;
+  width: var(--points-wheel-width);
+  margin-inline: auto;
 }
 
 .picker-highlight {
@@ -559,10 +562,10 @@ body {
 
 .points-input__wheel-group .picker-highlight {
   top: 50%;
-  left: 8px;
-  right: 8px;
+  left: 50%;
   height: var(--points-wheel-item-height);
-  transform: translateY(-50%);
+  width: calc(var(--points-wheel-width) - 16px);
+  transform: translate(-50%, -50%);
   border-radius: 12px;
 }
 
@@ -606,8 +609,10 @@ body {
     (var(--points-wheel-item-height) * var(--points-wheel-visible-count) - var(--points-wheel-item-height)) /
       2
   );
-  min-width: 80px;
-  max-width: 104px;
+  flex: 0 0 var(--points-wheel-width);
+  width: var(--points-wheel-width);
+  min-width: var(--points-wheel-width);
+  max-width: var(--points-wheel-width);
   height: calc(var(--points-wheel-item-height) * var(--points-wheel-visible-count) + 16px);
   min-height: calc(var(--points-wheel-item-height) * var(--points-wheel-visible-count) + 16px);
   max-height: calc(var(--points-wheel-item-height) * var(--points-wheel-visible-count) + 16px);
