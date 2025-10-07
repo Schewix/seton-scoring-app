@@ -208,6 +208,17 @@ body {
   gap: 16px;
 }
 
+.hero-panel--rules {
+  gap: 16px;
+}
+
+.hero-panel--rules .hero-panel-links {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
 .hero-panel-link {
   display: inline-flex;
   align-items: center;
