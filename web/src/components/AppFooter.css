@@ -1,26 +1,44 @@
 .app-footer {
   margin-top: auto;
   width: 100%;
-  padding: 24px 16px;
+  padding: 32px 24px 48px;
   text-align: center;
   font-size: 0.9rem;
-  color: rgba(11, 83, 70, 0.7);
-  background: rgba(255, 255, 255, 0.72);
-  border-top: 1px solid rgba(11, 83, 70, 0.12);
-  backdrop-filter: blur(6px);
+  color: var(--text-muted);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: center;
 }
 
-.app-footer--dark {
-  background: rgba(10, 78, 56, 0.85);
-  color: rgba(255, 255, 255, 0.82);
-  border-top-color: rgba(255, 255, 255, 0.18);
+.app-footer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.5;
 }
 
-.auth-footer {
-  background: rgba(255, 255, 255, 0.6);
-  border-top-color: rgba(11, 83, 70, 0.1);
+.app-footer-content p {
+  margin: 0;
 }
 
-.scoreboard-footer {
-  background: rgba(255, 255, 255, 0.85);
+.app-footer-logos {
+  display: flex;
+  gap: clamp(18px, 6vw, 80px);
+  align-items: center;
+  justify-content: center;
+}
+
+.app-footer-logos img {
+  width: clamp(28px, 4vw, 32px);
+  height: auto;
+  display: block;
+  transition: transform 0.2s ease;
+}
+
+.app-footer-logos a:hover img,
+.app-footer-logos a:focus-visible img {
+  transform: translateY(-2px);
 }
