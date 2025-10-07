@@ -2030,20 +2030,19 @@ function StationApp({
               </button>
             </div>
           </div>
+          {alerts.length ? (
+            <div className="hero-alerts">
+              {alerts.map((msg, idx) => (
+                <div key={idx} className="hero-alert">
+                  {msg}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </header>
 
       <main className="content">
-        {alerts.length ? (
-          <div className="alerts">
-            {alerts.map((msg, idx) => (
-              <div key={idx} className="alert">
-                {msg}
-              </div>
-            ))}
-          </div>
-        ) : null}
-
         <>
           {isTargetStation ? (
             <section className="card answers-card">
