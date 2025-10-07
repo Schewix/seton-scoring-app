@@ -1816,6 +1816,28 @@ textarea {
   transform: translateX(2px);
 }
 
+.auth-footer {
+  width: 100%;
+}
+
+.auth-footer .app-footer-content {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(4px, 1.8vw, 8px);
+}
+
+.auth-footer .app-footer-logos {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(22px, 7vw, 56px);
+}
+
+.auth-footer .app-footer-logos img {
+  width: clamp(30px, 7vw, 42px);
+  height: auto;
+}
+
 .auth-card {
   background: var(--surface-alt);
   border-radius: clamp(1.5rem, 4vw, 1.75rem);
