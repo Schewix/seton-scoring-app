@@ -99,7 +99,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
   const heroTitle = requirePinOnly ? 'Stanoviště' : 'Rozhodčí';
   const heroDescription = requirePinOnly
     ? 'Odemkni uložené stanoviště Setonova závodu pomocí PINu a pokračuj i bez připojení.'
-    : 'Spravuj průběh Setonova závodu, výsledky a offline frontu přímo ze stanoviště.';
+    : 'Tady spravuješ svoje stanoviště, zapisuješ body a průběh hlídek. Aplikace funguje i bez signálu a po připojení vše sama synchronizuje.';
   const descriptionText = requirePinOnly
     ? 'Zadej PIN pro odemknutí uloženého stanoviště.'
     : 'Přihlašovací údaje získáš od hlavního rozhodčího.';
@@ -164,9 +164,9 @@ export default function LoginScreen({ requirePinOnly }: Props) {
               <p>{heroDescription}</p>
             </div>
             <ul className="auth-hero-list">
-              <li>Bezpečné přihlášení pro rozhodčí</li>
-              <li>Offline režim se synchronizací fronty</li>
-              <li>Rychlý export výsledků do XLSX</li>
+              <li>Přihlášení pro rozhodčí stanovišť</li>
+              <li>Offline režim se synchronizací výsledků</li>
+              <li>Export přehledů do tabulek</li>
             </ul>
             <a className="auth-hero-link" href={SCOREBOARD_ROUTE_PREFIX}>
               Zobrazit výsledky Setonova závodu
