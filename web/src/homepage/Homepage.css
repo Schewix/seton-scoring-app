@@ -246,11 +246,9 @@
 
 .homepage-footer-logos {
   display: flex;
-  gap: clamp(16px, 6vw, 96px);
-  align-items: center;
-  justify-content: space-between;
-  width: min(320px, 80%);
-  padding: 0 clamp(8px, 4vw, 16px);
+  gap: clamp(16px, 4vw, 40px);
+  align-items: flex-end;
+  justify-content: center;
 }
 
 .homepage-footer-logos img {
