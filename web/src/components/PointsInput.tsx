@@ -196,7 +196,7 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
 
   const queueSnapHaptic = useCallback(
     (delay = SNAP_COMPLETION_DELAY_MS) => {
-      if (typeof window === 'undefined') {
+      if (prefersReducedMotion || typeof window === 'undefined') {
         return;
       }
       if (pendingSnapHapticRef.current !== null) {
@@ -207,7 +207,7 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
         triggerHaptic('medium');
       }, delay);
     },
-    [],
+    [prefersReducedMotion],
   );
 
   const scrollToOption = useCallback(
@@ -227,22 +227,24 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
     const optionHeight = optionNode.offsetHeight;
     const targetScrollTop = optionOffsetTop - wheelHeight / 2 + optionHeight / 2;
 
+    const effectiveBehavior = prefersReducedMotion ? 'auto' : behavior;
+
     if (!options?.skipProgrammaticFlag) {
       programmaticScrollRef.current = true;
     }
     if (typeof wheel.scrollTo === 'function') {
-      wheel.scrollTo({ top: targetScrollTop, behavior });
+      wheel.scrollTo({ top: targetScrollTop, behavior: effectiveBehavior });
     } else {
       wheel.scrollTop = targetScrollTop;
     }
     lastIndexRef.current = index;
-    if (behavior === 'auto' && !options?.skipProgrammaticFlag) {
+    if (effectiveBehavior === 'auto' && !options?.skipProgrammaticFlag) {
       programmaticScrollRef.current = false;
     }
-    if (options?.triggerSnapHaptic) {
+    if (options?.triggerSnapHaptic && !prefersReducedMotion) {
       queueSnapHaptic();
     }
-  }, [queueSnapHaptic]);
+  }, [prefersReducedMotion, queueSnapHaptic]);
 
   const handleSelect = useCallback(
     (option: PointsOption, behavior: ScrollBehavior = 'smooth') => {
@@ -269,9 +271,11 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
           optionRefs.current[selectedIndex]?.focus({ preventScroll: true });
         }
       }
-      triggerHaptic('selection');
+      if (!prefersReducedMotion) {
+        triggerHaptic('selection');
+      }
     },
-    [onChange, options, scrollToOption, selectedOption],
+    [onChange, options, prefersReducedMotion, scrollToOption, selectedOption],
   );
 
   const handleClear = useCallback(() => {
@@ -339,12 +343,12 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
         continue;
       }
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      if (now - lastTickTimeRef.current >= HAPTIC_COOLDOWN_MS) {
+      if (!prefersReducedMotion && now - lastTickTimeRef.current >= HAPTIC_COOLDOWN_MS) {
         triggerHaptic('selection');
         lastTickTimeRef.current = now;
       }
     }
-  }, [options.length]);
+  }, [options.length, prefersReducedMotion]);
 
   const scheduleScrollProcessing = useCallback(() => {
     if (scrollRafRef.current !== null) {
@@ -466,8 +470,6 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
     ? formatPointsForScreenReaders(Number(selectedOption))
     : 'Bez výběru';
 
-  const showWheel = !prefersReducedMotion;
-
   return (
     <div className="points-input">
       {label ? (
@@ -475,48 +477,46 @@ const PointsInput = forwardRef<HTMLButtonElement, PointsInputProps>(function Poi
           {label}
         </span>
       ) : null}
-      {showWheel ? (
-        <div className="points-input__wheel-group">
-          <div className="picker-highlight" aria-hidden="true" />
-          <div
-            className="points-input__wheel"
-            role="listbox"
-            aria-labelledby={labelId}
-            aria-describedby={helperId}
-            aria-activedescendant={selectedOption ? `${inputId}-${selectedOption}` : undefined}
-            ref={wheelRef}
-            onScroll={handleWheelScroll}
-          >
-            {options.map((option, index) => {
-              const isSelected = selectedOption === option;
-              const className = [
-                'points-input__wheel-option',
-                isSelected ? 'points-input__wheel-option--selected' : '',
-              ]
-                .filter(Boolean)
-                .join(' ');
+      <div className="points-input__wheel-group">
+        <div className="picker-highlight" aria-hidden="true" />
+        <div
+          className="points-input__wheel"
+          role="listbox"
+          aria-labelledby={labelId}
+          aria-describedby={helperId}
+          aria-activedescendant={selectedOption ? `${inputId}-${selectedOption}` : undefined}
+          ref={wheelRef}
+          onScroll={handleWheelScroll}
+        >
+          {options.map((option, index) => {
+            const isSelected = selectedOption === option;
+            const className = [
+              'points-input__wheel-option',
+              isSelected ? 'points-input__wheel-option--selected' : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
 
-              return (
-                <button
-                  type="button"
-                  id={`${inputId}-${option}`}
-                  role="option"
-                  aria-selected={isSelected}
-                  aria-label={formatPointsForScreenReaders(Number(option))}
-                  key={option}
-                  className={className}
-                  onClick={() => handleSelect(option, 'auto')}
-                  onKeyDown={(event) => handleKeyDown(event, index)}
-                  ref={registerOptionRef(index)}
-                  tabIndex={isSelected ? 0 : -1}
-                >
-                  {option}
-                </button>
-              );
-            })}
-          </div>
+            return (
+              <button
+                type="button"
+                id={`${inputId}-${option}`}
+                role="option"
+                aria-selected={isSelected}
+                aria-label={formatPointsForScreenReaders(Number(option))}
+                key={option}
+                className={className}
+                onClick={() => handleSelect(option, 'auto')}
+                onKeyDown={(event) => handleKeyDown(event, index)}
+                ref={registerOptionRef(index)}
+                tabIndex={isSelected ? 0 : -1}
+              >
+                {option}
+              </button>
+            );
+          })}
         </div>
-      ) : null}
+      </div>
       <div className="points-input__value" aria-live="polite">
         <strong>
           <span className="points-input__value-number">{displayNumber}</span>
