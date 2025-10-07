@@ -426,12 +426,15 @@ function ScoreboardApp() {
     });
 
     return Array.from(groups.values())
-      .map((group) => ({
-        ...group,
-        items: [...group.items]
+      .map((group) => {
+        const rankedItems = [...group.items]
           .sort(compareRankedResults)
-          .map((item, index) => ({ ...item, displayRank: index + 1 })),
-      }))
+          .map((item, index) => ({ ...item, displayRank: index + 1 }));
+        return {
+          ...group,
+          items: rankedItems,
+        };
+      })
       .sort((a, b) => compareBrackets(a.category, a.sex, b.category, b.sex));
   }, [ranked]);
 
@@ -464,6 +467,9 @@ function ScoreboardApp() {
             ];
           }),
         ];
+        if (rows.length === 1) {
+          rows.push(['—', '—', 'Žádné výsledky v této kategorii.', '', '']);
+        }
         const worksheet = XLSX.utils.aoa_to_sheet(rows);
         XLSX.utils.book_append_sheet(workbook, worksheet, sheetName || '—');
       });
@@ -581,41 +587,51 @@ function ScoreboardApp() {
             <div className="scoreboard-placeholder">Načítám data…</div>
           ) : groupedRanked.length ? (
             <div className="scoreboard-groups">
-              {groupedRanked.map((group) => (
-                <div key={group.key} className="scoreboard-group">
-                  <h3>{formatCategoryLabel(group.category, group.sex)}</h3>
-                  <table className="scoreboard-table scoreboard-table--compact">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Hlídka</th>
-                        <th>Body</th>
-                        <th>Body bez T</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.items.map((row) => {
-                        const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
-                        const fallbackCode = createFallbackPatrolCode(
-                          group.category,
-                          group.sex,
-                          displayRank,
-                        );
-                        return (
-                          <tr key={row.patrolId}>
-                            <td>{displayRank}</td>
-                            <td className="scoreboard-team">
-                              <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
-                            </td>
-                            <td>{formatPoints(row.totalPoints)}</td>
-                            <td>{formatPoints(row.pointsNoT)}</td>
+              {groupedRanked.map((group) => {
+                const displayRows = group.items;
+                return (
+                  <div key={group.key} className="scoreboard-group">
+                    <h3>{formatCategoryLabel(group.category, group.sex)}</h3>
+                    <table className="scoreboard-table scoreboard-table--compact">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Hlídka</th>
+                          <th>Body</th>
+                          <th>Body bez T</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayRows.length ? (
+                          displayRows.map((row) => {
+                            const displayRank =
+                              row.displayRank > 0 ? row.displayRank : row.rankInBracket;
+                            const fallbackCode = createFallbackPatrolCode(
+                              group.category,
+                              group.sex,
+                              displayRank,
+                            );
+                            return (
+                              <tr key={row.patrolId}>
+                                <td>{displayRank}</td>
+                                <td className="scoreboard-team">
+                                  <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
+                                </td>
+                                <td>{formatPoints(row.totalPoints)}</td>
+                                <td>{formatPoints(row.pointsNoT)}</td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr className="scoreboard-table-empty">
+                            <td colSpan={4}>Žádné výsledky v této kategorii.</td>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="scoreboard-placeholder">Zatím nejsou žádné výsledky.</div>

@@ -362,6 +362,8 @@
 .scoreboard-groups {
   display: grid;
   gap: clamp(18px, 2.4vw, 28px);
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 }
 
 .scoreboard-group {
@@ -418,15 +420,15 @@
   background: #fffbe5;
 }
 
-.scoreboard-table tbody tr:nth-child(-n + 3)::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: var(--zl-yellow);
+.scoreboard-table-empty td {
+  padding: 16px 0 12px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.scoreboard-table tbody tr:nth-child(-n + 3) {
+  box-shadow: inset 4px 0 0 var(--zl-yellow);
 }
 
 .scoreboard-table tbody td {
