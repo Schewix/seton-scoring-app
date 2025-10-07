@@ -14,6 +14,8 @@ import AppFooter from './components/AppFooter';
 import { supabase } from './supabaseClient';
 import './App.css';
 import zelenaLigaLogo from './assets/znak_SPTO_transparent.png';
+import competitionRulesPdf from './assets/pravidla-souteze.pdf';
+import stationRulesPdf from './assets/pravidla-stanovist.pdf';
 import { useAuth } from './auth/context';
 import LoginScreen from './auth/LoginScreen';
 import ChangePasswordScreen from './auth/ChangePasswordScreen';
@@ -2031,6 +2033,27 @@ function StationApp({
               <button type="button" className="logout-button" onClick={handleLogout}>
                 Odhlásit se
               </button>
+            </div>
+            <div className="hero-panel hero-panel--rules">
+              <span className="hero-panel-label">Pravidla</span>
+              <div className="hero-panel-links">
+                <a
+                  className="hero-panel-link"
+                  href={competitionRulesPdf}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Pravidla soutěže
+                </a>
+                <a
+                  className="hero-panel-link"
+                  href={stationRulesPdf}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Pravidla stanovišť
+                </a>
+              </div>
             </div>
           </div>
           {alerts.length ? (
