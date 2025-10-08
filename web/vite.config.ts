@@ -3,10 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { ROUTE_PREFIX, STATION_ROUTE_PREFIX } from './src/routing';
 
-const BASE_PATH = `${ROUTE_PREFIX}/`;
-
 export default defineConfig({
-  base: BASE_PATH,
   plugins: [
     react(),
     VitePWA({
