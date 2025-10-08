@@ -829,8 +829,10 @@ function AdminDashboard({
                 <thead>
                   <tr>
                     <th>Stanoviště</th>
-                    <th>Kategorie</th>
-                    <th>Celkem</th>
+                    {STATION_PASSAGE_CATEGORIES.map((category) => (
+                      <th key={category}>{category}</th>
+                    ))}
+                    <th>CELKEM</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -842,40 +844,47 @@ function AdminDashboard({
                           <span>{row.stationName}</span>
                         </div>
                       </td>
-                      <td>
-                        <div className="admin-station-categories">
-                          {row.categories.map((category) => {
-                            const expectedInCategory = row.expectedTotals[category];
-                            const passed = row.totals[category];
-                            const missingCount = row.missing[category].length;
-                            const isDisabled = expectedInCategory === 0 && passed === 0;
-                            const ariaLabel =
-                              `Stanoviště ${row.stationCode} ${row.stationName}` +
-                              ` – kategorie ${category}: ${passed} z ${expectedInCategory}`;
-                            const buttonClassNames = [
-                              'admin-table-button',
-                              missingCount > 0
-                                ? 'admin-table-button--missing'
-                                : 'admin-table-button--complete',
-                            ]
-                              .filter(Boolean)
-                              .join(' ');
+                      {STATION_PASSAGE_CATEGORIES.map((category) => {
+                        const isAllowed = row.categories.includes(category);
 
-                            return (
-                              <button
-                                key={`${row.stationId}-${category}`}
-                                type="button"
-                                className={buttonClassNames}
-                                onClick={() => handleOpenStationMissing(row, category)}
-                                disabled={isDisabled}
-                                aria-label={ariaLabel}
-                              >
-                                {passed}/{expectedInCategory}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </td>
+                        if (!isAllowed) {
+                          return (
+                            <td key={`${row.stationId}-${category}`}>
+                              <span className="admin-table-placeholder">–</span>
+                            </td>
+                          );
+                        }
+
+                        const expectedInCategory = row.expectedTotals[category];
+                        const passed = row.totals[category];
+                        const missingCount = row.missing[category].length;
+                        const isDisabled = expectedInCategory === 0 && passed === 0;
+                        const ariaLabel =
+                          `Stanoviště ${row.stationCode} ${row.stationName}` +
+                          ` – kategorie ${category}: ${passed} z ${expectedInCategory}`;
+                        const buttonClassNames = [
+                          'admin-table-button',
+                          missingCount > 0
+                            ? 'admin-table-button--missing'
+                            : 'admin-table-button--complete',
+                        ]
+                          .filter(Boolean)
+                          .join(' ');
+
+                        return (
+                          <td key={`${row.stationId}-${category}`}>
+                            <button
+                              type="button"
+                              className={buttonClassNames}
+                              onClick={() => handleOpenStationMissing(row, category)}
+                              disabled={isDisabled}
+                              aria-label={ariaLabel}
+                            >
+                              {passed}/{expectedInCategory}
+                            </button>
+                          </td>
+                        );
+                      })}
                       <td>
                         <button
                           type="button"
