@@ -222,28 +222,51 @@ function formatDateTime(value: string | null) {
   return date.toLocaleString('cs-CZ');
 }
 
-function formatPatrolMembers(members: string | null) {
-  if (!members) return '—';
+function parsePatrolMembersList(members: string | null) {
+  if (!members) return [] as string[];
   const parts = members
     .split(/;|\n/g)
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
+
   if (!parts.length) {
-    return members.trim();
+    const trimmed = members.trim();
+    return trimmed ? [trimmed] : [];
   }
-  return parts.join('\n');
+
+  return parts;
 }
 
-function formatStationPointsBreakdown(breakdown: Record<string, number>) {
-  const entries = Object.entries(breakdown);
-  if (!entries.length) {
+function formatPatrolMembers(members: string | null) {
+  const parts = parsePatrolMembersList(members);
+  if (!parts.length) {
     return '—';
   }
 
-  return entries
-    .sort((a, b) => a[0].localeCompare(b[0], 'cs'))
-    .map(([code, value]) => `${code}: ${value}`)
-    .join(', ');
+  return parts.join('\n');
+}
+
+function formatMemberColumns(members: string | null, columnCount: number) {
+  if (columnCount === 0) {
+    return [] as string[];
+  }
+
+  const parts = parsePatrolMembersList(members);
+  return Array.from({ length: columnCount }, (_, index) => parts[index] ?? '-');
+}
+
+function formatStationColumns(
+  breakdown: Record<string, number>,
+  stationCodes: readonly string[],
+) {
+  if (!stationCodes.length) {
+    return [] as (number | string)[];
+  }
+
+  return stationCodes.map((code) => {
+    const value = breakdown[code];
+    return typeof value === 'number' ? value : '-';
+  });
 }
 
 function normaliseBracketKey(category: string, sex: string) {
@@ -533,6 +556,26 @@ function ScoreboardApp() {
       return;
     }
 
+    const allMembers = groupedRanked.flatMap((group) =>
+      group.visibleItems.map((row) => parsePatrolMembersList(row.patrolMembers)),
+    );
+    const maxMemberCount = allMembers.reduce((max, members) => Math.max(max, members.length), 0);
+
+    const stationCodesSet = new Set<string>();
+    groupedRanked.forEach((group) => {
+      group.visibleItems.forEach((row) => {
+        Object.keys(row.stationPointsBreakdown).forEach((code) => {
+          stationCodesSet.add(code);
+        });
+      });
+    });
+    const sortedStationCodes = Array.from(stationCodesSet).sort((a, b) =>
+      a.localeCompare(b, 'cs'),
+    );
+
+    const memberHeaders = Array.from({ length: maxMemberCount }, (_, index) => `Člen ${index + 1}`);
+    const stationHeaders = sortedStationCodes.map((code) => `Body ${code}`);
+
     try {
       setExporting(true);
       const workbook = XLSX.utils.book_new();
@@ -544,47 +587,51 @@ function ScoreboardApp() {
             '#',
             'Hlídka',
             'Tým',
-            'Členové hlídky',
+            ...memberHeaders,
             'Čas startu',
             'Čas doběhu',
             'Celkový čas na trati',
             'Čekání',
             'Čas na trati bez čekání',
-            'Body ze stanovišť',
+            ...stationHeaders,
             'Body celkem',
             'Body bez času',
           ],
           ...group.visibleItems.map((row) => {
             const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
             const fallbackCode = createFallbackPatrolCode(group.category, group.sex, displayRank);
+            const memberCells = formatMemberColumns(row.patrolMembers, maxMemberCount);
+            const stationCells = formatStationColumns(row.stationPointsBreakdown, sortedStationCodes);
             return [
               displayRank,
               formatPatrolNumber(row.patrolCode, fallbackCode),
               row.teamName,
-              formatPatrolMembers(row.patrolMembers),
+              ...memberCells,
               formatDateTime(row.startTime),
               formatDateTime(row.finishTime),
               formatSeconds(row.totalSeconds),
               formatSeconds(row.waitSeconds),
               formatSeconds(row.pureSeconds),
-              formatStationPointsBreakdown(row.stationPointsBreakdown),
+              ...stationCells,
               row.totalPoints ?? '',
               row.pointsNoT ?? '',
             ];
           }),
         ];
         if (rows.length === 1) {
+          const emptyMemberCells = Array.from({ length: maxMemberCount }, () => '—');
+          const emptyStationCells = Array.from({ length: sortedStationCodes.length }, () => '—');
           rows.push([
             '—',
             '—',
             'Žádné výsledky v této kategorii.',
+            ...emptyMemberCells,
             '—',
             '—',
             '—',
             '—',
             '—',
-            '—',
-            '—',
+            ...emptyStationCells,
             '',
             '',
           ]);
