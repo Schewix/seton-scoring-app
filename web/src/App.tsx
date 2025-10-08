@@ -366,6 +366,7 @@ function StationApp({
   const stationId = manifest.station.id;
   const stationCode = manifest.station.code?.trim().toUpperCase() || '';
   const stationDisplayName = getStationDisplayName(manifest.station.name, manifest.station.code);
+  const showScoreboardLink = stationCode === 'T';
   const scoringLocked = manifest.event.scoringLocked;
   const isTargetStation = stationCode === 'T';
   const scoringDisabled = scoringLocked && !isTargetStation;
@@ -1926,14 +1927,16 @@ function StationApp({
             </div>
             <div className="hero-panel hero-panel--links">
               <span className="hero-panel-label">Odkazy</span>
-              <a
-                className="hero-panel-link"
-                href={SCOREBOARD_ROUTE_PREFIX}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Otevřít výsledky
-              </a>
+              {showScoreboardLink ? (
+                <a
+                  className="hero-panel-link"
+                  href={SCOREBOARD_ROUTE_PREFIX}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Otevřít výsledky
+                </a>
+              ) : null}
               <div className="hero-panel-links">
                 <a
                   className="hero-panel-link"
