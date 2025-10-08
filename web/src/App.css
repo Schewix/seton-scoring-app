@@ -1752,25 +1752,26 @@ textarea {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: clamp(40px, 6vw, 48px) clamp(24px, 5vw, 40px);
-  border-radius: 24px;
+  gap: clamp(20px, 4vw, 28px);
+  padding: clamp(44px, 7vw, 56px) clamp(28px, 6vw, 48px);
+  border-radius: 28px;
   background: linear-gradient(180deg, var(--zl-green) 0%, var(--zl-green-dark) 100%);
   color: #ffffff;
+  box-shadow: 0 24px 48px rgba(44, 67, 52, 0.16);
 }
 
 .auth-hero-brand {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   align-items: flex-start;
 }
 
 .auth-hero-logo {
-  width: 80px;
-  height: 80px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.15);
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.18);
   display: grid;
   place-items: center;
   padding: 8px;
@@ -1784,8 +1785,8 @@ textarea {
 .auth-hero-copy {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 16px;
+  gap: 10px;
+  margin-top: 20px;
 }
 
 .auth-hero-caption {
@@ -1813,9 +1814,9 @@ textarea {
 
 .auth-hero-copy p {
   margin: 0;
-  font-size: clamp(1rem, 2.4vw, 1.1rem);
+  font-size: clamp(1rem, 2.2vw, 1.15rem);
   color: rgba(255, 255, 255, 0.9);
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .auth-hero-list {
@@ -1823,14 +1824,37 @@ textarea {
   padding-left: 1.2rem;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  font-size: 1rem;
+  gap: 12px;
+  font-size: clamp(0.95rem, 2vw, 1.05rem);
   line-height: 1.6;
   color: rgba(255, 255, 255, 0.92);
 }
 
 .auth-hero-list li::marker {
   color: rgba(255, 255, 255, 0.65);
+}
+
+.auth-hero-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.4);
+  transition: color 0.2s ease, text-decoration-color 0.2s ease;
+}
+
+.auth-hero-link:hover,
+.auth-hero-link:focus-visible {
+  color: #ffffff;
+  text-decoration-color: #ffffff;
 }
 
 .auth-hero-admin-button {
@@ -1879,13 +1903,13 @@ textarea {
 
 .auth-card {
   background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 24px;
-  padding: clamp(24px, 4vw, 32px);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(207, 233, 197, 0.9);
+  border-radius: 28px;
+  padding: clamp(28px, 4vw, 36px);
+  box-shadow: 0 20px 44px rgba(44, 67, 52, 0.12);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
 }
 
 .auth-card h1,
@@ -1964,9 +1988,9 @@ textarea {
 .auth-field input {
   appearance: none;
   border-radius: 12px;
-  border: 1px solid #e0e6e0;
-  padding: 0 12px;
-  height: 46px;
+  border: 1px solid rgba(207, 233, 197, 0.9);
+  padding: 0 14px;
+  height: 48px;
   font-size: 1rem;
   color: var(--text);
   background: #ffffff;
@@ -2000,7 +2024,7 @@ textarea {
   border: none;
   border-radius: 12px;
   padding: 0 24px;
-  height: 48px;
+  height: 50px;
   background: var(--zl-yellow);
   color: var(--text);
   font-weight: 600;
@@ -2023,7 +2047,7 @@ textarea {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   font-size: 0.95rem;
   flex-wrap: wrap;
 }
@@ -2032,6 +2056,15 @@ textarea {
   color: var(--py-blue);
   font-weight: 600;
   text-decoration: none;
+}
+
+.auth-link--muted {
+  color: var(--text-2);
+}
+
+.auth-link--muted:hover,
+.auth-link--muted:focus-visible {
+  color: var(--text);
 }
 
 .auth-link:hover,
@@ -2062,7 +2095,7 @@ textarea {
   }
 
   .auth-hero {
-    padding: clamp(36px, 10vw, 44px) clamp(20px, 7vw, 32px);
+    padding: clamp(36px, 10vw, 44px) clamp(22px, 8vw, 32px);
   }
 
   .auth-hero-secondary {
@@ -2070,7 +2103,7 @@ textarea {
   }
 
   .auth-card {
-    padding: 24px;
+    padding: clamp(24px, 8vw, 32px);
   }
 }
 
