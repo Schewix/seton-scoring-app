@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useAuth } from './context';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
-import { SCOREBOARD_ROUTE_PREFIX } from '../routing';
 
 interface Props {
   requirePinOnly?: boolean;
@@ -168,9 +167,6 @@ export default function LoginScreen({ requirePinOnly }: Props) {
               <li>Offline režim se synchronizací výsledků</li>
               <li>Export výsledků do tabulek</li>
             </ul>
-            <a className="auth-hero-link" href={SCOREBOARD_ROUTE_PREFIX}>
-              Zobrazit výsledky Setonova závodu
-            </a>
           </section>
 
           <form
