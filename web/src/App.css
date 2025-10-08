@@ -1753,7 +1753,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding: clamp(28px, 4vw, 36px);
+  padding: clamp(40px, 6vw, 48px) clamp(24px, 5vw, 40px);
   border-radius: 24px;
   background: linear-gradient(180deg, var(--zl-green) 0%, var(--zl-green-dark) 100%);
   color: #ffffff;
@@ -1767,18 +1767,25 @@ textarea {
 }
 
 .auth-hero-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.15);
   display: grid;
   place-items: center;
-  padding: 6px;
+  padding: 8px;
 }
 
 .auth-hero-logo img {
   width: 100%;
   height: auto;
+}
+
+.auth-hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .auth-hero-caption {
@@ -1787,12 +1794,6 @@ textarea {
   text-transform: uppercase;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.78);
-}
-
-.auth-hero-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .auth-hero-eyebrow {
@@ -1830,6 +1831,29 @@ textarea {
 
 .auth-hero-list li::marker {
   color: rgba(255, 255, 255, 0.65);
+}
+
+.auth-hero-admin-button {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 12px;
+  padding: 12px 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.auth-hero-admin-button:hover,
+.auth-hero-admin-button:focus-visible {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
 .auth-hero-secondary {
@@ -2038,7 +2062,7 @@ textarea {
   }
 
   .auth-hero {
-    padding: 28px;
+    padding: clamp(36px, 10vw, 44px) clamp(20px, 7vw, 32px);
   }
 
   .auth-hero-secondary {
