@@ -58,6 +58,11 @@
   margin: 0;
 }
 
+.app-footer-content a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .app-footer-logos {
   display: flex;
   gap: clamp(22px, 7vw, 56px);
