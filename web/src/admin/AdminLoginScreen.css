@@ -90,23 +90,51 @@
 }
 
 .admin-login-hero-list li::before {
-  content: '✅';
+  content: '';
   flex-shrink: 0;
-  line-height: 1;
-  margin-top: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(247, 251, 246, 0.7);
+  border: 2px solid rgba(247, 251, 246, 0.85);
+  margin-top: 6px;
 }
 
-.admin-login-hero-link {
-  color: #f7fbf6;
-  font-size: 0.95rem;
-  text-decoration: underline;
+.admin-login-hero-button {
   align-self: flex-start;
-  transition: opacity 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: 16px;
+  background: #ffd84f;
+  color: #333333;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
 }
 
-.admin-login-hero-link:hover,
-.admin-login-hero-link:focus-visible {
-  opacity: 0.85;
+.admin-login-hero-button:hover,
+.admin-login-hero-button:focus-visible {
+  background: #ffcc33;
+  box-shadow: 0 10px 24px rgba(255, 204, 51, 0.35);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.admin-login-hero-button:focus-visible {
+  box-shadow: 0 0 0 3px rgba(255, 216, 79, 0.4), 0 10px 24px rgba(255, 204, 51, 0.35);
+}
+
+.admin-login-hero-button-label {
+  white-space: nowrap;
+}
+
+.admin-login-hero-button-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .admin-login-card {
