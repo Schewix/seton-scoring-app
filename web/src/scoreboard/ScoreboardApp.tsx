@@ -13,9 +13,16 @@ interface RawResult {
   team_name: string;
   category: string;
   sex: string;
+  patrol_members?: string | null;
+  start_time?: string | null;
+  finish_time?: string | null;
+  total_seconds?: number | string | null;
+  wait_seconds?: number | string | null;
   total_points: number | string | null;
   points_no_T: number | string | null;
   pure_seconds: number | string | null;
+  time_points?: number | string | null;
+  station_points_breakdown?: Record<string, unknown> | null;
 }
 
 interface RawRankedResult extends RawResult {
@@ -30,9 +37,16 @@ interface Result {
   teamName: string;
   category: string;
   sex: string;
+  patrolMembers: string | null;
+  startTime: string | null;
+  finishTime: string | null;
+  totalSeconds: number | null;
+  waitSeconds: number | null;
   totalPoints: number | null;
   pointsNoT: number | null;
   pureSeconds: number | null;
+  timePoints: number | null;
+  stationPointsBreakdown: Record<string, number>;
 }
 
 interface RankedResult extends Result {
@@ -85,6 +99,29 @@ function parseNumber(value: number | string | null, fallback: number | null = nu
   return fallback;
 }
 
+function parseStationPointsBreakdown(value: RawResult['station_points_breakdown']): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const entries = Object.entries(value).reduce<[string, number][]>((acc, [code, raw]) => {
+    const numeric = parseNumber((raw as number | string | null) ?? null);
+    if (numeric !== null) {
+      acc.push([code, numeric]);
+    }
+    return acc;
+  }, []);
+
+  if (!entries.length) {
+    return {};
+  }
+
+  return entries.reduce<Record<string, number>>((acc, [code, numeric]) => {
+    acc[code] = numeric;
+    return acc;
+  }, {});
+}
+
 function hasPatrolCode(value: string | null | undefined) {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -98,9 +135,16 @@ function normaliseResult(raw: RawResult): Result {
     teamName: raw.team_name,
     category: raw.category,
     sex: raw.sex,
+    patrolMembers: normaliseText(raw.patrol_members ?? null),
+    startTime: normaliseText(raw.start_time ?? null),
+    finishTime: normaliseText(raw.finish_time ?? null),
+    totalSeconds: parseNumber(raw.total_seconds),
+    waitSeconds: parseNumber(raw.wait_seconds, 0),
     totalPoints: parseNumber(raw.total_points),
     pointsNoT: parseNumber(raw.points_no_T),
     pureSeconds: parseNumber(raw.pure_seconds),
+    timePoints: parseNumber(raw.time_points),
+    stationPointsBreakdown: parseStationPointsBreakdown(raw.station_points_breakdown ?? null),
   };
 }
 
@@ -167,6 +211,39 @@ function formatSeconds(seconds: number | null) {
 function formatPoints(value: number | null) {
   if (value === null) return '—';
   return value.toLocaleString('cs-CZ');
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+  return date.toLocaleString('cs-CZ');
+}
+
+function formatPatrolMembers(members: string | null) {
+  if (!members) return '—';
+  const parts = members
+    .split(/;|\n/g)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (!parts.length) {
+    return members.trim();
+  }
+  return parts.join('\n');
+}
+
+function formatStationPointsBreakdown(breakdown: Record<string, number>) {
+  const entries = Object.entries(breakdown);
+  if (!entries.length) {
+    return '—';
+  }
+
+  return entries
+    .sort((a, b) => a[0].localeCompare(b[0], 'cs'))
+    .map(([code, value]) => `${code}: ${value}`)
+    .join(', ');
 }
 
 function normaliseBracketKey(category: string, sex: string) {
@@ -463,37 +540,70 @@ function ScoreboardApp() {
       groupedRanked.forEach((group) => {
         const sheetName = formatCategoryLabel(group.category, group.sex);
         const rows = [
-          ['#', 'Hlídka', 'Tým', 'Body', 'Body bez T'],
+          [
+            '#',
+            'Hlídka',
+            'Tým',
+            'Členové hlídky',
+            'Čas startu',
+            'Čas doběhu',
+            'Celkový čas na trati',
+            'Čekání',
+            'Čas na trati bez čekání',
+            'Body ze stanovišť',
+            'Body celkem',
+            'Body bez času',
+          ],
           ...group.visibleItems.map((row) => {
             const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
             const fallbackCode = createFallbackPatrolCode(group.category, group.sex, displayRank);
             return [
-                displayRank,
-                formatPatrolNumber(row.patrolCode, fallbackCode),
-                row.teamName,
-                row.totalPoints ?? '',
-                row.pointsNoT ?? '',
-              ];
-            }),
-          ];
-          if (rows.length === 1) {
-            rows.push(['—', '—', 'Žádné výsledky v této kategorii.', '', '']);
-          }
-          const worksheet = XLSX.utils.aoa_to_sheet(rows);
-          XLSX.utils.book_append_sheet(workbook, worksheet, sheetName || '—');
-        });
+              displayRank,
+              formatPatrolNumber(row.patrolCode, fallbackCode),
+              row.teamName,
+              formatPatrolMembers(row.patrolMembers),
+              formatDateTime(row.startTime),
+              formatDateTime(row.finishTime),
+              formatSeconds(row.totalSeconds),
+              formatSeconds(row.waitSeconds),
+              formatSeconds(row.pureSeconds),
+              formatStationPointsBreakdown(row.stationPointsBreakdown),
+              row.totalPoints ?? '',
+              row.pointsNoT ?? '',
+            ];
+          }),
+        ];
+        if (rows.length === 1) {
+          rows.push([
+            '—',
+            '—',
+            'Žádné výsledky v této kategorii.',
+            '—',
+            '—',
+            '—',
+            '—',
+            '—',
+            '—',
+            '—',
+            '',
+            '',
+          ]);
+        }
+        const worksheet = XLSX.utils.aoa_to_sheet(rows);
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName || '—');
+      });
 
-        const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
-        const rawName = eventName || 'vysledky';
-        const safeName = rawName
-          .trim()
-          .replace(/[\\/?%*:|"<>]/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim()
-          .replace(/ /g, '-');
-        const fileName = `${safeName || 'vysledky'}-${timestamp}.xlsx`;
+      const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
+      const rawName = eventName || 'vysledky';
+      const safeName = rawName
+        .trim()
+        .replace(/[\\/?%*:|"<>]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/ /g, '-');
+      const fileName = `${safeName || 'vysledky'}-${timestamp}.xlsx`;
 
-        XLSX.writeFile(workbook, fileName);
+      XLSX.writeFile(workbook, fileName);
       } catch (err) {
         console.error('Failed to export scoreboard data', err);
       } finally {
