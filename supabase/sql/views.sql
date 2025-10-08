@@ -24,18 +24,40 @@ select
   p.category,
   p.sex,
   p.note as patrol_members,
+  t.start_time,
+  t.finish_time,
+  case
+    when t.start_time is not null and t.finish_time is not null
+      then extract(epoch from (t.finish_time - t.start_time))::bigint
+    else null
+  end as total_seconds,
+  (60 * coalesce(waits.wait_minutes, 0))::bigint as wait_seconds,
+  case
+    when t.start_time is not null and t.finish_time is not null
+      then greatest(
+        extract(epoch from (t.finish_time - t.start_time))::bigint
+        - (60 * coalesce(waits.wait_minutes, 0))::bigint,
+        0
+      )
+    else null
+  end as pure_seconds,
   sum(s.points) as total_points,
   sum(case when st.code <> 'T' then s.points else 0 end) as points_no_T,
-  (
-    extract(epoch from (t.finish_time - t.start_time))
-    - coalesce(60 * (select sum(wait_minutes) from station_passages sp
-                     where sp.event_id=p.event_id and sp.patrol_id=p.id),0)
-  )::bigint as pure_seconds
+  sum(case when st.code = 'T' then s.points else 0 end) as time_points,
+  jsonb_object_agg(st.code, s.points order by st.code) filter (where st.code is not null) as station_points_breakdown
 from patrols p
 join events e on e.id = p.event_id
 left join station_scores s on s.patrol_id=p.id and s.event_id=p.event_id
 left join stations st on st.id = s.station_id
 left join timings t on t.event_id=p.event_id and t.patrol_id=p.id
+left join (
+  select
+    sp.event_id,
+    sp.patrol_id,
+    sum(sp.wait_minutes) as wait_minutes
+  from station_passages sp
+  group by sp.event_id, sp.patrol_id
+) waits on waits.event_id = p.event_id and waits.patrol_id = p.id
 where p.active is true
 group by
   p.event_id,
@@ -47,7 +69,8 @@ group by
   p.sex,
   p.note,
   t.start_time,
-  t.finish_time;
+  t.finish_time,
+  waits.wait_minutes;
 
 -- Ranking per (category, sex)
 create or replace view results_ranked as
@@ -69,9 +92,16 @@ select
   r.team_name,
   r.category,
   r.sex,
+  r.patrol_members,
+  r.start_time,
+  r.finish_time,
+  r.total_seconds,
+  r.wait_seconds,
   r.total_points,
   r.points_no_T,
   r.pure_seconds,
+  r.time_points,
+  r.station_points_breakdown,
   r.rank_in_bracket
 from results_ranked r
 join events e on e.id = r.event_id;
