@@ -24,11 +24,16 @@ type AnswersFormState = Record<CategoryKey, string>;
 
 type AnswersSummary = Record<CategoryKey, { letters: string[]; updatedAt: string | null }>;
 
-const STATION_PASSAGE_CATEGORIES = ['NH', 'ND', 'M', 'S'] as const;
+const STATION_PASSAGE_CATEGORIES = ['NH', 'ND', 'MH', 'MD', 'SH', 'SD', 'RH', 'RD'] as const;
 
 type StationCategoryKey = (typeof STATION_PASSAGE_CATEGORIES)[number];
 
-type PatrolSummary = { id: string; code: string; teamName: string; category: StationCategoryKey };
+type PatrolSummary = {
+  id: string;
+  code: string;
+  teamName: string;
+  category: StationCategoryKey;
+};
 
 type StationPassageRow = {
   stationId: string;
@@ -58,20 +63,42 @@ type MissingDialogState = {
 };
 
 function createEmptyStationCategoryTotals(): Record<StationCategoryKey, number> {
-  return { NH: 0, ND: 0, M: 0, S: 0 };
+  return {
+    NH: 0,
+    ND: 0,
+    MH: 0,
+    MD: 0,
+    SH: 0,
+    SD: 0,
+    RH: 0,
+    RD: 0,
+  };
 }
 
 function createEmptyStationCategorySets(): Record<StationCategoryKey, Set<string>> {
   return {
     NH: new Set<string>(),
     ND: new Set<string>(),
-    M: new Set<string>(),
-    S: new Set<string>(),
+    MH: new Set<string>(),
+    MD: new Set<string>(),
+    SH: new Set<string>(),
+    SD: new Set<string>(),
+    RH: new Set<string>(),
+    RD: new Set<string>(),
   };
 }
 
 function createEmptyStationCategoryLists(): Record<StationCategoryKey, PatrolSummary[]> {
-  return { NH: [], ND: [], M: [], S: [] };
+  return {
+    NH: [],
+    ND: [],
+    MH: [],
+    MD: [],
+    SH: [],
+    SD: [],
+    RH: [],
+    RD: [],
+  };
 }
 
 function normalizeText(value: string | null | undefined): string {
@@ -83,13 +110,24 @@ function toStationCategoryKey(
   sex: string | null | undefined,
 ): StationCategoryKey | null {
   const normalizedCategory = normalizeText(category).toUpperCase();
-  if (normalizedCategory === 'N') {
-    const normalizedSex = normalizeText(sex).toUpperCase();
-    return normalizedSex === 'D' ? 'ND' : 'NH';
+  const normalizedSex = normalizeText(sex).toUpperCase();
+
+  if (!normalizedCategory) {
+    return null;
   }
-  if (normalizedCategory === 'M' || normalizedCategory === 'S') {
-    return normalizedCategory;
+
+  if (normalizedSex === 'D') {
+    if (normalizedCategory === 'N') return 'ND';
+    if (normalizedCategory === 'M') return 'MD';
+    if (normalizedCategory === 'S') return 'SD';
+    if (normalizedCategory === 'R') return 'RD';
+  } else {
+    if (normalizedCategory === 'N') return 'NH';
+    if (normalizedCategory === 'M') return 'MH';
+    if (normalizedCategory === 'S') return 'SH';
+    if (normalizedCategory === 'R') return 'RH';
   }
+
   return null;
 }
 
@@ -229,8 +267,12 @@ function AdminDashboard({
 
     const stations = new Map<string, { code: string; name: string }>();
     ((stationsRes.data ?? []) as { id: string; code: string; name: string }[]).forEach((station) => {
+      const code = (station.code || '').trim().toUpperCase();
+      if (code === 'R') {
+        return;
+      }
       stations.set(station.id, {
-        code: (station.code || '').trim().toUpperCase(),
+        code,
         name: station.name,
       });
     });
@@ -317,8 +359,12 @@ function AdminDashboard({
     const perCategoryTotals: Record<StationCategoryKey, number> = {
       NH: categoryPatrols.NH.length,
       ND: categoryPatrols.ND.length,
-      M: categoryPatrols.M.length,
-      S: categoryPatrols.S.length,
+      MH: categoryPatrols.MH.length,
+      MD: categoryPatrols.MD.length,
+      SH: categoryPatrols.SH.length,
+      SD: categoryPatrols.SD.length,
+      RH: categoryPatrols.RH.length,
+      RD: categoryPatrols.RD.length,
     };
 
     const rows: StationPassageRow[] = sorted.map((station) => {
