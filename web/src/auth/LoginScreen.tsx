@@ -94,14 +94,25 @@ export default function LoginScreen({ requirePinOnly }: Props) {
   const submitLabel = requirePinOnly ? 'Odemknout' : 'Přihlásit';
   const loadingLabel = requirePinOnly ? 'Odemykám…' : 'Přihlašuji…';
 
-  const formTitle = requirePinOnly ? 'Odemknutí stanoviště' : 'Přihlášení rozhodčího';
-  const heroTitle = requirePinOnly ? 'Stanoviště' : 'Rozhodčí';
+  const formTitle = requirePinOnly ? 'Odemknutí stanoviště' : 'Přihlášení administrátora';
+  const heroHeading = requirePinOnly ? 'Stanoviště' : 'Admin – Setonův závod';
   const heroDescription = requirePinOnly
     ? 'Odemkni uložené stanoviště Setonova závodu pomocí PINu a pokračuj i bez připojení.'
-    : null;
+    : 'Spravuj závod, výsledky i uživatele v bezpečném admin rozhraní.';
+  const heroListItems = requirePinOnly
+    ? [
+      'Přihlášení pro rozhodčí stanovišť',
+      'Offline režim se synchronizací výsledků',
+      'Rychlé obnovení stanoviště pomocí PINu',
+    ]
+    : [
+      'Správa stanovišť a rozhodčích',
+      'Kontrola a export výsledků závodu',
+      'Správa uživatelů a přístupů',
+    ];
   const descriptionText = requirePinOnly
     ? 'Zadej PIN pro odemknutí uloženého stanoviště.'
-    : 'Přihlašovací údaje získáš od hlavního rozhodčího.';
+    : 'Přihlaste se e-mailem a heslem, které jste obdrželi od koordinátora závodu.';
   const descriptionId = requirePinOnly ? 'login-description-pin' : 'login-description';
 
   const emailFieldId = 'login-email';
@@ -143,31 +154,47 @@ export default function LoginScreen({ requirePinOnly }: Props) {
 
   return (
     <div className="auth-shell">
+      <header className="auth-header" aria-label="Navigace administrace">
+        <div className="auth-header-inner">
+          <a
+            className="auth-header-brand"
+            href="https://zelenaliga.cz"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <img src={zelenaLigaLogo} alt="Logo SPTO Brno" />
+            <span>SPTO Brno</span>
+          </a>
+          <a className="auth-header-link" href="/">
+            Zpět na Zelenou ligu
+          </a>
+        </div>
+      </header>
       <div className="auth-shell-content">
         <div className="auth-layout">
-          <section className="auth-hero" aria-label="Informace pro rozhodčí">
-            <div className="auth-hero-brand">
-              <a
-                className="auth-hero-logo"
-                href="https://zelenaliga.cz"
-                target="_blank"
-                rel="noreferrer"
-              >
-                <img src={zelenaLigaLogo} alt="Logo SPTO Brno" />
+          <div className="auth-hero-wrap">
+            <section className="auth-hero" aria-label="Informace pro rozhodčí">
+              <div className="auth-hero-brand">
+                <div className="auth-hero-logo" aria-hidden="true">
+                  <img src={zelenaLigaLogo} alt="" />
+                </div>
+                <span className="auth-hero-caption">SPTO Brno</span>
+              </div>
+              <div className="auth-hero-copy">
+                <span className="auth-hero-eyebrow">Setonův závod</span>
+                <h1>{heroHeading}</h1>
+                {heroDescription && <p>{heroDescription}</p>}
+              </div>
+              <ul className="auth-hero-list">
+                {heroListItems.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <a className="auth-hero-secondary" href={SCOREBOARD_ROUTE_PREFIX}>
+                Otevřít výsledky
               </a>
-              <span className="auth-hero-caption">SPTO Brno</span>
-            </div>
-            <div className="auth-hero-copy">
-              <span className="auth-hero-eyebrow">Setonův závod</span>
-              <h1>{heroTitle}</h1>
-              {heroDescription && <p>{heroDescription}</p>}
-            </div>
-            <ul className="auth-hero-list">
-              <li>Přihlášení pro rozhodčí stanovišť</li>
-              <li>Offline režim se synchronizací výsledků</li>
-              <li>Export výsledků do tabulek</li>
-            </ul>
-          </section>
+            </section>
+          </div>
 
           <form
             className="auth-card"
@@ -286,7 +313,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
               <a className="auth-link" href="mailto:zavody@zelenaliga.cz">
                 Zapomenuté heslo
               </a>
-              <a className="auth-link auth-link--muted" href="/">
+              <a className="auth-link" href="/">
                 Zpět na Zelenou ligu
               </a>
             </div>
