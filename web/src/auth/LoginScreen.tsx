@@ -121,7 +121,10 @@ export default function LoginScreen({ requirePinOnly }: Props) {
               target="_blank"
               rel="noreferrer"
             >
-              Přihlášení pro kancelář závodu
+              <span>Přihlášení pro kancelář závodu</span>
+              <span className="auth-hero-admin-icon" aria-hidden="true">
+                ↗
+              </span>
             </a>
           </section>
 
