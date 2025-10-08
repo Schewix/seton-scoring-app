@@ -2027,12 +2027,6 @@ function StationApp({
                 lastSyncedAt={lastSavedAt}
               />
             </div>
-            <div className="hero-panel hero-panel--actions">
-              <span className="hero-panel-label">Účet</span>
-              <button type="button" className="logout-button" onClick={handleLogout}>
-                Odhlásit se
-              </button>
-            </div>
             <div className="hero-panel hero-panel--links">
               <span className="hero-panel-label">Odkazy</span>
               <a
@@ -2061,6 +2055,12 @@ function StationApp({
                   Pravidla stanovišť
                 </a>
               </div>
+            </div>
+            <div className="hero-panel hero-panel--actions">
+              <span className="hero-panel-label">Účet</span>
+              <button type="button" className="logout-button" onClick={handleLogout}>
+                Odhlásit se
+              </button>
             </div>
           </div>
           {displayAlerts.length ? (
