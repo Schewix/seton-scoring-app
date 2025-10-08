@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useAuth } from './context';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
-import { SCOREBOARD_ROUTE_PREFIX } from '../routing';
 
 interface Props {
   requirePinOnly?: boolean;
@@ -102,15 +101,15 @@ export default function LoginScreen({ requirePinOnly }: Props) {
     : 'Spravuj závod, výsledky i uživatele v bezpečném admin rozhraní.';
   const heroListItems = requirePinOnly
     ? [
-        'Přihlášení pro rozhodčí stanovišť',
-        'Offline režim se synchronizací výsledků',
-        'Rychlé obnovení stanoviště pomocí PINu',
-      ]
+      'Přihlášení pro rozhodčí stanovišť',
+      'Offline režim se synchronizací výsledků',
+      'Rychlé obnovení stanoviště pomocí PINu',
+    ]
     : [
-        'Správa stanovišť a rozhodčích',
-        'Kontrola a export výsledků závodu',
-        'Správa uživatelů a přístupů',
-      ];
+      'Správa stanovišť a rozhodčích',
+      'Kontrola a export výsledků závodu',
+      'Správa uživatelů a přístupů',
+    ];
   const descriptionText = requirePinOnly
     ? 'Zadej PIN pro odemknutí uloženého stanoviště.'
     : 'Přihlaste se e-mailem a heslem, které jste obdrželi od koordinátora závodu.';
