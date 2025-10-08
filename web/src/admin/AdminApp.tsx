@@ -24,18 +24,74 @@ type AnswersFormState = Record<CategoryKey, string>;
 
 type AnswersSummary = Record<CategoryKey, { letters: string[]; updatedAt: string | null }>;
 
+const STATION_PASSAGE_CATEGORIES = ['NH', 'ND', 'M', 'S'] as const;
+
+type StationCategoryKey = (typeof STATION_PASSAGE_CATEGORIES)[number];
+
+type PatrolSummary = { id: string; code: string; teamName: string; category: StationCategoryKey };
+
 type StationPassageRow = {
   stationId: string;
   stationCode: string;
   stationName: string;
-  totals: Record<CategoryKey, number>;
+  totals: Record<StationCategoryKey, number>;
   total: number;
+  missing: Record<StationCategoryKey, PatrolSummary[]>;
+  totalMissing: PatrolSummary[];
+};
+
+type StationTotalsState = {
+  perCategory: Record<StationCategoryKey, number>;
+  overall: number;
 };
 
 type EventState = {
   name: string;
   scoringLocked: boolean;
 };
+
+type MissingDialogState = {
+  stationCode: string;
+  stationName: string;
+  category: StationCategoryKey | 'TOTAL';
+  missing: PatrolSummary[];
+};
+
+function createEmptyStationCategoryTotals(): Record<StationCategoryKey, number> {
+  return { NH: 0, ND: 0, M: 0, S: 0 };
+}
+
+function createEmptyStationCategorySets(): Record<StationCategoryKey, Set<string>> {
+  return {
+    NH: new Set<string>(),
+    ND: new Set<string>(),
+    M: new Set<string>(),
+    S: new Set<string>(),
+  };
+}
+
+function createEmptyStationCategoryLists(): Record<StationCategoryKey, PatrolSummary[]> {
+  return { NH: [], ND: [], M: [], S: [] };
+}
+
+function normalizeText(value: string | null | undefined): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function toStationCategoryKey(
+  category: string | null | undefined,
+  sex: string | null | undefined,
+): StationCategoryKey | null {
+  const normalizedCategory = normalizeText(category).toUpperCase();
+  if (normalizedCategory === 'N') {
+    const normalizedSex = normalizeText(sex).toUpperCase();
+    return normalizedSex === 'D' ? 'ND' : 'NH';
+  }
+  if (normalizedCategory === 'M' || normalizedCategory === 'S') {
+    return normalizedCategory;
+  }
+  return null;
+}
 
 function createEmptyAnswers(): AnswersFormState {
   return { N: '', M: '', S: '', R: '' };
@@ -76,6 +132,11 @@ function AdminDashboard({
   const [stationRows, setStationRows] = useState<StationPassageRow[]>([]);
   const [stationLoading, setStationLoading] = useState(false);
   const [stationError, setStationError] = useState<string | null>(null);
+  const [stationTotals, setStationTotals] = useState<StationTotalsState>(() => ({
+    perCategory: createEmptyStationCategoryTotals(),
+    overall: 0,
+  }));
+  const [missingDialog, setMissingDialog] = useState<MissingDialogState | null>(null);
 
   const [eventState, setEventState] = useState<EventState>({
     name: manifest.event.name,
@@ -133,8 +194,9 @@ function AdminDashboard({
   const loadStationStats = useCallback(async () => {
     setStationLoading(true);
     setStationError(null);
+    setMissingDialog(null);
 
-    const [stationsRes, passagesRes] = await Promise.all([
+    const [stationsRes, passagesRes, patrolsRes] = await Promise.all([
       supabase
         .from('stations')
         .select('id, code, name')
@@ -142,16 +204,26 @@ function AdminDashboard({
         .order('code'),
       supabase
         .from('station_passages')
-        .select('station_id, patrols(category)')
+        .select('station_id, patrol_id, patrols(category, sex)')
+        .eq('event_id', eventId),
+      supabase
+        .from('patrols')
+        .select('id, category, sex, patrol_code, team_name, active')
         .eq('event_id', eventId),
     ]);
 
     setStationLoading(false);
 
-    if (stationsRes.error || passagesRes.error) {
-      console.error('Failed to load station passages overview', stationsRes.error, passagesRes.error);
+    if (stationsRes.error || passagesRes.error || patrolsRes.error) {
+      console.error(
+        'Failed to load station passages overview',
+        stationsRes.error,
+        passagesRes.error,
+        patrolsRes.error,
+      );
       setStationError('Nepodařilo se načíst průchody stanovišť.');
       setStationRows([]);
+      setStationTotals({ perCategory: createEmptyStationCategoryTotals(), overall: 0 });
       return;
     }
 
@@ -163,37 +235,144 @@ function AdminDashboard({
       });
     });
 
-    const totals = new Map<string, StationPassageRow>();
+    const categoryPatrols = createEmptyStationCategoryLists();
+    const allPatrols: PatrolSummary[] = [];
+
+    type PatrolRow = {
+      id: string;
+      category: string | null;
+      sex: string | null;
+      patrol_code: string | null;
+      team_name: string | null;
+      active: boolean | null;
+    };
+
+    ((patrolsRes.data ?? []) as PatrolRow[]).forEach((patrol) => {
+      if (patrol.active === false) {
+        return;
+      }
+      const stationCategory = toStationCategoryKey(patrol.category, patrol.sex);
+      if (!stationCategory) {
+        return;
+      }
+      const summary: PatrolSummary = {
+        id: patrol.id,
+        code: normalizeText(patrol.patrol_code).toUpperCase(),
+        teamName: normalizeText(patrol.team_name),
+        category: stationCategory,
+      };
+      categoryPatrols[stationCategory].push(summary);
+      allPatrols.push(summary);
+    });
+
+    STATION_PASSAGE_CATEGORIES.forEach((category) => {
+      categoryPatrols[category].sort((a, b) => a.code.localeCompare(b.code, 'cs'));
+    });
+
+    type StationAccumulator = {
+      stationId: string;
+      stationCode: string;
+      stationName: string;
+      totals: Record<StationCategoryKey, number>;
+      total: number;
+      passed: Record<StationCategoryKey, Set<string>>;
+    };
+
+    const totals = new Map<string, StationAccumulator>();
     stations.forEach((station, id) => {
-      const baseTotals: Record<CategoryKey, number> = { N: 0, M: 0, S: 0, R: 0 };
       totals.set(id, {
         stationId: id,
         stationCode: station.code,
         stationName: station.name,
-        totals: baseTotals,
+        totals: createEmptyStationCategoryTotals(),
         total: 0,
+        passed: createEmptyStationCategorySets(),
       });
     });
 
-    ((passagesRes.data ?? []) as { station_id: string; patrols?: { category?: string | null } | null }[]).forEach((row) => {
+    type PassageRow = {
+      station_id: string;
+      patrol_id: string;
+      patrols?: { category?: string | null; sex?: string | null } | null;
+    };
+
+    ((passagesRes.data ?? []) as PassageRow[]).forEach((row) => {
       const station = totals.get(row.station_id);
       if (!station) {
         return;
       }
-      const category = row.patrols?.category ?? null;
-      const normalized = typeof category === 'string' ? category.trim().toUpperCase() : '';
-      if (!isCategoryKey(normalized)) {
+      const stationCategory = toStationCategoryKey(row.patrols?.category ?? null, row.patrols?.sex ?? null);
+      if (!stationCategory) {
         return;
       }
-      station.totals[normalized] += 1;
+      station.totals[stationCategory] += 1;
       station.total += 1;
+      station.passed[stationCategory].add(row.patrol_id);
     });
 
     const sorted = Array.from(totals.values()).sort((a, b) =>
       a.stationCode.localeCompare(b.stationCode, 'cs'),
     );
-    setStationRows(sorted);
+
+    const perCategoryTotals: Record<StationCategoryKey, number> = {
+      NH: categoryPatrols.NH.length,
+      ND: categoryPatrols.ND.length,
+      M: categoryPatrols.M.length,
+      S: categoryPatrols.S.length,
+    };
+
+    const rows: StationPassageRow[] = sorted.map((station) => {
+      const missing: Record<StationCategoryKey, PatrolSummary[]> = createEmptyStationCategoryLists();
+      const passedOverall = new Set<string>();
+
+      STATION_PASSAGE_CATEGORIES.forEach((category) => {
+        const passed = station.passed[category];
+        passed.forEach((id) => passedOverall.add(id));
+        missing[category] = categoryPatrols[category].filter((patrol) => !passed.has(patrol.id));
+      });
+
+      const totalMissing = allPatrols.filter((patrol) => !passedOverall.has(patrol.id));
+
+      return {
+        stationId: station.stationId,
+        stationCode: station.stationCode,
+        stationName: station.stationName,
+        totals: station.totals,
+        total: station.total,
+        missing,
+        totalMissing,
+      };
+    });
+
+    setStationTotals({ perCategory: perCategoryTotals, overall: allPatrols.length });
+    setStationRows(rows);
   }, [eventId]);
+
+  const handleOpenStationMissing = useCallback(
+    (row: StationPassageRow, category: StationCategoryKey | 'TOTAL') => {
+      if (category === 'TOTAL') {
+        setMissingDialog({
+          stationCode: row.stationCode,
+          stationName: row.stationName,
+          category,
+          missing: row.totalMissing,
+        });
+        return;
+      }
+
+      setMissingDialog({
+        stationCode: row.stationCode,
+        stationName: row.stationName,
+        category,
+        missing: row.missing[category],
+      });
+    },
+    [],
+  );
+
+  const handleCloseMissingDialog = useCallback(() => {
+    setMissingDialog(null);
+  }, []);
 
   const loadEventState = useCallback(async () => {
     if (!API_BASE_URL) {
@@ -531,7 +710,7 @@ function AdminDashboard({
                 <thead>
                   <tr>
                     <th>Stanoviště</th>
-                    {ANSWER_CATEGORIES.map((category) => (
+                    {STATION_PASSAGE_CATEGORIES.map((category) => (
                       <th key={category}>{category}</th>
                     ))}
                     <th>Celkem</th>
@@ -546,10 +725,53 @@ function AdminDashboard({
                           <span>{row.stationName}</span>
                         </div>
                       </td>
-                      {ANSWER_CATEGORIES.map((category) => (
-                        <td key={`${row.stationId}-${category}`}>{row.totals[category]}</td>
-                      ))}
-                      <td>{row.total}</td>
+                      {STATION_PASSAGE_CATEGORIES.map((category) => {
+                        const totalInCategory = stationTotals.perCategory[category];
+                        const passed = row.totals[category];
+                        const missingCount = row.missing[category].length;
+                        const isDisabled = totalInCategory === 0 && passed === 0;
+                        const ariaLabel =
+                          `Stanoviště ${row.stationCode} ${row.stationName}` +
+                          ` – kategorie ${category}: ${passed} z ${totalInCategory}`;
+                        const buttonClassNames = [
+                          'admin-table-button',
+                          missingCount > 0 ? 'admin-table-button--missing' : 'admin-table-button--complete',
+                        ]
+                          .filter(Boolean)
+                          .join(' ');
+
+                        return (
+                          <td key={`${row.stationId}-${category}`}>
+                            <button
+                              type="button"
+                              className={buttonClassNames}
+                              onClick={() => handleOpenStationMissing(row, category)}
+                              disabled={isDisabled}
+                              aria-label={ariaLabel}
+                            >
+                              {passed}/{totalInCategory}
+                            </button>
+                          </td>
+                        );
+                      })}
+                      <td>
+                        <button
+                          type="button"
+                          className={`admin-table-button ${
+                            row.totalMissing.length > 0
+                              ? 'admin-table-button--missing'
+                              : 'admin-table-button--complete'
+                          }`}
+                          onClick={() => handleOpenStationMissing(row, 'TOTAL')}
+                          disabled={stationTotals.overall === 0}
+                          aria-label={
+                            `Stanoviště ${row.stationCode} ${row.stationName}` +
+                            ` – celkem: ${row.total} z ${stationTotals.overall}`
+                          }
+                        >
+                          {row.total}/{stationTotals.overall}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -557,6 +779,73 @@ function AdminDashboard({
             </div>
           ) : null}
         </section>
+        {missingDialog ? (
+          <div
+            className="admin-modal-backdrop"
+            role="presentation"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                handleCloseMissingDialog();
+              }
+            }}
+          >
+            <div
+              className="admin-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-missing-title"
+            >
+              <div className="admin-modal-header">
+                <div>
+                  <h3 id="admin-missing-title">
+                    Stanoviště {missingDialog.stationCode} – {missingDialog.stationName}
+                  </h3>
+                  <p className="admin-modal-subtitle">
+                    {missingDialog.category === 'TOTAL'
+                      ? 'Zbývající hlídky celkem'
+                      : `Zbývající hlídky (${missingDialog.category})`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="admin-modal-close"
+                  onClick={handleCloseMissingDialog}
+                  aria-label="Zavřít"
+                >
+                  ×
+                </button>
+              </div>
+              <p className="admin-modal-meta">
+                {missingDialog.missing.length} z{' '}
+                {missingDialog.category === 'TOTAL'
+                  ? stationTotals.overall
+                  : stationTotals.perCategory[missingDialog.category]}
+                {' '}hlídek ještě neprošlo.
+              </p>
+              {missingDialog.missing.length === 0 ? (
+                <p className="admin-modal-empty">Všechny hlídky již stanoviště navštívily.</p>
+              ) : (
+                <ul className="admin-missing-list">
+                  {missingDialog.missing.map((patrol) => (
+                    <li key={patrol.id}>
+                      <span className="admin-missing-code">{patrol.code}</span>
+                      {patrol.teamName ? <span className="admin-missing-name">{patrol.teamName}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="admin-modal-actions">
+                <button
+                  type="button"
+                  className="admin-button admin-button--secondary"
+                  onClick={handleCloseMissingDialog}
+                >
+                  Zavřít
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
       <AppFooter variant="minimal" />
     </div>
