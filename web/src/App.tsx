@@ -1926,16 +1926,14 @@ function StationApp({
             </div>
             <div className="hero-panel hero-panel--links">
               <span className="hero-panel-label">Odkazy</span>
-              {isTargetStation ? (
-                <a
-                  className="hero-panel-link"
-                  href={SCOREBOARD_ROUTE_PREFIX}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Otevřít výsledky
-                </a>
-              ) : null}
+              <a
+                className="hero-panel-link"
+                href={SCOREBOARD_ROUTE_PREFIX}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Otevřít výsledky
+              </a>
               <div className="hero-panel-links">
                 <a
                   className="hero-panel-link"
