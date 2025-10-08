@@ -1,3 +1,10 @@
+/* Global sizing to avoid subpixel shifts and width overflow in inputs/badges */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 .admin-shell {
   min-height: 100vh;
   display: flex;
@@ -223,7 +230,9 @@
 .admin-answers-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: stretch;
+  justify-items: stretch;
 }
 
 .admin-answers-field {
@@ -234,12 +243,15 @@
   border: 1px solid var(--border);
   border-radius: 18px;
   padding: 16px 18px;
+  align-items: stretch;
 }
 
 .admin-answers-field label {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  align-items: center;
+  /* center badge + strip consistently */
 }
 
 .admin-answers-label {
@@ -253,17 +265,39 @@
   border-radius: 999px;
   background: var(--zl-yellow);
   color: #333333;
+  min-height: 28px;
+  align-self: center;
 }
 
 .admin-answers-field input {
   width: 100%;
+  max-width: 560px;
+  align-self: center;
+  /* centers the strip within each card */
+  min-height: 48px;
+  /* fixed visual height */
   border-radius: 14px;
   border: 1px solid var(--border);
+  /* keep constant border width */
   padding: 12px 14px;
+  /* symmetric left/right padding */
   font-size: 1rem;
   text-transform: uppercase;
+  text-align: center;
+  /* center characters */
+  line-height: 1;
+  /* prevents vertical jump */
   background: var(--surface);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  /* no accidental wrapping */
+  outline: 2px solid transparent;
+  /* focus uses outline, not border width change */
+  outline-offset: 2px;
+}
+
+.admin-answers-field input:focus {
+  outline-color: var(--py-blue);
 }
 
 .admin-answers-meta {
@@ -273,6 +307,7 @@
   display: inline-flex;
   flex-wrap: wrap;
   gap: 4px 0;
+  align-self: center;
 }
 
 .admin-answers-meta-item {
@@ -280,7 +315,7 @@
   align-items: center;
 }
 
-.admin-answers-meta-item + .admin-answers-meta-item::before {
+.admin-answers-meta-item+.admin-answers-meta-item::before {
   content: '•';
   margin-left: 10px;
   margin-right: 6px;
