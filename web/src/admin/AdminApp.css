@@ -371,6 +371,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+.admin-table td:nth-child(2),
+.admin-table th:nth-child(2) {
+  text-align: left;
+}
+
 .admin-table-button {
   border: none;
   background: none;
@@ -392,6 +397,17 @@
 
 .admin-table-button--complete {
   color: var(--text-2);
+}
+
+.admin-station-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: flex-start;
+}
+
+.admin-station-categories .admin-table-button {
+  min-width: 72px;
 }
 
 .admin-station-label {

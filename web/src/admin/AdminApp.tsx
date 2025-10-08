@@ -30,6 +30,25 @@ const STATION_PASSAGE_CATEGORIES = ['NH', 'ND', 'MH', 'MD', 'SH', 'SD', 'RH', 'R
 
 type StationCategoryKey = (typeof STATION_PASSAGE_CATEGORIES)[number];
 
+const STATION_ALLOWED_CATEGORIES: Record<string, CategoryKey[]> = {
+  A: ['M', 'S', 'R'],
+  B: ['N', 'M', 'S', 'R'],
+  C: ['N', 'M', 'S', 'R'],
+  D: ['R'],
+  F: ['N', 'M', 'S', 'R'],
+  J: ['N', 'M', 'S', 'R'],
+  K: ['N', 'M'],
+  M: ['M', 'S', 'R'],
+  N: ['S', 'R'],
+  O: ['N', 'M', 'S', 'R'],
+  P: ['N', 'M', 'S', 'R'],
+  S: ['M', 'S', 'R'],
+  T: ['N', 'M', 'S', 'R'],
+  U: ['N', 'M', 'S', 'R'],
+  V: ['S', 'R'],
+  Z: ['N', 'M', 'S', 'R'],
+};
+
 type PatrolSummary = {
   id: string;
   code: string;
@@ -41,15 +60,13 @@ type StationPassageRow = {
   stationId: string;
   stationCode: string;
   stationName: string;
+  categories: StationCategoryKey[];
   totals: Record<StationCategoryKey, number>;
-  total: number;
+  expectedTotals: Record<StationCategoryKey, number>;
+  totalPassed: number;
+  totalExpected: number;
   missing: Record<StationCategoryKey, PatrolSummary[]>;
   totalMissing: PatrolSummary[];
-};
-
-type StationTotalsState = {
-  perCategory: Record<StationCategoryKey, number>;
-  overall: number;
 };
 
 type EventState = {
@@ -62,6 +79,7 @@ type MissingDialogState = {
   stationName: string;
   category: StationCategoryKey | 'TOTAL';
   missing: PatrolSummary[];
+  expected: number;
 };
 
 function createEmptyStationCategoryTotals(): Record<StationCategoryKey, number> {
@@ -101,6 +119,36 @@ function createEmptyStationCategoryLists(): Record<StationCategoryKey, PatrolSum
     RH: [],
     RD: [],
   };
+}
+
+function getAllowedStationCategories(stationCode: string): StationCategoryKey[] {
+  const normalizedCode = stationCode.trim().toUpperCase();
+  const allowedBaseCategories = STATION_ALLOWED_CATEGORIES[normalizedCode] ?? ['N', 'M', 'S', 'R'];
+  const allowedStationCategories = new Set<StationCategoryKey>();
+
+  allowedBaseCategories
+    .map((category) => category.trim().toUpperCase())
+    .filter(isCategoryKey)
+    .forEach((category) => {
+      if (category === 'N') {
+        allowedStationCategories.add('NH');
+        allowedStationCategories.add('ND');
+      }
+      if (category === 'M') {
+        allowedStationCategories.add('MH');
+        allowedStationCategories.add('MD');
+      }
+      if (category === 'S') {
+        allowedStationCategories.add('SH');
+        allowedStationCategories.add('SD');
+      }
+      if (category === 'R') {
+        allowedStationCategories.add('RH');
+        allowedStationCategories.add('RD');
+      }
+    });
+
+  return STATION_PASSAGE_CATEGORIES.filter((category) => allowedStationCategories.has(category));
 }
 
 function normalizeText(value: string | null | undefined): string {
@@ -172,10 +220,6 @@ function AdminDashboard({
   const [stationRows, setStationRows] = useState<StationPassageRow[]>([]);
   const [stationLoading, setStationLoading] = useState(false);
   const [stationError, setStationError] = useState<string | null>(null);
-  const [stationTotals, setStationTotals] = useState<StationTotalsState>(() => ({
-    perCategory: createEmptyStationCategoryTotals(),
-    overall: 0,
-  }));
   const [missingDialog, setMissingDialog] = useState<MissingDialogState | null>(null);
 
   const [eventState, setEventState] = useState<EventState>({
@@ -263,7 +307,6 @@ function AdminDashboard({
       );
       setStationError('Nepodařilo se načíst průchody stanovišť.');
       setStationRows([]);
-      setStationTotals({ perCategory: createEmptyStationCategoryTotals(), overall: 0 });
       return;
     }
 
@@ -318,7 +361,6 @@ function AdminDashboard({
       stationCode: string;
       stationName: string;
       totals: Record<StationCategoryKey, number>;
-      total: number;
       passed: Record<StationCategoryKey, Set<string>>;
     };
 
@@ -329,7 +371,6 @@ function AdminDashboard({
         stationCode: station.code,
         stationName: station.name,
         totals: createEmptyStationCategoryTotals(),
-        total: 0,
         passed: createEmptyStationCategorySets(),
       });
     });
@@ -350,7 +391,6 @@ function AdminDashboard({
         return;
       }
       station.totals[stationCategory] += 1;
-      station.total += 1;
       station.passed[stationCategory].add(row.patrol_id);
     });
 
@@ -358,41 +398,41 @@ function AdminDashboard({
       a.stationCode.localeCompare(b.stationCode, 'cs'),
     );
 
-    const perCategoryTotals: Record<StationCategoryKey, number> = {
-      NH: categoryPatrols.NH.length,
-      ND: categoryPatrols.ND.length,
-      MH: categoryPatrols.MH.length,
-      MD: categoryPatrols.MD.length,
-      SH: categoryPatrols.SH.length,
-      SD: categoryPatrols.SD.length,
-      RH: categoryPatrols.RH.length,
-      RD: categoryPatrols.RD.length,
-    };
-
     const rows: StationPassageRow[] = sorted.map((station) => {
+      const categories = getAllowedStationCategories(station.stationCode);
+      const allowedCategorySet = new Set(categories);
       const missing: Record<StationCategoryKey, PatrolSummary[]> = createEmptyStationCategoryLists();
+      const expectedTotals = createEmptyStationCategoryTotals();
       const passedOverall = new Set<string>();
 
-      STATION_PASSAGE_CATEGORIES.forEach((category) => {
+      categories.forEach((category) => {
         const passed = station.passed[category];
         passed.forEach((id) => passedOverall.add(id));
+        expectedTotals[category] = categoryPatrols[category].length;
         missing[category] = categoryPatrols[category].filter((patrol) => !passed.has(patrol.id));
       });
 
-      const totalMissing = allPatrols.filter((patrol) => !passedOverall.has(patrol.id));
+      const totalMissing = allPatrols.filter(
+        (patrol) => allowedCategorySet.has(patrol.category) && !passedOverall.has(patrol.id),
+      );
+
+      const totalPassed = categories.reduce((sum, category) => sum + station.totals[category], 0);
+      const totalExpected = categories.reduce((sum, category) => sum + expectedTotals[category], 0);
 
       return {
         stationId: station.stationId,
         stationCode: station.stationCode,
         stationName: station.stationName,
+        categories,
         totals: station.totals,
-        total: station.total,
+        expectedTotals,
+        totalPassed,
+        totalExpected,
         missing,
         totalMissing,
       };
     });
 
-    setStationTotals({ perCategory: perCategoryTotals, overall: allPatrols.length });
     setStationRows(rows);
   }, [eventId]);
 
@@ -404,6 +444,7 @@ function AdminDashboard({
           stationName: row.stationName,
           category,
           missing: row.totalMissing,
+          expected: row.totalExpected,
         });
         return;
       }
@@ -413,6 +454,7 @@ function AdminDashboard({
         stationName: row.stationName,
         category,
         missing: row.missing[category],
+        expected: row.expectedTotals[category],
       });
     },
     [],
@@ -787,9 +829,7 @@ function AdminDashboard({
                 <thead>
                   <tr>
                     <th>Stanoviště</th>
-                    {STATION_PASSAGE_CATEGORIES.map((category) => (
-                      <th key={category}>{category}</th>
-                    ))}
+                    <th>Kategorie</th>
                     <th>Celkem</th>
                   </tr>
                 </thead>
@@ -802,35 +842,40 @@ function AdminDashboard({
                           <span>{row.stationName}</span>
                         </div>
                       </td>
-                      {STATION_PASSAGE_CATEGORIES.map((category) => {
-                        const totalInCategory = stationTotals.perCategory[category];
-                        const passed = row.totals[category];
-                        const missingCount = row.missing[category].length;
-                        const isDisabled = totalInCategory === 0 && passed === 0;
-                        const ariaLabel =
-                          `Stanoviště ${row.stationCode} ${row.stationName}` +
-                          ` – kategorie ${category}: ${passed} z ${totalInCategory}`;
-                        const buttonClassNames = [
-                          'admin-table-button',
-                          missingCount > 0 ? 'admin-table-button--missing' : 'admin-table-button--complete',
-                        ]
-                          .filter(Boolean)
-                          .join(' ');
+                      <td>
+                        <div className="admin-station-categories">
+                          {row.categories.map((category) => {
+                            const expectedInCategory = row.expectedTotals[category];
+                            const passed = row.totals[category];
+                            const missingCount = row.missing[category].length;
+                            const isDisabled = expectedInCategory === 0 && passed === 0;
+                            const ariaLabel =
+                              `Stanoviště ${row.stationCode} ${row.stationName}` +
+                              ` – kategorie ${category}: ${passed} z ${expectedInCategory}`;
+                            const buttonClassNames = [
+                              'admin-table-button',
+                              missingCount > 0
+                                ? 'admin-table-button--missing'
+                                : 'admin-table-button--complete',
+                            ]
+                              .filter(Boolean)
+                              .join(' ');
 
-                        return (
-                          <td key={`${row.stationId}-${category}`}>
-                            <button
-                              type="button"
-                              className={buttonClassNames}
-                              onClick={() => handleOpenStationMissing(row, category)}
-                              disabled={isDisabled}
-                              aria-label={ariaLabel}
-                            >
-                              {passed}/{totalInCategory}
-                            </button>
-                          </td>
-                        );
-                      })}
+                            return (
+                              <button
+                                key={`${row.stationId}-${category}`}
+                                type="button"
+                                className={buttonClassNames}
+                                onClick={() => handleOpenStationMissing(row, category)}
+                                disabled={isDisabled}
+                                aria-label={ariaLabel}
+                              >
+                                {passed}/{expectedInCategory}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </td>
                       <td>
                         <button
                           type="button"
@@ -840,13 +885,13 @@ function AdminDashboard({
                               : 'admin-table-button--complete'
                           }`}
                           onClick={() => handleOpenStationMissing(row, 'TOTAL')}
-                          disabled={stationTotals.overall === 0}
+                          disabled={row.totalExpected === 0}
                           aria-label={
                             `Stanoviště ${row.stationCode} ${row.stationName}` +
-                            ` – celkem: ${row.total} z ${stationTotals.overall}`
+                            ` – celkem: ${row.totalPassed} z ${row.totalExpected}`
                           }
                         >
-                          {row.total}/{stationTotals.overall}
+                          {row.totalPassed}/{row.totalExpected}
                         </button>
                       </td>
                     </tr>
@@ -894,10 +939,7 @@ function AdminDashboard({
               </div>
               <p className="admin-modal-meta">
                 {missingDialog.missing.length} z{' '}
-                {missingDialog.category === 'TOTAL'
-                  ? stationTotals.overall
-                  : stationTotals.perCategory[missingDialog.category]}
-                {' '}hlídek ještě neprošlo.
+                {missingDialog.expected} hlídek ještě neprošlo.
               </p>
               {missingDialog.missing.length === 0 ? (
                 <p className="admin-modal-empty">Všechny hlídky již stanoviště navštívily.</p>
