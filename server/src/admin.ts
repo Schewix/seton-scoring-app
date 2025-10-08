@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { z } from 'zod';
 import { verifyAccessToken } from './tokens.js';
 import { supabase } from './supabase.js';
@@ -51,7 +51,8 @@ async function resolveAdminContext(req: Request, res: Response): Promise<AdminCo
     }
 
     if (!station) {
-      return res.status(404).json({ error: 'Station not found' });
+      res.status(404).json({ error: 'Station not found' });
+      return null;
     }
 
     return {
@@ -67,7 +68,9 @@ async function resolveAdminContext(req: Request, res: Response): Promise<AdminCo
   }
 }
 
-async function requireCalcStation(req: Request, res: Response, next: NextFunction) {
+type AdminRequest = Request & { adminContext: AdminContext };
+
+const requireCalcStation: RequestHandler = async (req, res, next) => {
   const context = await resolveAdminContext(req, res);
   if (!context) {
     return;
@@ -78,14 +81,14 @@ async function requireCalcStation(req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  (req as Request & { adminContext: AdminContext }).adminContext = context;
+  (req as AdminRequest).adminContext = context;
   next();
-}
+};
 
 router.use(requireCalcStation);
 
-router.get('/event-state', async (req: Request & { adminContext: AdminContext }, res: Response) => {
-  const { eventId } = req.adminContext;
+router.get('/event-state', async (req: Request, res: Response) => {
+  const { eventId } = (req as AdminRequest).adminContext;
   const { data: event, error } = await supabase
     .from('events')
     .select('id, name, scoring_locked')
@@ -94,7 +97,8 @@ router.get('/event-state', async (req: Request & { adminContext: AdminContext },
 
   if (error || !event) {
     console.error('Failed to load event state', error);
-    return res.status(500).json({ error: 'Failed to load event state' });
+    res.status(500).json({ error: 'Failed to load event state' });
+    return;
   }
 
   res.json({
@@ -108,14 +112,15 @@ const updateSchema = z.object({
   locked: z.boolean(),
 });
 
-router.post('/event-state', async (req: Request & { adminContext: AdminContext }, res: Response) => {
+router.post('/event-state', async (req: Request, res: Response) => {
   const parse = updateSchema.safeParse(req.body);
   if (!parse.success) {
-    return res.status(400).json({ error: 'Invalid body' });
+    res.status(400).json({ error: 'Invalid body' });
+    return;
   }
 
   const { locked } = parse.data;
-  const { eventId } = req.adminContext;
+  const { eventId } = (req as AdminRequest).adminContext;
 
   const { error } = await supabase
     .from('events')
@@ -124,7 +129,8 @@ router.post('/event-state', async (req: Request & { adminContext: AdminContext }
 
   if (error) {
     console.error('Failed to update scoring lock', error);
-    return res.status(500).json({ error: 'Failed to update event' });
+    res.status(500).json({ error: 'Failed to update event' });
+    return;
   }
 
   res.json({ success: true, scoringLocked: locked });
