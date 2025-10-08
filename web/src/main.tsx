@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { AuthProvider } from './auth/context';
 import { registerSW } from 'virtual:pwa-register';
-import { ROUTE_PREFIX, isScoreboardPathname, isStationAppPath } from './routing';
+import { ROUTE_PREFIX, isAdminPathname, isScoreboardPathname, isStationAppPath } from './routing';
 
 type IconLinkConfig = {
   rel: string;
@@ -91,6 +91,7 @@ const view = params.get('view');
 const pathname = window.location.pathname;
 const normalizedPath = pathname.replace(/\/$/, '') || '/';
 const isScoreboardPath = isScoreboardPathname(pathname);
+const isAdminPath = isAdminPathname(pathname);
 const isHomepagePath = normalizedPath === '/' || normalizedPath === '/draci-smycka';
 const isSetonNamespace =
   normalizedPath === ROUTE_PREFIX ||
@@ -106,7 +107,15 @@ function render(element: React.ReactNode) {
   );
 }
 
-if ((view && scoreboardViews.has(view)) || isScoreboardPath) {
+if (isAdminPath) {
+  import('./admin/AdminApp')
+    .then(({ default: AdminApp }) => {
+      render(<AdminApp />);
+    })
+    .catch((error) => {
+      console.error('Failed to load admin view', error);
+    });
+} else if ((view && scoreboardViews.has(view)) || isScoreboardPath) {
   import('./scoreboard/ScoreboardApp')
     .then(({ default: ScoreboardApp }) => {
       render(<ScoreboardApp />);

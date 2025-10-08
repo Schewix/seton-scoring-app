@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import authRouter, { manifestHandler } from './auth.js';
 import syncRouter from './sync.js';
+import adminRouter from './admin.js';
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use('/auth', authRouter);
 app.get('/manifest', manifestHandler);
 
 app.use(syncRouter);
+app.use('/admin', adminRouter);
 
 const port = Number(process.env.PORT || 8787);
 

@@ -106,6 +106,7 @@ function useInitialization(setStatus: (status: AuthStatus) => void) {
                 event: {
                   id: env.VITE_EVENT_ID || 'event-test',
                   name: 'Test Event',
+                  scoringLocked: false,
                 },
                 allowedCategories: ['N', 'M', 'S', 'R'],
                 allowedTasks: [],

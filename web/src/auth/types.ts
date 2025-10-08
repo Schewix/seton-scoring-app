@@ -30,6 +30,7 @@ export interface StationManifest {
   event: {
     id: string;
     name: string;
+    scoringLocked: boolean;
   };
   allowedCategories: string[];
   allowedTasks: string[];

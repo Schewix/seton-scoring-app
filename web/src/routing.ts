@@ -1,6 +1,7 @@
 export const ROUTE_PREFIX = '/setonuv-zavod';
 export const STATION_ROUTE_PREFIX = `${ROUTE_PREFIX}/stanoviste`;
 export const SCOREBOARD_ROUTE_PREFIX = `${ROUTE_PREFIX}/vysledky`;
+export const ADMIN_ROUTE_PREFIX = `${ROUTE_PREFIX}/admin`;
 
 const ADDITIONAL_STATION_PREFIXES = [
   `${ROUTE_PREFIX}/station`,
@@ -45,4 +46,8 @@ export function isScoreboardPathname(pathname: string): boolean {
   return ADDITIONAL_SCOREBOARD_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
+}
+
+export function isAdminPathname(pathname: string): boolean {
+  return pathname === ADMIN_ROUTE_PREFIX || pathname.startsWith(`${ADMIN_ROUTE_PREFIX}/`);
 }
