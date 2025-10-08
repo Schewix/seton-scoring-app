@@ -18,7 +18,13 @@ export default function AppFooter({ className, variant = 'minimal' }: AppFooterP
     <footer className={classes.join(' ')}>
       <div className="app-footer-content">
         <p>© 2025 Zelená liga SPTO · Projekt SPTO Brno · Součást Pionýra</p>
-        <p>Vytvořili 32. PTO Severka a Ševa</p>
+        <p>
+          Vytvořili{' '}
+          <a href="https://severka.org" target="_blank" rel="noreferrer">
+            32. PTO Severka
+          </a>{' '}
+          a Ševa
+        </p>
       </div>
       <div className="app-footer-logos" aria-label="Logo SPTO Brno a Pionýr">
         <a href="https://jihomoravsky.pionyr.cz/pto/" target="_blank" rel="noreferrer" aria-label="SPTO Brno">
