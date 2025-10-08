@@ -122,7 +122,7 @@ authRouter.post('/login', async (req, res) => {
       .maybeSingle(),
     supabase
       .from('events')
-      .select('id, name')
+      .select('id, name, scoring_locked')
       .eq('id', assignment.event_id)
       .maybeSingle(),
   ]);
@@ -147,6 +147,7 @@ authRouter.post('/login', async (req, res) => {
     event: {
       id: event.id,
       name: event.name,
+      scoringLocked: !!event.scoring_locked,
     },
     allowedCategories,
     allowedTasks: assignment.allowed_tasks ?? [],
@@ -269,7 +270,7 @@ export async function manifestHandler(req: Request, res: Response) {
         .maybeSingle(),
       supabase
         .from('events')
-        .select('id, name')
+        .select('id, name, scoring_locked')
         .eq('id', assignment.event_id)
         .maybeSingle(),
     ]);
@@ -294,6 +295,7 @@ export async function manifestHandler(req: Request, res: Response) {
       event: {
         id: event.id,
         name: event.name,
+        scoringLocked: !!event.scoring_locked,
       },
       allowedCategories,
       allowedTasks: assignment.allowed_tasks ?? [],

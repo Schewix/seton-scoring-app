@@ -98,11 +98,6 @@ type LegacyPendingSubmission = PendingSubmissionPayload & {
 
 type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 
-const ANSWER_CATEGORIES = ['N', 'M', 'S', 'R'] as const;
-type CategoryKey = (typeof ANSWER_CATEGORIES)[number];
-function isCategoryKey(value: string): value is CategoryKey {
-  return (ANSWER_CATEGORIES as readonly string[]).includes(value);
-}
 const QUEUE_KEY_PREFIX = 'web_pending_ops_v1';
 const LEGACY_QUEUE_KEY_PREFIX = 'web_pending_station_submissions_v1';
 
@@ -127,6 +122,14 @@ const DEFAULT_ALLOWED_CATEGORIES: Record<string, CategoryKey[]> = {
 
 import { env } from './envVars';
 import { getStationPath, isStationAppPath } from './routing';
+import {
+  ANSWER_CATEGORIES,
+  CategoryKey,
+  formatAnswersForInput,
+  isCategoryKey,
+  packAnswersForStorage,
+  parseAnswerLetters,
+} from './utils/targetAnswers';
 
 const isAdminMode =
   typeof env.VITE_ADMIN_MODE === 'string' && ['1', 'true', 'yes', 'on'].includes(env.VITE_ADMIN_MODE.toLowerCase());
@@ -134,18 +137,6 @@ const isAdminMode =
 localforage.config({
   name: 'seton-web',
 });
-
-function parseAnswerLetters(value = '') {
-  return (value.match(/[A-D]/gi) || []).map((l) => l.toUpperCase());
-}
-
-function formatAnswersForInput(stored = '') {
-  return parseAnswerLetters(stored).join(' ');
-}
-
-function packAnswersForStorage(value = '') {
-  return parseAnswerLetters(value).join('');
-}
 
 function formatPatrolMetaLabel(patrol: { patrol_code: string | null; category: string; sex: string } | null) {
   if (!patrol) {
@@ -378,6 +369,9 @@ function StationApp({
   const stationId = manifest.station.id;
   const stationCode = manifest.station.code?.trim().toUpperCase() || '';
   const stationDisplayName = getStationDisplayName(manifest.station.name, manifest.station.code);
+  const scoringLocked = manifest.event.scoringLocked;
+  const isTargetStation = stationCode === 'T';
+  const scoringDisabled = scoringLocked && !isTargetStation;
   const [activePatrol, setActivePatrol] = useState<Patrol | null>(null);
   const [scannerPatrol, setScannerPatrol] = useState<Patrol | null>(null);
   const [points, setPoints] = useState('');
@@ -413,6 +407,16 @@ function StationApp({
   const [savingAnswers, setSavingAnswers] = useState(false);
   const [autoScore, setAutoScore] = useState({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
   const [alerts, setAlerts] = useState<string[]>([]);
+  const displayAlerts = useMemo(() => {
+    if (scoringDisabled) {
+      const baseMessage = 'Závod byl ukončen. Zapisování bodů bylo kanceláří uzamčeno.';
+      if (alerts.includes(baseMessage)) {
+        return alerts;
+      }
+      return [baseMessage, ...alerts];
+    }
+    return alerts;
+  }, [alerts, scoringDisabled]);
   const [showAnswersEditor, setShowAnswersEditor] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [arrivedAt, setArrivedAt] = useState<string | null>(null);
@@ -434,8 +438,6 @@ function StationApp({
   const [scoreReviewError, setScoreReviewError] = useState<string | null>(null);
 
   const queueKey = useMemo(() => `${QUEUE_KEY_PREFIX}_${stationId}`, [stationId]);
-
-  const isTargetStation = stationCode === 'T';
   const enableTicketQueue = !isTargetStation;
   const allowedCategorySet = useMemo(() => {
     const manifestCategories = Array.isArray(manifest.allowedCategories)
@@ -673,6 +675,10 @@ function StationApp({
 
   const handleAddTicket = useCallback(
     (initialState: Extract<TicketState, 'waiting' | 'serving'> = 'waiting') => {
+      if (scoringDisabled) {
+        pushAlert('Závod byl ukončen. Zapisování bodů je uzamčeno.');
+        return;
+      }
       if (!scannerPatrol) {
         pushAlert('Nejprve načti hlídku.');
         return;
@@ -708,7 +714,7 @@ function StationApp({
         pushAlert('Hlídka už je ve frontě.');
       }
     },
-    [scannerPatrol, pushAlert, resolvePatrolCode, updateTickets],
+    [scannerPatrol, pushAlert, resolvePatrolCode, scoringDisabled, updateTickets],
   );
 
   const clearWait = useCallback(() => {
@@ -1687,6 +1693,10 @@ function StationApp({
   }, [answersForm, categoryAnswers, eventId, loadCategoryAnswers, pushAlert, stationId]);
 
   const handleSave = useCallback(async () => {
+    if (scoringDisabled) {
+      pushAlert('Závod byl ukončen. Zapisování bodů je uzamčeno.');
+      return;
+    }
     if (!activePatrol) return;
     if (!stationId || !queueKey) {
       pushAlert('Vyber stanoviště před uložením záznamu.');
@@ -1825,6 +1835,7 @@ function StationApp({
     manifest.manifestVersion,
     auth.deviceKey,
     resolvePatrolCode,
+    scoringDisabled,
     syncQueue,
   ]);
 
@@ -2052,9 +2063,9 @@ function StationApp({
               </div>
             </div>
           </div>
-          {alerts.length ? (
+          {displayAlerts.length ? (
             <div className="hero-alerts">
-              {alerts.map((msg, idx) => (
+              {displayAlerts.map((msg, idx) => (
                 <div key={idx} className="hero-alert">
                   {msg}
                 </div>
@@ -2509,9 +2520,14 @@ function StationApp({
                     helperText="Vyber počet bodů, které hlídka získala."
                   />
                 )}
-                <button type="button" className="primary" onClick={handleSave}>
+                <button type="button" className="primary" onClick={handleSave} disabled={scoringDisabled}>
                   Uložit záznam
                 </button>
+                {scoringDisabled ? (
+                  <p className="error-text">
+                    Závod byl ukončen. Zapisování bodů je možné pouze na stanovišti T.
+                  </p>
+                ) : null}
               </div>
             ) : (
               <p className="form-placeholder">Nejprve načti hlídku a otevři formulář.</p>

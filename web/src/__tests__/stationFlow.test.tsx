@@ -266,7 +266,7 @@ vi.mock('../auth/context', async () => {
         code: mockedStationCode,
         name: mockedStationCode === 'T' ? 'Výpočetka' : 'Stanoviště X',
       },
-      event: { id: 'event-test', name: 'Test Event' },
+      event: { id: 'event-test', name: 'Test Event', scoringLocked: false },
       allowedCategories: mockedAllowedCategories,
       allowedTasks: [],
       manifestVersion: 1,
@@ -331,13 +331,14 @@ async function selectPatrolCode(
     number: string;
   },
 ) {
-  const categoryGroup = screen.getByRole('radiogroup', { name: 'Kategorie hlídky' });
-  const typeGroup = screen.getByRole('radiogroup', { name: 'Družina nebo hlídka' });
-  const numberGroup = screen.getByRole('radiogroup', { name: 'Číslo hlídky' });
+  const categoryGroup = screen.getByRole('listbox', { name: 'Kategorie' });
+  const typeGroup = screen.getByRole('listbox', { name: 'Pohlaví (H = hoši, D = dívky)' });
+  const numberGroup = screen.getByRole('listbox', { name: 'Číslo hlídky' });
 
-  await user.click(within(categoryGroup).getByRole('radio', { name: category }));
-  await user.click(within(typeGroup).getByRole('radio', { name: type }));
-  await user.click(within(numberGroup).getByRole('radio', { name: number }));
+  await user.click(within(categoryGroup).getByRole('option', { name: category }));
+  await user.click(within(typeGroup).getByRole('option', { name: type }));
+  const paddedNumber = number.padStart(2, '0');
+  await user.click(within(numberGroup).getByRole('option', { name: paddedNumber }));
 }
 
 async function loadPatrolAndOpenForm(
@@ -492,8 +493,8 @@ describe('station workflow', () => {
 
     await loadPatrolAndOpenForm(user);
 
-    const pointsPicker = await screen.findByRole('radiogroup', { name: 'Body (0 až 12)' });
-    await user.click(within(pointsPicker).getByRole('radio', { name: '10' }));
+    const pointsPicker = await screen.findByRole('listbox', { name: 'Body (0 až 12)' });
+    await user.click(within(pointsPicker).getByRole('option', { name: '10 bodů' }));
 
     fetchMock.mockRejectedValueOnce(new Error('offline'));
 
@@ -512,7 +513,7 @@ describe('station workflow', () => {
     mockedStationCode = 'A';
     mockedAllowedCategories = ['M', 'S', 'R'];
     mockedPatrolCategory = 'N';
-    mockedPatrolCode = 'NH-1';
+    mockedPatrolCode = 'NH-01';
 
     const user = userEvent.setup();
 
@@ -522,14 +523,15 @@ describe('station workflow', () => {
 
     await selectPatrolCode(user, { category: 'M', type: 'H', number: '1' });
 
-    const categoryGroup = screen.getByRole('radiogroup', { name: 'Kategorie hlídky' });
-    await user.click(within(categoryGroup).getByRole('radio', { name: 'N' }));
+    const categoryGroup = screen.getByRole('listbox', { name: 'Kategorie' });
+    await user.click(within(categoryGroup).getByRole('option', { name: 'N' }));
 
-    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+    const loadButton = screen.getByRole('button', { name: 'Načíst hlídku' });
+    expect(loadButton).toBeDisabled();
 
-    await waitFor(() =>
-      expect(screen.getByText('Hlídka této kategorie na stanoviště nepatří.')).toBeInTheDocument(),
-    );
+    expect(
+      await screen.findByText('Vyber kategorii, pohlaví a číslo hlídky.'),
+    ).toBeInTheDocument();
 
     expect(screen.queryByRole('button', { name: 'Obsluhovat' })).not.toBeInTheDocument();
   });
@@ -543,14 +545,14 @@ describe('station workflow', () => {
 
     await loadPatrolAndOpenForm(user);
 
-    const pointsPicker = await screen.findByRole('radiogroup', { name: 'Body (0 až 12)' });
+    const pointsPicker = await screen.findByRole('listbox', { name: 'Body (0 až 12)' });
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
     expect(
       await screen.findByText('Body musí být celé číslo v rozsahu 0 až 12.'),
     ).toBeInTheDocument();
-    expect(within(pointsPicker).queryByRole('radio', { checked: true })).not.toBeInTheDocument();
+    expect(within(pointsPicker).queryByRole('option', { selected: true })).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.queryByText(/Záznam uložen do fronty/)).not.toBeInTheDocument();
   });
@@ -675,8 +677,8 @@ describe('station workflow', () => {
 
     await loadPatrolAndOpenForm(user);
 
-    const pointsPicker = await screen.findByRole('radiogroup', { name: 'Body (0 až 12)' });
-    await user.click(within(pointsPicker).getByRole('radio', { name: '10' }));
+    const pointsPicker = await screen.findByRole('listbox', { name: 'Body (0 až 12)' });
+    await user.click(within(pointsPicker).getByRole('option', { name: '10 bodů' }));
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 

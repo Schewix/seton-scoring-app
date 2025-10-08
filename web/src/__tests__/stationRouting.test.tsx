@@ -25,7 +25,7 @@ describe('useStationRouting', () => {
       manifest: {
         judge: { id: 'judge-1', email: 'judge@example.com', displayName: 'Test Judge' },
         station: { id: 'station-123', code: 'X', name: 'Stanoviště X' },
-        event: { id: 'event-1', name: 'Test Event' },
+        event: { id: 'event-1', name: 'Test Event', scoringLocked: false },
         allowedCategories: [],
         allowedTasks: [],
         manifestVersion: 1,
@@ -63,7 +63,7 @@ describe('useStationRouting', () => {
       manifest: {
         judge: { id: 'judge-1', email: 'judge@example.com', displayName: 'Test Judge' },
         station: { id: 'station-123', code: 'X', name: 'Stanoviště X' },
-        event: { id: 'event-1', name: 'Test Event' },
+        event: { id: 'event-1', name: 'Test Event', scoringLocked: false },
         allowedCategories: [],
         allowedTasks: [],
         manifestVersion: 1,
