@@ -15,6 +15,7 @@
   --text-2: #555555;
   --text-muted: var(--text-2);
   --border: #cfe9c5;
+  --zebra: #fffbe5;
   --surface: #f7fbf6;
   --surface-alt: #ffffff;
   --shadow-soft: 0 24px 48px rgba(44, 67, 52, 0.12);

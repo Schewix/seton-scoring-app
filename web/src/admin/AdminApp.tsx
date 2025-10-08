@@ -366,7 +366,11 @@ function AdminDashboard({
               <p className="admin-subtitle">Tento účet nemá oprávnění pro kancelář závodu.</p>
             </div>
             <div className="admin-header-actions">
-              <button type="button" className="admin-button" onClick={() => logout()}>
+              <button
+                type="button"
+                className="admin-button admin-button--secondary admin-button--pill"
+                onClick={() => logout()}
+              >
                 Odhlásit se
               </button>
             </div>
@@ -378,7 +382,7 @@ function AdminDashboard({
             <p>Administrace je dostupná pouze stanovišti T (výpočetka).</p>
           </section>
         </main>
-        <AppFooter variant="dark" />
+        <AppFooter variant="minimal" />
       </div>
     );
   }
@@ -397,13 +401,17 @@ function AdminDashboard({
           <div className="admin-header-actions">
             <button
               type="button"
-              className="admin-button admin-button--ghost"
+              className="admin-button admin-button--secondary admin-button--pill"
               onClick={handleRefreshAll}
               disabled={refreshing}
             >
               {refreshing ? 'Obnovuji…' : 'Obnovit data'}
             </button>
-            <button type="button" className="admin-button" onClick={() => logout()}>
+            <button
+              type="button"
+              className="admin-button admin-button--secondary admin-button--pill"
+              onClick={() => logout()}
+            >
               Odhlásit se
             </button>
           </div>
@@ -425,7 +433,7 @@ function AdminDashboard({
             <div className="admin-card-actions">
               <button
                 type="button"
-                className={`admin-button ${eventState.scoringLocked ? 'admin-button--secondary' : 'admin-button--danger'}`}
+                className="admin-button admin-button--primary"
                 onClick={() => handleToggleLock(!eventState.scoringLocked)}
                 disabled={lockUpdating}
               >
@@ -441,7 +449,7 @@ function AdminDashboard({
           {lockMessage ? <p className="admin-notice">{lockMessage}</p> : null}
         </section>
 
-        <section className="admin-card">
+        <section className="admin-card admin-card--with-divider">
           <header className="admin-card-header">
             <div>
               <h2>Správné odpovědi – Terčový úsek</h2>
@@ -450,7 +458,7 @@ function AdminDashboard({
             <div className="admin-card-actions">
               <button
                 type="button"
-                className="admin-button admin-button--ghost"
+                className="admin-button admin-button--secondary"
                 onClick={loadAnswers}
                 disabled={answersLoading}
               >
@@ -489,7 +497,7 @@ function AdminDashboard({
           <div className="admin-card-actions admin-card-actions--end">
             <button
               type="button"
-              className="admin-button"
+              className="admin-button admin-button--primary"
               onClick={handleSaveAnswers}
               disabled={answersSaving}
             >
@@ -498,7 +506,7 @@ function AdminDashboard({
           </div>
         </section>
 
-        <section className="admin-card">
+        <section className="admin-card admin-card--with-divider">
           <header className="admin-card-header">
             <div>
               <h2>Průchody stanovišť</h2>
@@ -507,7 +515,7 @@ function AdminDashboard({
             <div className="admin-card-actions">
               <button
                 type="button"
-                className="admin-button admin-button--ghost"
+                className="admin-button admin-button--secondary"
                 onClick={loadStationStats}
                 disabled={stationLoading}
               >
@@ -550,7 +558,7 @@ function AdminDashboard({
           ) : null}
         </section>
       </main>
-      <AppFooter variant="dark" />
+      <AppFooter variant="minimal" />
     </div>
   );
 }
@@ -564,7 +572,7 @@ function AdminApp() {
         <div className="admin-card admin-card--narrow">
           <h1>Načítám…</h1>
         </div>
-        <AppFooter variant="dark" />
+        <AppFooter variant="minimal" />
       </div>
     );
   }
@@ -575,11 +583,15 @@ function AdminApp() {
         <div className="admin-card admin-card--narrow">
           <h1>Nelze načíst aplikaci</h1>
           <p>{status.message || 'Zkontroluj připojení nebo konfiguraci a zkus to znovu.'}</p>
-          <button type="button" className="admin-button" onClick={() => window.location.reload()}>
+          <button
+            type="button"
+            className="admin-button admin-button--primary"
+            onClick={() => window.location.reload()}
+          >
             Zkusit znovu
           </button>
         </div>
-        <AppFooter variant="dark" />
+        <AppFooter variant="minimal" />
       </div>
     );
   }
