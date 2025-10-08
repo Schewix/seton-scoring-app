@@ -88,11 +88,22 @@ export default function AdminLoginScreen() {
               <li>Export výsledků</li>
               <li>Přehled a kontrola stanovišť</li>
             </ul>
-            <a
-              className="admin-login-hero-link"
-              href={SCOREBOARD_ROUTE_PREFIX}
-            >
-              Zobrazit výsledky Setonova závodu
+            <a className="admin-login-hero-button" href={SCOREBOARD_ROUTE_PREFIX}>
+              <span className="admin-login-hero-button-label">
+                Zobrazit výsledky Setonova závodu
+              </span>
+              <svg
+                className="admin-login-hero-button-icon"
+                viewBox="0 0 24 24"
+                role="presentation"
+                focusable="false"
+                aria-hidden="true"
+              >
+                <path
+                  fill="currentColor"
+                  d="M7.5 5.25c-.414 0-.75.336-.75.75s.336.75.75.75h8.189L6.72 15.719a.75.75 0 1 0 1.06 1.062L16.75 7.812v8.189c0 .414.336.75.75.75s.75-.336.75-.75V6A.75.75 0 0 0 17.5 5.25h-10Z"
+                />
+              </svg>
             </a>
           </section>
 
