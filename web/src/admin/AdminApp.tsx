@@ -16,6 +16,7 @@ import {
 } from '../utils/targetAnswers';
 import { env } from '../envVars';
 import { SCOREBOARD_ROUTE_PREFIX } from '../routing';
+import AdminLoginScreen from './AdminLoginScreen';
 
 const API_BASE_URL = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
 
@@ -962,7 +963,7 @@ function AdminApp() {
   }
 
   if (status.state === 'unauthenticated') {
-    return <LoginScreen />;
+    return <AdminLoginScreen />;
   }
 
   if (status.state === 'password-change-required') {
