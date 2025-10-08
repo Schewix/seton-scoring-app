@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from './context';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
-import { SCOREBOARD_ROUTE_PREFIX } from '../routing';
+import { ADMIN_ROUTE_PREFIX } from '../routing';
 
 interface Props {
   requirePinOnly?: boolean;
@@ -99,10 +99,10 @@ export default function LoginScreen({ requirePinOnly }: Props) {
   const heroTitle = requirePinOnly ? 'Stanoviště' : 'Rozhodčí';
   const heroDescription = requirePinOnly
     ? 'Odemkni uložené stanoviště Setonova závodu pomocí PINu a pokračuj i bez připojení.'
-    : 'Spravuj průchody a výsledky stanovišť v průběhu závodu.';
+    : null;
   const descriptionText = requirePinOnly
     ? 'Zadej PIN pro odemknutí uloženého stanoviště.'
-    : 'Přihlašovací údaje získáš od hlavního rozhodčího. PIN pomůže se sdíleným stanovištěm.';
+    : 'Přihlašovací údaje získáš od hlavního rozhodčího.';
   const descriptionId = requirePinOnly ? 'login-description-pin' : 'login-description';
 
   const emailFieldId = 'login-email';
@@ -164,25 +164,18 @@ export default function LoginScreen({ requirePinOnly }: Props) {
               {heroDescription && <p>{heroDescription}</p>}
             </div>
             <ul className="auth-hero-list">
-              {requirePinOnly ? (
-                <>
-                  <li>Odemknutí stanoviště uložené v zařízení</li>
-                  <li>Bezpečné zadávání výsledků v offline režimu</li>
-                  <li>Automatická synchronizace po připojení</li>
-                </>
-              ) : (
-                <>
-                  <li>Přihlášení pro rozhodčí stanovišť</li>
-                  <li>Offline práce s průchody a výsledky</li>
-                  <li>Rychlý export podkladů pro kancelář závodu</li>
-                </>
-              )}
+              <li>Přihlášení pro rozhodčí stanovišť</li>
+              <li>Offline režim se synchronizací výsledků</li>
+              <li>Export výsledků do tabulek</li>
             </ul>
-            {!requirePinOnly ? (
-              <a className="auth-hero-link" href={SCOREBOARD_ROUTE_PREFIX}>
-                Zobrazit výsledky
-              </a>
-            ) : null}
+            <a
+              className="auth-hero-admin-button"
+              href={ADMIN_ROUTE_PREFIX}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Přihlášení pro kancelář závodu
+            </a>
           </section>
 
           <form
