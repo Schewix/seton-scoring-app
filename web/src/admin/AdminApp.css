@@ -270,6 +270,30 @@
   margin: 0;
   font-size: 0.85rem;
   color: var(--text-muted);
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+}
+
+.admin-answers-meta-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.admin-answers-meta-item + .admin-answers-meta-item::before {
+  content: '•';
+  margin-left: 10px;
+  margin-right: 6px;
+  color: currentColor;
+}
+
+.admin-answers-meta-letters {
+  letter-spacing: 0.08em;
+  white-space: normal;
+}
+
+.admin-answers-meta-time {
+  white-space: nowrap;
 }
 
 .admin-table-wrapper {

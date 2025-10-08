@@ -696,6 +696,10 @@ function AdminDashboard({
           <div className="admin-answers-grid">
             {ANSWER_CATEGORIES.map((category) => {
               const summary = answersSummary[category];
+              const hasAnswers = summary.letters.length > 0;
+              const formattedLetters = summary.letters.join(' ');
+              const updatedAt = summary.updatedAt ? new Date(summary.updatedAt) : null;
+
               return (
                 <div key={category} className="admin-answers-field">
                   <label htmlFor={`answers-${category}`}>
@@ -710,10 +714,27 @@ function AdminDashboard({
                     />
                   </label>
                   <p className="admin-answers-meta">
-                    {summary.letters.length
-                      ? `${summary.letters.length} odpovědí • ${summary.letters.join(' ')}`
-                      : 'Nenastaveno'}
-                    {summary.updatedAt ? ` · ${new Date(summary.updatedAt).toLocaleString('cs-CZ')}` : ''}
+                    {hasAnswers ? (
+                      <>
+                        <span className="admin-answers-meta-item admin-answers-meta-count">
+                          {`${summary.letters.length} odpovědí`}
+                        </span>
+                        <span className="admin-answers-meta-item admin-answers-meta-letters">
+                          {formattedLetters}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="admin-answers-meta-item">Nenastaveno</span>
+                    )}
+                    {updatedAt ? (
+                      <time
+                        className="admin-answers-meta-item admin-answers-meta-time"
+                        dateTime={updatedAt.toISOString()}
+                        suppressHydrationWarning
+                      >
+                        {updatedAt.toLocaleString('cs-CZ')}
+                      </time>
+                    ) : null}
                   </p>
                 </div>
               );
