@@ -580,8 +580,6 @@ describe('station workflow', () => {
     await renderApp();
 
     await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
-    await screen.findByText('Správné odpovědi');
-
     await loadPatrolAndOpenForm(user);
 
     await screen.findAllByText(/Vlci/);
@@ -638,8 +636,6 @@ describe('station workflow', () => {
     await renderApp();
 
     await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
-    await screen.findByText('Správné odpovědi');
-
     await loadPatrolAndOpenForm(user);
 
     await screen.findAllByText(/Vlci/);

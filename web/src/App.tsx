@@ -131,9 +131,6 @@ import {
   parseAnswerLetters,
 } from './utils/targetAnswers';
 
-const isAdminMode =
-  typeof env.VITE_ADMIN_MODE === 'string' && ['1', 'true', 'yes', 'on'].includes(env.VITE_ADMIN_MODE.toLowerCase());
-
 localforage.config({
   name: 'seton-web',
 });
@@ -380,12 +377,6 @@ function StationApp({
   const [answersError, setAnswersError] = useState('');
   const [useTargetScoring, setUseTargetScoring] = useState(false);
   const [categoryAnswers, setCategoryAnswers] = useState<Record<string, string>>({});
-  const [answersForm, setAnswersForm] = useState<Record<CategoryKey, string>>({
-    N: '',
-    M: '',
-    S: '',
-    R: '',
-  });
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingItems, setPendingItems] = useState<PendingOperation[]>([]);
   const [showPendingDetails, setShowPendingDetails] = useState(false);
@@ -403,8 +394,6 @@ function StationApp({
   const [scanActive, setScanActive] = useState(false);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [tick, setTick] = useState(0);
-  const [loadingAnswers, setLoadingAnswers] = useState(false);
-  const [savingAnswers, setSavingAnswers] = useState(false);
   const [autoScore, setAutoScore] = useState({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
   const [alerts, setAlerts] = useState<string[]>([]);
   const displayAlerts = useMemo(() => {
@@ -417,7 +406,6 @@ function StationApp({
     }
     return alerts;
   }, [alerts, scoringDisabled]);
-  const [showAnswersEditor, setShowAnswersEditor] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [arrivedAt, setArrivedAt] = useState<string | null>(null);
   const [finishAt, setFinishAt] = useState<string | null>(null);
@@ -588,8 +576,6 @@ function StationApp({
     },
     [stationId],
   );
-
-  const canEditAnswers = isAdminMode;
 
   const updateQueueState = useCallback((items: PendingOperation[]) => {
     setPendingCount(items.length);
@@ -1166,24 +1152,15 @@ function StationApp({
     setUseTargetScoring(isTargetStation);
   }, [isTargetStation]);
 
-  useEffect(() => {
-    if (!canEditAnswers) {
-      setShowAnswersEditor(false);
-    }
-  }, [canEditAnswers]);
-
   const loadCategoryAnswers = useCallback(async () => {
     if (!stationId) {
       return;
     }
-    setLoadingAnswers(true);
     const { data, error } = await supabase
       .from('station_category_answers')
       .select('category, correct_answers')
       .eq('event_id', eventId)
       .eq('station_id', stationId);
-
-    setLoadingAnswers(false);
 
     if (error) {
       console.error(error);
@@ -1192,21 +1169,15 @@ function StationApp({
     }
 
     const map: Record<string, string> = {};
-    const form: Record<CategoryKey, string> = { N: '', M: '', S: '', R: '' };
     (data || []).forEach((row) => {
       map[row.category] = row.correct_answers;
-      if (ANSWER_CATEGORIES.includes(row.category as CategoryKey)) {
-        form[row.category as CategoryKey] = formatAnswersForInput(row.correct_answers);
-      }
     });
     setCategoryAnswers(map);
-    setAnswersForm(form);
   }, [eventId, stationId, pushAlert]);
 
   useEffect(() => {
     if (!isTargetStation) {
       setCategoryAnswers({});
-      setAnswersForm({ N: '', M: '', S: '', R: '' });
       return;
     }
     loadCategoryAnswers();
@@ -1636,62 +1607,6 @@ function StationApp({
     void logout();
   }, [logout]);
 
-  const saveCategoryAnswers = useCallback(async () => {
-    if (!stationId) {
-      pushAlert('Vyber prosím stanoviště před uložením odpovědí.');
-      return;
-    }
-
-    setSavingAnswers(true);
-    const updates: { event_id: string; station_id: string; category: string; correct_answers: string }[] = [];
-    const deletions: string[] = [];
-
-    for (const cat of ANSWER_CATEGORIES) {
-      const packed = packAnswersForStorage(answersForm[cat]);
-      if (!packed) {
-        if (categoryAnswers[cat]) deletions.push(cat);
-        continue;
-      }
-      if (packed.length !== 12) {
-        pushAlert(`Kategorie ${cat} musí mít 12 odpovědí.`);
-        setSavingAnswers(false);
-        return;
-      }
-      updates.push({ event_id: eventId, station_id: stationId, category: cat, correct_answers: packed });
-    }
-
-    if (updates.length) {
-      const { error } = await supabase
-        .from('station_category_answers')
-        .upsert(updates, { onConflict: 'event_id,station_id,category' });
-      if (error) {
-        console.error(error);
-        pushAlert('Uložení správných odpovědí selhalo.');
-        setSavingAnswers(false);
-        return;
-      }
-    }
-
-    if (deletions.length) {
-      const { error } = await supabase
-        .from('station_category_answers')
-        .delete()
-        .in('category', deletions)
-        .eq('event_id', eventId)
-        .eq('station_id', stationId);
-      if (error) {
-        console.error(error);
-        pushAlert('Některé kategorie se nepodařilo odstranit.');
-        setSavingAnswers(false);
-        return;
-      }
-    }
-
-    setSavingAnswers(false);
-    pushAlert('Správné odpovědi uloženy.');
-    loadCategoryAnswers();
-  }, [answersForm, categoryAnswers, eventId, loadCategoryAnswers, pushAlert, stationId]);
-
   const handleSave = useCallback(async () => {
     if (scoringDisabled) {
       pushAlert('Závod byl ukončen. Zapisování bodů je uzamčeno.');
@@ -1949,24 +1864,6 @@ function StationApp({
     return tickets.some((ticket) => ticket.patrolId === scannerPatrol.id && ticket.state !== 'done');
   }, [scannerPatrol, tickets]);
 
-  const answersSummary = useMemo(
-    () =>
-      ANSWER_CATEGORIES.reduce(
-        (acc, cat) => {
-          const letters = parseAnswerLetters(categoryAnswers[cat] || '');
-          acc[cat] = { letters, count: letters.length };
-          return acc;
-        },
-        {} as Record<CategoryKey, { letters: string[]; count: number }>
-      ),
-    [categoryAnswers]
-  );
-
-  const hasAnyAnswers = useMemo(
-    () => ANSWER_CATEGORIES.some((cat) => answersSummary[cat].count > 0),
-    [answersSummary]
-  );
-
   const waitSecondsDisplay = useTargetScoring ? null : waitDurationSeconds;
 
   return (
@@ -2079,96 +1976,6 @@ function StationApp({
 
       <main className="content">
         <>
-          {isTargetStation ? (
-            <section className="card answers-card">
-              <header className="card-header">
-                <div>
-                  <h2>Správné odpovědi</h2>
-                  <p className="card-subtitle">Každá kategorie musí mít 12 odpovědí (A–D).</p>
-                </div>
-                <div className="card-actions">
-                  {canEditAnswers ? (
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => setShowAnswersEditor((prev) => !prev)}
-                    >
-                      {showAnswersEditor ? 'Zobrazit přehled' : 'Upravit odpovědi'}
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={loadCategoryAnswers}
-                    disabled={loadingAnswers}
-                  >
-                    {loadingAnswers ? 'Načítám…' : 'Obnovit'}
-                  </button>
-                </div>
-              </header>
-              {canEditAnswers && showAnswersEditor ? (
-                <div className="answers-editor">
-                  <p className="card-hint">Zadej 12 odpovědí (A/B/C/D) pro každou kategorii.</p>
-                  <div className="answers-grid">
-                    {ANSWER_CATEGORIES.map((cat) => (
-                      <label key={cat} className="answers-field">
-                        <span>{cat}</span>
-                        <input
-                          value={answersForm[cat]}
-                          onChange={(event) =>
-                            setAnswersForm((prev) => ({ ...prev, [cat]: event.target.value.toUpperCase() }))
-                          }
-                          placeholder="např. A B C D …"
-                        />
-                      </label>
-                    ))}
-                  </div>
-                  <div className="answers-actions">
-                    <button
-                      type="button"
-                      className="primary"
-                      onClick={saveCategoryAnswers}
-                      disabled={savingAnswers}
-                    >
-                      {savingAnswers ? 'Ukládám…' : 'Uložit správné odpovědi'}
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={loadCategoryAnswers}
-                      disabled={loadingAnswers}
-                    >
-                      Znovu načíst
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="answers-summary">
-                  {ANSWER_CATEGORIES.map((cat) => {
-                    const summary = answersSummary[cat];
-                    return (
-                      <div key={cat} className="answers-summary-row">
-                        <span className="answers-tag">{cat}</span>
-                        <span className="answers-value">
-                          {summary.count ? `${summary.count} • ${summary.letters.join(' ')}` : 'Nenastaveno'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {!canEditAnswers ? (
-                <p className="card-hint">Správné odpovědi může upravit pouze administrátor.</p>
-              ) : null}
-              {!(canEditAnswers && showAnswersEditor) && !hasAnyAnswers && !loadingAnswers ? (
-                <p className="card-hint">Správné odpovědi zatím nejsou nastavené.</p>
-              ) : null}
-              {!(canEditAnswers && showAnswersEditor) && loadingAnswers ? (
-                <p className="card-hint">Načítám…</p>
-              ) : null}
-            </section>
-          ) : null}
-
           <section className="card scanner-card">
             <header className="card-header">
               <div>
