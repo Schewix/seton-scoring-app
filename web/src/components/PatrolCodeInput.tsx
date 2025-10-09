@@ -80,6 +80,7 @@ interface PatrolCodeInputProps {
   onValidationChange?: (state: PatrolValidationState) => void;
   id?: string;
   label?: string;
+  excludePatrolIds?: ReadonlySet<string> | null;
 }
 
 function logInteraction(event: string, payload: Record<string, unknown>) {
@@ -177,6 +178,7 @@ export default function PatrolCodeInput({
   onValidationChange,
   id,
   label,
+  excludePatrolIds,
 }: PatrolCodeInputProps) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
@@ -202,6 +204,22 @@ export default function PatrolCodeInput({
 
   const registryEntries = registry.entries ?? [];
 
+  const excludedPatrolIdSet = useMemo(() => {
+    if (!excludePatrolIds) {
+      return null;
+    }
+    const values: string[] = [];
+    excludePatrolIds.forEach((id) => {
+      if (typeof id === 'string' && id.length > 0) {
+        values.push(id);
+      }
+    });
+    if (values.length === 0) {
+      return null;
+    }
+    return new Set(values);
+  }, [excludePatrolIds]);
+
   const registryMap = useMemo(() => {
     const map = new Map<string, PatrolRegistryEntry>();
     registryEntries.forEach((entry) => {
@@ -218,6 +236,9 @@ export default function PatrolCodeInput({
     const map = new Map<string, WheelColumnOption[]>();
 
     registryEntries.forEach((entry) => {
+      if (excludedPatrolIdSet?.has(entry.id)) {
+        return;
+      }
       const category = entry.category?.trim().toUpperCase() ?? '';
       const gender = entry.gender?.trim().toUpperCase() ?? '';
       if (!isCategoryOption(category) || !isGenderOption(gender)) {
@@ -255,7 +276,7 @@ export default function PatrolCodeInput({
     });
 
     return map;
-  }, [registryEntries]);
+  }, [excludedPatrolIdSet, registryEntries]);
 
   const availableNumberOptions = useMemo<WheelColumnOption[]>(() => {
     if (!selectedCategory || !selectedGender) {
