@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { forwardRef, useMemo, useState } from 'react';
 import type { Ticket } from '../auth/tickets';
 import { computeWaitTime } from '../auth/tickets';
 
@@ -22,7 +22,10 @@ function slaClass(ms: number) {
   return 'ticket-ok';
 }
 
-export default function TicketQueue({ tickets, onChangeState, heartbeat }: TicketQueueProps) {
+const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQueue(
+  { tickets, onChangeState, heartbeat }: TicketQueueProps,
+  ref,
+) {
   const grouped = useMemo(() => {
     const waiting: Ticket[] = [];
     const serving: Ticket[] = [];
@@ -51,7 +54,7 @@ export default function TicketQueue({ tickets, onChangeState, heartbeat }: Ticke
   const [showDone, setShowDone] = useState(true);
 
   return (
-    <section className="card tickets-card">
+    <section ref={ref} className="card tickets-card">
       <header className="card-header">
         <div>
           <h2>Fronta hlídek</h2>
@@ -157,4 +160,6 @@ export default function TicketQueue({ tickets, onChangeState, heartbeat }: Ticke
       ) : null}
     </section>
   );
-}
+});
+
+export default TicketQueue;
