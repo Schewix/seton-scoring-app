@@ -436,6 +436,7 @@ function StationApp({
   const tempCodesRef = useRef<Map<string, string>>(new Map());
   const tempCounterRef = useRef(1);
   const formRef = useRef<HTMLElement | null>(null);
+  const ticketQueueRef = useRef<HTMLElement | null>(null);
   const pointsInputRef = useRef<HTMLButtonElement | null>(null);
   const answersInputRef = useRef<HTMLInputElement | null>(null);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -452,6 +453,21 @@ function StationApp({
 
   const queueKey = useMemo(() => `${QUEUE_KEY_PREFIX}_${stationId}`, [stationId]);
   const enableTicketQueue = !isTargetStation;
+  const scrollToQueue = useCallback(() => {
+    if (!enableTicketQueue) {
+      return;
+    }
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const element = ticketQueueRef.current;
+    if (!element) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [enableTicketQueue]);
   const allowedCategorySet = useMemo(() => {
     const manifestCategories = Array.isArray(manifest.allowedCategories)
       ? manifest.allowedCategories
@@ -1623,6 +1639,51 @@ function StationApp({
     lastScanRef.current = null;
   }, [clearWait, isTargetStation]);
 
+  const handleReturnToQueue = useCallback(() => {
+    if (!activePatrol) {
+      resetForm();
+      scrollToQueue();
+      return;
+    }
+
+    if (!enableTicketQueue) {
+      resetForm();
+      return;
+    }
+
+    const targetTicket = tickets.find((ticket) => ticket.patrolId === activePatrol.id);
+    if (!targetTicket) {
+      pushAlert('Hlídku se nepodařilo vrátit do obsluhy.');
+      resetForm();
+      scrollToQueue();
+      return;
+    }
+
+    if (targetTicket.state === 'serving') {
+      pushAlert('Hlídka už je v obsluze.');
+      resetForm();
+      scrollToQueue();
+      return;
+    }
+
+    updateTickets((current) =>
+      current.map((ticket) =>
+        ticket.id === targetTicket.id ? transitionTicket(ticket, 'serving') : ticket,
+      ),
+    );
+    pushAlert(`Hlídka ${activePatrol.team_name} byla vrácena do obsluhovaných.`);
+    resetForm();
+    scrollToQueue();
+  }, [
+    activePatrol,
+    enableTicketQueue,
+    pushAlert,
+    resetForm,
+    scrollToQueue,
+    tickets,
+    updateTickets,
+  ]);
+
   useEffect(() => {
     resetForm();
     setLastSavedAt(null);
@@ -1924,10 +1985,11 @@ function StationApp({
     const queueWithOperation = [...queueBefore, operation];
     await writeQueue(queueKey, queueWithOperation);
     updateQueueState(queueWithOperation);
-    setShowPendingDetails(true);
+    setShowPendingDetails(false);
     pushAlert(`Záznam uložen do fronty (${queuePayload.team_name ?? queuePayload.patrol_code}).`);
     setLastSavedAt(now);
     resetForm();
+    scrollToQueue();
     void syncQueue();
   }, [
     autoScore,
@@ -1949,6 +2011,7 @@ function StationApp({
     auth.deviceKey,
     resolvePatrolCode,
     scoringDisabled,
+    scrollToQueue,
     syncQueue,
   ]);
 
@@ -2372,6 +2435,7 @@ function StationApp({
 
           {enableTicketQueue ? (
             <TicketQueue
+              ref={ticketQueueRef}
               tickets={tickets}
               heartbeat={tick}
               onChangeState={handleTicketStateChange}
@@ -2390,8 +2454,12 @@ function StationApp({
                       : 'Vyplň body a potvrď uložení.'}
                 </p>
               </div>
-              <button type="button" className="ghost" onClick={resetForm}>
-                Vymazat
+              <button
+                type="button"
+                className="ghost"
+                onClick={enableTicketQueue ? handleReturnToQueue : resetForm}
+              >
+                {enableTicketQueue ? 'Vrátit hlídku do fronty' : 'Vymazat'}
               </button>
             </header>
             {activePatrol ? (
