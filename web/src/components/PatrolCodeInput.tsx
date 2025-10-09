@@ -1,6 +1,6 @@
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, KeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
+import type { KeyboardEvent } from 'react';
 import { triggerHaptic } from '../utils/haptics';
 
 const PATROL_CODE_REGEX = /^[NMSR][HD]-(?:0?[1-9]|[1-3][0-9]|40)$/;
@@ -182,7 +182,6 @@ export default function PatrolCodeInput({
   const inputId = id ?? generatedId;
   const labelId = label ? `${inputId}-label` : undefined;
   const feedbackId = `${inputId}-feedback`;
-  const fallbackId = `${inputId}-fallback`;
 
   const normalisedValue = useMemo(() => normalisePatrolCode(value), [value]);
 
@@ -280,24 +279,14 @@ export default function PatrolCodeInput({
     }
     const match = scoped.find((option) => option.value === selectedNumber);
     if (!match || match.disabled) {
-      const fallback = scoped.find((option) => !option.disabled) ?? null;
-      if (fallback) {
-        onChange(`${selectedCategory}${selectedGender}-${fallback.value}`);
+      const firstAvailable = scoped.find((option) => !option.disabled) ?? null;
+      if (firstAvailable) {
+        onChange(`${selectedCategory}${selectedGender}-${firstAvailable.value}`);
       } else if (selectedNumber) {
         onChange(`${selectedCategory}${selectedGender}-`);
       }
     }
   }, [numbersByGroup, onChange, selectedCategory, selectedGender, selectedNumber]);
-
-  const [fallbackText, setFallbackText] = useState(() => formatDisplayValue(normalisedValue));
-  const isFallbackEditingRef = useRef(false);
-
-  useEffect(() => {
-    if (isFallbackEditingRef.current) {
-      return;
-    }
-    setFallbackText(formatDisplayValue(normalisedValue));
-  }, [normalisedValue]);
 
   const handleCategorySelect = useCallback(
     (option: string) => {
@@ -345,26 +334,6 @@ export default function PatrolCodeInput({
       onChange(`${selectedCategory}${selectedGender}-${option}`);
     },
     [onChange, selectedCategory, selectedGender, selectedNumber],
-  );
-
-  const handleFallbackFocus = useCallback(() => {
-    isFallbackEditingRef.current = true;
-  }, []);
-
-  const handleFallbackBlur = useCallback(() => {
-    isFallbackEditingRef.current = false;
-    setFallbackText(formatDisplayValue(normalisedValue));
-  }, [normalisedValue]);
-
-  const handleFallbackChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const raw = event.target.value.toUpperCase();
-      setFallbackText(raw);
-      const next = normalisePatrolCode(raw);
-      logInteraction('manual-input', { raw, next });
-      onChange(next);
-    },
-    [onChange],
   );
 
   const validationState = useMemo<PatrolValidationState>(() => {
@@ -529,24 +498,6 @@ export default function PatrolCodeInput({
       >
         {validationState.message}
       </small>
-      <div className="patrol-code-input__fallback">
-        <label htmlFor={fallbackId}>Zadat kód ručně</label>
-        <input
-          id={fallbackId}
-          type="text"
-          inputMode="text"
-          autoComplete="off"
-          spellCheck="false"
-          autoCapitalize="characters"
-          value={fallbackText}
-          onChange={handleFallbackChange}
-          onFocus={handleFallbackFocus}
-          onBlur={handleFallbackBlur}
-          placeholder="NH-07"
-          aria-describedby={feedbackId}
-          aria-invalid={!validationState.valid}
-        />
-      </div>
     </div>
   );
 }
