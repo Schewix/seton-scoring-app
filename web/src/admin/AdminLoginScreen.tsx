@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import './AdminLoginScreen.css';
+import '../styles/LoginPage.css';
 import { useAuth } from '../auth/context';
 import AppFooter from '../components/AppFooter';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
@@ -67,70 +67,65 @@ export default function AdminLoginScreen() {
     }
   };
 
+  const heroItems = ['Správa dat závodu', 'Export výsledků', 'Přehled stanovišť'];
+
   return (
-    <div className="admin-login-page">
-      <main className="admin-login-main">
-        <div className="admin-login-layout">
-          <section className="admin-login-hero" aria-label="Administrace závodu">
-            <div className="admin-login-brand">
-              <img src={zelenaLigaLogo} alt="Logo SPTO Brno" />
-              <div className="admin-login-brand-text">
-                <span className="admin-login-brand-name">SPTO Brno</span>
-                <span className="admin-login-brand-caption">Součást Pionýra</span>
+    <div className="login-page login-page--admin">
+      <main className="login-main">
+        <div className="login-layout">
+          <section className="login-hero" aria-label="Administrace závodu">
+            <div className="login-hero-brand">
+              <img src={zelenaLigaLogo} alt="Logo SPTO Brno" className="login-hero-logo" />
+              <div className="login-hero-brand-text">
+                <span className="login-hero-brand-name">SPTO BRNO</span>
+                <span className="login-hero-brand-caption">Součást Pionýra</span>
               </div>
             </div>
-            <div className="admin-login-hero-copy">
+            <div className="login-hero-copy">
+              <span className="login-hero-eyebrow">Setonův závod</span>
               <h1>Administrace závodu</h1>
               <p>Správa závodu, stanovišť a výsledků.</p>
             </div>
-            <ul className="admin-login-hero-list">
-              <li>Správa závodních dat</li>
-              <li>Export výsledků</li>
-              <li>Přehled a kontrola stanovišť</li>
+            <ul className="login-hero-list">
+              {heroItems.map((item) => (
+                <li key={item} className="login-hero-list-item">
+                  <span className="login-hero-list-icon" aria-hidden="true">
+                    ✅
+                  </span>
+                  <span>{item}</span>
+                </li>
+              ))}
             </ul>
-            <a className="admin-login-hero-button" href={SCOREBOARD_ROUTE_PREFIX}>
-              <span className="admin-login-hero-button-label">
-                Zobrazit výsledky Setonova závodu
+            <a className="login-hero-button" href={SCOREBOARD_ROUTE_PREFIX}>
+              <span>Zobrazit výsledky Setonova závodu</span>
+              <span className="login-hero-button-icon" aria-hidden="true">
+                →
               </span>
-              <svg
-                className="admin-login-hero-button-icon"
-                viewBox="0 0 24 24"
-                role="presentation"
-                focusable="false"
-                aria-hidden="true"
-              >
-                <path
-                  fill="currentColor"
-                  d="M7.5 5.25c-.414 0-.75.336-.75.75s.336.75.75.75h8.189L6.72 15.719a.75.75 0 1 0 1.06 1.062L16.75 7.812v8.189c0 .414.336.75.75.75s.75-.336.75-.75V6A.75.75 0 0 0 17.5 5.25h-10Z"
-                />
-              </svg>
             </a>
           </section>
 
-          <form className="admin-login-card" onSubmit={handleSubmit} noValidate>
-            <header className="admin-login-card-header">
+          <form className="login-card" onSubmit={handleSubmit} noValidate>
+            <header>
               <h2>Přihlášení administrátora</h2>
-              <p>Údaje získáš od hlavního správce závodu.</p>
+              <p className="login-card-description">Údaje získáš od hlavního správce závodu.</p>
             </header>
 
             {!isBrowserOnline ? (
-              <div className="admin-login-offline" role="status">
-                <span aria-hidden="true" />
+              <div className="login-offline" role="status">
+                <span className="login-offline-indicator" aria-hidden="true" />
                 Připojení je offline. Pokus se znovu po obnovení.
               </div>
             ) : null}
 
             {error ? (
-              <div className="admin-login-alert" role="alert">
-                <span className="admin-login-alert-icon" aria-hidden="true">
-                  !
-                </span>
+              <div className="login-alert login-alert--error" role="alert">
+                <span className="login-alert-icon" aria-hidden="true">!</span>
                 <span>{error.message}</span>
               </div>
             ) : null}
 
-            <div className="admin-login-field-group">
-              <label className="admin-login-field" htmlFor={emailFieldId}>
+            <div className="login-field-group">
+              <label className="login-field" htmlFor={emailFieldId}>
                 <span>E-mail</span>
                 <input
                   id={emailFieldId}
@@ -149,14 +144,14 @@ export default function AdminLoginScreen() {
                 />
               </label>
               {emailError ? (
-                <p id={`${emailFieldId}-error`} className="admin-login-field-error">
+                <p id={`${emailFieldId}-error`} className="login-field-error">
                   {emailError}
                 </p>
               ) : null}
             </div>
 
-            <div className="admin-login-field-group">
-              <label className="admin-login-field" htmlFor={passwordFieldId}>
+            <div className="login-field-group">
+              <label className="login-field" htmlFor={passwordFieldId}>
                 <span>Heslo</span>
                 <input
                   id={passwordFieldId}
@@ -174,14 +169,14 @@ export default function AdminLoginScreen() {
                 />
               </label>
               {passwordError ? (
-                <p id={`${passwordFieldId}-error`} className="admin-login-field-error">
+                <p id={`${passwordFieldId}-error`} className="login-field-error">
                   {passwordError}
                 </p>
               ) : null}
             </div>
 
-            <div className="admin-login-field-group">
-              <label className="admin-login-field" htmlFor={pinFieldId}>
+            <div className="login-field-group">
+              <label className="login-field" htmlFor={pinFieldId}>
                 <span>PIN / Zařízení (volitelné)</span>
                 <input
                   id={pinFieldId}
@@ -201,28 +196,28 @@ export default function AdminLoginScreen() {
                 />
               </label>
               {pinError ? (
-                <p id={`${pinFieldId}-error`} className="admin-login-field-error">
+                <p id={`${pinFieldId}-error`} className="login-field-error">
                   {pinError}
                 </p>
               ) : null}
             </div>
 
-            <button type="submit" disabled={submitDisabled} className="admin-login-submit">
+            <button type="submit" disabled={submitDisabled} className="login-primary">
               {loading ? 'Přihlašuji…' : 'Přihlásit se'}
             </button>
 
-            <div className="admin-login-links">
-              <a className="admin-login-link" href="mailto:zavody@zelenaliga.cz">
+            <div className="login-links">
+              <a className="login-link" href="mailto:zavody@zelenaliga.cz">
                 Zapomenuté heslo
               </a>
-              <a className="admin-login-link" href="/">
+              <a className="login-link login-link--muted" href="/">
                 Zpět na Zelenou ligu
               </a>
             </div>
           </form>
         </div>
       </main>
-      <AppFooter className="admin-login-footer" />
+      <AppFooter className="login-footer" />
     </div>
   );
 }
