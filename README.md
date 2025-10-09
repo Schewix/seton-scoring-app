@@ -1,34 +1,38 @@
-# Seton Scoring App (Supabase + Google Sheets)
+# Seton Scoring App
 
-Systém pro bodování stanovišť Setonu. Projekt začal jako mobilní aplikace v
-Expo, ale aktuální vývoj se soustředí na webovou verzi postavenou na Reactu.
-Sdílená backendová vrstva běží na Supabase a seznam hlídek se synchronizuje z
-Google Sheets. Historická mobilní aplikace už v repozitáři není – toto
-monorepo nyní obsahuje jen web, databázové skripty, Google Apps Script a nástroj
-pro generování QR kódů.
+Seton Scoring App je monorepo pro zapisování výsledků stanovišť závodu Setonův závod. Současná generace projektu běží kompletně ve webovém prohlížeči; backend je postavený na Supabase a malé Express aplikaci, pomocné skripty řeší synchronizaci hlídek a generování QR kódů. Dřívější mobilní klient už není součástí repozitáře.
 
-## Předpoklady
+## Rychlý start
 
-- Node.js 20 (stejná verze se používá v CI a při nasazení na Vercel) a `npm`.
-- Přístup k instanci Supabase (URL a anon/service klíče) a případně Supabase
-  CLI, pokud budeš lokálně zkoušet SQL skripty.
-- Google Apps Script účet s přístupem k tabulce pro import hlídek.
+1. **Node.js 20** – celý monorepo používá Node 20 (stejná verze jako v CI). V kořenové složce není potřeba spouštět `npm install`; vždy se pracuje uvnitř konkrétního balíčku (`web/`, `server/`, `scripts/`).
+2. **Supabase projekt** – připrav si URL instance, anon/service role klíče a heslo databáze. Schéma a pohledy najdeš v [`supabase/sql`](./supabase/sql).
+3. **Google Sheets** – hlídky se synchronizují přes Apps Script nebo Supabase Edge Function. Viz [Google Sheets složku](./google-sheets) a funkci [`sync-patrols`](./supabase/functions/sync-patrols).
+4. **Spuštění backendu** – Express API v [`server/`](./server) obsluhuje přihlášení a manifest stanoviště. Stačí vytvořit `.env` podle ukázky níže a spustit `npm run dev`.
+5. **Spuštění webu** – klient pro rozhodčí i výsledkový přehled je v [`web/`](./web). Po nastavení `.env.local` stačí `npm run dev` a otevřít URL z terminálu.
 
-## Přehled repozitáře
+> Detailní postupy jsou popsány níže a v README jednotlivých složek.
 
-- `web/` – webová aplikace pro rozhodčí a výsledkový přehled (React, Vite,
-  TypeScript, PWA se service workerem).
-- `supabase/sql/` – schéma databáze, pohledy, RLS politiky a referenční seed.
-- `google-sheets/` – Apps Script pro import hlídek a popis šablony tabulky.
-- `scripts/` – nástroje pro generování QR kódů hlídek.
-- `server/` – Express API (login, manifest, synchronizační backend pro rozhodčí).
-- `.github/workflows/` – CI/CD workflow pro nasazení webu na Vercel a push
-  Supabase schématu.
+## Struktura repozitáře
+
+| Složka | Popis |
+| --- | --- |
+| [`web/`](./web) | React + Vite aplikace pro rozhodčí a veřejný výsledkový přehled (PWA, offline fronta, Vitest testy). |
+| [`server/`](./server) | Express API zajišťující přihlášení rozhodčích, vydávání JWT tokenů a manifest stanoviště. |
+| [`supabase/sql`](./supabase/sql) | SQL skripty se schématem, pohledy, RLS politikami a referenčním seedem pro konkrétní ročník. |
+| [`supabase/functions/sync-patrols`](./supabase/functions/sync-patrols) | Edge Function, která nahrazuje Apps Script synchronizaci hlídek z Google Sheets. |
+| [`google-sheets/`](./google-sheets) | Google Apps Script a popis struktury sdílené tabulky pro kancelář. |
+| [`scripts/`](./scripts) | Utility (např. generátor QR kódů hlídek). |
+| [`docs/`](./docs) | Uživatelský manuál a doplňující podklady pro obsluhu stanovišť. |
+| [`notes/`](./notes) | Neformální poznámky a stav dlouhodobých úkolů. |
 
 ## Backend (Express API)
 
-Autentizace rozhodčích a manifest stanoviště obstarává mini-server v adresáři
-`server/`.
+Mini-server v adresáři [`server/`](./server) ověřuje přihlášení rozhodčích, vydává krátkodobé access tokeny a spravuje refresh tokeny v tabulce `judge_sessions`. Ve výchozím stavu poskytuje dva endpointy:
+
+- `POST /auth/login` – očekává email a heslo rozhodčího, načte jeho přiřazení (`station_assignments`), vytvoří session a vrátí access i refresh token plus manifest stanoviště.
+- `GET /manifest` – ověří access token a vrátí aktuální manifest včetně přiřazených hlídek.
+
+Lokální spuštění:
 
 ```bash
 cd server
@@ -36,213 +40,78 @@ npm install
 npm run dev
 ```
 
-Konfigurace (`server/.env`):
+`.env` soubor vypadá takto:
 
-```
-SUPABASE_URL=<https://...>
+```bash
+SUPABASE_URL=https://<projekt>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service role>
-JWT_SECRET=<tajný klíč>
-REFRESH_TOKEN_SECRET=<jiný tajný klíč>
-# volitelné (default 15 min / 14 dní)
+JWT_SECRET=<tajný klíč pro access token>
+REFRESH_TOKEN_SECRET=<tajný klíč pro refresh token>
+# volitelné (sekundy)
 ACCESS_TOKEN_TTL_SECONDS=900
 REFRESH_TOKEN_TTL_SECONDS=1209600
 ```
 
-Server poskytuje endpointy:
-
-- `POST /auth/login` – email/heslo → access/refresh tokeny, manifest, seznam hlídek.
-- `GET /manifest` – obnoví manifest podle aktuálního přiřazení (vyžaduje access token).
+Hotový TypeScript build vytvoří `npm run build`, produkční start zajišťuje `npm start`.
 
 ## Webová aplikace (React + Vite)
 
-### Hlavní funkce
+Aplikace v [`web/`](./web) poskytuje dvě hlavní rozhraní – rozhraní rozhodčího na adrese `/setonuv-zavod` a veřejný výsledkový přehled na `/setonuv-zavod/vysledky` (aliasy `/vysledky`, `/scoreboard`, `?view=vysledky`). Mezi klíčové funkce patří:
 
-- Skenování QR kódů hlídek kamerou zařízení (ZXing) nebo ruční zadání kódu.
-- Formulář pro zápis bodů, čekací doby, poznámky a času doběhu (včetně
-  výpočtu penalizace za časové kategorie).
-- Automatické vyhodnocení terčového úseku včetně přepínače mezi manuálním a
-  automatickým režimem a validace vstupu.
-- Správa správných odpovědí pro jednotlivé kategorie s možností editace v
-  administrátorském režimu a přehledem uložených terčových výsledků.
-- Lokální fronta hlídek (čekají/obsluhované/hotové) pro řízení provozu
-  stanoviště, navázaná na skenování hlídky.
-- Offline fronta neodeslaných záznamů uložená v IndexedDB (`localforage`) s
-  automatickými pokusy o synchronizaci a ručním přehledem.
-- Přehled posledních výsledků s napojením na Supabase Realtime, detailní
-  náhled terčových odpovědí a rychlé opravy bodů ostatních stanovišť.
-- Samostatný výsledkový přehled (scoreboard) pro kancelář s automatickým
-  obnovováním a exportem do XLSX.
+- skenování QR kódů hlídek (ZXing) a ruční zadávání kódů,
+- lokální fronta hlídek v IndexedDB (`localforage`) s automatickou synchronizací,
+- zápis bodů, čekacích dob, poznámek a času doběhu včetně výpočtu penalizací,
+- automatické vyhodnocení terčových odpovědí s editací správných odpovědí v admin režimu,
+- živý přehled posledních výsledků přes Supabase Realtime a export do XLSX.
 
-### Instalace a spuštění
+Instalace a spuštění:
 
-1. Nastav prostředí:
+```bash
+cd web
+npm install
+npm run dev
+```
 
-   ```bash
-   cd web
-   npm install
-   ```
+Do `.env.local` přidej minimálně tyto proměnné:
 
-2. Vytvoř soubor `.env` (nebo `.env.local`) s proměnnými:
+```bash
+VITE_SUPABASE_URL=https://<projekt>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon klíč>
+VITE_EVENT_ID=<UUID aktuální akce>
+VITE_STATION_ID=<UUID stanoviště>
+# volitelné
+VITE_ADMIN_MODE=1
+VITE_AUTH_API_URL=https://scoring-backend.example.com
+VITE_AUTH_BYPASS=1  # jen pro lokální vývoj bez přihlášení
+```
 
-   ```bash
-   VITE_SUPABASE_URL=<url z projektu Supabase>
-   VITE_SUPABASE_ANON_KEY=<anon klíč>
-   VITE_EVENT_ID=<UUID aktuální akce>
-   # doporučeno: předvyplněné stanoviště pro bypass režim a přesměrování URL
-   VITE_STATION_ID=<UUID stanoviště>
-   # volitelné: zapne administrátorský režim pro editaci správných odpovědí
-   VITE_ADMIN_MODE=1
-   # adresa backendu pro login/manifest (pokud běží samostatně)
-   VITE_AUTH_API_URL=https://scoring-backend.example.com
-   # pro lokální vývoj bez přihlášení
-   VITE_AUTH_BYPASS=1
-
-  ```
-
-3. Spusť vývojový server:
-
-   ```bash
-   npm run dev
-   ```
-
-   Pro produkci použij `npm run build` a `npm run preview` nebo nasazení podle
-   hostingu.
-
-4. Spusť lint a testy (Vitest) dle potřeby:
-
-   ```bash
-   npm run lint
-   npm run test
-   ```
-
-   Test `stationFlow.test.tsx` kontroluje offline frontu a náhled čekajících
-   záznamů.
-
-### Výsledkový přehled
-
-- Stejné prostředí (`.env`) jako pro rozhodčí – je potřeba především
-  `VITE_EVENT_ID`.
-- Výsledkový přehled je dostupný na URL
-  `/setonuv-zavod/vysledky` (nebo přidáním `?view=vysledky` k libovolné URL
-  aplikace; starší parametr `?view=scoreboard` zůstává funkční). Dynamicky se
-  načte stránka využívající pohled `scoreboard_view`
-  (postavený nad `results_ranked`).
-- Stránka se automaticky obnovuje každých 30 sekund, případně lze použít ruční
-  tlačítko „Aktualizovat“.
-- Lze exportovat kompletní výsledky do XLSX souboru – stačí kliknout na
-  tlačítko „Exportovat Excel“.
-
-### Další poznámky
-
-- Offline fronta je per prohlížeč/stanici – při ztrátě sítě se záznamy ukládají
-  lokálně, aplikace je průběžně zkouší odesílat a zobrazuje čas dalšího pokusu.
-  Ručně lze synchronizaci vyvolat z detailu fronty.
-- Zadané jméno rozhodčího se ukládá do `localStorage` pro další relaci.
-- Správné odpovědi lze hromadně upravit v horním panelu (vyžaduje administrátorský
-  režim). Při zapnutí automatického hodnocení se odpovědi validují (12 otázek,
-  pouze písmena A–D).
-- Přihlašovací obrazovka a hlavní rozhraní jsou dostupné na adrese
-  `/setonuv-zavod`.
-- Každé stanoviště má vlastní URL tvaru
-  `/setonuv-zavod/stanoviste/<station_id>` (s krátkým aliasem
-  `/stanoviste/<station_id>` a zpětně kompatibilním `/stations/<station_id>`).
-- Výsledkový přehled má kanonickou adresu `/setonuv-zavod/vysledky`;
-  zachovány jsou i zkrácené aliasy `/vysledky`, `/scoreboard` a
-  `/setonuv-zavod/scoreboard`.
-
-## Uživatelský manuál
-
-Detailní návod pro rozhodčí i kancelář je v souboru
-[`docs/USER_GUIDE.cs.md`](./docs/USER_GUIDE.cs.md).
+Běžné skripty: `npm run build`, `npm run preview`, `npm run lint`, `npm run test` (Vitest scénáře pokrývají offline frontu i automatické hodnocení terče).
 
 ## Supabase & Google Sheets
 
-1. Spusť SQL skripty ze složky [`supabase/sql/`](./supabase/sql):
-
-   ```bash
-   schema.sql
-   views.sql
-   rls.sql # zapni RLS jen pokud je potřeba
-   ```
-
-   V databázi vzniknou tabulky `station_passages`, `station_scores`,
-   `station_category_answers`, `station_quiz_responses` a pohledy `results`,
-   `results_ranked`. RLS politiky očekávají, že JWT obsahuje `event_id` a
-   `station_id` jako textové hodnoty UUID.
-
-2. Apps Script v [`google-sheets/AppsScript.gs`](./google-sheets/AppsScript.gs)
-   synchronizuje listy Google Sheets do tabulky `patrols`. Ve Script Properties
-   nastav `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE` a `EVENT_ID`. Šablonu listů
-   popisuje soubor
-   [`SHEET_TEMPLATE_INFO.md`](./google-sheets/SHEET_TEMPLATE_INFO.md). Skript
-   také nabízí funkci `exportResultsToSheets`, která načte pohled
-   `results_ranked` a naplní listy `Výsledky N/M/S/R` pořadím včetně celkových
-   bodů, bodů bez trestů a členů hlídek. Export lze spouštět ručně z menu
-   „Seton → Exportovat výsledky“ nebo přes časovač Apps Scriptu.
-   Pokud nechceš používat Apps Script, stejnou synchronizaci zvládne Edge Function
-   [`sync-patrols`](./supabase/functions/sync-patrols) – stačí publikovat
-   jednotlivé listy jako CSV (`File → Share → Publish to web`) a odkazy předat
-   do proměnné `SHEET_EXPORTS` (např. `N_H=https://...`). Funkci pak spouštíš
-   přes Supabase cron nebo externí plánovač.
-
-3. Soubor
-   [`supabase/sql/seton_2024_seed.sql`](./supabase/sql/seton_2024_seed.sql)
-   slouží jako referenční seed dat. Před spuštěním nahraď `EVENT_ID` vlastním
-   UUID.
-
-## QR kódy
-
-Skript [`scripts/generate-qr-codes.mjs`](./scripts/generate-qr-codes.mjs)
-načte aktivní hlídky z Supabase a vygeneruje pro každou SVG i společné PDF.
-
-1. Nainstaluj závislosti skriptu:
+1. Spusť SQL skripty v pořadí `schema.sql`, `views.sql`, případně `rls.sql` (zapne RLS) a dle potřeby seed [`seton_2024_seed.sql`](./supabase/sql/seton_2024_seed.sql). RLS politiky předpokládají, že JWT obsahuje `event_id` a `station_id` jako textové UUID.
+2. Hlídky lze synchronizovat dvěma způsoby:
+   - **Apps Script** [`google-sheets/AppsScript.gs`](./google-sheets/AppsScript.gs) – nastav `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE` a `EVENT_ID` v Script Properties; šablonu listů popisuje [`SHEET_TEMPLATE_INFO.md`](./google-sheets/SHEET_TEMPLATE_INFO.md).
+   - **Edge Function** [`sync-patrols`](./supabase/functions/sync-patrols) – publikuj jednotlivé listy jako CSV a jejich URL ulož do proměnné `SHEET_EXPORTS`. Funkci spouštěj cronem nebo ručně pomocí `supabase functions invoke`.
+3. Skript [`scripts/generate-qr-codes.mjs`](./scripts/generate-qr-codes.mjs) stáhne aktivní hlídky ze Supabase a vytvoří pro ně SVG i PDF s QR kódy. Spouští se příkazem:
 
    ```bash
    cd scripts
    npm install
-   ```
-
-2. Spusť generování (výstupní složka je volitelná, výchozí je
-   `qr-codes/<EVENT_ID>`):
-
-   ```bash
    SUPABASE_URL=... \
    SUPABASE_SERVICE_ROLE_KEY=... \
    node generate-qr-codes.mjs <EVENT_ID> [output-dir]
    ```
 
-   Do QR kódu se vkládá payload `seton://p/<patrol_code>` a stejný kód se
-   zobrazí i pod QR kódem vygenerovaného SVG.
+## CI/CD
 
-## CI/CD a nasazení
+- [`deploy-vercel.yml`](./.github/workflows/deploy-vercel.yml) buildí `web/` a nasazuje ji na Vercel. Potřebné sekrety: `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_TOKEN`.
+- [`supabase.yml`](./.github/workflows/supabase.yml) spouští `supabase db push && supabase db seed`. Vyžaduje `SUPABASE_ACCESS_TOKEN` a `SUPABASE_DB_PASSWORD`.
 
-- `.github/workflows/deploy-vercel.yml` buildí složku `web/` a nasazuje ji na
-  Vercel při pushi do `main`. Workflow očekává sekrety `VERCEL_ORG_ID`,
-  `VERCEL_PROJECT_ID` a `VERCEL_TOKEN`.
-- `.github/workflows/supabase.yml` propojuje repozitář se Supabase projektem a
-  spouští `supabase db push && supabase db seed`. Nastav sekrety
-  `SUPABASE_ACCESS_TOKEN` a `SUPABASE_DB_PASSWORD`.
+## Chybějící nebo plánované oblasti
 
-## Terčový úsek
+- **Historie skenů na stanovišti:** web ukládá každý QR sken přes `appendScanRecord`, ale chybí rozhraní pro zobrazení/export historie. Doplnění jednoduchého náhledu by usnadnilo diagnostiku chyb skenování.
+- **Dokumentace procesů nasazení serveru:** Express backend se nasazuje manuálně; stojí za to doplnit playbook pro produkční provoz (např. Vercel Functions, Fly.io nebo Supabase Edge Functions).
+- **Automatizace Supabase migrací:** SQL skripty se spouští ručně. Integrace se Supabase CLI (`supabase db push`) je částečně připravená v CI, ale chybí popsaný lokální workflow.
 
-- Pro každou kategorii nastav 12 správných odpovědí (`A/B/C/D`).
-- Při zapnutém automatickém hodnocení aplikace porovná odpovědi, spočítá body a
-  uloží detail (`station_quiz_responses`).
-- Přepnutí zpět na manuální hodnocení odstraní dříve uložené terčové odpovědi
-  dané hlídky.
-
-## Známá omezení
-
-- Offline režim se stará pouze o zápis záznamů; načítání dat stále vyžaduje
-  připojení.
-- Pro ostrý provoz je nutné zajistit správné JWT tokeny (s `event_id` a
-  `station_id`) dle definovaných RLS politik.
-
-## Next Steps
-
-1. Připravit bezpečné vydávání JWT tokenů pro rozhodčí (např. přes Supabase Edge
-   Functions nebo externí službu) a popsat proces v dokumentaci.
-2. Rozšířit testy o automatické hodnocení terče a synchronizaci fronty, aby
-   pokryly klíčové větve komunikace se Supabase.
-3. Doplnit detailní dokumentaci k archivní mobilní aplikaci, pokud ji bude
-   potřeba znovu oživit.
+Podrobnější poznámky a rozpracované nápady jsou v [`notes/`](./notes).
