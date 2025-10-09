@@ -1,11 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Ticket } from '../auth/tickets';
 import { computeWaitTime } from '../auth/tickets';
 
 interface TicketQueueProps {
   tickets: Ticket[];
   onChangeState: (id: string, nextState: Ticket['state']) => void;
-  onReset: () => void;
   heartbeat: number;
 }
 
@@ -23,7 +22,7 @@ function slaClass(ms: number) {
   return 'ticket-ok';
 }
 
-export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat }: TicketQueueProps) {
+export default function TicketQueue({ tickets, onChangeState, heartbeat }: TicketQueueProps) {
   const grouped = useMemo(() => {
     const waiting: Ticket[] = [];
     const serving: Ticket[] = [];
@@ -49,6 +48,7 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
   }, [tickets, heartbeat]);
 
   const nextUp = grouped.waiting[0];
+  const [showDone, setShowDone] = useState(true);
 
   return (
     <section className="card tickets-card">
@@ -60,8 +60,8 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
           </p>
         </div>
         <div className="card-actions">
-          <button type="button" className="ghost" onClick={onReset}>
-            Odebrat dokončené hlídky
+          <button type="button" className="ghost" onClick={() => setShowDone((current) => !current)}>
+            {showDone ? 'Skrýt hotové' : 'Zobrazit hotové'}
           </button>
         </div>
       </header>
@@ -124,28 +124,30 @@ export default function TicketQueue({ tickets, onChangeState, onReset, heartbeat
             })}
           </ul>
         </div>
-        <div className="tickets-column">
-          <div className="tickets-column-header">
-            <h3>Hotové</h3>
-            <span>{grouped.done.length}</span>
+        {showDone ? (
+          <div className="tickets-column">
+            <div className="tickets-column-header">
+              <h3>Hotové</h3>
+              <span>{grouped.done.length}</span>
+            </div>
+            <ul>
+              {grouped.done.map((ticket) => {
+                const waitMs = computeWaitTime(ticket);
+                return (
+                  <li key={ticket.id} className="ticket ticket-done">
+                    <div>
+                      <strong>{ticket.patrolCode}</strong>
+                      <span>{ticket.teamName}</span>
+                    </div>
+                    <div className="ticket-meta">
+                      <span>{waitMs > 0 ? formatDuration(waitMs) : '—'}</span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
-          <ul>
-            {grouped.done.map((ticket) => {
-              const waitMs = computeWaitTime(ticket);
-              return (
-                <li key={ticket.id} className="ticket ticket-done">
-                  <div>
-                    <strong>{ticket.patrolCode}</strong>
-                    <span>{ticket.teamName}</span>
-                  </div>
-                  <div className="ticket-meta">
-                    <span>{waitMs > 0 ? formatDuration(waitMs) : '—'}</span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+        ) : null}
       </div>
 
       {nextUp ? (

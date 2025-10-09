@@ -1111,22 +1111,6 @@ function StationApp({
     [initializeFormForPatrol, patrolById, pushAlert, tickets, updateTickets],
   );
 
-  const handleResetTickets = useCallback(() => {
-    let removedTickets = 0;
-    updateTickets((current) =>
-      current.filter((ticket) => {
-        const keep = ticket.state !== 'done';
-        if (!keep) {
-          removedTickets += 1;
-        }
-        return keep;
-      }),
-    );
-    if (removedTickets > 0) {
-      pushAlert('Dokončené hlídky byly odebrány z fronty.');
-    }
-  }, [pushAlert, updateTickets]);
-
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const desiredPath = getStationPath(stationDisplayName);
@@ -2083,7 +2067,6 @@ function StationApp({
               tickets={tickets}
               heartbeat={tick}
               onChangeState={handleTicketStateChange}
-              onReset={handleResetTickets}
             />
           ) : null}
 
