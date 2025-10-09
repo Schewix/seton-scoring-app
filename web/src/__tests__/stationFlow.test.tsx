@@ -529,9 +529,11 @@ describe('station workflow', () => {
     const loadButton = screen.getByRole('button', { name: 'Načíst hlídku' });
     expect(loadButton).toBeDisabled();
 
-    expect(
-      await screen.findByText('Vyber kategorii, pohlaví a číslo hlídky.'),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Vyber kategorii, pohlaví a číslo hlídky.'),
+      ).not.toBeInTheDocument(),
+    );
 
     expect(screen.queryByRole('button', { name: 'Obsluhovat' })).not.toBeInTheDocument();
   });
