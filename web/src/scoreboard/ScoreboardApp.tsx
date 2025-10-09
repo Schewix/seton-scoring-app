@@ -229,12 +229,21 @@ function parsePatrolMembersList(members: string | null) {
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
 
-  if (!parts.length) {
-    const trimmed = members.trim();
-    return trimmed ? [trimmed] : [];
+  if (parts.length > 1) {
+    return parts;
   }
 
-  return parts;
+  const commaParts = members
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+
+  if (commaParts.length > 1) {
+    return commaParts;
+  }
+
+  const trimmed = members.trim();
+  return trimmed ? [trimmed] : [];
 }
 
 function formatPatrolMembers(members: string | null) {
@@ -252,7 +261,7 @@ function formatMemberColumns(members: string | null, columnCount: number) {
   }
 
   const parts = parsePatrolMembersList(members);
-  return Array.from({ length: columnCount }, (_, index) => parts[index] ?? '-');
+  return Array.from({ length: columnCount }, (_, index) => parts[index] ?? '—');
 }
 
 function formatStationColumns(
@@ -343,6 +352,7 @@ function ScoreboardApp() {
     return normaliseText((import.meta.env.VITE_EVENT_NAME as string | undefined) ?? null) ?? '';
   });
   const [exporting, setExporting] = useState(false);
+  const [stationCodes, setStationCodes] = useState<string[]>([]);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const isMountedRef = useRef(true);
 
@@ -397,6 +407,54 @@ function ScoreboardApp() {
       cancelled = true;
     };
   }, [eventName, rawEventId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadStations = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('stations')
+          .select('code')
+          .eq('event_id', rawEventId)
+          .order('code', { ascending: true });
+
+        if (!isMountedRef.current || cancelled) {
+          return;
+        }
+
+        if (error) {
+          console.error('Failed to load station list for export', error);
+          return;
+        }
+
+        if (!Array.isArray(data)) {
+          return;
+        }
+
+        const uniqueCodes = Array.from(
+          new Set(
+            data
+              .map((row) => (typeof row.code === 'string' ? row.code.trim().toUpperCase() : ''))
+              .filter((code) => code && code !== 'R'),
+          ),
+        );
+
+        setStationCodes(uniqueCodes);
+      } catch (err) {
+        if (!isMountedRef.current || cancelled) {
+          return;
+        }
+        console.error('Failed to load station list for export', err);
+      }
+    };
+
+    loadStations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rawEventId]);
 
   const loadData = useCallback(async () => {
     setRefreshing(true);
@@ -561,17 +619,23 @@ function ScoreboardApp() {
     );
     const maxMemberCount = allMembers.reduce((max, members) => Math.max(max, members.length), 0);
 
-    const stationCodesSet = new Set<string>();
+    const fallbackStationCodesSet = new Set<string>();
     groupedRanked.forEach((group) => {
       group.visibleItems.forEach((row) => {
         Object.keys(row.stationPointsBreakdown).forEach((code) => {
-          stationCodesSet.add(code);
+          fallbackStationCodesSet.add(code.trim().toUpperCase());
         });
       });
     });
-    const sortedStationCodes = Array.from(stationCodesSet).sort((a, b) =>
-      a.localeCompare(b, 'cs'),
-    );
+
+    const stationCodesForExport = (stationCodes.length
+      ? stationCodes
+      : Array.from(fallbackStationCodesSet)
+          .filter((code) => code && code !== 'R')
+          .sort((a, b) => a.localeCompare(b, 'cs'))
+    ).filter((code, index, array) => array.indexOf(code) === index);
+
+    const sortedStationCodes = stationCodesForExport;
 
     const memberHeaders = Array.from({ length: maxMemberCount }, (_, index) => `Člen ${index + 1}`);
     const stationHeaders = sortedStationCodes.map((code) => `Body ${code}`);
@@ -656,7 +720,7 @@ function ScoreboardApp() {
       } finally {
         setExporting(false);
       }
-    }, [eventName, exporting, groupedRanked]);
+    }, [eventName, exporting, groupedRanked, stationCodes]);
 
     const eventLabel = eventName || 'Název závodu není k dispozici';
     const lastUpdatedLabel = lastUpdatedAt
