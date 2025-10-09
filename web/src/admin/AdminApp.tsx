@@ -15,6 +15,13 @@ import {
   parseAnswerLetters,
 } from '../utils/targetAnswers';
 import { env } from '../envVars';
+import {
+  createStationCategoryRecord,
+  getAllowedStationCategories,
+  STATION_PASSAGE_CATEGORIES,
+  StationCategoryKey,
+  toStationCategoryKey,
+} from '../utils/stationCategories';
 import AdminLoginScreen from './AdminLoginScreen';
 
 const API_BASE_URL = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
@@ -24,29 +31,6 @@ type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 type AnswersFormState = Record<CategoryKey, string>;
 
 type AnswersSummary = Record<CategoryKey, { letters: string[]; updatedAt: string | null }>;
-
-const STATION_PASSAGE_CATEGORIES = ['NH', 'ND', 'MH', 'MD', 'SH', 'SD', 'RH', 'RD'] as const;
-
-type StationCategoryKey = (typeof STATION_PASSAGE_CATEGORIES)[number];
-
-const STATION_ALLOWED_CATEGORIES: Record<string, CategoryKey[]> = {
-  A: ['M', 'S', 'R'],
-  B: ['N', 'M', 'S', 'R'],
-  C: ['N', 'M', 'S', 'R'],
-  D: ['R'],
-  F: ['N', 'M', 'S', 'R'],
-  J: ['N', 'M', 'S', 'R'],
-  K: ['N', 'M'],
-  M: ['M', 'S', 'R'],
-  N: ['S', 'R'],
-  O: ['N', 'M', 'S', 'R'],
-  P: ['N', 'M', 'S', 'R'],
-  S: ['M', 'S', 'R'],
-  T: ['N', 'M', 'S', 'R'],
-  U: ['N', 'M', 'S', 'R'],
-  V: ['S', 'R'],
-  Z: ['N', 'M', 'S', 'R'],
-};
 
 type PatrolSummary = {
   id: string;
@@ -81,103 +65,8 @@ type MissingDialogState = {
   expected: number;
 };
 
-function createEmptyStationCategoryTotals(): Record<StationCategoryKey, number> {
-  return {
-    NH: 0,
-    ND: 0,
-    MH: 0,
-    MD: 0,
-    SH: 0,
-    SD: 0,
-    RH: 0,
-    RD: 0,
-  };
-}
-
-function createEmptyStationCategorySets(): Record<StationCategoryKey, Set<string>> {
-  return {
-    NH: new Set<string>(),
-    ND: new Set<string>(),
-    MH: new Set<string>(),
-    MD: new Set<string>(),
-    SH: new Set<string>(),
-    SD: new Set<string>(),
-    RH: new Set<string>(),
-    RD: new Set<string>(),
-  };
-}
-
-function createEmptyStationCategoryLists(): Record<StationCategoryKey, PatrolSummary[]> {
-  return {
-    NH: [],
-    ND: [],
-    MH: [],
-    MD: [],
-    SH: [],
-    SD: [],
-    RH: [],
-    RD: [],
-  };
-}
-
-function getAllowedStationCategories(stationCode: string): StationCategoryKey[] {
-  const normalizedCode = stationCode.trim().toUpperCase();
-  const allowedBaseCategories = STATION_ALLOWED_CATEGORIES[normalizedCode] ?? ['N', 'M', 'S', 'R'];
-  const allowedStationCategories = new Set<StationCategoryKey>();
-
-  allowedBaseCategories
-    .map((category) => category.trim().toUpperCase())
-    .filter(isCategoryKey)
-    .forEach((category) => {
-      if (category === 'N') {
-        allowedStationCategories.add('NH');
-        allowedStationCategories.add('ND');
-      }
-      if (category === 'M') {
-        allowedStationCategories.add('MH');
-        allowedStationCategories.add('MD');
-      }
-      if (category === 'S') {
-        allowedStationCategories.add('SH');
-        allowedStationCategories.add('SD');
-      }
-      if (category === 'R') {
-        allowedStationCategories.add('RH');
-        allowedStationCategories.add('RD');
-      }
-    });
-
-  return STATION_PASSAGE_CATEGORIES.filter((category) => allowedStationCategories.has(category));
-}
-
 function normalizeText(value: string | null | undefined): string {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function toStationCategoryKey(
-  category: string | null | undefined,
-  sex: string | null | undefined,
-): StationCategoryKey | null {
-  const normalizedCategory = normalizeText(category).toUpperCase();
-  const normalizedSex = normalizeText(sex).toUpperCase();
-
-  if (!normalizedCategory) {
-    return null;
-  }
-
-  if (normalizedSex === 'D') {
-    if (normalizedCategory === 'N') return 'ND';
-    if (normalizedCategory === 'M') return 'MD';
-    if (normalizedCategory === 'S') return 'SD';
-    if (normalizedCategory === 'R') return 'RD';
-  } else {
-    if (normalizedCategory === 'N') return 'NH';
-    if (normalizedCategory === 'M') return 'MH';
-    if (normalizedCategory === 'S') return 'SH';
-    if (normalizedCategory === 'R') return 'RH';
-  }
-
-  return null;
 }
 
 function createEmptyAnswers(): AnswersFormState {
@@ -321,7 +210,7 @@ function AdminDashboard({
       });
     });
 
-    const categoryPatrols = createEmptyStationCategoryLists();
+    const categoryPatrols = createStationCategoryRecord<PatrolSummary[]>(() => []);
     const allPatrols: PatrolSummary[] = [];
 
     type PatrolRow = {
@@ -369,8 +258,8 @@ function AdminDashboard({
         stationId: id,
         stationCode: station.code,
         stationName: station.name,
-        totals: createEmptyStationCategoryTotals(),
-        passed: createEmptyStationCategorySets(),
+        totals: createStationCategoryRecord<number>(() => 0),
+        passed: createStationCategoryRecord<Set<string>>(() => new Set<string>()),
       });
     });
 
@@ -400,8 +289,8 @@ function AdminDashboard({
     const rows: StationPassageRow[] = sorted.map((station) => {
       const categories = getAllowedStationCategories(station.stationCode);
       const allowedCategorySet = new Set(categories);
-      const missing: Record<StationCategoryKey, PatrolSummary[]> = createEmptyStationCategoryLists();
-      const expectedTotals = createEmptyStationCategoryTotals();
+      const missing = createStationCategoryRecord<PatrolSummary[]>(() => []);
+      const expectedTotals = createStationCategoryRecord<number>(() => 0);
       const passedOverall = new Set<string>();
 
       categories.forEach((category) => {
