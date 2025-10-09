@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import '../styles/LoginPage.css';
 import { useAuth } from './context';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
@@ -43,10 +44,21 @@ export default function LoginScreen({ requirePinOnly }: Props) {
   const loadingLabel = requirePinOnly ? 'Odemykám…' : 'Přihlašuji…';
 
   const formTitle = requirePinOnly ? 'Odemknutí stanoviště' : 'Přihlášení rozhodčího';
-  const heroTitle = requirePinOnly ? 'Stanoviště' : 'Rozhodčí';
-  const heroDescription = requirePinOnly
-    ? 'Odemkni uložené stanoviště Setonova závodu pomocí PINu a pokračuj i bez připojení.'
-    : null;
+  const heroTitle = requirePinOnly ? 'Setonův závod – Stanoviště' : 'Setonův závod – Rozhodčí';
+  const heroSubtitle = requirePinOnly
+    ? 'Odemkni uložené stanoviště Setonova závodu a pokračuj i bez připojení.'
+    : 'Záznam výsledků ze stanovišť závodu.';
+  const heroItems = requirePinOnly
+    ? [
+        'Práce v offline režimu',
+        'Bezpečné odemknutí pomocí PINu',
+        'Automatická synchronizace výsledků',
+      ]
+    : [
+        'Přihlášení rozhodčích stanovišť',
+        'Offline režim se synchronizací',
+        'Export výsledků do tabulek',
+      ];
   const descriptionText = requirePinOnly
     ? 'Zadej PIN pro odemknutí uloženého stanoviště.'
     : 'Přihlašovací údaje získáš od hlavního rozhodčího.';
@@ -90,72 +102,66 @@ export default function LoginScreen({ requirePinOnly }: Props) {
   };
 
   return (
-    <div className="auth-shell">
-      <div className="auth-shell-content">
-        <div className="auth-layout">
-          <section className="auth-hero" aria-label="Informace pro rozhodčí">
-            <div className="auth-hero-brand">
-              <a
-                className="auth-hero-logo"
-                href="https://zelenaliga.cz"
-                target="_blank"
-                rel="noreferrer"
-              >
-                <img src={zelenaLigaLogo} alt="Logo SPTO Brno" />
-              </a>
-              <span className="auth-hero-caption">SPTO Brno</span>
+    <div className="login-page login-page--referee">
+      <div className="login-main">
+        <div className="login-layout">
+          <section className="login-hero" aria-label="Informace pro rozhodčí">
+            <div className="login-hero-brand">
+              <img src={zelenaLigaLogo} alt="Logo SPTO Brno" className="login-hero-logo" />
+              <div className="login-hero-brand-text">
+                <span className="login-hero-brand-name">SPTO BRNO</span>
+                <span className="login-hero-brand-caption">Součást Pionýra</span>
+              </div>
             </div>
-            <div className="auth-hero-copy">
-              <span className="auth-hero-eyebrow">Setonův závod</span>
+            <div className="login-hero-copy">
+              <span className="login-hero-eyebrow">Setonův závod</span>
               <h1>{heroTitle}</h1>
-              {heroDescription && <p>{heroDescription}</p>}
+              <p>{heroSubtitle}</p>
             </div>
-            <ul className="auth-hero-list">
-              <li>Přihlášení pro rozhodčí stanovišť</li>
-              <li>Offline režim se synchronizací výsledků</li>
-              <li>Export výsledků do tabulek</li>
+            <ul className="login-hero-list">
+              {heroItems.map((item) => (
+                <li key={item} className="login-hero-list-item">
+                  <span className="login-hero-list-icon" aria-hidden="true">
+                    ✅
+                  </span>
+                  <span>{item}</span>
+                </li>
+              ))}
             </ul>
-            <a
-              className="auth-hero-admin-button"
-              href={ADMIN_ROUTE_PREFIX}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a className="login-hero-button" href={ADMIN_ROUTE_PREFIX} target="_blank" rel="noreferrer">
               <span>Přihlášení pro kancelář závodu</span>
-              <span className="auth-hero-admin-icon" aria-hidden="true">
-                ↗
+              <span className="login-hero-button-icon" aria-hidden="true">
+                →
               </span>
             </a>
           </section>
 
           <form
-            className="auth-card"
+            className="login-card"
             onSubmit={handleSubmit}
             aria-describedby={descriptionId}
             noValidate
           >
             {showOfflineNotice ? (
-              <div className="auth-offline-banner" role="status">
-                <span className="auth-offline-indicator" aria-hidden="true" />
+              <div className="login-offline" role="status">
+                <span className="login-offline-indicator" aria-hidden="true" />
                 Jste offline – přihlášení se uloží a odešle po připojení.
               </div>
             ) : null}
             <h2>{formTitle}</h2>
-            <p id={descriptionId} className="auth-description">
+            <p id={descriptionId} className="login-card-description">
               {descriptionText}
             </p>
             {error ? (
-              <div className="auth-alert auth-alert--error" role="alert">
-                <span className="auth-alert-icon" aria-hidden="true">
-                  !
-                </span>
+              <div className="login-alert login-alert--error" role="alert">
+                <span className="login-alert-icon" aria-hidden="true">!</span>
                 <span>{error.message}</span>
               </div>
             ) : null}
 
             {!requirePinOnly ? (
-              <div className="auth-field-group">
-                <label className="auth-field" htmlFor={emailFieldId}>
+              <div className="login-field-group">
+                <label className="login-field" htmlFor={emailFieldId}>
                   <span>E-mail</span>
                   <input
                     id={emailFieldId}
@@ -174,7 +180,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
                   />
                 </label>
                 {emailError ? (
-                  <p id={`${emailFieldId}-error`} className="auth-field-error">
+                  <p id={`${emailFieldId}-error`} className="login-field-error">
                     {emailError}
                   </p>
                 ) : null}
@@ -182,8 +188,8 @@ export default function LoginScreen({ requirePinOnly }: Props) {
             ) : null}
 
             {!requirePinOnly ? (
-              <div className="auth-field-group">
-                <label className="auth-field" htmlFor={passwordFieldId}>
+              <div className="login-field-group">
+                <label className="login-field" htmlFor={passwordFieldId}>
                   <span>Heslo</span>
                   <input
                     id={passwordFieldId}
@@ -203,15 +209,15 @@ export default function LoginScreen({ requirePinOnly }: Props) {
                   />
                 </label>
                 {passwordError ? (
-                  <p id={`${passwordFieldId}-error`} className="auth-field-error">
+                  <p id={`${passwordFieldId}-error`} className="login-field-error">
                     {passwordError}
                   </p>
                 ) : null}
               </div>
             ) : null}
 
-            <div className="auth-field-group">
-              <label className="auth-field" htmlFor={pinFieldId}>
+            <div className="login-field-group">
+              <label className="login-field" htmlFor={pinFieldId}>
                 <span>{requirePinOnly ? 'PIN' : 'PIN (volitelné)'}</span>
                 <input
                   id={pinFieldId}
@@ -232,27 +238,27 @@ export default function LoginScreen({ requirePinOnly }: Props) {
                 />
               </label>
               {pinError ? (
-                <p id={`${pinFieldId}-error`} className="auth-field-error">
+                <p id={`${pinFieldId}-error`} className="login-field-error">
                   {pinError}
                 </p>
               ) : null}
             </div>
 
-            <button type="submit" disabled={submitDisabled} className="auth-primary">
+            <button type="submit" disabled={submitDisabled} className="login-primary">
               {loading ? loadingLabel : submitLabel}
             </button>
-            <div className="auth-links">
-              <a className="auth-link" href="mailto:zavody@zelenaliga.cz">
+            <div className="login-links">
+              <a className="login-link" href="mailto:zavody@zelenaliga.cz">
                 Zapomenuté heslo
               </a>
-              <a className="auth-link auth-link--muted" href="/">
+              <a className="login-link login-link--muted" href="/">
                 Zpět na Zelenou ligu
               </a>
             </div>
           </form>
         </div>
       </div>
-      <AppFooter variant="minimal" className="auth-footer" />
+      <AppFooter variant="minimal" className="login-footer" />
     </div>
   );
 }
