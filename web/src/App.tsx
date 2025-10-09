@@ -2306,6 +2306,7 @@ function StationApp({
                   label="Ruční kód"
                   registry={patrolRegistryState}
                   onValidationChange={setManualValidation}
+                  excludePatrolIds={stationPassageVisitedSet}
                 />
                 <button
                   type="button"
