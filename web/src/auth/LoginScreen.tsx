@@ -121,10 +121,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
             <ul className="login-hero-list">
               {heroItems.map((item) => (
                 <li key={item} className="login-hero-list-item">
-                  <span className="login-hero-list-icon" aria-hidden="true">
-                    ✅
-                  </span>
-                  <span>{item}</span>
+                  {item}
                 </li>
               ))}
             </ul>
