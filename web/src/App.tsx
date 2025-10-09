@@ -25,9 +25,18 @@ import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord } from './storage/scanHistory';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
-import { ROUTE_PREFIX, SCOREBOARD_ROUTE_PREFIX } from './routing';
+import { ROUTE_PREFIX, SCOREBOARD_ROUTE_PREFIX, getStationPath, isStationAppPath } from './routing';
 import competitionRulesPdf from './assets/pravidla-souteze.pdf';
 import stationRulesPdf from './assets/pravidla-stanovist.pdf';
+import {
+  createStationCategoryRecord,
+  getAllowedStationCategories,
+  getStationAllowedBaseCategories,
+  StationCategoryKey,
+  toStationCategoryKey,
+} from './utils/stationCategories';
+import { env } from './envVars';
+import { CategoryKey, formatAnswersForInput, isCategoryKey, packAnswersForStorage, parseAnswerLetters } from './utils/targetAnswers';
 
 
 interface Patrol {
@@ -88,6 +97,28 @@ interface StationScoreRowState {
   error: string | null;
 }
 
+interface StationSummaryPatrol {
+  id: string;
+  code: string;
+  teamName: string;
+  baseCategory: string;
+  sex: string;
+}
+
+interface StationCategorySummaryItem {
+  key: StationCategoryKey;
+  expected: number;
+  visited: number;
+  missing: StationSummaryPatrol[];
+}
+
+interface StationCategorySummary {
+  items: StationCategorySummaryItem[];
+  totalExpected: number;
+  totalVisited: number;
+  totalMissing: StationSummaryPatrol[];
+}
+
 type LegacyPendingSubmission = PendingSubmissionPayload & {
   judge?: string;
   judge_id?: string;
@@ -100,36 +131,6 @@ type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 
 const QUEUE_KEY_PREFIX = 'web_pending_ops_v1';
 const LEGACY_QUEUE_KEY_PREFIX = 'web_pending_station_submissions_v1';
-
-const DEFAULT_ALLOWED_CATEGORIES: Record<string, CategoryKey[]> = {
-  A: ['M', 'S', 'R'],
-  B: ['N', 'M', 'S', 'R'],
-  C: ['N', 'M', 'S', 'R'],
-  D: ['R'],
-  F: ['N', 'M', 'S', 'R'],
-  J: ['N', 'M', 'S', 'R'],
-  K: ['N', 'M'],
-  M: ['M', 'S', 'R'],
-  N: ['S', 'R'],
-  O: ['N', 'M', 'S', 'R'],
-  P: ['N', 'M', 'S', 'R'],
-  S: ['M', 'S', 'R'],
-  T: ['N', 'M', 'S', 'R'],
-  U: ['N', 'M', 'S', 'R'],
-  V: ['S', 'R'],
-  Z: ['N', 'M', 'S', 'R'],
-};
-
-import { env } from './envVars';
-import { getStationPath, isStationAppPath } from './routing';
-import {
-  ANSWER_CATEGORIES,
-  CategoryKey,
-  formatAnswersForInput,
-  isCategoryKey,
-  packAnswersForStorage,
-  parseAnswerLetters,
-} from './utils/targetAnswers';
 
 localforage.config({
   name: 'seton-web',
@@ -352,6 +353,25 @@ function getStationDisplayName(name: string, code: string | null | undefined): s
   return code?.trim().toUpperCase() === 'T' ? 'Výpočetka' : name;
 }
 
+const STATION_CATEGORY_LABELS: Record<StationCategoryKey, { chip: string; detail: string }> = {
+  NH: { chip: 'N/H', detail: 'N – hoši' },
+  ND: { chip: 'N/D', detail: 'N – dívky' },
+  MH: { chip: 'M/H', detail: 'M – hoši' },
+  MD: { chip: 'M/D', detail: 'M – dívky' },
+  SH: { chip: 'S/H', detail: 'S – hoši' },
+  SD: { chip: 'S/D', detail: 'S – dívky' },
+  RH: { chip: 'R/H', detail: 'R – hoši' },
+  RD: { chip: 'R/D', detail: 'R – dívky' },
+};
+
+function formatStationCategoryChipLabel(category: StationCategoryKey): string {
+  return STATION_CATEGORY_LABELS[category]?.chip ?? category;
+}
+
+function formatStationCategoryDetailLabel(category: StationCategoryKey): string {
+  return STATION_CATEGORY_LABELS[category]?.detail ?? category;
+}
+
 function StationApp({
   auth,
   refreshManifest,
@@ -425,6 +445,10 @@ function StationApp({
   const [scoreReviewState, setScoreReviewState] = useState<Record<string, StationScoreRowState>>({});
   const [scoreReviewLoading, setScoreReviewLoading] = useState(false);
   const [scoreReviewError, setScoreReviewError] = useState<string | null>(null);
+  const [stationPassageIds, setStationPassageIds] = useState<string[]>([]);
+  const [stationPassageLoading, setStationPassageLoading] = useState(false);
+  const [stationPassageError, setStationPassageError] = useState<string | null>(null);
+  const [selectedSummaryCategory, setSelectedSummaryCategory] = useState<StationCategoryKey | null>(null);
 
   const queueKey = useMemo(() => `${QUEUE_KEY_PREFIX}_${stationId}`, [stationId]);
   const enableTicketQueue = !isTargetStation;
@@ -435,10 +459,28 @@ function StationApp({
     const normalizedManifest = manifestCategories
       .map((category) => (typeof category === 'string' ? category.trim().toUpperCase() : ''))
       .filter((category): category is CategoryKey => category.length > 0 && isCategoryKey(category));
-    const fallbackCategories = DEFAULT_ALLOWED_CATEGORIES[stationCode] ?? ANSWER_CATEGORIES;
+    const fallbackCategories = getStationAllowedBaseCategories(stationCode);
     const effectiveCategories = normalizedManifest.length ? normalizedManifest : fallbackCategories;
     return new Set<CategoryKey>(effectiveCategories);
   }, [manifest.allowedCategories, stationCode]);
+  const allowedStationCategories = useMemo(() => {
+    if (allowedCategorySet.size === 0) {
+      return getAllowedStationCategories(stationCode);
+    }
+    return getAllowedStationCategories(stationCode, { baseCategories: allowedCategorySet });
+  }, [allowedCategorySet, stationCode]);
+  const allowedStationCategorySet = useMemo(
+    () => new Set<StationCategoryKey>(allowedStationCategories),
+    [allowedStationCategories],
+  );
+  useEffect(() => {
+    setSelectedSummaryCategory((previous) => {
+      if (!previous) {
+        return null;
+      }
+      return allowedStationCategorySet.has(previous) ? previous : null;
+    });
+  }, [allowedStationCategorySet]);
   const isCategoryAllowed = useCallback(
     (category: string | null | undefined) => {
       if (allowedCategorySet.size === 0) {
@@ -724,6 +766,31 @@ function StationApp({
     });
     return map;
   }, [auth.patrols, isCategoryAllowed]);
+
+  const stationPassageVisitedSet = useMemo(() => {
+    const visited = new Set<string>();
+    stationPassageIds.forEach((id) => {
+      if (typeof id === 'string' && id.length > 0) {
+        visited.add(id);
+      }
+    });
+
+    pendingItems.forEach((item) => {
+      if (item.type !== 'submission') {
+        return;
+      }
+      const payload = item.payload;
+      if (!payload || payload.event_id !== eventId || payload.station_id !== stationId) {
+        return;
+      }
+      if (payload.patrol_id) {
+        visited.add(payload.patrol_id);
+      }
+    });
+
+    return visited;
+  }, [eventId, pendingItems, stationId, stationPassageIds]);
+
 
   const loadTimingData = useCallback(
     async (patrolId: string) => {
@@ -1160,6 +1227,125 @@ function StationApp({
     setCategoryAnswers(map);
   }, [eventId, stationId, pushAlert]);
 
+  const loadStationPassages = useCallback(async () => {
+    setStationPassageLoading(true);
+    setStationPassageError(null);
+
+    try {
+      const { data, error } = await supabase
+        .from('station_passages')
+        .select('patrol_id')
+        .eq('event_id', eventId)
+        .eq('station_id', stationId);
+
+      if (error) {
+        throw error;
+      }
+
+      const rows = (data ?? []) as { patrol_id: string | null }[];
+      const ids = rows
+        .map((row) => row.patrol_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
+      setStationPassageIds(ids);
+    } catch (error) {
+      console.error('Failed to load station passages summary', error);
+      setStationPassageError('Nepodařilo se načíst průchody hlídek.');
+    } finally {
+      setStationPassageLoading(false);
+    }
+  }, [eventId, stationId]);
+
+  const stationCategorySummary = useMemo<StationCategorySummary>(() => {
+    const record = createStationCategoryRecord(() => ({
+      expected: 0,
+      visited: 0,
+      missing: [] as StationSummaryPatrol[],
+    }));
+    let totalExpected = 0;
+    let totalVisited = 0;
+
+    auth.patrols.forEach((patrolSummary) => {
+      if (!isCategoryAllowed(patrolSummary.category)) {
+        return;
+      }
+      const stationCategory = toStationCategoryKey(patrolSummary.category, patrolSummary.sex);
+      if (!stationCategory || !allowedStationCategorySet.has(stationCategory)) {
+        return;
+      }
+      const normalizedCode = normalisePatrolCode(patrolSummary.patrol_code ?? '');
+      const teamName = (patrolSummary.team_name || '').trim();
+      const detail: StationSummaryPatrol = {
+        id: patrolSummary.id,
+        code: normalizedCode,
+        teamName,
+        baseCategory: patrolSummary.category,
+        sex: patrolSummary.sex,
+      };
+
+      record[stationCategory].expected += 1;
+      totalExpected += 1;
+
+      if (stationPassageVisitedSet.has(patrolSummary.id)) {
+        record[stationCategory].visited += 1;
+        totalVisited += 1;
+      } else {
+        record[stationCategory].missing.push(detail);
+      }
+    });
+
+    const items = allowedStationCategories.map<StationCategorySummaryItem>((category) => {
+      const entry = record[category];
+      const missing = [...entry.missing].sort((a, b) => {
+        const labelA = (a.code || `${a.baseCategory}/${a.sex}`).toUpperCase();
+        const labelB = (b.code || `${b.baseCategory}/${b.sex}`).toUpperCase();
+        return labelA.localeCompare(labelB, 'cs');
+      });
+      return {
+        key: category,
+        expected: entry.expected,
+        visited: entry.visited,
+        missing,
+      };
+    });
+
+    const totalMissing = items.flatMap((item) => item.missing);
+
+    return {
+      items,
+      totalExpected,
+      totalVisited,
+      totalMissing,
+    };
+  }, [
+    allowedStationCategories,
+    allowedStationCategorySet,
+    auth.patrols,
+    isCategoryAllowed,
+    stationPassageVisitedSet,
+  ]);
+
+  const selectedSummaryDetail = useMemo(() => {
+    if (!selectedSummaryCategory) {
+      return null;
+    }
+    return (
+      stationCategorySummary.items.find((item) => item.key === selectedSummaryCategory) ?? null
+    );
+  }, [selectedSummaryCategory, stationCategorySummary]);
+
+  const handleSelectSummaryCategory = useCallback((category: StationCategoryKey) => {
+    setSelectedSummaryCategory((previous) => (previous === category ? null : category));
+  }, []);
+
+  const handleRefreshStationPassages = useCallback(() => {
+    void loadStationPassages();
+  }, [loadStationPassages]);
+
+  const stationSummaryRemaining = useMemo(
+    () => Math.max(0, stationCategorySummary.totalExpected - stationCategorySummary.totalVisited),
+    [stationCategorySummary.totalExpected, stationCategorySummary.totalVisited],
+  );
+
   useEffect(() => {
     if (!isTargetStation) {
       setCategoryAnswers({});
@@ -1167,6 +1353,10 @@ function StationApp({
     }
     loadCategoryAnswers();
   }, [isTargetStation, loadCategoryAnswers]);
+
+  useEffect(() => {
+    loadStationPassages();
+  }, [loadStationPassages]);
 
   const syncQueue = useCallback(async () => {
     let queue = await readQueue(queueKey);
@@ -1360,6 +1550,7 @@ function StationApp({
       if (flushed) {
         pushAlert(`Synchronizováno ${flushed} záznamů.`);
         setLastSavedAt(new Date().toISOString());
+        void loadStationPassages();
       }
     } catch (error) {
       const syncError = error as Error & { shouldLogout?: boolean };
@@ -1387,6 +1578,7 @@ function StationApp({
     auth.tokens.sessionId,
     eventId,
     manifest.manifestVersion,
+    loadStationPassages,
     queueKey,
     stationId,
     syncing,
@@ -1961,6 +2153,104 @@ function StationApp({
 
       <main className="content">
         <>
+          <section className="card station-summary-card">
+            <header className="card-header">
+              <div>
+                <h2>Přehled průchodů</h2>
+                <p className="card-subtitle">
+                  Sleduj, kolik hlídek už stanoviště navštívilo podle kategorií.
+                </p>
+              </div>
+              <div className="card-actions">
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={handleRefreshStationPassages}
+                  disabled={stationPassageLoading}
+                >
+                  {stationPassageLoading ? 'Načítám…' : 'Obnovit'}
+                </button>
+              </div>
+            </header>
+            {stationPassageError ? <p className="error-text">{stationPassageError}</p> : null}
+            {stationCategorySummary.items.length ? (
+              <>
+                <div className="station-summary-grid">
+                  {stationCategorySummary.items.map((item) => {
+                    const missingCount = Math.max(0, item.expected - item.visited);
+                    let statusLabel = 'Žádné hlídky';
+                    if (item.expected > 0) {
+                      statusLabel = missingCount === 0 ? 'Splněno' : `Chybí ${missingCount}`;
+                    }
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        className="station-summary-chip"
+                        data-missing={missingCount > 0 ? '1' : '0'}
+                        data-empty={item.expected === 0 ? '1' : '0'}
+                        data-active={selectedSummaryCategory === item.key ? '1' : '0'}
+                        onClick={() => handleSelectSummaryCategory(item.key)}
+                      >
+                        <span className="station-summary-chip-label">
+                          {formatStationCategoryChipLabel(item.key)}
+                        </span>
+                        <span className="station-summary-chip-value">
+                          {item.visited}/{item.expected}
+                        </span>
+                        <span className="station-summary-chip-status">{statusLabel}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="card-hint">
+                  Celkem: {stationCategorySummary.totalVisited}/{stationCategorySummary.totalExpected} hlídek
+                  {stationCategorySummary.totalExpected === 0
+                    ? '.'
+                    : stationSummaryRemaining > 0
+                      ? `, chybí ${stationSummaryRemaining}.`
+                      : ', vše splněno.'}
+                </p>
+              </>
+            ) : (
+              <p className="card-hint">Pro toto stanoviště nejsou žádné hlídky k zobrazení.</p>
+            )}
+            {selectedSummaryDetail ? (
+              <div className="station-summary-detail" role="region" aria-live="polite">
+                <div className="station-summary-detail-header">
+                  <h3>{formatStationCategoryDetailLabel(selectedSummaryDetail.key)}</h3>
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => setSelectedSummaryCategory(null)}
+                  >
+                    Zavřít
+                  </button>
+                </div>
+                <p className="card-hint">
+                  {selectedSummaryDetail.expected === 0
+                    ? 'Tato kategorie nemá žádné hlídky.'
+                    : selectedSummaryDetail.missing.length === 0
+                      ? 'Všechny hlídky již stanoviště navštívily.'
+                      : `Chybí ${selectedSummaryDetail.missing.length} z ${selectedSummaryDetail.expected} hlídek.`}
+                </p>
+                {selectedSummaryDetail.missing.length ? (
+                  <ul className="station-summary-list">
+                    {selectedSummaryDetail.missing.map((patrol) => {
+                      const codeLabel = patrol.code || `${patrol.baseCategory}/${patrol.sex}`;
+                      return (
+                        <li key={patrol.id}>
+                          <strong>{codeLabel}</strong>
+                          {patrol.teamName ? <span>{patrol.teamName}</span> : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+
           <section className="card scanner-card">
             <header className="card-header">
               <div>
