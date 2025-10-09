@@ -1,21 +1,20 @@
 # `sync-patrols` Edge Function
 
-Pulls roster data published as CSV from Google Sheets and upserts it into the
-`patrols` table (plus optional start times into `timings`). Designed to replace
-the legacy Apps Script synchronisation.
+Tato Supabase Edge Function nahrazuje historický Google Apps Script. Stahuje CSV exporty z jednotlivých listů Google Sheets (publikovaných přes „Share → Publish to web“), parsuje je a upsertuje hlídky do tabulek `patrols` a `timings`.
 
-## Deployment
+Funkce běží v prostředí Deno na Supabase a ke komunikaci s databází používá service-role klíč. Každé volání prochází všechny konfigurované listy a:
+
+1. doplní chybějící `patrol_code` (náhodným 6znakovým kódem),
+2. aktualizuje údaje o hlídce (`team_name`, kategorie, poznámka, aktivita),
+3. vytvoří/aktualizuje záznam o startu (`timings`) pokud je ve zdroji vyplněný čas.
+
+## Nasazení
 
 ```bash
 supabase functions deploy sync-patrols
 ```
 
-Add a cron job (Supabase Scheduled Functions or any external scheduler) to call
-the deployed endpoint periodically.
-
-## Required secrets
-
-Set these secrets before deploying:
+Před nasazením nastav potřebné secret hodnoty:
 
 ```bash
 supabase secrets set \
@@ -24,39 +23,45 @@ supabase secrets set \
   SHEET_EXPORTS=$'N_H=https://...\nN_D=https://...\nM_H=https://...'
 ```
 
-Optional secrets:
+Volitelně můžeš přidat i `SYNC_SECRET` – pokud je nastavený, funkce očekává hlavičku `Authorization: Bearer <SYNC_SECRET>`.
 
-- `SYNC_SECRET` – bearer token required in the `Authorization` header.
+`SUPABASE_URL` není potřeba zadávat; v prostředí Supabase Functions se doplní automaticky.
 
-`SUPABASE_URL` is injected automatically inside Supabase Edge Functions.
+## Lokální vývoj
 
-### `SHEET_EXPORTS`
-
-`SHEET_EXPORTS` is a newline-separated list of sheet identifiers and published
-CSV URLs. The identifier must follow `CATEGORY_SEX` (`N|M|S|R` + `H|D`).
-
-Example:
-
-```
-N_H=https://docs.google.com/spreadsheets/d/.../pub?gid=123&single=true&output=csv
-N_D=https://docs.google.com/spreadsheets/d/.../pub?gid=456&single=true&output=csv
-```
-
-Each CSV must contain these headers (case-insensitive):
-
-- `team_name` (required)
-- `patrol_code` (optional, generated if empty)
-- `child1`, `child2`, `child3`
-- `start_time`
-- `note`
-- `active`
-
-## Manual trigger
+Pro lokální testování si vystačíš se Supabase CLI (vyžaduje Deno):
 
 ```bash
-supabase functions invoke sync-patrols --no-verify-jwt --request-body '{}' \
+SHEET_EXPORTS=$'N_H=https://...\nN_D=https://...' \
+SUPABASE_SERVICE_ROLE_KEY=... \
+SYNC_EVENT_ID=... \
+supabase functions serve --env-file .env.local --no-verify-jwt sync-patrols
+```
+
+V `.env.local` můžeš držet shodné hodnoty jako v produkci. Funkce poslouchá na `http://localhost:54321/functions/v1/sync-patrols`.
+
+Manualní spuštění (lokálně i v cloudu) vypadá takto:
+
+```bash
+supabase functions invoke sync-patrols --no-verify-jwt \
+  --request-body '{}' \
   --header 'Authorization: Bearer <SYNC_SECRET>'
 ```
 
-The function responds with the number of patrols processed and timing rows
-upserted.
+Odpověď obsahuje počty zpracovaných záznamů:
+
+```json
+{
+  "patrols": 128,
+  "timings": 64
+}
+```
+
+## Plánování
+
+Funkci spouštěj cronem každých pár minut – buď přes Supabase Scheduled Functions, nebo externí plánovač. Zdrojové CSV by měly být publikované s volbou „Automatically republish when changes are made“.
+
+## Známá omezení
+
+- Funkce očekává přesný formát záhlaví CSV (viz `index.ts`). Pokud listy obsahují jiné názvy sloupců, volání skončí chybou 400.
+- Neprobíhá deduplikace podle jmen dětí; klíčem je kombinace `event_id + patrol_code`. Pokud chceš sloučit hlídku ručně, udělej změny přímo v Supabase.
