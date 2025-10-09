@@ -2365,11 +2365,7 @@ function StationApp({
                     <span className="scanner-note">Hlídka už čeká ve frontě.</span>
                   ) : null}
                 </div>
-              ) : (
-                <p className="scanner-placeholder">
-                  Zadej kód hlídky ručně.
-                </p>
-              )}
+              ) : null}
             </div>
           </section>
 

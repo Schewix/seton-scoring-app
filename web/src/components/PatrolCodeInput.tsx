@@ -359,7 +359,7 @@ export default function PatrolCodeInput({
         code: canonical,
         valid: false,
         reason: 'incomplete',
-        message: 'Vyber kategorii, pohlaví a číslo hlídky.',
+        message: '',
       };
     }
     if (!PATROL_CODE_REGEX.test(canonical)) {
@@ -491,13 +491,15 @@ export default function PatrolCodeInput({
       <div className="patrol-code-input__value" aria-live="polite">
         {displayValue}
       </div>
-      <small
-        id={feedbackId}
-        className={validationState.valid ? 'valid' : 'invalid'}
-        aria-live="polite"
-      >
-        {validationState.message}
-      </small>
+      {validationState.message ? (
+        <small
+          id={feedbackId}
+          className={validationState.valid ? 'valid' : 'invalid'}
+          aria-live="polite"
+        >
+          {validationState.message}
+        </small>
+      ) : null}
     </div>
   );
 }
