@@ -72,8 +72,6 @@ praktický návod pro provoz na stanovišti i pro kancelář závodu.
      a uložit přímo do Supabase.
    - *Poslední výsledky* načítají streamovaná data ze Supabase – vhodné pro
      rychlou kontrolu, zda se záznam skutečně propsal.
-   - Stanoviště „T“ má navíc *Report terčových odpovědí* s filtrem podle hlídek a
-     exportem do CSV.
 
 ## 4. Offline režim
 

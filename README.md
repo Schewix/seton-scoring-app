@@ -70,7 +70,6 @@ Server poskytuje endpointy:
   automatickými pokusy o synchronizaci a ručním přehledem.
 - Přehled posledních výsledků s napojením na Supabase Realtime, detailní
   náhled terčových odpovědí a rychlé opravy bodů ostatních stanovišť.
-- Report terčových odpovědí s exportem do CSV a historie skenování pro audit.
 - Samostatný výsledkový přehled (scoreboard) pro kancelář s automatickým
   obnovováním a exportem do XLSX.
 

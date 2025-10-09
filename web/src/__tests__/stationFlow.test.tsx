@@ -503,6 +503,8 @@ describe('station workflow', () => {
     expect(await screen.findByText(/Záznam uložen do fronty/)).toBeInTheDocument();
     expect(await screen.findByText(/Čeká na odeslání: 1/)).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: 'Zobrazit frontu' }));
+
     const queueLabel = await screen.findByText('Vlci (N-01)');
     expect(queueLabel).toBeInTheDocument();
     expect(screen.getByText('Manuální body')).toBeInTheDocument();
@@ -743,6 +745,7 @@ describe('station workflow', () => {
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
     expect(await screen.findByText(/Čeká na odeslání: 1/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Zobrazit frontu' }));
     expect(await screen.findByText(/Chyba: Session revoked/)).toBeInTheDocument();
     expect(await screen.findByText('Přihlášení vypršelo, přihlas se prosím znovu.')).toBeInTheDocument();
 
