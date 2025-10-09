@@ -536,6 +536,68 @@ describe('station workflow', () => {
     expect(screen.queryByRole('button', { name: 'Obsluhovat' })).not.toBeInTheDocument();
   });
 
+  it('prevents loading patrols that already passed through the station', async () => {
+    supabaseMock.__setMock(
+      'station_passages',
+      () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () =>
+              Promise.resolve({
+                data: [{ patrol_id: 'patrol-1' }],
+                error: null,
+              }),
+          }),
+        }),
+        upsert: vi.fn(),
+      }),
+    );
+
+    const user = userEvent.setup();
+
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+
+    await selectPatrolCode(user, { category: 'N', type: 'H', number: '1' });
+    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+
+    expect(await screen.findByText('Hlídka už na stanovišti byla.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Obsluhovat' })).not.toBeInTheDocument();
+  });
+
+  it('allows loading patrols on Výpočetka even if already passed through', async () => {
+    mockedStationCode = 'T';
+    supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Výpočetka' }));
+    supabaseMock.__setMock(
+      'station_passages',
+      () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () =>
+              Promise.resolve({
+                data: [{ patrol_id: 'patrol-1' }],
+                error: null,
+              }),
+          }),
+        }),
+        upsert: vi.fn(),
+      }),
+    );
+
+    const user = userEvent.setup();
+
+    await renderApp();
+
+    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+
+    await selectPatrolCode(user, { category: 'N', type: 'H', number: '1' });
+    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+
+    await screen.findByRole('button', { name: 'Obsluhovat' });
+    expect(screen.queryByText('Hlídka už na stanovišti byla.')).not.toBeInTheDocument();
+  });
+
   it('rejects decimal values for manual scoring input', async () => {
     const user = userEvent.setup();
 

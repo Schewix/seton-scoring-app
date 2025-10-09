@@ -1700,6 +1700,19 @@ function StationApp({
         return false;
       }
 
+      if (stationCode !== 'T' && stationPassageVisitedSet.has(data.id)) {
+        pushAlert('Hlídka už na stanovišti byla.');
+        void appendScanRecord(eventId, stationId, {
+          code: normalized,
+          scannedAt: new Date().toISOString(),
+          status: 'failed',
+          reason: 'already-visited',
+          patrolId: data.id,
+          teamName: data.team_name,
+        }).catch((err) => console.debug('scan history store failed', err));
+        return false;
+      }
+
       setScannerPatrol({ ...data });
       setScanActive(false);
       setManualCode('');
@@ -1714,7 +1727,15 @@ function StationApp({
 
       return true;
     },
-    [cachedPatrolMap, eventId, isCategoryAllowed, pushAlert, stationId]
+    [
+      cachedPatrolMap,
+      eventId,
+      isCategoryAllowed,
+      pushAlert,
+      stationCode,
+      stationId,
+      stationPassageVisitedSet,
+    ]
   );
 
   const handleScanResult = useCallback(
