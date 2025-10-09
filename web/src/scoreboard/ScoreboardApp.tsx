@@ -77,6 +77,98 @@ const BRACKET_ORDER = ['N__H', 'N__D', 'M__H', 'M__D', 'S__H', 'S__D', 'R__H', '
 
 const BRACKET_ORDER_INDEX = new Map(BRACKET_ORDER.map((key, index) => [key, index] as const));
 
+const CATEGORY_CODES = ['N', 'M', 'S', 'R'] as const;
+type CategoryCode = (typeof CATEGORY_CODES)[number];
+
+const STATION_CATEGORY_REQUIREMENTS: Record<string, readonly CategoryCode[]> = {
+  A: ['M', 'S', 'R'],
+  B: ['N', 'M', 'S', 'R'],
+  C: ['N', 'M', 'S', 'R'],
+  D: ['R'],
+  F: ['N', 'M', 'S', 'R'],
+  J: ['N', 'M', 'S', 'R'],
+  K: ['N', 'M'],
+  M: ['M', 'S', 'R'],
+  N: ['S', 'R'],
+  O: ['N', 'M', 'S', 'R'],
+  P: ['N', 'M', 'S', 'R'],
+  R: ['N', 'M', 'S', 'R'],
+  S: ['M', 'S', 'R'],
+  T: ['N', 'M', 'S', 'R'],
+  U: ['N', 'M', 'S', 'R'],
+  V: ['S', 'R'],
+  Z: ['N', 'M', 'S', 'R'],
+};
+
+function normaliseCategoryKey(value: string | null | undefined): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim().toUpperCase();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+function isCategoryCode(value: string | null | undefined): value is CategoryCode {
+  return value ? (CATEGORY_CODES as readonly string[]).includes(value) : false;
+}
+
+function normaliseStationCode(value: string | null | undefined): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim().toUpperCase();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+function selectStationCodesForCategory(
+  allStationCodes: readonly string[],
+  category: string,
+  fallbackCodes: Iterable<string>,
+): string[] {
+  const normalisedCategory = normaliseCategoryKey(category);
+  if (!isCategoryCode(normalisedCategory)) {
+    return [...allStationCodes];
+  }
+
+  const filtered = allStationCodes.filter((code) => {
+    const allowedCategories = STATION_CATEGORY_REQUIREMENTS[code];
+    if (!allowedCategories || allowedCategories.length === 0) {
+      return true;
+    }
+    return allowedCategories.includes(normalisedCategory);
+  });
+
+  if (filtered.length > 0) {
+    return filtered;
+  }
+
+  const fallbackFiltered: string[] = [];
+  for (const rawCode of fallbackCodes) {
+    const normalised = normaliseStationCode(rawCode);
+    if (!normalised) {
+      continue;
+    }
+    if (fallbackFiltered.includes(normalised)) {
+      continue;
+    }
+    const allowedCategories = STATION_CATEGORY_REQUIREMENTS[normalised];
+    if (allowedCategories && allowedCategories.length > 0 && !allowedCategories.includes(normalisedCategory)) {
+      continue;
+    }
+    fallbackFiltered.push(normalised);
+  }
+
+  if (fallbackFiltered.length > 0) {
+    return fallbackFiltered;
+  }
+
+  return [...allStationCodes];
+}
+
 function normaliseText(value: string | null | undefined) {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -106,8 +198,9 @@ function parseStationPointsBreakdown(value: RawResult['station_points_breakdown'
 
   const entries = Object.entries(value).reduce<[string, number][]>((acc, [code, raw]) => {
     const numeric = parseNumber((raw as number | string | null) ?? null);
-    if (numeric !== null) {
-      acc.push([code, numeric]);
+    const normalisedCode = normaliseStationCode(code);
+    if (numeric !== null && normalisedCode) {
+      acc.push([normalisedCode, numeric]);
     }
     return acc;
   }, []);
@@ -432,15 +525,17 @@ function ScoreboardApp() {
           return;
         }
 
-        const uniqueCodes = Array.from(
-          new Set(
-            data
-              .map((row) => (typeof row.code === 'string' ? row.code.trim().toUpperCase() : ''))
-              .filter((code) => code && code !== 'R'),
-          ),
-        );
+        const uniqueCodesSet = new Set<string>();
+        data.forEach((row) => {
+          const normalisedCode = normaliseStationCode(
+            typeof row.code === 'string' ? row.code : null,
+          );
+          if (normalisedCode) {
+            uniqueCodesSet.add(normalisedCode);
+          }
+        });
 
-        setStationCodes(uniqueCodes);
+        setStationCodes(Array.from(uniqueCodesSet));
       } catch (err) {
         if (!isMountedRef.current || cancelled) {
           return;
@@ -623,22 +718,28 @@ function ScoreboardApp() {
     groupedRanked.forEach((group) => {
       group.visibleItems.forEach((row) => {
         Object.keys(row.stationPointsBreakdown).forEach((code) => {
-          fallbackStationCodesSet.add(code.trim().toUpperCase());
+          const normalisedCode = normaliseStationCode(code);
+          if (normalisedCode) {
+            fallbackStationCodesSet.add(normalisedCode);
+          }
         });
       });
     });
 
-    const stationCodesForExport = (stationCodes.length
-      ? stationCodes
-      : Array.from(fallbackStationCodesSet)
-          .filter((code) => code && code !== 'R')
-          .sort((a, b) => a.localeCompare(b, 'cs'))
-    ).filter((code, index, array) => array.indexOf(code) === index);
+    const fallbackStationCodes = Array.from(fallbackStationCodesSet).sort((a, b) => a.localeCompare(b, 'cs'));
+    const preferredStationCodes = stationCodes.length ? stationCodes : fallbackStationCodes;
+    const stationCodesForExport = Array.from(
+      new Set(
+        preferredStationCodes
+          .concat(fallbackStationCodes)
+          .map((code) => normaliseStationCode(code))
+          .filter((code): code is string => Boolean(code)),
+      ),
+    );
 
     const sortedStationCodes = stationCodesForExport;
 
     const memberHeaders = Array.from({ length: maxMemberCount }, (_, index) => `Člen ${index + 1}`);
-    const stationHeaders = sortedStationCodes.map((code) => `Body ${code}`);
 
     try {
       setExporting(true);
@@ -646,6 +747,17 @@ function ScoreboardApp() {
 
       groupedRanked.forEach((group) => {
         const sheetName = formatCategoryLabel(group.category, group.sex);
+        const groupStationCodes = new Set<string>();
+        group.visibleItems.forEach((row) => {
+          Object.keys(row.stationPointsBreakdown).forEach((code) => {
+            const normalisedCode = normaliseStationCode(code);
+            if (normalisedCode) {
+              groupStationCodes.add(normalisedCode);
+            }
+          });
+        });
+        const sheetStationCodes = selectStationCodesForCategory(sortedStationCodes, group.category, groupStationCodes);
+        const stationHeaders = sheetStationCodes.map((code) => `Body ${code}`);
         const rows = [
           [
             '#',
@@ -665,7 +777,7 @@ function ScoreboardApp() {
             const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
             const fallbackCode = createFallbackPatrolCode(group.category, group.sex, displayRank);
             const memberCells = formatMemberColumns(row.patrolMembers, maxMemberCount);
-            const stationCells = formatStationColumns(row.stationPointsBreakdown, sortedStationCodes);
+            const stationCells = formatStationColumns(row.stationPointsBreakdown, sheetStationCodes);
             return [
               displayRank,
               formatPatrolNumber(row.patrolCode, fallbackCode),
@@ -684,7 +796,7 @@ function ScoreboardApp() {
         ];
         if (rows.length === 1) {
           const emptyMemberCells = Array.from({ length: maxMemberCount }, () => '—');
-          const emptyStationCells = Array.from({ length: sortedStationCodes.length }, () => '—');
+          const emptyStationCells = Array.from({ length: sheetStationCodes.length }, () => '—');
           rows.push([
             '—',
             '—',
