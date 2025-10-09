@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import localforage from 'localforage';
 // import QRScanner from './components/QRScanner';
 import LastScoresList from './components/LastScoresList';
-import TargetAnswersReport from './components/TargetAnswersReport';
 import PatrolCodeInput, {
   normalisePatrolCode,
   PatrolRegistryEntry,
@@ -2932,14 +2931,6 @@ function StationApp({
           </section>
 
           <LastScoresList eventId={eventId} stationId={stationId} isTargetStation={isTargetStation} />
-          {isTargetStation ? (
-            <TargetAnswersReport
-              eventId={eventId}
-              stationId={stationId}
-              stationName={stationDisplayName}
-              stationCode={stationCode}
-            />
-          ) : null}
         </>
       </main>
       <AppFooter />
