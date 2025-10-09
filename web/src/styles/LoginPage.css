@@ -41,9 +41,11 @@
 }
 
 .login-hero-logo {
-  width: 64px;
-  height: 64px;
+  width: 72px;
+  max-height: 72px;
+  height: auto;
   display: block;
+  object-fit: contain;
 }
 
 .login-hero-brand-text {
@@ -96,34 +98,17 @@
 
 .login-hero-list {
   margin: 0;
-  padding: 0;
-  list-style: none;
+  padding: 0 0 0 24px;
+  list-style: disc;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
 .login-hero-list-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
   font-size: 1rem;
   line-height: 1.6;
   color: rgba(255, 255, 255, 0.92);
-}
-
-.login-hero-list-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  font-size: 1.05rem;
-  line-height: 1;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
-  margin-top: 2px;
 }
 
 .login-hero-button {

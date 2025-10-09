@@ -15,7 +15,6 @@ import {
   parseAnswerLetters,
 } from '../utils/targetAnswers';
 import { env } from '../envVars';
-import { SCOREBOARD_ROUTE_PREFIX } from '../routing';
 import AdminLoginScreen from './AdminLoginScreen';
 
 const API_BASE_URL = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
@@ -676,14 +675,6 @@ function AdminDashboard({
             >
               {refreshing ? 'Obnovuji…' : 'Obnovit data'}
             </button>
-            <a
-              className="admin-button admin-button--secondary admin-button--pill"
-              href={SCOREBOARD_ROUTE_PREFIX}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Zobrazit výsledky
-            </a>
             <button
               type="button"
               className="admin-button admin-button--secondary admin-button--pill"
