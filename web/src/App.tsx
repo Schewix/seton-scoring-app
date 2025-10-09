@@ -85,14 +85,17 @@ interface StationScoreRow {
   stationCode: string;
   stationName: string;
   points: number | null;
+  waitMinutes: number | null;
   judge: string | null;
   note: string | null;
   hasScore: boolean;
+  hasWait: boolean;
 }
 
 interface StationScoreRowState {
   ok: boolean;
-  draft: string;
+  pointsDraft: string;
+  waitDraft: string;
   saving: boolean;
   error: string | null;
 }
@@ -131,6 +134,7 @@ type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 
 const QUEUE_KEY_PREFIX = 'web_pending_ops_v1';
 const LEGACY_QUEUE_KEY_PREFIX = 'web_pending_station_submissions_v1';
+const WAIT_MINUTES_MAX = 600;
 
 localforage.config({
   name: 'seton-web',
@@ -873,7 +877,7 @@ function StationApp({
       setScoreReviewError(null);
 
       try {
-        const [stationsRes, scoresRes] = await Promise.all([
+        const [stationsRes, scoresRes, waitsRes] = await Promise.all([
           supabase
             .from('stations')
             .select('id, code, name')
@@ -883,12 +887,22 @@ function StationApp({
             .select('station_id, points, judge, note')
             .eq('event_id', eventId)
             .eq('patrol_id', patrolId),
+          supabase
+            .from('station_passages')
+            .select('station_id, wait_minutes')
+            .eq('event_id', eventId)
+            .eq('patrol_id', patrolId),
         ]);
 
         setScoreReviewLoading(false);
 
-        if (stationsRes.error || scoresRes.error) {
-          console.error('Failed to load station scores for review', stationsRes.error, scoresRes.error);
+        if (stationsRes.error || scoresRes.error || waitsRes.error) {
+          console.error(
+            'Failed to load station scores for review',
+            stationsRes.error,
+            scoresRes.error,
+            waitsRes.error,
+          );
           setScoreReviewRows([]);
           setScoreReviewState({});
           setScoreReviewError('Nepodařilo se načíst body ostatních stanovišť.');
@@ -915,17 +929,36 @@ function StationApp({
           },
         );
 
+        const waitValues = new Map<string, number>();
+        const waitPresent = new Set<string>();
+        ((waitsRes.data ?? []) as { station_id: string; wait_minutes: number | null }[]).forEach((row) => {
+          const station = row.station_id;
+          if (typeof station !== 'string' || station.length === 0) {
+            return;
+          }
+          const wait = Number(row.wait_minutes ?? 0);
+          if (!Number.isFinite(wait) || wait < 0) {
+            waitValues.set(station, 0);
+          } else {
+            waitValues.set(station, wait);
+          }
+          waitPresent.add(station);
+        });
+
         const rows = stations
           .map<StationScoreRow>((station) => {
             const existing = scoreMap.get(station.id);
+            const waitValue = waitValues.get(station.id);
             return {
               stationId: station.id,
               stationCode: station.code,
               stationName: station.name,
               points: existing?.points ?? null,
+              waitMinutes: waitValue ?? null,
               judge: existing?.judge ?? null,
               note: existing?.note ?? null,
               hasScore: typeof existing?.points === 'number',
+              hasWait: waitPresent.has(station.id),
             };
           })
           .sort((a, b) => a.stationCode.localeCompare(b.stationCode, 'cs'));
@@ -935,10 +968,20 @@ function StationApp({
           const next: Record<string, StationScoreRowState> = {};
           rows.forEach((row) => {
             const previous = prev[row.stationId];
-            const defaultDraft = row.points !== null ? String(row.points) : '';
+            const defaultPointsDraft = row.points !== null ? String(row.points) : '';
+            const defaultWaitDraft = row.waitMinutes !== null ? String(row.waitMinutes) : '0';
             next[row.stationId] = {
               ok: previous?.ok ?? true,
-              draft: previous ? (previous.ok ? defaultDraft : previous.draft) : defaultDraft,
+              pointsDraft: previous
+                ? previous.ok
+                  ? defaultPointsDraft
+                  : previous.pointsDraft
+                : defaultPointsDraft,
+              waitDraft: previous
+                ? previous.ok
+                  ? defaultWaitDraft
+                  : previous.waitDraft
+                : defaultWaitDraft,
               saving: false,
               error: null,
             };
@@ -1016,11 +1059,13 @@ function StationApp({
       setScoreReviewState((prev) => {
         const next = { ...prev };
         const base = scoreReviewRows.find((row) => row.stationId === stationId);
-        const defaultDraft = base && base.points !== null ? String(base.points) : '';
+        const defaultPointsDraft = base && base.points !== null ? String(base.points) : '';
+        const defaultWaitDraft = base && base.waitMinutes !== null ? String(base.waitMinutes) : '0';
         const current = prev[stationId];
         next[stationId] = {
           ok,
-          draft: ok ? defaultDraft : current?.draft ?? defaultDraft,
+          pointsDraft: ok ? defaultPointsDraft : current?.pointsDraft ?? defaultPointsDraft,
+          waitDraft: ok ? defaultWaitDraft : current?.waitDraft ?? defaultWaitDraft,
           saving: false,
           error: null,
         };
@@ -1032,12 +1077,28 @@ function StationApp({
 
   const handleScoreDraftChange = useCallback((stationId: string, value: string) => {
     setScoreReviewState((prev) => {
-      const current = prev[stationId] ?? { ok: false, draft: '', saving: false, error: null };
+      const current =
+        prev[stationId] ?? { ok: false, pointsDraft: '', waitDraft: '0', saving: false, error: null };
       return {
         ...prev,
         [stationId]: {
           ...current,
-          draft: value,
+          pointsDraft: value,
+          error: null,
+        },
+      };
+    });
+  }, []);
+
+  const handleWaitDraftChange = useCallback((stationId: string, value: string) => {
+    setScoreReviewState((prev) => {
+      const current =
+        prev[stationId] ?? { ok: false, pointsDraft: '', waitDraft: '0', saving: false, error: null };
+      return {
+        ...prev,
+        [stationId]: {
+          ...current,
+          waitDraft: value,
           error: null,
         },
       };
@@ -1057,10 +1118,12 @@ function StationApp({
         return;
       }
 
-      const trimmed = state.draft.trim();
-      const parsedValue = trimmed === '' ? NaN : Number(trimmed);
+      const trimmedPoints = state.pointsDraft.trim();
+      const pointsValue = trimmedPoints === '' ? NaN : Number(trimmedPoints);
+      const trimmedWait = state.waitDraft.trim();
+      const waitValue = trimmedWait === '' ? NaN : Number(trimmedWait);
 
-      if (!Number.isInteger(parsedValue) || parsedValue < 0 || parsedValue > 12) {
+      if (!Number.isInteger(pointsValue) || pointsValue < 0 || pointsValue > 12) {
         setScoreReviewState((prev) => {
           const previous = prev[stationId] ?? state;
           return {
@@ -1068,9 +1131,24 @@ function StationApp({
             [stationId]: {
               ...previous,
               ok: false,
-              draft: previous?.draft ?? state.draft,
               saving: false,
               error: 'Body musí být číslo 0–12.',
+            },
+          };
+        });
+        return;
+      }
+
+      if (!Number.isInteger(waitValue) || waitValue < 0 || waitValue > WAIT_MINUTES_MAX) {
+        setScoreReviewState((prev) => {
+          const previous = prev[stationId] ?? state;
+          return {
+            ...prev,
+            [stationId]: {
+              ...previous,
+              ok: false,
+              saving: false,
+              error: `Čekání musí být číslo 0–${WAIT_MINUTES_MAX}.`,
             },
           };
         });
@@ -1089,7 +1167,7 @@ function StationApp({
         if (baseRow.hasScore) {
           const { error } = await supabase
             .from('station_scores')
-            .update({ points: parsedValue })
+            .update({ points: pointsValue })
             .eq('event_id', eventId)
             .eq('station_id', stationId)
             .eq('patrol_id', activePatrol.id);
@@ -1101,7 +1179,7 @@ function StationApp({
             event_id: eventId,
             station_id: stationId,
             patrol_id: activePatrol.id,
-            points: parsedValue,
+            points: pointsValue,
             judge: manifest.judge.displayName,
           });
           if (error) {
@@ -1109,7 +1187,33 @@ function StationApp({
           }
         }
 
-        pushAlert(`Body pro stanoviště ${baseRow.stationCode || stationId} aktualizovány.`);
+        const waitBase = baseRow.waitMinutes ?? 0;
+
+        if (baseRow.hasWait) {
+          if (waitValue !== waitBase) {
+            const { error } = await supabase
+              .from('station_passages')
+              .update({ wait_minutes: waitValue })
+              .eq('event_id', eventId)
+              .eq('station_id', stationId)
+              .eq('patrol_id', activePatrol.id);
+            if (error) {
+              throw error;
+            }
+          }
+        } else if (waitValue !== 0) {
+          const { error } = await supabase.from('station_passages').insert({
+            event_id: eventId,
+            station_id: stationId,
+            patrol_id: activePatrol.id,
+            wait_minutes: waitValue,
+          });
+          if (error) {
+            throw error;
+          }
+        }
+
+        pushAlert(`Záznam pro stanoviště ${baseRow.stationCode || stationId} aktualizován.`);
         await loadScoreReview(activePatrol.id);
         setScoreReviewState((prev) => {
           const current = prev[stationId];
@@ -1118,7 +1222,14 @@ function StationApp({
           }
           return {
             ...prev,
-            [stationId]: { ...current, ok: true, saving: false, error: null },
+            [stationId]: {
+              ...current,
+              ok: true,
+              saving: false,
+              error: null,
+              pointsDraft: String(pointsValue),
+              waitDraft: String(waitValue),
+            },
           };
         });
       } catch (error) {
@@ -1134,7 +1245,7 @@ function StationApp({
             },
           };
         });
-        pushAlert('Nepodařilo se uložit body pro vybrané stanoviště.');
+        pushAlert('Nepodařilo se uložit záznam pro vybrané stanoviště.');
       }
     },
     [eventId, loadScoreReview, manifest.judge.displayName, activePatrol, pushAlert, scoreReviewRows, scoreReviewState],
@@ -2574,6 +2685,7 @@ function StationApp({
                             <thead>
                               <tr>
                                 <th>Body</th>
+                                <th>Čekání (min)</th>
                                 <th>Stanoviště</th>
                                 <th>OK</th>
                                 <th>Akce</th>
@@ -2585,22 +2697,32 @@ function StationApp({
                                   scoreReviewState[row.stationId] ??
                                   ({
                                     ok: true,
-                                    draft: row.points !== null ? String(row.points) : '',
+                                    pointsDraft: row.points !== null ? String(row.points) : '',
+                                    waitDraft: row.waitMinutes !== null ? String(row.waitMinutes) : '0',
                                     saving: false,
                                     error: null,
                                   } satisfies StationScoreRowState);
-                                const draft = state.draft;
-                                const trimmed = draft.trim();
-                                const draftNumber = trimmed === '' ? NaN : Number(trimmed);
-                                const isValid =
-                                  Number.isInteger(draftNumber) && draftNumber >= 0 && draftNumber <= 12;
-                                const dirty =
-                                  !state.ok &&
-                                  (Number.isNaN(draftNumber)
-                                    ? row.points !== null
-                                    : row.points === null
-                                      ? true
-                                      : draftNumber !== row.points);
+                                const pointsDraft = state.pointsDraft;
+                                const waitDraft = state.waitDraft;
+                                const pointsTrimmed = pointsDraft.trim();
+                                const waitTrimmed = waitDraft.trim();
+                                const pointsNumber = pointsTrimmed === '' ? NaN : Number(pointsTrimmed);
+                                const waitNumber = waitTrimmed === '' ? NaN : Number(waitTrimmed);
+                                const pointsValid =
+                                  Number.isInteger(pointsNumber) && pointsNumber >= 0 && pointsNumber <= 12;
+                                const waitValid =
+                                  Number.isInteger(waitNumber) && waitNumber >= 0 && waitNumber <= WAIT_MINUTES_MAX;
+                                const dirtyPoints = Number.isNaN(pointsNumber)
+                                  ? row.points !== null
+                                  : row.points === null
+                                    ? true
+                                    : pointsNumber !== row.points;
+                                const baseWait = row.waitMinutes ?? 0;
+                                const dirtyWait = Number.isNaN(waitNumber)
+                                  ? row.waitMinutes !== null
+                                  : waitNumber !== baseWait;
+                                const isValid = pointsValid && waitValid;
+                                const dirty = !state.ok && (dirtyPoints || dirtyWait);
                                 return (
                                   <tr key={row.stationId} className={state.ok ? '' : 'score-review-editing'}>
                                     <td>
@@ -2609,11 +2731,24 @@ function StationApp({
                                         min={0}
                                         max={12}
                                         inputMode="numeric"
-                                        value={draft}
+                                        value={pointsDraft}
                                         onChange={(event) => handleScoreDraftChange(row.stationId, event.target.value)}
                                         disabled={state.ok || state.saving}
                                         placeholder="—"
                                         className="score-review-input"
+                                      />
+                                    </td>
+                                    <td>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={WAIT_MINUTES_MAX}
+                                        inputMode="numeric"
+                                        value={waitDraft}
+                                        onChange={(event) => handleWaitDraftChange(row.stationId, event.target.value)}
+                                        disabled={state.ok || state.saving}
+                                        placeholder="—"
+                                        className="score-review-input score-review-input--wait"
                                       />
                                     </td>
                                     <td>

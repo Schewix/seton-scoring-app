@@ -1359,7 +1359,7 @@ textarea {
 .score-review-table table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 420px;
+  min-width: 520px;
 }
 
 .score-review-table thead th {
@@ -1386,6 +1386,10 @@ textarea {
   width: 72px;
   text-align: center;
   font-weight: 600;
+}
+
+.score-review-input--wait {
+  width: 88px;
 }
 
 .score-review-station {
