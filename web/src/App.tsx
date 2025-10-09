@@ -1926,7 +1926,7 @@ function StationApp({
               />
             </div>
             <div className="hero-panel hero-panel--links">
-              <span className="hero-panel-label">Odkazy</span>
+              <span className="hero-panel-label">{stationCode === 'T' ? 'Odkazy' : 'Pravidla'}</span>
               {showScoreboardLink ? (
                 <a
                   className="hero-panel-link"
