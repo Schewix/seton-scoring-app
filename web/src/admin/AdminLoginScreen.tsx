@@ -4,7 +4,6 @@ import { useAuth } from '../auth/context';
 import AppFooter from '../components/AppFooter';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import { translateLoginError, type LoginErrorFeedback } from '../auth/loginErrors';
-import { SCOREBOARD_ROUTE_PREFIX } from '../routing';
 
 export default function AdminLoginScreen() {
   const { login } = useAuth();
@@ -89,19 +88,10 @@ export default function AdminLoginScreen() {
             <ul className="login-hero-list">
               {heroItems.map((item) => (
                 <li key={item} className="login-hero-list-item">
-                  <span className="login-hero-list-icon" aria-hidden="true">
-                    ✅
-                  </span>
-                  <span>{item}</span>
+                  {item}
                 </li>
               ))}
             </ul>
-            <a className="login-hero-button" href={SCOREBOARD_ROUTE_PREFIX}>
-              <span>Zobrazit výsledky Setonova závodu</span>
-              <span className="login-hero-button-icon" aria-hidden="true">
-                →
-              </span>
-            </a>
           </section>
 
           <form className="login-card" onSubmit={handleSubmit} noValidate>
