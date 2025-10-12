@@ -26,6 +26,10 @@
       "destination": "/api/auth/change-password"
     },
     {
+      "source": "/auth/reset-password",
+      "destination": "/api/auth/reset-password"
+    },
+    {
       "source": "/auth/(.*)",
       "destination": "https://vdkbdnxkpeeqxnruwiah.supabase.co/functions/v1/$1"
     },
@@ -71,6 +75,14 @@
     },
     {
       "source": "/setonuv-zavod/admin/(.*)",
+      "destination": "/"
+    },
+    {
+      "source": "/setonuv-zavod/zapomenute-heslo",
+      "destination": "/"
+    },
+    {
+      "source": "/setonuv-zavod/zapomenute-heslo/(.*)",
       "destination": "/"
     },
     {
