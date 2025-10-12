@@ -148,6 +148,52 @@ localforage.config({
   name: 'seton-web',
 });
 
+function formatWaitMinutes(totalMinutes: number) {
+  const clamped = Math.max(0, Math.min(WAIT_MINUTES_MAX, Math.round(totalMinutes)));
+  const hours = Math.floor(clamped / 60)
+    .toString()
+    .padStart(2, '0');
+  const minutes = (clamped % 60).toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+const WAIT_TIME_ZERO = formatWaitMinutes(0);
+const WAIT_TIME_MAX = formatWaitMinutes(WAIT_MINUTES_MAX);
+
+function formatWaitDraft(minutes: number | null | undefined) {
+  if (typeof minutes !== 'number' || Number.isNaN(minutes)) {
+    return WAIT_TIME_ZERO;
+  }
+  return formatWaitMinutes(minutes);
+}
+
+function parseWaitDraft(value: string) {
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return NaN;
+  }
+
+  if (/^\d+$/.test(trimmed)) {
+    const numeric = Number(trimmed);
+    if (Number.isInteger(numeric) && numeric >= 0 && numeric <= WAIT_MINUTES_MAX) {
+      return numeric;
+    }
+    return NaN;
+  }
+
+  const match = trimmed.match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!match) {
+    return NaN;
+  }
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const total = hours * 60 + minutes;
+  if (!Number.isInteger(total) || total < 0 || total > WAIT_MINUTES_MAX) {
+    return NaN;
+  }
+  return total;
+}
+
 function formatPatrolMetaLabel(patrol: { patrol_code: string | null; category: string; sex: string } | null) {
   if (!patrol) {
     return '';
@@ -980,7 +1026,7 @@ function StationApp({
           rows.forEach((row) => {
             const previous = prev[row.stationId];
             const defaultPointsDraft = row.points !== null ? String(row.points) : '';
-            const defaultWaitDraft = row.waitMinutes !== null ? String(row.waitMinutes) : '0';
+            const defaultWaitDraft = formatWaitDraft(row.waitMinutes);
             next[row.stationId] = {
               ok: previous?.ok ?? true,
               pointsDraft: previous
@@ -1081,7 +1127,7 @@ function StationApp({
         const next = { ...prev };
         const base = scoreReviewRows.find((row) => row.stationId === stationId);
         const defaultPointsDraft = base && base.points !== null ? String(base.points) : '';
-        const defaultWaitDraft = base && base.waitMinutes !== null ? String(base.waitMinutes) : '0';
+        const defaultWaitDraft = formatWaitDraft(base?.waitMinutes);
         const current = prev[stationId];
         next[stationId] = {
           ok,
@@ -1099,7 +1145,7 @@ function StationApp({
   const handleScoreDraftChange = useCallback((stationId: string, value: string) => {
     setScoreReviewState((prev) => {
       const current =
-        prev[stationId] ?? { ok: false, pointsDraft: '', waitDraft: '0', saving: false, error: null };
+        prev[stationId] ?? { ok: false, pointsDraft: '', waitDraft: WAIT_TIME_ZERO, saving: false, error: null };
       return {
         ...prev,
         [stationId]: {
@@ -1114,7 +1160,7 @@ function StationApp({
   const handleWaitDraftChange = useCallback((stationId: string, value: string) => {
     setScoreReviewState((prev) => {
       const current =
-        prev[stationId] ?? { ok: false, pointsDraft: '', waitDraft: '0', saving: false, error: null };
+        prev[stationId] ?? { ok: false, pointsDraft: '', waitDraft: WAIT_TIME_ZERO, saving: false, error: null };
       return {
         ...prev,
         [stationId]: {
@@ -1141,8 +1187,7 @@ function StationApp({
 
       const trimmedPoints = state.pointsDraft.trim();
       const pointsValue = trimmedPoints === '' ? NaN : Number(trimmedPoints);
-      const trimmedWait = state.waitDraft.trim();
-      const waitValue = trimmedWait === '' ? NaN : Number(trimmedWait);
+      const waitValue = parseWaitDraft(state.waitDraft);
 
       if (!Number.isInteger(pointsValue) || pointsValue < 0 || pointsValue > 12) {
         setScoreReviewState((prev) => {
@@ -1169,7 +1214,7 @@ function StationApp({
               ...previous,
               ok: false,
               saving: false,
-              error: `Čekání musí být číslo 0–${WAIT_MINUTES_MAX}.`,
+              error: `Čekání musí být čas v rozsahu 00:00–${WAIT_TIME_MAX}.`,
             },
           };
         });
@@ -1249,7 +1294,7 @@ function StationApp({
               saving: false,
               error: null,
               pointsDraft: String(pointsValue),
-              waitDraft: String(waitValue),
+              waitDraft: formatWaitDraft(waitValue),
             },
           };
         });
@@ -2721,7 +2766,7 @@ function StationApp({
                             <thead>
                               <tr>
                                 <th>Body</th>
-                                <th>Čekání (min)</th>
+                                <th>Čekání (HH:MM)</th>
                                 <th>Stanoviště</th>
                                 <th>OK</th>
                                 <th>Akce</th>
@@ -2734,16 +2779,18 @@ function StationApp({
                                   ({
                                     ok: true,
                                     pointsDraft: row.points !== null ? String(row.points) : '',
-                                    waitDraft: row.waitMinutes !== null ? String(row.waitMinutes) : '0',
+                                    waitDraft: formatWaitDraft(row.waitMinutes),
                                     saving: false,
                                     error: null,
                                   } satisfies StationScoreRowState);
                                 const pointsDraft = state.pointsDraft;
-                                const waitDraft = state.waitDraft;
+                                const rawWaitDraft = state.waitDraft;
                                 const pointsTrimmed = pointsDraft.trim();
-                                const waitTrimmed = waitDraft.trim();
                                 const pointsNumber = pointsTrimmed === '' ? NaN : Number(pointsTrimmed);
-                                const waitNumber = waitTrimmed === '' ? NaN : Number(waitTrimmed);
+                                const waitNumber = parseWaitDraft(rawWaitDraft);
+                                const waitDraft = Number.isNaN(waitNumber)
+                                  ? rawWaitDraft || WAIT_TIME_ZERO
+                                  : formatWaitDraft(waitNumber);
                                 const pointsValid =
                                   Number.isInteger(pointsNumber) && pointsNumber >= 0 && pointsNumber <= 12;
                                 const waitValid =
@@ -2776,14 +2823,14 @@ function StationApp({
                                     </td>
                                     <td>
                                       <input
-                                        type="number"
-                                        min={0}
-                                        max={WAIT_MINUTES_MAX}
-                                        inputMode="numeric"
+                                        type="time"
+                                        step={60}
+                                        min={WAIT_TIME_ZERO}
+                                        max={WAIT_TIME_MAX}
                                         value={waitDraft}
                                         onChange={(event) => handleWaitDraftChange(row.stationId, event.target.value)}
                                         disabled={state.ok || state.saving}
-                                        placeholder="—"
+                                        placeholder="hh:mm"
                                         className="score-review-input score-review-input--wait"
                                       />
                                     </td>
