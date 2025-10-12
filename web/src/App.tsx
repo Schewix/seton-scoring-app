@@ -134,6 +134,15 @@ type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 const QUEUE_KEY_PREFIX = 'web_pending_ops_v1';
 const LEGACY_QUEUE_KEY_PREFIX = 'web_pending_station_submissions_v1';
 const WAIT_MINUTES_MAX = 600;
+const SCORE_REVIEW_TASK_KEYS = new Set([
+  'score-review',
+  'score_review',
+  'review-station-scores',
+  'calc',
+  'calc-score-review',
+  'manage-results',
+  'manage-wait-times',
+]);
 
 localforage.config({
   name: 'seton-web',
@@ -389,9 +398,11 @@ function StationApp({
   const stationId = manifest.station.id;
   const stationCode = manifest.station.code?.trim().toUpperCase() || '';
   const stationDisplayName = getStationDisplayName(manifest.station.name, manifest.station.code);
-  const showScoreboardLink = stationCode === 'T';
   const scoringLocked = manifest.event.scoringLocked;
   const isTargetStation = stationCode === 'T';
+  const canReviewStationScores =
+    isTargetStation || manifest.allowedTasks.some((task) => SCORE_REVIEW_TASK_KEYS.has(task));
+  const showScoreboardLink = canReviewStationScores;
   const scoringDisabled = scoringLocked && !isTargetStation;
   const [activePatrol, setActivePatrol] = useState<Patrol | null>(null);
   const [scannerPatrol, setScannerPatrol] = useState<Patrol | null>(null);
@@ -864,7 +875,7 @@ function StationApp({
 
   const loadScoreReview = useCallback(
     async (patrolId: string) => {
-      if (!isTargetStation) {
+      if (!canReviewStationScores) {
         setScoreReviewRows([]);
         setScoreReviewState({});
         setScoreReviewError(null);
@@ -995,7 +1006,7 @@ function StationApp({
         console.error('Failed to load station score review', error);
       }
     },
-    [eventId, isTargetStation],
+    [eventId, canReviewStationScores],
   );
 
   const initializeFormForPatrol = useCallback(
@@ -1024,7 +1035,9 @@ function StationApp({
       setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
 
       void loadTimingData(data.id);
-      void loadScoreReview(data.id);
+      if (canReviewStationScores) {
+        void loadScoreReview(data.id);
+      }
 
       if (typeof window !== 'undefined') {
         window.requestAnimationFrame(() => {
@@ -1037,7 +1050,14 @@ function StationApp({
         });
       }
     },
-    [categoryAnswers, clearWait, isTargetStation, loadTimingData, loadScoreReview],
+    [
+      categoryAnswers,
+      clearWait,
+      isTargetStation,
+      loadTimingData,
+      loadScoreReview,
+      canReviewStationScores,
+    ],
   );
 
   const handleServePatrol = useCallback(() => {
@@ -2597,69 +2617,70 @@ function StationApp({
                   </div>
                 ) : null}
                 {stationCode === 'T' ? (
-                  <>
-                    <div className="calc-grid">
-                      <div className="calc-time-card">
-                        <div className="calc-time-header">
-                          <h3>Čas doběhu</h3>
-                          <p className="card-hint">Zapiš čas doběhu na stanovišti. Přepočet vychází ze startovního času.</p>
-                          <p className="card-hint">
-                            12 bodů je za limitní čas dle kategorie, za každých započatých 10 minut navíc se odečte 1 bod.
-                          </p>
+                  <div className="calc-grid">
+                    <div className="calc-time-card">
+                      <div className="calc-time-header">
+                        <h3>Čas doběhu</h3>
+                        <p className="card-hint">Zapiš čas doběhu na stanovišti. Přepočet vychází ze startovního času.</p>
+                        <p className="card-hint">
+                          12 bodů je za limitní čas dle kategorie, za každých započatých 10 minut navíc se odečte 1 bod.
+                        </p>
+                      </div>
+                      <div className="calc-time-input">
+                        <label htmlFor="finish-time-input">Doběh (HH:MM)</label>
+                        <input
+                          id="finish-time-input"
+                          type="time"
+                          value={finishTimeInput}
+                          onChange={(event) => handleFinishTimeChange(event.target.value)}
+                          step={60}
+                          placeholder="hh:mm"
+                        />
+                      </div>
+                      <div className="calc-time-meta">
+                        <div>
+                          <span className="calc-meta-label">Start:</span>
+                          <strong>{formatDateTimeLabel(startTime)}</strong>
                         </div>
-                        <div className="calc-time-input">
-                          <label htmlFor="finish-time-input">Doběh (HH:MM)</label>
-                          <input
-                            id="finish-time-input"
-                            type="time"
-                            value={finishTimeInput}
-                            onChange={(event) => handleFinishTimeChange(event.target.value)}
-                            step={60}
-                            placeholder="hh:mm"
-                          />
+                        <div>
+                          <span className="calc-meta-label">Čas na trati:</span>
+                          <strong>{timeOnCourse ?? '—'}</strong>
                         </div>
-                        <div className="calc-time-meta">
-                          <div>
-                            <span className="calc-meta-label">Start:</span>
-                            <strong>{formatDateTimeLabel(startTime)}</strong>
-                          </div>
-                          <div>
-                            <span className="calc-meta-label">Čas na trati:</span>
-                            <strong>{timeOnCourse ?? '—'}</strong>
-                          </div>
-                          <div>
-                            <span className="calc-meta-label">Čekání:</span>
-                            <strong>
-                              {totalWaitMinutes !== null
-                                ? formatWaitDuration(totalWaitMinutes * 60)
-                                : '—'}
-                            </strong>
-                          </div>
-                          <div>
-                            <span className="calc-meta-label">Čistý čas:</span>
-                            <strong>{pureCourseLabel}</strong>
-                          </div>
-                          <div>
-                            <span className="calc-meta-label">Body za čas:</span>
-                            <strong>{timePoints ?? '—'}</strong>
-                          </div>
+                        <div>
+                          <span className="calc-meta-label">Čekání:</span>
+                          <strong>
+                            {totalWaitMinutes !== null
+                              ? formatWaitDuration(totalWaitMinutes * 60)
+                              : '—'}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="calc-meta-label">Čistý čas:</span>
+                          <strong>{pureCourseLabel}</strong>
+                        </div>
+                        <div>
+                          <span className="calc-meta-label">Body za čas:</span>
+                          <strong>{timePoints ?? '—'}</strong>
                         </div>
                       </div>
-                      {controlChecks.length ? (
-                        <div className="calc-checklist">
-                          <h3>Kontrola vyplnění</h3>
-                          <ul>
-                            {controlChecks.map((item) => (
-                              <li key={item.label} className={item.ok ? 'ok' : 'warn'}>
-                                <span className="status-dot" aria-hidden />
-                                {item.label}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
                     </div>
-                    <div className="score-review">
+                    {controlChecks.length ? (
+                      <div className="calc-checklist">
+                        <h3>Kontrola vyplnění</h3>
+                        <ul>
+                          {controlChecks.map((item) => (
+                            <li key={item.label} className={item.ok ? 'ok' : 'warn'}>
+                              <span className="status-dot" aria-hidden />
+                              {item.label}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {canReviewStationScores ? (
+                  <div className="score-review">
                       <div className="score-review-header">
                         <div>
                           <h3>Kontrola bodů stanovišť</h3>
@@ -2795,8 +2816,7 @@ function StationApp({
                           </table>
                         </div>
                       ) : null}
-                    </div>
-                  </>
+                  </div>
                 ) : null}
                 {useTargetScoring ? (
                   <div className={`auto-section${stationCode === 'T' ? ' calc-auto' : ''}`}>
