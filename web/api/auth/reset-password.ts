@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { hashPassword, generateTemporaryPassword } from './password-utils';
+import { hashPassword, generateTemporaryPassword } from './password-utils.js';
 
 const REQUIRED_ENV_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'RESEND_API_KEY'];
 
