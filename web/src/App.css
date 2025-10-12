@@ -1870,6 +1870,7 @@ textarea {
   justify-content: center;
 }
 
+
 .auth-layout {
   max-width: 1120px;
   margin: 0 auto;
@@ -1886,15 +1887,37 @@ textarea {
 }
 
 .auth-hero {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding: clamp(40px, 6vw, 48px) clamp(28px, 6vw, 56px);
+  padding: clamp(64px, 10vw, 80px) clamp(32px, 7vw, 56px) clamp(48px, 8vw, 64px);
   border-radius: 24px;
   background: linear-gradient(180deg, #57aa27 0%, #4a9722 100%);
   color: #ffffff;
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  z-index: 0;
+}
+
+.auth-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.auth-hero::after {
+  content: '';
+  position: absolute;
+  width: 70%;
+  aspect-ratio: 1 / 1;
+  left: 18%;
+  bottom: -6%;
+  background: url('../assets/znak_SPTO_transparent.png') no-repeat center / contain;
+  opacity: 0.1;
+  filter: blur(4px);
+  pointer-events: none;
+  z-index: 0;
 }
 
 .auth-hero-brand {
@@ -1948,7 +1971,7 @@ textarea {
 
 .auth-hero-copy p {
   margin: 0;
-  font-size: clamp(1rem, 2.4vw, 1.05rem);
+  font-size: clamp(0.9rem, 2.2vw, 0.95rem);
   color: rgba(255, 255, 255, 0.92);
   line-height: 1.6;
 }
@@ -1960,12 +1983,12 @@ textarea {
   flex-direction: column;
   gap: 8px;
   font-size: 0.95rem;
-  line-height: 1.5;
+  line-height: 1.6;
   color: rgba(255, 255, 255, 0.9);
 }
 
 .auth-hero-list li::marker {
-  color: rgba(255, 255, 255, 0.65);
+  color: #ffd84f;
 }
 
 .auth-hero-admin-button {
@@ -2023,8 +2046,8 @@ textarea {
   background: #ffffff;
   border: none;
   border-radius: 24px;
-  padding: clamp(32px, 6vw, 48px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
+  padding: clamp(32px, 6vw, 40px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -2032,19 +2055,32 @@ textarea {
   justify-self: center;
 }
 
+.auth-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .auth-card h1,
 .auth-card h2 {
   margin: 0;
-  font-size: clamp(1.8rem, 3.4vw, 2.1rem);
+  font-size: clamp(1.45rem, 3.2vw, 1.6rem);
   font-weight: 700;
   color: var(--text);
 }
 
 .auth-description {
   margin: 0;
-  color: #4b4b4b;
+  color: #555555;
   line-height: 1.6;
-  font-size: 1rem;
+  font-size: 0.95rem;
+}
+
+.auth-caption {
+  margin: 0;
+  color: #666666;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 .auth-field-group {
@@ -2116,8 +2152,8 @@ textarea {
   appearance: none;
   border-radius: 12px;
   border: 1px solid #e0e6e0;
-  padding: 0 12px;
-  height: 46px;
+  padding: 0 14px;
+  height: 48px;
   font-size: 1rem;
   color: var(--text);
   background: #ffffff;
@@ -2168,6 +2204,37 @@ textarea {
 .auth-primary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.auth-secondary {
+  appearance: none;
+  border-radius: 12px;
+  padding: 0 24px;
+  height: 48px;
+  background: #ffffff;
+  border: 1px solid #e4e8e3;
+  color: #2b2b2b;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.auth-secondary:hover,
+.auth-secondary:focus-visible {
+  background: #f7f9f6;
+  box-shadow: 0 4px 12px rgba(43, 43, 43, 0.08);
+}
+
+.auth-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .auth-links {
@@ -2308,6 +2375,12 @@ textarea {
 
   .auth-hero {
     padding: clamp(36px, 10vw, 44px) clamp(20px, 7vw, 32px);
+  }
+
+  .auth-hero::after {
+    width: 90%;
+    left: 5%;
+    bottom: -14%;
   }
 
   .auth-hero-secondary {

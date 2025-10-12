@@ -84,10 +84,15 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin }: Pro
           </div>
 
           <form className="auth-card" onSubmit={handleSubmit}>
-            <h2>Změna hesla</h2>
-            <p className="auth-description">
-              Účet <strong>{email}</strong> vyžaduje nastavení nového hesla.
-            </p>
+            <div className="auth-card-header">
+              <h2>Změna hesla</h2>
+              <p className="auth-description">
+                Dokonči změnu hesla a vrať se zpět ke správě stanoviště.
+              </p>
+              <p className="auth-caption">
+                Účet <strong>{email}</strong> vyžaduje nastavení nového hesla.
+              </p>
+            </div>
 
             <div className="auth-field-group">
               <label className="auth-field" htmlFor="change-password-new">
@@ -134,19 +139,21 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin }: Pro
               </div>
             ) : null}
 
-            <button type="submit" className="auth-primary" disabled={loading}>
-              {loading ? 'Ukládám…' : 'Nastavit heslo'}
-            </button>
-            <button
-              type="button"
-              className="auth-secondary"
-              onClick={() => {
-                void logout();
-              }}
-              disabled={loading}
-            >
-              Zpět na přihlášení
-            </button>
+            <div className="auth-card-actions">
+              <button type="submit" className="auth-primary" disabled={loading}>
+                {loading ? 'Ukládám…' : 'Nastavit heslo'}
+              </button>
+              <button
+                type="button"
+                className="auth-secondary"
+                onClick={() => {
+                  void logout();
+                }}
+                disabled={loading}
+              >
+                Zpět na přihlášení
+              </button>
+            </div>
           </form>
         </div>
       </div>
