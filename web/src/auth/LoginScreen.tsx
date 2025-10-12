@@ -3,7 +3,7 @@ import '../styles/LoginPage.css';
 import { useAuth } from './context';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
-import { ADMIN_ROUTE_PREFIX } from '../routing';
+import { ADMIN_ROUTE_PREFIX, FORGOT_PASSWORD_ROUTE } from '../routing';
 import { translateLoginError, type LoginErrorFeedback } from './loginErrors';
 
 interface Props {
@@ -245,7 +245,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
               {loading ? loadingLabel : submitLabel}
             </button>
             <div className="login-links">
-              <a className="login-link" href="mailto:zavody@zelenaliga.cz">
+              <a className="login-link" href={FORGOT_PASSWORD_ROUTE}>
                 Zapomenuté heslo
               </a>
               <a className="login-link login-link--muted" href="/">
