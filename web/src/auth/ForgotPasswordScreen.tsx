@@ -66,7 +66,10 @@ export default function ForgotPasswordScreen() {
               <li className="login-hero-list-item">Správa účtu v Zelené lize</li>
             </ul>
             <button type="button" className="login-hero-back-button" onClick={handleBackToLogin}>
-              ← Zpět na přihlášení
+              <span>Zpět na přihlášení</span>
+              <span className="login-back-button-icon" aria-hidden="true">
+                →
+              </span>
             </button>
           </section>
 
@@ -131,7 +134,10 @@ export default function ForgotPasswordScreen() {
                 className="login-form-back-button"
                 onClick={handleBackToLogin}
               >
-                ← Zpět na přihlášení
+                <span>Zpět na přihlášení</span>
+                <span className="login-back-button-icon" aria-hidden="true">
+                  →
+                </span>
               </button>
             </div>
           </form>
