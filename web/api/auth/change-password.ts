@@ -1,26 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
+import { hashPassword } from './password-utils';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const PBKDF2_ITERATIONS = 210_000;
-
-function toBase64(buffer: ArrayBuffer) {
-  return Buffer.from(buffer).toString('base64');
-}
-
-async function hashPassword(password: string): Promise<string> {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey('raw', encoder.encode(password), { name: 'PBKDF2' }, false, [
-    'deriveBits',
-  ]);
-  const derivedBits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: PBKDF2_ITERATIONS },
-    key,
-    256,
-  );
-  return `pbkdf2$sha256$${PBKDF2_ITERATIONS}$${toBase64(salt.buffer)}$${toBase64(derivedBits)}`;
-}
 
 export default async function handler(req: any, res: any) {
   const cors = {

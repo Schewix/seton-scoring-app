@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import { AuthProvider } from './auth/context';
 import { registerSW } from 'virtual:pwa-register';
-import { ROUTE_PREFIX, isAdminPathname, isScoreboardPathname, isStationAppPath } from './routing';
+import { FORGOT_PASSWORD_ROUTE, ROUTE_PREFIX, isAdminPathname, isScoreboardPathname, isStationAppPath } from './routing';
 
 type IconLinkConfig = {
   rel: string;
@@ -98,6 +98,7 @@ const isSetonNamespace =
   normalizedPath.startsWith(`${ROUTE_PREFIX}/`) ||
   isStationAppPath(normalizedPath);
 const scoreboardViews = new Set(['scoreboard', 'vysledky']);
+const forgotPasswordViews = new Set(['zapomenute-heslo', 'forgot-password']);
 
 function render(element: React.ReactNode) {
   root.render(
@@ -114,6 +115,14 @@ if (isAdminPath) {
     })
     .catch((error) => {
       console.error('Failed to load admin view', error);
+    });
+} else if ((view && forgotPasswordViews.has(view)) || normalizedPath === FORGOT_PASSWORD_ROUTE) {
+  import('./auth/ForgotPasswordScreen')
+    .then(({ default: ForgotPasswordScreen }) => {
+      render(<ForgotPasswordScreen />);
+    })
+    .catch((error) => {
+      console.error('Failed to load forgot password view', error);
     });
 } else if ((view && scoreboardViews.has(view)) || isScoreboardPath) {
   import('./scoreboard/ScoreboardApp')

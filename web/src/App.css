@@ -1874,10 +1874,10 @@ textarea {
   max-width: 1120px;
   margin: 0 auto;
   width: 100%;
-  padding: clamp(64px, 10vw, 96px) clamp(16px, 5vw, 32px);
+  padding: clamp(64px, 9vw, 96px) clamp(16px, 5vw, 32px);
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  gap: clamp(24px, 4vw, 32px);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(24px, 4vw, 40px);
   align-items: stretch;
 }
 
@@ -1889,40 +1889,38 @@ textarea {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: clamp(32px, 5vw, 40px) clamp(20px, 4vw, 32px);
-  border-radius: 20px;
-  background: linear-gradient(180deg, var(--zl-green) 0%, var(--zl-green-dark) 100%);
+  gap: 24px;
+  padding: clamp(40px, 6vw, 48px) clamp(28px, 6vw, 56px);
+  border-radius: 24px;
+  background: linear-gradient(180deg, #57aa27 0%, #4a9722 100%);
   color: #ffffff;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
 }
 
 .auth-hero-brand {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   align-items: flex-start;
 }
 
 .auth-hero-logo {
-  width: 80px;
-  height: 80px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.15);
+  width: auto;
+  height: 56px;
   display: grid;
   place-items: center;
-  padding: 8px;
 }
 
 .auth-hero-logo img {
-  width: 100%;
-  height: auto;
+  height: 100%;
+  width: auto;
 }
 
 .auth-hero-copy {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 16px;
+  gap: 12px;
+  margin-top: 8px;
 }
 
 .auth-hero-caption {
@@ -1943,16 +1941,16 @@ textarea {
 
 .auth-hero-copy h1 {
   margin: 0;
-  font-size: clamp(2rem, 4vw, 2.6rem);
+  font-size: clamp(2.3rem, 4.2vw, 2.8rem);
   font-weight: 700;
   letter-spacing: 0.01em;
 }
 
 .auth-hero-copy p {
   margin: 0;
-  font-size: clamp(1rem, 2.4vw, 1.1rem);
-  color: rgba(255, 255, 255, 0.9);
-  line-height: 1.5;
+  font-size: clamp(1rem, 2.4vw, 1.05rem);
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1.6;
 }
 
 .auth-hero-list {
@@ -1960,10 +1958,10 @@ textarea {
   padding-left: 1.2rem;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  font-size: 1rem;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.92);
+  gap: 8px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .auth-hero-list li::marker {
@@ -2005,45 +2003,48 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 12px 20px;
+  gap: 8px;
+  padding: 10px 18px;
   border-radius: 999px;
-  background: #ffffff;
-  color: var(--py-blue);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: transparent;
+  color: #ffffff;
   text-decoration: none;
   font-weight: 600;
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .auth-hero-secondary:hover,
 .auth-hero-secondary:focus-visible {
-  background: #f1f6ff;
-  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .auth-card {
   background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: clamp(20px, 4vw, 28px);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  border: none;
+  border-radius: 24px;
+  padding: clamp(32px, 6vw, 48px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 24px;
+  width: min(100%, 420px);
+  justify-self: center;
 }
 
 .auth-card h1,
 .auth-card h2 {
   margin: 0;
-  font-size: clamp(1.6rem, 3vw, 1.9rem);
+  font-size: clamp(1.8rem, 3.4vw, 2.1rem);
   font-weight: 700;
   color: var(--text);
 }
 
 .auth-description {
   margin: 0;
-  color: var(--text-2);
+  color: #4b4b4b;
   line-height: 1.6;
+  font-size: 1rem;
 }
 
 .auth-field-group {
@@ -2083,8 +2084,14 @@ textarea {
 
 .auth-alert--error {
   background: #fff1ec;
-  color: var(--py-flame);
-  border-left: 4px solid var(--py-flame);
+  color: #d64516;
+  border-left: 4px solid #d64516;
+}
+
+.auth-alert--success {
+  background: #ecfdf3;
+  color: #03603c;
+  border-left: 4px solid var(--zl-green);
 }
 
 .auth-alert-icon {
@@ -2145,8 +2152,8 @@ textarea {
   border-radius: 12px;
   padding: 0 24px;
   height: 48px;
-  background: var(--zl-yellow);
-  color: var(--text);
+  background: #ffd84f;
+  color: #2b2b2b;
   font-weight: 600;
   font-size: 1rem;
   cursor: pointer;
@@ -2155,7 +2162,7 @@ textarea {
 
 .auth-primary:hover,
 .auth-primary:focus-visible {
-  background: var(--zl-yellow-600);
+  background: #ffcc33;
 }
 
 .auth-primary:disabled {
@@ -2173,14 +2180,108 @@ textarea {
 }
 
 .auth-link {
-  color: var(--py-blue);
+  color: #0055a4;
   font-weight: 600;
   text-decoration: none;
+}
+
+.auth-link--muted {
+  color: var(--text-2);
+}
+
+.auth-link--muted:hover,
+.auth-link--muted:focus-visible {
+  color: var(--text);
 }
 
 .auth-link:hover,
 .auth-link:focus-visible {
   text-decoration: underline;
+}
+
+.auth-card-footer {
+  margin-top: -12px;
+}
+
+.auth-card-footer .auth-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.auth-status-card {
+  background: #eaf6ef;
+  color: #2e7d32;
+}
+
+.auth-status-card h1,
+.auth-status-card h2 {
+  color: #2e7d32;
+}
+
+.auth-status-card .auth-description {
+  color: rgba(46, 125, 50, 0.92);
+}
+
+.auth-status-header {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.auth-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(46, 125, 50, 0.12);
+  color: #2e7d32;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.auth-status-text {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-status-meta {
+  margin: 0;
+  font-size: 0.95rem;
+  color: rgba(46, 125, 50, 0.8);
+}
+
+.auth-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.auth-status-repeat {
+  background: transparent;
+  border: 1px solid rgba(46, 125, 50, 0.35);
+  border-radius: 999px;
+  color: #2e7d32;
+  cursor: pointer;
+  font-weight: 600;
+  padding: 10px 20px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.auth-status-repeat:hover,
+.auth-status-repeat:focus-visible {
+  background: rgba(46, 125, 50, 0.12);
+  border-color: rgba(46, 125, 50, 0.45);
+}
+
+.auth-status-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .auth-footer {

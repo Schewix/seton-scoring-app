@@ -2,6 +2,7 @@ export const ROUTE_PREFIX = '/setonuv-zavod';
 export const STATION_ROUTE_PREFIX = `${ROUTE_PREFIX}/stanoviste`;
 export const SCOREBOARD_ROUTE_PREFIX = `${ROUTE_PREFIX}/vysledky`;
 export const ADMIN_ROUTE_PREFIX = `${ROUTE_PREFIX}/admin`;
+export const FORGOT_PASSWORD_ROUTE = `${ROUTE_PREFIX}/zapomenute-heslo`;
 
 const ADDITIONAL_STATION_PREFIXES = [
   `${ROUTE_PREFIX}/station`,
