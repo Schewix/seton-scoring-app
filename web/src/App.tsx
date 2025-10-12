@@ -405,7 +405,8 @@ function StationApp({
   const [pendingItems, setPendingItems] = useState<PendingOperation[]>([]);
   const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [manualCode, setManualCode] = useState('');
+  const [manualCodeDraft, setManualCodeDraft] = useState('');
+  const [confirmedManualCode, setConfirmedManualCode] = useState('');
   const [patrolRegistryEntries, setPatrolRegistryEntries] = useState<PatrolRegistryEntry[]>([]);
   const [patrolRegistryLoading, setPatrolRegistryLoading] = useState(true);
   const [patrolRegistryError, setPatrolRegistryError] = useState<string | null>(null);
@@ -1007,7 +1008,8 @@ function StationApp({
       setAnswersInput('');
       setAnswersError('');
       setScanActive(false);
-      setManualCode('');
+      setManualCodeDraft('');
+      setConfirmedManualCode('');
       setUseTargetScoring(isTargetStation);
 
       const arrival = options?.arrivedAt ?? new Date().toISOString();
@@ -1735,7 +1737,8 @@ function StationApp({
     setAutoScore({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
     setUseTargetScoring(isTargetStation);
     setScanActive(false);
-    setManualCode('');
+    setManualCodeDraft('');
+    setConfirmedManualCode('');
     setArrivedAt(null);
     setFinishAt(null);
     setFinishTimeInput('');
@@ -1886,7 +1889,8 @@ function StationApp({
 
       setScannerPatrol({ ...data });
       setScanActive(false);
-      setManualCode('');
+      setManualCodeDraft('');
+      setConfirmedManualCode(normalized);
 
       void appendScanRecord(eventId, stationId, {
         code: normalized,
@@ -1906,8 +1910,28 @@ function StationApp({
       stationCode,
       stationId,
       stationPassageVisitedSet,
+      setConfirmedManualCode,
+      setManualCodeDraft,
     ]
   );
+
+  const handleManualConfirm = useCallback(async () => {
+    if (!manualValidation.valid) {
+      return;
+    }
+    const trimmed = manualValidation.code.trim();
+    if (!trimmed) {
+      return;
+    }
+    const normalized = trimmed.toUpperCase();
+    console.info('[patrol-code-input] confirm', {
+      code: normalized,
+      patrolId: manualValidation.patrolId,
+    });
+    const hapticType = normalized === confirmedManualCode ? 'light' : 'heavy';
+    triggerHaptic(hapticType);
+    void fetchPatrol(normalized);
+  }, [confirmedManualCode, fetchPatrol, manualValidation]);
 
   const handleScanResult = useCallback(
     async (text: string) => {
@@ -2474,8 +2498,8 @@ function StationApp({
               */}
               <div className="manual-entry">
                 <PatrolCodeInput
-                  value={manualCode}
-                  onChange={setManualCode}
+                  value={manualCodeDraft}
+                  onChange={setManualCodeDraft}
                   label="Ruční kód"
                   registry={patrolRegistryState}
                   onValidationChange={setManualValidation}
@@ -2485,15 +2509,7 @@ function StationApp({
                   type="button"
                   className="primary"
                   onClick={() => {
-                    if (!manualValidation.valid || !manualValidation.code.trim()) {
-                      return;
-                    }
-                    console.info('[patrol-code-input] confirm', {
-                      code: manualValidation.code,
-                      patrolId: manualValidation.patrolId,
-                    });
-                    triggerHaptic('heavy');
-                    void fetchPatrol(manualValidation.code.trim());
+                    void handleManualConfirm();
                   }}
                   disabled={!manualValidation.valid || patrolRegistryLoading}
                 >
