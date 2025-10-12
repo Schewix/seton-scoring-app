@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useCallback, useState } from 'react';
 import '../styles/LoginPage.css';
 import '../styles/ForgotPasswordPage.css';
 import AppFooter from '../components/AppFooter';
@@ -40,6 +40,10 @@ export default function ForgotPasswordScreen() {
   const showSuccess = feedback === 'success';
   const showError = feedback === 'error';
 
+  const handleBackToLogin = useCallback(() => {
+    window.location.assign(ROUTE_PREFIX);
+  }, []);
+
   return (
     <div className="login-page login-page--forgot">
       <main className="login-main">
@@ -61,9 +65,9 @@ export default function ForgotPasswordScreen() {
               <li className="login-hero-list-item">Odkaz platný 15 minut</li>
               <li className="login-hero-list-item">Správa účtu v Zelené lize</li>
             </ul>
-            <a className="login-hero-back" href={ROUTE_PREFIX}>
+            <button type="button" className="login-hero-back-button" onClick={handleBackToLogin}>
               ← Zpět na přihlášení
-            </a>
+            </button>
           </section>
 
           <form className="login-card login-form" onSubmit={handleSubmit} noValidate>
@@ -122,9 +126,13 @@ export default function ForgotPasswordScreen() {
             </button>
 
             <div className="login-form-footer">
-              <a className="login-link" href={ROUTE_PREFIX}>
+              <button
+                type="button"
+                className="login-form-back-button"
+                onClick={handleBackToLogin}
+              >
                 ← Zpět na přihlášení
-              </a>
+              </button>
             </div>
           </form>
         </div>
