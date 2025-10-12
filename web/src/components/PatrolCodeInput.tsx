@@ -548,6 +548,8 @@ function WheelColumn({
   const scrollRafRef = useRef<number | null>(null);
   const pendingSnapHapticRef = useRef<number | null>(null);
   const isInitialRenderRef = useRef(true);
+  const previousSelectedRef = useRef<string | null>(null);
+  const previousOptionsKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     optionRefs.current = optionRefs.current.slice(0, options.length);
@@ -893,19 +895,39 @@ function WheelColumn({
   }, [disabled, finalizeScroll, options.length, scheduleScrollProcessing]);
 
   useEffect(() => {
+    const optionsKey = options
+      .map((option) => `${option.value}:${option.disabled ? '1' : '0'}`)
+      .join('|');
+    const selectionChanged = previousSelectedRef.current !== selected;
+    const optionsChanged = previousOptionsKeyRef.current !== optionsKey;
+
+    if (!selectionChanged && !optionsChanged) {
+      return;
+    }
+
+    previousSelectedRef.current = selected;
+    previousOptionsKeyRef.current = optionsKey;
+
     if (options.length === 0) {
       lastIndexRef.current = null;
       return;
     }
-    const nextIndex = selected ? options.findIndex((option) => option.value === selected) : 0;
+
+    let nextIndex = selected ? options.findIndex((option) => option.value === selected) : -1;
     if (nextIndex < 0) {
-      lastIndexRef.current = 0;
+      nextIndex = options.findIndex((option) => !option.disabled);
+    }
+
+    if (nextIndex < 0) {
+      lastIndexRef.current = null;
       return;
     }
+
     lastIndexRef.current = nextIndex;
-    const behavior = isInitialRenderRef.current ? 'auto' : 'smooth';
+    const shouldAnimate = selectionChanged && !isInitialRenderRef.current;
+    const behavior: ScrollBehavior = shouldAnimate ? 'smooth' : 'auto';
     isInitialRenderRef.current = false;
-    scrollToOption(nextIndex, behavior);
+    scrollToOption(nextIndex, behavior, shouldAnimate ? undefined : { skipProgrammaticFlag: true });
   }, [options, scrollToOption, selected]);
 
   const registerOptionRef = useCallback(
