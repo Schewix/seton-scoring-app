@@ -1292,6 +1292,12 @@ textarea {
   gap: 16px;
   align-items: flex-start;
   flex-wrap: wrap;
+  width: 100%;
+}
+
+.manual-entry .patrol-code-input {
+  flex: 1 1 360px;
+  max-width: 560px;
 }
 
 .manual-entry button {
@@ -1300,6 +1306,10 @@ textarea {
 
 .manual-entry input {
   min-width: 200px;
+}
+
+.patrol-code-input__wheel-group {
+  width: 100%;
 }
 
 .scanner-preview {
