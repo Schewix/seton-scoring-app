@@ -1,18 +1,15 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
-import type { KeyboardEvent } from 'react';
+import Picker from 'react-mobile-picker';
 import { triggerHaptic } from '../utils/haptics';
 
 const PATROL_CODE_REGEX = /^[NMSR][HD]-(?:0?[1-9]|[1-3][0-9]|40)$/;
 
 const CATEGORY_OPTIONS = ['N', 'M', 'S', 'R'] as const;
 const GENDER_OPTIONS = ['H', 'D'] as const;
-const PAGE_JUMP = 5;
 const WHEEL_ITEM_HEIGHT = 48;
-const DEFAULT_ROW_HEIGHT = WHEEL_ITEM_HEIGHT;
-const WHEEL_HAPTIC_COOLDOWN_MS = 70;
-const WHEEL_SNAP_INACTIVITY_DELAY_MS = 110;
-const WHEEL_SNAP_COMPLETION_DELAY_MS = 220;
+const WHEEL_VISIBLE_COUNT = 5;
+const PLACEHOLDER_VALUE = '__';
 
 export type CategoryOption = (typeof CATEGORY_OPTIONS)[number];
 export type GenderOption = (typeof GENDER_OPTIONS)[number];
@@ -61,15 +58,6 @@ interface WheelColumnOption {
   value: string;
   label: string;
   title?: string;
-  disabled?: boolean;
-}
-
-interface WheelColumnProps {
-  options: readonly WheelColumnOption[];
-  selected: string;
-  onSelect: (option: string) => void;
-  ariaLabel: string;
-  optionIdPrefix: string;
   disabled?: boolean;
 }
 
@@ -169,6 +157,16 @@ export function normalisePatrolCode(raw: string) {
   }
 
   return result;
+}
+
+type PatrolCodePickerValue = {
+  category: string;
+  gender: string;
+  number: string;
+};
+
+function isPlaceholder(value: string) {
+  return value === PLACEHOLDER_VALUE;
 }
 
 export default function PatrolCodeInput({
@@ -322,6 +320,7 @@ export default function PatrolCodeInput({
         nextValue += preferred ? `-${preferred.value}` : '-';
       }
       logInteraction('category-change', { category: option });
+      triggerHaptic('selection');
       onChange(nextValue);
     },
     [numbersByGroup, onChange, selectedCategory, selectedGender],
@@ -337,6 +336,7 @@ export default function PatrolCodeInput({
       let nextValue = `${selectedCategory}${option}`;
       nextValue += preferred ? `-${preferred.value}` : '-';
       logInteraction('gender-change', { category: selectedCategory, gender: option });
+      triggerHaptic('selection');
       onChange(nextValue);
     },
     [numbersByGroup, onChange, selectedCategory, selectedGender],
@@ -352,6 +352,7 @@ export default function PatrolCodeInput({
         gender: selectedGender,
         number: option,
       });
+      triggerHaptic('selection');
       onChange(`${selectedCategory}${selectedGender}-${option}`);
     },
     [onChange, selectedCategory, selectedGender, selectedNumber],
@@ -443,21 +444,127 @@ export default function PatrolCodeInput({
   }, [onValidationChange, validationState]);
 
   const wheelOptionsCategory = useMemo(
-    () => CATEGORY_OPTIONS.map((value) => ({ value, label: value })),
+    () =>
+      [
+        { value: PLACEHOLDER_VALUE, label: '—', title: 'Vyber kategorii' },
+        ...CATEGORY_OPTIONS.map((value) => ({ value, label: value })),
+      ],
     [],
   );
   const wheelOptionsGender = useMemo(
     () =>
-      GENDER_OPTIONS.map((value) => ({
-        value,
-        label: value,
-        title: value === 'H' ? 'Hoši' : 'Dívky',
-      })),
+      [
+        { value: PLACEHOLDER_VALUE, label: '—', title: 'Vyber pohlaví' },
+        ...GENDER_OPTIONS.map((value) => ({
+          value,
+          label: value,
+          title: value === 'H' ? 'Hoši' : 'Dívky',
+        })),
+      ],
     [],
   );
 
-  const displayValue = formatDisplayValue(normalisedValue) || '—';
+  const numberColumnOptions = useMemo(() => {
+    const baseOptions = availableNumberOptions.map((option) => ({ ...option }));
+    const placeholderTitle =
+      baseOptions.length > 0 ? 'Vyber číslo hlídky' : 'Žádná čísla nejsou k dispozici';
+    return [
+      {
+        value: PLACEHOLDER_VALUE,
+        label: '—',
+        title: placeholderTitle,
+        disabled: baseOptions.length === 0,
+      },
+      ...baseOptions,
+    ];
+  }, [availableNumberOptions]);
+
+  const pickerValue = useMemo<PatrolCodePickerValue>(
+    () => ({
+      category: selectedCategory || PLACEHOLDER_VALUE,
+      gender: selectedGender || PLACEHOLDER_VALUE,
+      number: selectedNumber || PLACEHOLDER_VALUE,
+    }),
+    [selectedCategory, selectedGender, selectedNumber],
+  );
+
   const wheelIsDisabled = registry.loading || Boolean(registry.error);
+  const displayValue = formatDisplayValue(normalisedValue) || '—';
+
+  const handlePickerChange = useCallback(
+    (nextValue: PatrolCodePickerValue, key: string) => {
+      const nextOption = String(nextValue[key as keyof PatrolCodePickerValue] ?? '');
+      if (wheelIsDisabled) {
+        return;
+      }
+      if (key === 'category') {
+        if (isPlaceholder(nextOption)) {
+          if (normalisedValue) {
+            onChange('');
+          }
+          return;
+        }
+        if (isCategoryOption(nextOption)) {
+          handleCategorySelect(nextOption);
+        }
+        return;
+      }
+      if (key === 'gender') {
+        if (!selectedCategory) {
+          return;
+        }
+        if (isPlaceholder(nextOption)) {
+          onChange(`${selectedCategory}-`);
+          return;
+        }
+        if (isGenderOption(nextOption)) {
+          handleGenderSelect(nextOption);
+        }
+        return;
+      }
+      if (!selectedCategory || !selectedGender) {
+        return;
+      }
+      if (isPlaceholder(nextOption)) {
+        onChange(`${selectedCategory}${selectedGender}-`);
+        return;
+      }
+      const keyId = `${selectedCategory}${selectedGender}`;
+      const scoped = numbersByGroup.get(keyId) ?? [];
+      const match = scoped.find((option) => option.value === nextOption) ?? null;
+      if (match?.disabled) {
+        const targetIndex = scoped.findIndex((option) => option.value === nextOption);
+        if (targetIndex >= 0) {
+          for (let offset = 1; offset < scoped.length; offset += 1) {
+            const forward = scoped[targetIndex + offset];
+            if (forward && !forward.disabled) {
+              handleNumberSelect(forward.value);
+              return;
+            }
+            const backward = scoped[targetIndex - offset];
+            if (backward && !backward.disabled) {
+              handleNumberSelect(backward.value);
+              return;
+            }
+          }
+        }
+        onChange(`${selectedCategory}${selectedGender}-`);
+        return;
+      }
+      handleNumberSelect(nextOption);
+    },
+    [
+      handleCategorySelect,
+      handleGenderSelect,
+      handleNumberSelect,
+      normalisedValue,
+      numbersByGroup,
+      onChange,
+      selectedCategory,
+      selectedGender,
+      wheelIsDisabled,
+    ],
+  );
 
   return (
     <div className="patrol-code-input">
@@ -477,30 +584,130 @@ export default function PatrolCodeInput({
         aria-labelledby={labelId}
       >
         <div className="picker-highlight" aria-hidden="true" />
-        <WheelColumn
-          options={wheelOptionsCategory}
-          selected={selectedCategory}
-          onSelect={handleCategorySelect}
-          ariaLabel="Kategorie"
-          optionIdPrefix={`${inputId}-category-option`}
-          disabled={wheelIsDisabled}
-        />
-        <WheelColumn
-          options={wheelOptionsGender}
-          selected={selectedGender}
-          onSelect={handleGenderSelect}
-          ariaLabel="Pohlaví (H = hoši, D = dívky)"
-          optionIdPrefix={`${inputId}-gender-option`}
-          disabled={wheelIsDisabled || !selectedCategory}
-        />
-        <WheelColumn
-          options={availableNumberOptions}
-          selected={selectedNumber}
-          onSelect={handleNumberSelect}
-          ariaLabel="Číslo hlídky"
-          optionIdPrefix={`${inputId}-number-option`}
-          disabled={wheelIsDisabled || !selectedCategory || !selectedGender}
-        />
+        <Picker
+          className="patrol-code-input__picker"
+          value={pickerValue}
+          onChange={handlePickerChange}
+          height={WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_COUNT}
+          itemHeight={WHEEL_ITEM_HEIGHT}
+          wheelMode="natural"
+          aria-label="Výběr hlídky"
+        >
+          <Picker.Column
+            name="category"
+            className="patrol-code-input__picker-column"
+            aria-label="Kategorie"
+            role="listbox"
+            data-disabled={wheelIsDisabled ? 'true' : undefined}
+          >
+            {wheelOptionsCategory.map((option, index) => (
+              <Picker.Item
+                key={`${inputId}-category-option-${index}`}
+                value={option.value}
+                className="patrol-code-input__picker-item"
+                title={option.title}
+                data-disabled={option.disabled ? 'true' : undefined}
+                role="option"
+                aria-selected={pickerValue.category === option.value}
+                aria-disabled={option.disabled || wheelIsDisabled ? true : undefined}
+              >
+                {({ selected }) => (
+                  <span
+                    className="patrol-code-input__picker-item-label"
+                    data-selected={selected ? 'true' : undefined}
+                    data-disabled={option.disabled ? 'true' : undefined}
+                  >
+                    {option.label}
+                  </span>
+                )}
+              </Picker.Item>
+            ))}
+          </Picker.Column>
+          <Picker.Column
+            name="gender"
+            className="patrol-code-input__picker-column"
+            aria-label="Pohlaví (H = hoši, D = dívky)"
+            role="listbox"
+            data-disabled={
+              wheelIsDisabled || !selectedCategory ? 'true' : undefined
+            }
+          >
+            {wheelOptionsGender.map((option, index) => (
+              <Picker.Item
+                key={`${inputId}-gender-option-${index}`}
+                value={option.value}
+                className="patrol-code-input__picker-item"
+                title={option.title}
+                data-disabled={
+                  option.disabled || wheelIsDisabled || !selectedCategory ? 'true' : undefined
+                }
+                role="option"
+                aria-selected={pickerValue.gender === option.value}
+                aria-disabled={
+                  option.disabled || wheelIsDisabled || !selectedCategory ? true : undefined
+                }
+              >
+                {({ selected }) => (
+                  <span
+                    className="patrol-code-input__picker-item-label"
+                    data-selected={selected ? 'true' : undefined}
+                    data-disabled={
+                      option.disabled || wheelIsDisabled || !selectedCategory
+                        ? 'true'
+                        : undefined
+                    }
+                  >
+                    {option.label}
+                  </span>
+                )}
+              </Picker.Item>
+            ))}
+          </Picker.Column>
+          <Picker.Column
+            name="number"
+            className="patrol-code-input__picker-column"
+            aria-label="Číslo hlídky"
+            role="listbox"
+            data-disabled={
+              wheelIsDisabled || !selectedCategory || !selectedGender ? 'true' : undefined
+            }
+          >
+            {numberColumnOptions.map((option, index) => (
+              <Picker.Item
+                key={`${inputId}-number-option-${index}`}
+                value={option.value}
+                className="patrol-code-input__picker-item"
+                title={option.title}
+                data-disabled={
+                  option.disabled || wheelIsDisabled || !selectedCategory || !selectedGender
+                    ? 'true'
+                    : undefined
+                }
+                role="option"
+                aria-selected={pickerValue.number === option.value}
+                aria-disabled={
+                  option.disabled || wheelIsDisabled || !selectedCategory || !selectedGender
+                    ? true
+                    : undefined
+                }
+              >
+                {({ selected }) => (
+                  <span
+                    className="patrol-code-input__picker-item-label"
+                    data-selected={selected ? 'true' : undefined}
+                    data-disabled={
+                      option.disabled || wheelIsDisabled || !selectedCategory || !selectedGender
+                        ? 'true'
+                        : undefined
+                    }
+                  >
+                    {option.label}
+                  </span>
+                )}
+              </Picker.Item>
+            ))}
+          </Picker.Column>
+        </Picker>
         {wheelIsDisabled ? (
           <div className="patrol-code-input__wheel-skeleton" aria-hidden="true">
             <div />
@@ -521,462 +728,6 @@ export default function PatrolCodeInput({
           {validationState.message}
         </small>
       ) : null}
-    </div>
-  );
-}
-
-function WheelColumn({
-  options,
-  selected,
-  onSelect,
-  ariaLabel,
-  optionIdPrefix,
-  disabled = false,
-}: WheelColumnProps) {
-  const wheelRef = useRef<HTMLDivElement | null>(null);
-  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const scrollTimeoutRef = useRef<number | null>(null);
-  const programmaticScrollRef = useRef(false);
-  const lastScrollInfoRef = useRef<{ top: number; timestamp: number; velocity: number }>({
-    top: 0,
-    timestamp: 0,
-    velocity: 0,
-  });
-  const rowHeightRef = useRef(DEFAULT_ROW_HEIGHT);
-  const lastIndexRef = useRef<number | null>(null);
-  const lastTickTimeRef = useRef(0);
-  const scrollRafRef = useRef<number | null>(null);
-  const pendingSnapHapticRef = useRef<number | null>(null);
-  const isInitialRenderRef = useRef(true);
-  const previousSelectedRef = useRef<string | null>(null);
-  const previousOptionsKeyRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    optionRefs.current = optionRefs.current.slice(0, options.length);
-  }, [options.length]);
-
-  const updateWheelPadding = useCallback(() => {
-    const wheel = wheelRef.current;
-    if (!wheel) {
-      return;
-    }
-    const firstOption = optionRefs.current.find((node) => node);
-    if (!firstOption) {
-      return;
-    }
-    const wheelHeight = wheel.clientHeight;
-    if (wheelHeight <= 0) {
-      return;
-    }
-    const optionHeight = firstOption.offsetHeight || DEFAULT_ROW_HEIGHT;
-    const firstIndex = optionRefs.current.findIndex((node) => node === firstOption);
-    const secondOption =
-      firstIndex >= 0
-        ? optionRefs.current.slice(firstIndex + 1).find((node) => node)
-        : undefined;
-    const rowHeightCandidate = secondOption
-      ? Math.abs(secondOption.offsetTop - firstOption.offsetTop) || optionHeight
-      : optionHeight;
-    rowHeightRef.current = Math.max(1, Math.round(rowHeightCandidate));
-    const padding = Math.max(0, wheelHeight / 2 - optionHeight / 2);
-    wheel.style.setProperty('--wheel-padding', `${padding}px`);
-  }, []);
-
-  useEffect(() => {
-    updateWheelPadding();
-  }, [options.length, updateWheelPadding]);
-
-  useEffect(() => {
-    const handleResize = () => updateWheelPadding();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [updateWheelPadding]);
-
-  useEffect(() => {
-    return () => {
-      if (scrollTimeoutRef.current !== null) {
-        window.clearTimeout(scrollTimeoutRef.current);
-      }
-      if (scrollRafRef.current !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
-        window.cancelAnimationFrame(scrollRafRef.current);
-      }
-      if (pendingSnapHapticRef.current !== null && typeof window !== 'undefined') {
-        window.clearTimeout(pendingSnapHapticRef.current);
-      }
-    };
-  }, []);
-
-  const queueSnapHaptic = useCallback(
-    (delay = WHEEL_SNAP_COMPLETION_DELAY_MS) => {
-      if (typeof window === 'undefined') {
-        return;
-      }
-      if (pendingSnapHapticRef.current !== null) {
-        window.clearTimeout(pendingSnapHapticRef.current);
-      }
-      pendingSnapHapticRef.current = window.setTimeout(() => {
-        pendingSnapHapticRef.current = null;
-        triggerHaptic('medium');
-      }, delay);
-    },
-    [],
-  );
-
-  const scrollToOption = useCallback(
-    (
-      index: number,
-      behavior: ScrollBehavior = 'smooth',
-      options?: { triggerSnapHaptic?: boolean; skipProgrammaticFlag?: boolean },
-    ) => {
-    const wheel = wheelRef.current;
-    const optionNode = optionRefs.current[index];
-    if (!wheel || !optionNode) {
-      return;
-    }
-    const wheelHeight = wheel.clientHeight;
-    const optionOffsetTop = optionNode.offsetTop;
-    const optionHeight = optionNode.offsetHeight || WHEEL_ITEM_HEIGHT;
-    const targetScrollTop = optionOffsetTop - wheelHeight / 2 + optionHeight / 2;
-    if (!options?.skipProgrammaticFlag) {
-      programmaticScrollRef.current = true;
-    }
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    lastScrollInfoRef.current = {
-      top: targetScrollTop,
-      timestamp: now,
-      velocity: 0,
-    };
-    if (typeof wheel.scrollTo === 'function') {
-      wheel.scrollTo({ top: targetScrollTop, behavior });
-    } else {
-      wheel.scrollTop = targetScrollTop;
-    }
-    lastIndexRef.current = index;
-    if (behavior === 'auto' && !options?.skipProgrammaticFlag) {
-      programmaticScrollRef.current = false;
-    }
-    if (options?.triggerSnapHaptic) {
-      queueSnapHaptic();
-    }
-  }, [queueSnapHaptic]);
-
-  const findNextEnabled = useCallback(
-    (startIndex: number, direction: 1 | -1, wrap: boolean) => {
-      if (!options.length) {
-        return -1;
-      }
-      let index = startIndex;
-      for (let i = 0; i < options.length; i += 1) {
-        if (!wrap && (index < 0 || index >= options.length)) {
-          return -1;
-        }
-        const currentIndex = wrap ? (index + options.length) % options.length : index;
-        const option = options[currentIndex];
-        if (option && !option.disabled) {
-          return currentIndex;
-        }
-        index += direction;
-      }
-      return -1;
-    },
-    [options],
-  );
-
-  const handleOptionSelect = useCallback(
-    (option: WheelColumnOption) => {
-      if (disabled || option.disabled) {
-        return;
-      }
-      if (option.value === selected) {
-        const existingIndex = options.findIndex((item) => item.value === option.value);
-        if (existingIndex >= 0) {
-          scrollToOption(existingIndex, 'smooth', { triggerSnapHaptic: true });
-        }
-        return;
-      }
-      onSelect(option.value);
-      const selectedIndex = options.findIndex((item) => item.value === option.value);
-      if (selectedIndex >= 0) {
-        scrollToOption(selectedIndex, 'smooth', { triggerSnapHaptic: true });
-        triggerHaptic('selection');
-      }
-    },
-    [disabled, onSelect, options, scrollToOption, selected],
-  );
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
-      if (disabled) {
-        return;
-      }
-      if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
-        event.preventDefault();
-        const nextIndex = findNextEnabled(currentIndex - 1, -1, true);
-        if (nextIndex >= 0 && nextIndex !== currentIndex) {
-          handleOptionSelect(options[nextIndex]);
-        }
-      } else if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
-        event.preventDefault();
-        const nextIndex = findNextEnabled(currentIndex + 1, 1, true);
-        if (nextIndex >= 0 && nextIndex !== currentIndex) {
-          handleOptionSelect(options[nextIndex]);
-        }
-      } else if (event.key === 'PageUp') {
-        event.preventDefault();
-        const target = Math.max(0, currentIndex - PAGE_JUMP);
-        const nextIndex = findNextEnabled(target, -1, false);
-        if (nextIndex >= 0 && nextIndex !== currentIndex) {
-          handleOptionSelect(options[nextIndex]);
-        }
-      } else if (event.key === 'PageDown') {
-        event.preventDefault();
-        const target = Math.min(options.length - 1, currentIndex + PAGE_JUMP);
-        const nextIndex = findNextEnabled(target, 1, false);
-        if (nextIndex >= 0 && nextIndex !== currentIndex) {
-          handleOptionSelect(options[nextIndex]);
-        }
-      } else if (event.key === 'Home') {
-        event.preventDefault();
-        const nextIndex = findNextEnabled(0, 1, false);
-        if (nextIndex >= 0) {
-          handleOptionSelect(options[nextIndex]);
-        }
-      } else if (event.key === 'End') {
-        event.preventDefault();
-        const nextIndex = findNextEnabled(options.length - 1, -1, false);
-        if (nextIndex >= 0) {
-          handleOptionSelect(options[nextIndex]);
-        }
-      }
-    },
-    [disabled, findNextEnabled, handleOptionSelect, options],
-  );
-
-  const processScroll = useCallback(() => {
-    scrollRafRef.current = null;
-    const wheel = wheelRef.current;
-    if (!wheel || options.length === 0) {
-      return;
-    }
-    const rowHeight = rowHeightRef.current || DEFAULT_ROW_HEIGHT;
-    if (rowHeight <= 0) {
-      return;
-    }
-    const rawIndex = Math.floor(wheel.scrollTop / rowHeight);
-    const clampedIndex = Math.max(0, Math.min(options.length - 1, rawIndex));
-    const previousIndex = lastIndexRef.current;
-    if (previousIndex === null) {
-      lastIndexRef.current = clampedIndex;
-      return;
-    }
-    if (clampedIndex === previousIndex) {
-      return;
-    }
-    lastIndexRef.current = clampedIndex;
-    if (programmaticScrollRef.current || disabled) {
-      return;
-    }
-    const direction = clampedIndex > previousIndex ? 1 : -1;
-    let currentIndex = previousIndex;
-    while ((direction > 0 && currentIndex < clampedIndex) || (direction < 0 && currentIndex > clampedIndex)) {
-      currentIndex += direction;
-      if (currentIndex < 0 || currentIndex >= options.length) {
-        continue;
-      }
-      if (options[currentIndex]?.disabled) {
-        continue;
-      }
-      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      if (now - lastTickTimeRef.current >= WHEEL_HAPTIC_COOLDOWN_MS) {
-        triggerHaptic('selection');
-        lastTickTimeRef.current = now;
-      }
-    }
-  }, [disabled, options]);
-
-  const scheduleScrollProcessing = useCallback(() => {
-    if (scrollRafRef.current !== null) {
-      return;
-    }
-    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
-      processScroll();
-      return;
-    }
-    scrollRafRef.current = window.requestAnimationFrame(processScroll);
-  }, [processScroll]);
-
-  const finalizeScroll = useCallback(() => {
-    const wheel = wheelRef.current;
-    if (!wheel || options.length === 0) {
-      return;
-    }
-    const rowHeight = rowHeightRef.current || DEFAULT_ROW_HEIGHT;
-    if (rowHeight <= 0) {
-      return;
-    }
-    const rawIndex = Math.round(wheel.scrollTop / rowHeight);
-    let targetIndex = Math.max(0, Math.min(options.length - 1, rawIndex));
-    if (options[targetIndex]?.disabled) {
-      const forward = findNextEnabled(targetIndex + 1, 1, true);
-      const backward = findNextEnabled(targetIndex - 1, -1, true);
-      if (forward < 0 && backward < 0) {
-        return;
-      }
-      if (forward < 0) {
-        targetIndex = backward;
-      } else if (backward < 0) {
-        targetIndex = forward;
-      } else {
-        const baseNode = optionRefs.current[targetIndex];
-        const forwardNode = forward >= 0 ? optionRefs.current[forward] : null;
-        const backwardNode = backward >= 0 ? optionRefs.current[backward] : null;
-        const baseTop = baseNode ? baseNode.offsetTop : targetIndex * rowHeight;
-        const forwardDistance = forwardNode
-          ? Math.abs(forwardNode.offsetTop - baseTop)
-          : Math.abs(forward - targetIndex) * rowHeight;
-        const backwardDistance = backwardNode
-          ? Math.abs(backwardNode.offsetTop - baseTop)
-          : Math.abs(backward - targetIndex) * rowHeight;
-        targetIndex = forwardDistance <= backwardDistance ? forward : backward;
-      }
-    }
-    const targetOption = options[targetIndex];
-    if (!targetOption || targetOption.disabled) {
-      return;
-    }
-    if (targetOption.value !== selected) {
-      handleOptionSelect(targetOption);
-      return;
-    }
-    scrollToOption(targetIndex, 'smooth', { triggerSnapHaptic: true });
-  }, [findNextEnabled, handleOptionSelect, optionRefs, options, scrollToOption, selected]);
-
-  const handleScroll = useCallback(() => {
-    if (disabled || !wheelRef.current || options.length === 0) {
-      return;
-    }
-    scheduleScrollProcessing();
-    if (typeof window === 'undefined') {
-      finalizeScroll();
-      return;
-    }
-    if (scrollTimeoutRef.current !== null) {
-      window.clearTimeout(scrollTimeoutRef.current);
-    }
-    const wheel = wheelRef.current;
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const currentTop = wheel.scrollTop;
-    const last = lastScrollInfoRef.current;
-    const deltaTime = Math.max(1, now - last.timestamp);
-    const velocity = (currentTop - last.top) / deltaTime;
-    lastScrollInfoRef.current = {
-      top: currentTop,
-      timestamp: now,
-      velocity,
-    };
-    const attemptSettle = () => {
-      if (programmaticScrollRef.current) {
-        programmaticScrollRef.current = false;
-        return;
-      }
-      const nowCheck = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      const timeSinceLastScroll = nowCheck - lastScrollInfoRef.current.timestamp;
-      const latestVelocity = Math.abs(lastScrollInfoRef.current.velocity);
-      if (timeSinceLastScroll < WHEEL_SNAP_INACTIVITY_DELAY_MS || latestVelocity > 0.05) {
-        scrollTimeoutRef.current = window.setTimeout(
-          attemptSettle,
-          Math.max(40, Math.floor(WHEEL_SNAP_INACTIVITY_DELAY_MS / 2)),
-        );
-        return;
-      }
-      finalizeScroll();
-    };
-    scrollTimeoutRef.current = window.setTimeout(attemptSettle, WHEEL_SNAP_INACTIVITY_DELAY_MS);
-  }, [disabled, finalizeScroll, options.length, scheduleScrollProcessing]);
-
-  useEffect(() => {
-    const optionsKey = options
-      .map((option) => `${option.value}:${option.disabled ? '1' : '0'}`)
-      .join('|');
-    const selectionChanged = previousSelectedRef.current !== selected;
-    const optionsChanged = previousOptionsKeyRef.current !== optionsKey;
-
-    if (!selectionChanged && !optionsChanged) {
-      return;
-    }
-
-    previousSelectedRef.current = selected;
-    previousOptionsKeyRef.current = optionsKey;
-
-    if (options.length === 0) {
-      lastIndexRef.current = null;
-      return;
-    }
-
-    let nextIndex = selected ? options.findIndex((option) => option.value === selected) : -1;
-    if (nextIndex < 0) {
-      nextIndex = options.findIndex((option) => !option.disabled);
-    }
-
-    if (nextIndex < 0) {
-      lastIndexRef.current = null;
-      return;
-    }
-
-    lastIndexRef.current = nextIndex;
-    const shouldAnimate = selectionChanged && !isInitialRenderRef.current;
-    const behavior: ScrollBehavior = shouldAnimate ? 'smooth' : 'auto';
-    isInitialRenderRef.current = false;
-    scrollToOption(nextIndex, behavior, shouldAnimate ? undefined : { skipProgrammaticFlag: true });
-  }, [options, scrollToOption, selected]);
-
-  const registerOptionRef = useCallback(
-    (index: number) => (node: HTMLButtonElement | null) => {
-      optionRefs.current[index] = node;
-      if (node) {
-        updateWheelPadding();
-      }
-    },
-    [updateWheelPadding],
-  );
-
-  return (
-    <div
-      className="patrol-code-input__wheel"
-      role="listbox"
-      aria-label={ariaLabel}
-      aria-disabled={disabled || undefined}
-      ref={wheelRef}
-      onScroll={handleScroll}
-    >
-      {options.map((option, index) => {
-        const isSelected = selected === option.value;
-        const optionId = `${optionIdPrefix}-${index}`;
-        const className = [
-          'patrol-code-input__wheel-option',
-          isSelected ? 'patrol-code-input__wheel-option--selected' : '',
-          option.disabled ? 'patrol-code-input__wheel-option--disabled' : '',
-        ]
-          .filter(Boolean)
-          .join(' ');
-        return (
-          <button
-            type="button"
-            role="option"
-            aria-selected={isSelected}
-            id={optionId}
-            key={`${optionId}-${option.value}`}
-            className={className}
-            onClick={() => handleOptionSelect(option)}
-            onKeyDown={(event) => handleKeyDown(event, index)}
-            disabled={disabled || option.disabled}
-            ref={registerOptionRef(index)}
-            title={option.title}
-          >
-            {option.label}
-          </button>
-        );
-      })}
     </div>
   );
 }
