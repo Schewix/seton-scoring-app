@@ -1666,11 +1666,16 @@ function StationApp({
     const hasSession = Boolean(auth.tokens.sessionId);
     const expiresAt = auth.tokens.accessTokenExpiresAt;
     if (!hasSession || (typeof expiresAt === 'number' && expiresAt <= Date.now())) {
-      await releaseLocks((op) => ({
-        ...op,
-        inProgress: false,
-        lastError: 'missing-session',
-      }));
+      await releaseLocks((op) => {
+        const retryCount = op.retryCount + 1;
+        return {
+          ...op,
+          inProgress: false,
+          retryCount,
+          nextAttemptAt: Date.now() + computeBackoffMs(retryCount),
+          lastError: 'missing-session',
+        };
+      });
       pushAlert('Přihlášení vypršelo, po obnovení připojení se znovu přihlas pro odeslání fronty.');
       return;
     }
