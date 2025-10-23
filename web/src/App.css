@@ -645,39 +645,7 @@ body {
   cursor: not-allowed;
 }
 
-.points-input__wheel-option {
-  margin: 0;
-  padding: 0;
-  min-height: var(--points-wheel-item-height);
-  font-size: 1.125rem;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: none;
-  color: var(--text-muted);
-  border-radius: 8px;
-  transition: color 0.2s ease, transform 0.2s ease, background 0.2s ease;
-}
 
-.points-input__wheel-option:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.points-input__wheel-option:hover {
-  background: #eaf6ef;
-  color: var(--py-blue);
-}
-
-.points-input__wheel-option--selected {
-  background: transparent;
-  color: var(--py-blue);
-  font-weight: 700;
-  transform: scale(1.04);
-}
-
-.points-input__wheel-option:disabled {
-  cursor: not-allowed;
-}
 
 .patrol-code-input__picker {
   width: 100%;
@@ -976,6 +944,50 @@ button.ghost {
   color: var(--text);
   border-color: rgba(255, 216, 79, 0.48);
   box-shadow: 0 10px 22px rgba(255, 216, 79, 0.16);
+}
+
+.points-input__wheel-option {
+  margin: 0;
+  padding: 0;
+  min-height: var(--points-wheel-item-height);
+  font-size: 1.125rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--text-muted);
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  transition: color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+}
+
+.points-input__wheel-option:hover {
+  background: #eaf6ef;
+  color: var(--py-blue);
+  transform: none;
+  box-shadow: none;
+}
+
+.points-input__wheel-option:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.points-input__wheel-option:active {
+  transform: none;
+}
+
+.points-input__wheel-option--selected {
+  background: transparent;
+  color: var(--py-blue);
+  font-weight: 700;
+  transform: scale(1.04);
+}
+
+.points-input__wheel-option:disabled {
+  cursor: not-allowed;
+  background: transparent;
+  box-shadow: none;
 }
 
 button.ghost:hover {
