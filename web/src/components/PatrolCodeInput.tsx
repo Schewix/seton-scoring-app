@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
+import { KeyboardEvent, useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import Picker from 'react-mobile-picker';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -10,6 +10,7 @@ const GENDER_OPTIONS = ['H', 'D'] as const;
 const WHEEL_ITEM_HEIGHT = 48;
 const WHEEL_VISIBLE_COUNT = 5;
 const PLACEHOLDER_VALUE = '__';
+const PAGE_JUMP = 5;
 
 export type CategoryOption = (typeof CATEGORY_OPTIONS)[number];
 export type GenderOption = (typeof GENDER_OPTIONS)[number];
@@ -491,13 +492,12 @@ export default function PatrolCodeInput({
   const wheelIsDisabled = registry.loading || Boolean(registry.error);
   const displayValue = formatDisplayValue(normalisedValue) || '—';
 
-  const handlePickerChange = useCallback(
-    (nextValue: PatrolCodePickerValue, key: string) => {
-      const nextOption = String(nextValue[key as keyof PatrolCodePickerValue] ?? '');
+  const handleColumnValueSelect = useCallback(
+    (column: keyof PatrolCodePickerValue, nextOption: string) => {
       if (wheelIsDisabled) {
         return;
       }
-      if (key === 'category') {
+      if (column === 'category') {
         if (isPlaceholder(nextOption)) {
           if (normalisedValue) {
             onChange('');
@@ -509,7 +509,7 @@ export default function PatrolCodeInput({
         }
         return;
       }
-      if (key === 'gender') {
+      if (column === 'gender') {
         if (!selectedCategory) {
           return;
         }
@@ -566,6 +566,127 @@ export default function PatrolCodeInput({
     ],
   );
 
+  const handlePickerChange = useCallback(
+    (nextValue: PatrolCodePickerValue, key: string) => {
+      const nextOption = String(nextValue[key as keyof PatrolCodePickerValue] ?? '');
+      handleColumnValueSelect(key as keyof PatrolCodePickerValue, nextOption);
+    },
+    [handleColumnValueSelect],
+  );
+
+  const handleColumnKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLElement>, column: keyof PatrolCodePickerValue) => {
+      const config = {
+        category: {
+          options: wheelOptionsCategory,
+          selectedValue: pickerValue.category,
+          disabled: wheelIsDisabled,
+        },
+        gender: {
+          options: wheelOptionsGender,
+          selectedValue: pickerValue.gender,
+          disabled: wheelIsDisabled || !selectedCategory,
+        },
+        number: {
+          options: numberColumnOptions,
+          selectedValue: pickerValue.number,
+          disabled: wheelIsDisabled || !selectedCategory || !selectedGender,
+        },
+      }[column];
+
+      if (!config || config.disabled) {
+        return;
+      }
+
+      const { options, selectedValue } = config;
+      if (!options.length) {
+        return;
+      }
+
+      const findNextEnabledIndex = (
+        startIndex: number,
+        direction: 1 | -1,
+        wrap: boolean,
+      ) => {
+        if (!options.length) {
+          return -1;
+        }
+        let index = startIndex;
+        for (let i = 0; i < options.length; i += 1) {
+          if (!wrap && (index < 0 || index >= options.length)) {
+            return -1;
+          }
+          const currentIndex = wrap
+            ? (index + options.length) % options.length
+            : index;
+          const option = options[currentIndex];
+          if (option && !option.disabled) {
+            return currentIndex;
+          }
+          index += direction;
+        }
+        return -1;
+      };
+
+      const currentIndex = options.findIndex((option) => option.value === selectedValue);
+      const fallbackIndex = findNextEnabledIndex(0, 1, false);
+      const activeIndex = currentIndex >= 0 ? currentIndex : fallbackIndex;
+
+      if (activeIndex < 0) {
+        return;
+      }
+
+      const moveToIndex = (nextIndex: number) => {
+        if (nextIndex < 0 || nextIndex === activeIndex) {
+          return;
+        }
+        const option = options[nextIndex];
+        if (!option || option.disabled) {
+          return;
+        }
+        handleColumnValueSelect(column, option.value);
+      };
+
+      if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+        event.preventDefault();
+        const nextIndex = findNextEnabledIndex(activeIndex - 1, -1, true);
+        moveToIndex(nextIndex);
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        const nextIndex = findNextEnabledIndex(activeIndex + 1, 1, true);
+        moveToIndex(nextIndex);
+      } else if (event.key === 'PageUp') {
+        event.preventDefault();
+        const target = Math.max(0, activeIndex - PAGE_JUMP);
+        const nextIndex = findNextEnabledIndex(target, -1, false);
+        moveToIndex(nextIndex);
+      } else if (event.key === 'PageDown') {
+        event.preventDefault();
+        const target = Math.min(options.length - 1, activeIndex + PAGE_JUMP);
+        const nextIndex = findNextEnabledIndex(target, 1, false);
+        moveToIndex(nextIndex);
+      } else if (event.key === 'Home') {
+        event.preventDefault();
+        const nextIndex = findNextEnabledIndex(0, 1, false);
+        moveToIndex(nextIndex);
+      } else if (event.key === 'End') {
+        event.preventDefault();
+        const nextIndex = findNextEnabledIndex(options.length - 1, -1, false);
+        moveToIndex(nextIndex);
+      }
+    },
+    [
+      handleColumnValueSelect,
+      numberColumnOptions,
+      pickerValue,
+      selectedCategory,
+      selectedGender,
+      wheelIsDisabled,
+      wheelOptionsCategory,
+      wheelOptionsGender,
+    ],
+  );
+
   return (
     <div className="patrol-code-input">
       {label ? (
@@ -598,6 +719,9 @@ export default function PatrolCodeInput({
             className="patrol-code-input__picker-column"
             aria-label="Kategorie"
             role="listbox"
+            tabIndex={wheelIsDisabled ? -1 : 0}
+            onKeyDown={(event) => handleColumnKeyDown(event, 'category')}
+            aria-disabled={wheelIsDisabled ? true : undefined}
             data-disabled={wheelIsDisabled ? 'true' : undefined}
           >
             {wheelOptionsCategory.map((option, index) => (
@@ -628,6 +752,11 @@ export default function PatrolCodeInput({
             className="patrol-code-input__picker-column"
             aria-label="Pohlaví (H = hoši, D = dívky)"
             role="listbox"
+            tabIndex={wheelIsDisabled || !selectedCategory ? -1 : 0}
+            onKeyDown={(event) => handleColumnKeyDown(event, 'gender')}
+            aria-disabled={
+              wheelIsDisabled || !selectedCategory ? true : undefined
+            }
             data-disabled={
               wheelIsDisabled || !selectedCategory ? 'true' : undefined
             }
@@ -668,6 +797,15 @@ export default function PatrolCodeInput({
             className="patrol-code-input__picker-column"
             aria-label="Číslo hlídky"
             role="listbox"
+            tabIndex={
+              wheelIsDisabled || !selectedCategory || !selectedGender ? -1 : 0
+            }
+            onKeyDown={(event) => handleColumnKeyDown(event, 'number')}
+            aria-disabled={
+              wheelIsDisabled || !selectedCategory || !selectedGender
+                ? true
+                : undefined
+            }
             data-disabled={
               wheelIsDisabled || !selectedCategory || !selectedGender ? 'true' : undefined
             }
