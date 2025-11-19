@@ -133,7 +133,7 @@ if (isAdminPath) {
       console.error('Failed to load scoreboard view', error);
     });
 } else if (isHomepagePath && !isSetonNamespace) {
-  import('./homepage/Homepage')
+  import('./homepage/HomePage')
     .then(({ default: Homepage }) => {
       render(<Homepage />);
     })
@@ -149,7 +149,7 @@ if (isAdminPath) {
       console.error('Failed to load scoring app', error);
     });
 } else {
-  import('./homepage/Homepage')
+  import('./homepage/HomePage')
     .then(({ default: Homepage }) => {
       render(<Homepage />);
     })
