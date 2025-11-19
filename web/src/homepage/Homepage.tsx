@@ -1,12 +1,19 @@
-import { useState } from 'react';
-
-const NAV_LINKS = [
-  { label: 'Domů', href: '#hero' },
-  { label: 'O Zelené lize', href: '#o-zelene-lize' },
-  { label: 'Oddíly SPTO', href: '#oddily' },
-  { label: 'Akce a výsledky', href: '#poradi' },
-  { label: 'Sborníčky', href: '#sbornicky' },
-  { label: 'Kontakt / Pro vedoucí', href: '#kontakt' },
+const EVENTS = [
+  {
+    slug: 'setonuv-zavod',
+    name: 'Setonův závod',
+    description:
+      'Tábornická soutěž pro všechny oddíly SPTO. Hlídky prověřují dovednosti z oddílové praxe – mapa, buzola, uzly, první pomoc, spolupráce.',
+    href: '/setonuv-zavod',
+    status: 'available' as const,
+  },
+  {
+    slug: 'draci-smycka',
+    name: 'Dračí smyčka',
+    description: 'Soutěž jednotlivců ve vázání uzlů. Nové ročníky připravujeme na stejném digitálním zázemí.',
+    href: '/draci-smycka',
+    status: 'coming-soon' as const,
+  },
 ];
 
 const ODDILY = [
@@ -69,229 +76,189 @@ const SBORNICKY = [
 ];
 
 function ZelenaLigaHomePage() {
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  const closeMenu = () => setMenuOpen(false);
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-emerald-100 text-slate-900">
-      <header className="sticky top-0 z-50 border-b border-emerald-100 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 md:px-6">
-          <a href="#hero" className="text-lg font-semibold text-emerald-700">
-            Zelená liga SPTO
-          </a>
-          <nav className="hidden items-center gap-6 text-sm font-medium text-slate-600 lg:flex">
-            {NAV_LINKS.map((link) => (
-              <a key={link.label} href={link.href} className="transition hover:text-emerald-700">
-                {link.label}
-              </a>
-            ))}
-          </nav>
-          <button
-            type="button"
-            className="flex h-10 w-10 items-center justify-center rounded-md border border-emerald-200 text-emerald-700 lg:hidden"
-            onClick={() => setMenuOpen((prev) => !prev)}
-            aria-label="Otevřít menu"
-          >
-            <span className="sr-only">Menu</span>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              className="h-6 w-6"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-        </div>
-        {menuOpen && (
-          <div className="lg:hidden">
-            <nav className="space-y-1 border-t border-emerald-100 bg-white px-4 py-3 text-sm font-medium text-slate-600">
-              {NAV_LINKS.map((link) => (
-                <a
-                  key={link.label}
-                  href={link.href}
-                  onClick={closeMenu}
-                  className="block rounded-md px-3 py-2 transition hover:bg-emerald-50 hover:text-emerald-700"
-                >
-                  {link.label}
-                </a>
-              ))}
-            </nav>
+    <main className="min-h-screen bg-[#f3faec] text-slate-900">
+      <div className="max-w-5xl mx-auto px-4 py-10 md:py-16 space-y-20">
+        <section
+          id="hero"
+          className="flex flex-col md:flex-row gap-10 items-center md:items-start"
+        >
+          <div className="flex items-center justify-center w-full md:w-auto">
+            <div className="h-28 w-28 rounded-full bg-white shadow flex items-center justify-center text-lg font-semibold tracking-wide text-emerald-600">
+              SPTO
+            </div>
           </div>
-        )}
-      </header>
-
-      <main>
-        <section id="hero" className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-16 text-center md:py-24">
-          <p className="text-sm uppercase tracking-[0.3em] text-emerald-600">Společná soutěž SPTO</p>
-          <h1 className="text-3xl font-semibold text-slate-900 sm:text-4xl md:text-5xl">Zelená liga SPTO</h1>
-          <p className="text-lg text-slate-600 md:text-xl">
-            Celoroční soutěž pionýrských tábornických oddílů z Jihomoravského kraje.
-          </p>
-          <p className="text-base leading-relaxed text-slate-600 md:text-lg">
-            Oddíly mezi sebou soutěží v tábornických dovednostech, orientaci v přírodě, sportu i týmové spolupráci.
-            Během roku proběhne několik závodů – od atletiky přes zabíjenou až po Setonův závod.
-          </p>
-          <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <a
-              href="#o-zelene-lize"
-              className="rounded-full bg-emerald-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-200 transition hover:bg-emerald-700"
-            >
-              Jak Zelená liga funguje
-            </a>
-            <a
-              href="#poradi"
-              className="rounded-full border border-emerald-200 px-6 py-3 text-sm font-semibold text-emerald-700 transition hover:border-emerald-400"
-            >
-              Aktuální pořadí
-            </a>
+          <div className="space-y-4 max-w-3xl">
+            <p className="text-xs tracking-[0.25em] uppercase text-slate-500">Zelená liga</p>
+            <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Digitální podpora soutěží SPTO</h1>
+            <p className="text-sm md:text-base text-slate-700 leading-relaxed">
+              Celoroční soutěž pionýrských tábornických oddílů z Jihomoravského kraje drží společnou nit – férový boj, táborové dovednosti a radost z pohybu v přírodě.
+            </p>
+            <p className="text-sm md:text-base text-slate-700 leading-relaxed">
+              Vše vzniklo mezi vedoucími, kteří závody sami pořádají. Přidáváme jen tolik techniky, aby se výsledky daly připravit i sdílet elegantně a zůstalo víc času na oddílový život.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <a
+                href="#o-zelene-lize"
+                className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-400 transition"
+              >
+                Jak Zelená liga funguje
+              </a>
+              <a
+                href="#poradi"
+                className="inline-flex items-center justify-center rounded-full border border-emerald-200 px-5 py-2.5 text-sm font-semibold text-emerald-700 hover:border-emerald-400 transition"
+              >
+                Aktuální pořadí
+              </a>
+            </div>
           </div>
         </section>
 
-        <section id="o-zelene-lize" className="bg-white py-16">
-          <div className="mx-auto max-w-4xl px-4">
-            <p className="text-sm font-semibold uppercase tracking-wide text-emerald-600">O Zelené lize</p>
-            <h2 className="mt-3 text-3xl font-semibold text-slate-900">Co je Zelená liga?</h2>
-            <p className="mt-4 text-lg text-slate-700">
+        <section id="souteze" className="space-y-6">
+          <div className="text-center space-y-3 max-w-3xl mx-auto">
+            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">Naše soutěže</h2>
+            <p className="text-sm text-slate-600">
+              Najdete tu odkazy na systémy, přes které rozhodčí zapisují body a vedoucí sledují výsledky jednotlivých závodů.
+            </p>
+          </div>
+          <div className="grid gap-6 md:grid-cols-2">
+            {EVENTS.map((event) => (
+              <article
+                key={event.slug}
+                className="bg-white rounded-3xl shadow-sm border border-amber-100 p-6 flex flex-col justify-between"
+              >
+                <div className="space-y-3">
+                  <span className="text-xs font-semibold tracking-[0.2em] text-amber-500">Soutěž</span>
+                  <h3 className="text-xl font-semibold">{event.name}</h3>
+                  <p className="text-sm text-slate-600">{event.description}</p>
+                </div>
+                <div className="mt-6">
+                  {event.status === 'available' ? (
+                    <a
+                      href={event.href}
+                      className="inline-flex items-center rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 shadow hover:bg-amber-300 transition"
+                    >
+                      Otevřít soutěž
+                    </a>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-600">
+                      Připravujeme
+                    </span>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="o-zelene-lize" className="space-y-4">
+          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">O Zelené lize</h2>
+          <div className="space-y-3 text-base text-slate-700 max-w-prose">
+            <p>
               Zelená liga je celoroční soutěž tábornických oddílů SPTO. Oddíly sbírají body na různých závodech během roku – od sportovních klání přes tábornické disciplíny až po Setonův závod. Na konci roku nejúspěšnější oddíly získají čestné nášivky Zelené ligy.
             </p>
-            <p className="mt-4 text-base text-slate-600">
+            <p>
               Každý oddíl má svou tradici, zvyky a styl práce – všechny ale spojuje společná chuť být venku, hrát fair play a růst společně.
             </p>
           </div>
         </section>
 
-        <section id="oddily" className="py-16">
-          <div className="mx-auto max-w-6xl px-4">
-            <div className="md:flex md:items-center md:justify-between">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-wide text-emerald-600">Oddíly SPTO</p>
-                <h2 className="mt-2 text-3xl font-semibold text-slate-900">Oddíly zapojené do Zelené ligy</h2>
+        <section id="oddily" className="space-y-6">
+          <div className="space-y-2">
+            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">Oddíly zapojené do Zelené ligy</h2>
+            <p className="text-sm text-slate-600 max-w-prose">
+              Zelená liga spojuje tábornické oddíly z celého Jihomoravského kraje. Níže je ukázka některých z nich.
+            </p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {ODDILY.map((oddil) => (
+              <div key={oddil.name} className="bg-white rounded-2xl shadow-sm p-4 border border-slate-100">
+                <h3 className="text-xl font-semibold">{oddil.name}</h3>
+                <p className="text-sm text-slate-600">{oddil.city}</p>
+                <p className="mt-2 text-sm text-slate-700">{oddil.description}</p>
+                <button className="mt-3 text-sm font-medium text-emerald-700 hover:text-emerald-900">
+                  Detail oddílu →
+                </button>
               </div>
-              <p className="mt-4 text-base text-slate-600 md:mt-0 md:max-w-xl">
-                Zelená liga spojuje tábornické oddíly z celého Jihomoravského kraje. Níže je ukázka některých z nich.
-              </p>
-            </div>
-            <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {ODDILY.map((oddil) => (
-                <div key={oddil.name} className="rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm">
-                  <p className="text-xs uppercase tracking-wide text-emerald-500">{oddil.city}</p>
-                  <h3 className="mt-2 text-xl font-semibold text-slate-900">{oddil.name}</h3>
-                  <p className="mt-3 text-sm text-slate-600">{oddil.description}</p>
-                  <a
-                    href="#"
-                    className="mt-5 inline-flex items-center text-sm font-semibold text-emerald-700 hover:text-emerald-900"
-                  >
-                    Detail oddílu
-                    <span aria-hidden="true" className="ml-1">→</span>
-                  </a>
-                </div>
-              ))}
-            </div>
-            <div className="mt-8 text-right">
-              <a href="#" className="text-sm font-semibold text-emerald-700 hover:text-emerald-900">
-                Zobrazit všechny oddíly SPTO →
-              </a>
-            </div>
+            ))}
           </div>
         </section>
 
-        <section id="poradi" className="bg-slate-900 py-16 text-white">
-          <div className="mx-auto max-w-5xl px-4">
-            <p className="text-sm font-semibold uppercase tracking-wide text-emerald-300">Pořadí</p>
-            <h2 className="mt-2 text-3xl font-semibold">Pořadí v aktuálním ročníku Zelené ligy</h2>
-            <p className="mt-4 text-base text-slate-200">
+        <section id="poradi" className="space-y-4">
+          <div className="space-y-2 max-w-prose">
+            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">Pořadí Zelené ligy</h2>
+            <p className="text-sm text-slate-600">
               Během školního roku sbírají oddíly body na jednotlivých závodech. Na konci roku sedm nejlepších získá právo nosit čestnou nášivku Zelené ligy.
             </p>
-            <div className="mt-8 overflow-x-auto">
-              <table className="min-w-full divide-y divide-white/10 text-left text-sm">
-                <thead>
-                  <tr className="text-xs uppercase tracking-wide text-emerald-200">
-                    <th className="py-3 pr-4">Pořadí</th>
-                    <th className="py-3 pr-4">Oddíl</th>
-                    <th className="py-3">Body</th>
+          </div>
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 uppercase text-xs tracking-wide">
+                <tr>
+                  <th className="py-3 px-4 text-left">Pořadí</th>
+                  <th className="py-3 px-4 text-left">Oddíl</th>
+                  <th className="py-3 px-4 text-right">Body</th>
+                </tr>
+              </thead>
+              <tbody>
+                {STANDINGS.map((item, index) => (
+                  <tr key={item.rank} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                    <td className="py-3 px-4 font-semibold text-slate-700">{item.rank}.</td>
+                    <td className="py-3 px-4 text-slate-800">{item.name}</td>
+                    <td className="py-3 px-4 text-right font-semibold text-slate-900">{item.points}</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {STANDINGS.map((item) => (
-                    <tr key={item.rank}>
-                      <td className="py-3 pr-4 font-semibold text-emerald-200">{item.rank}.</td>
-                      <td className="py-3 pr-4 text-white">{item.name}</td>
-                      <td className="py-3 text-white">{item.points}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-6 text-sm font-semibold text-emerald-200">
-              <a href="#">Zobrazit kompletní tabulku a výsledky závodů →</a>
-            </p>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
 
-        <section id="sbornicky" className="py-16">
-          <div className="mx-auto max-w-5xl px-4">
-            <p className="text-sm font-semibold uppercase tracking-wide text-emerald-600">Sborníčky</p>
-            <h2 className="mt-2 text-3xl font-semibold text-slate-900">Sborníčky Zelené ligy</h2>
-            <p className="mt-4 text-base text-slate-600">
-              Každý sborníček shrnuje zhruba pět let života SPTO – výsledky všech závodů Zelené ligy, změny ve vedení SPTO i dění v jednotlivých oddílech. Můžete je číst online nebo stáhnout jako PDF.
+        <section id="sbornicky" className="space-y-6">
+          <div className="space-y-2 max-w-prose">
+            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">Sborníčky</h2>
+            <p className="text-sm text-slate-600">
+              Každý sborníček shrnuje několik ročníků Zelené ligy – výsledky závodů, novinky v oddílech i příběhy vedoucích.
             </p>
-            <div className="mt-10 grid gap-6 md:grid-cols-2">
-              {SBORNICKY.map((sbornicek) => (
-                <div key={sbornicek.title} className="rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm">
-                  <h3 className="text-xl font-semibold text-slate-900">{sbornicek.title}</h3>
-                  <p className="mt-3 text-sm text-slate-600">{sbornicek.description}</p>
-                  <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                    <a
-                      href="#"
-                      className="flex-1 rounded-full bg-emerald-600 px-4 py-2 text-center text-sm font-semibold text-white transition hover:bg-emerald-700"
-                    >
-                      Otevřít PDF
-                    </a>
-                    <a
-                      href="#"
-                      className="flex-1 rounded-full border border-emerald-200 px-4 py-2 text-center text-sm font-semibold text-emerald-700 transition hover:border-emerald-400"
-                    >
-                      Stáhnout PDF
-                    </a>
-                  </div>
+          </div>
+          <div className="grid gap-6 md:grid-cols-2">
+            {SBORNICKY.map((sbornicek) => (
+              <article key={sbornicek.title} className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 space-y-4">
+                <div>
+                  <h3 className="text-xl font-semibold">{sbornicek.title}</h3>
+                  <p className="text-sm text-slate-600 mt-2">{sbornicek.description}</p>
                 </div>
-              ))}
-            </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <a
+                    href="#"
+                    className="flex-1 inline-flex items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-400 transition"
+                  >
+                    Otevřít PDF
+                  </a>
+                  <a
+                    href="#"
+                    className="flex-1 inline-flex items-center justify-center rounded-full border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700 hover:border-emerald-400 transition"
+                  >
+                    Stáhnout
+                  </a>
+                </div>
+              </article>
+            ))}
           </div>
         </section>
 
-        <section id="o-spto" className="bg-emerald-50 py-14">
-          <div className="mx-auto max-w-4xl px-4 text-center">
-            <p className="text-sm font-semibold uppercase tracking-wide text-emerald-600">O SPTO</p>
-            <h3 className="mt-2 text-2xl font-semibold text-slate-900">Co je SPTO?</h3>
-            <p className="mt-4 text-base text-slate-700">
-              Sdružení pionýrských tábornických oddílů (SPTO) je spolek jihomoravských pionýrských oddílů, které se zaměřují na turistiku, tábornictví a poznávání přírody. Zelená liga je jejich společná celoroční soutěž.
-            </p>
-          </div>
+        <section id="kontakt" className="space-y-3 max-w-prose">
+          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">Kontakt &amp; podpora</h2>
+          <p className="text-sm text-slate-600">
+            Pro vedoucí i rodiče jsme na dosah. Napište nám na{' '}
+            <a href="mailto:info@zelenaliga.cz" className="text-emerald-700 font-semibold hover:text-emerald-900">
+              info@zelenaliga.cz
+            </a>{' '}
+            nebo se stavte na některé z akcí SPTO.
+          </p>
+          <p className="text-sm text-slate-600">© {new Date().getFullYear()} Zelená liga SPTO</p>
         </section>
-      </main>
-
-      <footer id="kontakt" className="border-t border-emerald-100 bg-white py-8">
-        <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
-          <p className="text-base font-medium text-slate-700">© {new Date().getFullYear()} Zelená liga SPTO</p>
-          <div className="flex flex-col gap-3 text-sm md:flex-row md:items-center md:gap-6">
-            <a href="#" className="hover:text-emerald-700">
-              Pro vedoucí
-            </a>
-            <a href="#" className="hover:text-emerald-700">
-              Pro rodiče
-            </a>
-            <a href="mailto:info@zelenaliga.cz" className="hover:text-emerald-700">
-              Kontakt
-            </a>
-          </div>
-        </div>
-      </footer>
-    </div>
+      </div>
+    </main>
   );
 }
 
