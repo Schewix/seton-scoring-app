@@ -452,6 +452,7 @@ function StationApp({
   const scoringDisabled = scoringLocked && !isTargetStation;
   const [activePatrol, setActivePatrol] = useState<Patrol | null>(null);
   const [scannerPatrol, setScannerPatrol] = useState<Patrol | null>(null);
+  const [showPatrolChoice, setShowPatrolChoice] = useState(false);
   const [points, setPoints] = useState('');
   const [note, setNote] = useState('');
   const [answersInput, setAnswersInput] = useState('');
@@ -816,6 +817,7 @@ function StationApp({
         } else {
           pushAlert(`Do fronty přidána hlídka ${scannerPatrol.team_name}.`);
         }
+        setShowPatrolChoice(false);
       } else {
         pushAlert('Hlídka už je ve frontě.');
       }
@@ -1119,6 +1121,7 @@ function StationApp({
     }
     initializeFormForPatrol(scannerPatrol);
     pushAlert(`Hlídka ${scannerPatrol.team_name} je připravena k obsluze.`);
+    setShowPatrolChoice(false);
   }, [enableTicketQueue, handleAddTicket, initializeFormForPatrol, pushAlert, scannerPatrol]);
 
   const handleScoreOkToggle = useCallback(
@@ -1800,6 +1803,7 @@ function StationApp({
   const resetForm = useCallback(() => {
     setActivePatrol(null);
     setScannerPatrol(null);
+    setShowPatrolChoice(false);
     setPoints('');
     setNote('');
     setAnswersInput('');
@@ -1968,6 +1972,7 @@ function StationApp({
       }
 
       setScannerPatrol({ ...data });
+      setShowPatrolChoice(true);
       setScanActive(false);
       setManualCodeDraft('');
       setConfirmedManualCode(normalized);
@@ -1994,6 +1999,7 @@ function StationApp({
       stationPassageVisitedSet,
       setConfirmedManualCode,
       setManualCodeDraft,
+      setShowPatrolChoice,
     ]
   );
 
@@ -2201,6 +2207,13 @@ function StationApp({
     const queueWithOperation = [...queueBefore, operation];
     await writeQueue(queueKey, queueWithOperation);
     updateQueueState(queueWithOperation);
+    if (enableTicketQueue) {
+      updateTickets((current) =>
+        current.map((ticket) =>
+          ticket.patrolId === activePatrol.id ? { ...ticket, points: scorePoints } : ticket,
+        ),
+      );
+    }
     setShowPendingDetails(false);
     pushAlert(`Záznam uložen do fronty (${queuePayload.team_name ?? queuePayload.patrol_code}).`);
     setLastSavedAt(now);
@@ -2216,6 +2229,7 @@ function StationApp({
     pushAlert,
     resetForm,
     updateQueueState,
+    updateTickets,
     waitDurationSeconds,
     arrivedAt,
     stationId,
@@ -2229,6 +2243,7 @@ function StationApp({
     scoringDisabled,
     scrollToQueue,
     syncQueue,
+    enableTicketQueue,
   ]);
 
   const totalAnswers = useMemo(
@@ -2450,6 +2465,39 @@ function StationApp({
           ) : null}
         </div>
       </header>
+      {showPatrolChoice && scannerPatrol ? (
+        <div className="patrol-choice-backdrop" role="dialog" aria-modal="true">
+          <div className="patrol-choice-modal">
+            <div className="patrol-choice-header">
+              <h2>Hlídka načtena</h2>
+              <button
+                type="button"
+                className="ghost patrol-choice-close"
+                onClick={() => setShowPatrolChoice(false)}
+                aria-label="Zavřít dialog"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="patrol-choice-subtitle">Vyber další krok, aby hlídka nezapadla ve frontě.</p>
+            <div className="patrol-choice-details">
+              <strong>{scannerPatrol.team_name}</strong>
+              {previewPatrolCode ? <span>Kód: {previewPatrolCode}</span> : null}
+              <span>{formatPatrolMetaLabel(scannerPatrol)}</span>
+            </div>
+            <div className="patrol-choice-actions">
+              <button type="button" className="primary" onClick={handleServePatrol}>
+                Obsluhovat
+              </button>
+              {enableTicketQueue ? (
+                <button type="button" className="ghost" onClick={() => handleAddTicket('waiting')}>
+                  Čekat
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <main className="content">
         <>

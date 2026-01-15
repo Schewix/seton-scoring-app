@@ -1673,6 +1673,71 @@ textarea {
   color: #7c2d12;
 }
 
+.patrol-choice-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 24px;
+}
+
+.patrol-choice-modal {
+  width: min(520px, 100%);
+  background: var(--surface);
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.patrol-choice-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.patrol-choice-header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.patrol-choice-close {
+  font-size: 1rem;
+  padding: 6px 12px;
+}
+
+.patrol-choice-subtitle {
+  margin: 0;
+  color: #475569;
+}
+
+.patrol-choice-details {
+  background: rgba(226, 232, 240, 0.6);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #0f172a;
+}
+
+.patrol-choice-details strong {
+  font-size: 1.1rem;
+}
+
+.patrol-choice-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .score-list {
   list-style: none;
   margin: 0;
