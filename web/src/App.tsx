@@ -105,6 +105,7 @@ interface StationSummaryPatrol {
   teamName: string;
   baseCategory: string;
   sex: string;
+  visited: boolean;
 }
 
 interface StationCategorySummaryItem {
@@ -112,6 +113,7 @@ interface StationCategorySummaryItem {
   expected: number;
   visited: number;
   missing: StationSummaryPatrol[];
+  completed: StationSummaryPatrol[];
 }
 
 interface StationCategorySummary {
@@ -208,6 +210,45 @@ function formatPatrolMetaLabel(patrol: { patrol_code: string | null; category: s
     return `${category}/${sex}`;
   }
   return category || sex || '';
+}
+
+function formatSummaryPatrolLabel(patrol: StationSummaryPatrol) {
+  return patrol.code || `${patrol.baseCategory}/${patrol.sex}`;
+}
+
+function getSummaryPatrolSortKey(patrol: StationSummaryPatrol) {
+  const normalized = normalisePatrolCode(patrol.code || '');
+  const match = normalized.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  const category = match?.[1] ?? patrol.baseCategory;
+  const sex = match?.[2] ?? patrol.sex;
+  const numberValue = match ? Number(match[3]) : NaN;
+  const label = formatSummaryPatrolLabel(patrol).toUpperCase();
+  return {
+    category,
+    sex,
+    numberValue,
+    label,
+  };
+}
+
+function compareSummaryPatrols(a: StationSummaryPatrol, b: StationSummaryPatrol) {
+  const keyA = getSummaryPatrolSortKey(a);
+  const keyB = getSummaryPatrolSortKey(b);
+  if (keyA.category !== keyB.category) {
+    return keyA.category.localeCompare(keyB.category, 'cs');
+  }
+  if (keyA.sex !== keyB.sex) {
+    return keyA.sex.localeCompare(keyB.sex, 'cs');
+  }
+  const aHasNumber = Number.isFinite(keyA.numberValue);
+  const bHasNumber = Number.isFinite(keyB.numberValue);
+  if (aHasNumber && bHasNumber && keyA.numberValue !== keyB.numberValue) {
+    return keyA.numberValue - keyB.numberValue;
+  }
+  if (aHasNumber !== bHasNumber) {
+    return aHasNumber ? -1 : 1;
+  }
+  return keyA.label.localeCompare(keyB.label, 'cs');
 }
 
 async function readQueue(key: string): Promise<PendingOperation[]> {
@@ -1456,6 +1497,7 @@ function StationApp({
       expected: 0,
       visited: 0,
       missing: [] as StationSummaryPatrol[],
+      completed: [] as StationSummaryPatrol[],
     }));
     let totalExpected = 0;
     let totalVisited = 0;
@@ -1476,14 +1518,16 @@ function StationApp({
         teamName,
         baseCategory: patrolSummary.category,
         sex: patrolSummary.sex,
+        visited: stationPassageVisitedSet.has(patrolSummary.id),
       };
 
       record[stationCategory].expected += 1;
       totalExpected += 1;
 
-      if (stationPassageVisitedSet.has(patrolSummary.id)) {
+      if (detail.visited) {
         record[stationCategory].visited += 1;
         totalVisited += 1;
+        record[stationCategory].completed.push(detail);
       } else {
         record[stationCategory].missing.push(detail);
       }
@@ -1491,16 +1535,14 @@ function StationApp({
 
     const items = allowedStationCategories.map<StationCategorySummaryItem>((category) => {
       const entry = record[category];
-      const missing = [...entry.missing].sort((a, b) => {
-        const labelA = (a.code || `${a.baseCategory}/${a.sex}`).toUpperCase();
-        const labelB = (b.code || `${b.baseCategory}/${b.sex}`).toUpperCase();
-        return labelA.localeCompare(labelB, 'cs');
-      });
+      const missing = [...entry.missing].sort(compareSummaryPatrols);
+      const completed = [...entry.completed].sort(compareSummaryPatrols);
       return {
         key: category,
         expected: entry.expected,
         visited: entry.visited,
         missing,
+        completed,
       };
     });
 
@@ -1532,6 +1574,45 @@ function StationApp({
   const handleSelectSummaryCategory = useCallback((category: StationCategoryKey) => {
     setSelectedSummaryCategory((previous) => (previous === category ? null : category));
   }, []);
+
+  const handleSelectSummaryPatrol = useCallback(
+    (patrol: StationSummaryPatrol) => {
+      if (scannerPatrol && scannerPatrol.id === patrol.id) {
+        pushAlert('Hlídka už je načtená.');
+        return;
+      }
+      if (activePatrol && activePatrol.id === patrol.id) {
+        pushAlert('Hlídka už je právě obsluhovaná.');
+        return;
+      }
+      if (patrol.visited && stationCode !== 'T') {
+        pushAlert('Hlídka už na stanovišti byla.');
+        return;
+      }
+      const data = auth.patrols.find((candidate) => candidate.id === patrol.id);
+      if (!data) {
+        pushAlert('Hlídka nenalezena.');
+        return;
+      }
+      setScannerPatrol({ ...data });
+      setShowPatrolChoice(true);
+      setScanActive(false);
+      setManualCodeDraft('');
+      setConfirmedManualCode(patrol.code ? patrol.code.toUpperCase() : '');
+    },
+    [
+      activePatrol,
+      auth.patrols,
+      pushAlert,
+      scannerPatrol,
+      setConfirmedManualCode,
+      setManualCodeDraft,
+      setScanActive,
+      setScannerPatrol,
+      setShowPatrolChoice,
+      stationCode,
+    ],
+  );
 
   const handleRefreshStationPassages = useCallback(() => {
     void loadStationPassages();
@@ -2578,23 +2659,82 @@ function StationApp({
                 <p className="card-hint">
                   {selectedSummaryDetail.expected === 0
                     ? 'Tato kategorie nemá žádné hlídky.'
-                    : selectedSummaryDetail.missing.length === 0
-                      ? 'Všechny hlídky již stanoviště navštívily.'
-                      : `Chybí ${selectedSummaryDetail.missing.length} z ${selectedSummaryDetail.expected} hlídek.`}
+                    : `Absolvováno ${selectedSummaryDetail.visited} z ${selectedSummaryDetail.expected} hlídek.`}
+                  {selectedSummaryDetail.expected > 0 && selectedSummaryDetail.missing.length > 0
+                    ? ` Chybí ${selectedSummaryDetail.missing.length}.`
+                    : selectedSummaryDetail.expected > 0
+                      ? ' Všechny hlídky již stanoviště navštívily.'
+                      : null}
                 </p>
-                {selectedSummaryDetail.missing.length ? (
-                  <ul className="station-summary-list">
-                    {selectedSummaryDetail.missing.map((patrol) => {
-                      const codeLabel = patrol.code || `${patrol.baseCategory}/${patrol.sex}`;
-                      return (
-                        <li key={patrol.id}>
-                          <strong>{codeLabel}</strong>
-                          {patrol.teamName ? <span>{patrol.teamName}</span> : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : null}
+                <div className="station-summary-sections">
+                  <div className="station-summary-section">
+                    <div className="station-summary-section-header">
+                      <h4>Chybějící hlídky ({selectedSummaryDetail.missing.length})</h4>
+                      <span className="card-hint">Kliknutím vybereš hlídku k obsluze.</span>
+                    </div>
+                    {selectedSummaryDetail.missing.length ? (
+                      <ul className="station-summary-list">
+                        {selectedSummaryDetail.missing.map((patrol) => {
+                          const codeLabel = formatSummaryPatrolLabel(patrol);
+                          const isSelectable = !patrol.visited || stationCode === 'T';
+                          return (
+                            <li key={patrol.id}>
+                              <button
+                                type="button"
+                                className="station-summary-item"
+                                data-visited={patrol.visited ? '1' : '0'}
+                                onClick={() => handleSelectSummaryPatrol(patrol)}
+                                disabled={!isSelectable}
+                                aria-label={`Vybrat hlídku ${codeLabel}`}
+                              >
+                                <div className="station-summary-item-header">
+                                  <strong>{codeLabel}</strong>
+                                  <span className="station-summary-item-status">Chybí</span>
+                                </div>
+                                {patrol.teamName ? <span>{patrol.teamName}</span> : null}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="card-hint">Žádné chybějící hlídky.</p>
+                    )}
+                  </div>
+                  <div className="station-summary-section">
+                    <div className="station-summary-section-header">
+                      <h4>Absolvované hlídky ({selectedSummaryDetail.completed.length})</h4>
+                    </div>
+                    {selectedSummaryDetail.completed.length ? (
+                      <ul className="station-summary-list">
+                        {selectedSummaryDetail.completed.map((patrol) => {
+                          const codeLabel = formatSummaryPatrolLabel(patrol);
+                          const isSelectable = !patrol.visited || stationCode === 'T';
+                          return (
+                            <li key={patrol.id}>
+                              <button
+                                type="button"
+                                className="station-summary-item"
+                                data-visited={patrol.visited ? '1' : '0'}
+                                onClick={() => handleSelectSummaryPatrol(patrol)}
+                                disabled={!isSelectable}
+                                aria-label={`Vybrat hlídku ${codeLabel}`}
+                              >
+                                <div className="station-summary-item-header">
+                                  <strong>{codeLabel}</strong>
+                                  <span className="station-summary-item-status">Absolvováno</span>
+                                </div>
+                                {patrol.teamName ? <span>{patrol.teamName}</span> : null}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="card-hint">Zatím žádné absolvované hlídky.</p>
+                    )}
+                  </div>
+                </div>
               </div>
             ) : null}
           </section>
