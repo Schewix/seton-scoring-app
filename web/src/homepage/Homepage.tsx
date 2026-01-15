@@ -146,6 +146,91 @@ const TROOPS = [
   },
 ];
 
+const APPLICATION_LINKS = [
+  {
+    label: 'Setonův závod – aplikace',
+    description: 'Hlavní rozhraní pro sběr bodů a správu stanovišť.',
+    href: '/setonuv-zavod',
+  },
+  {
+    label: 'Výsledková tabule',
+    description: 'Aktuální pořadí hlídek a přehled bodů.',
+    href: '/setonuv-zavod/vysledky',
+  },
+];
+
+type InfoLink = {
+  label: string;
+  description?: string;
+  href: string;
+};
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function NotFoundPage() {
+  return (
+    <div className="homepage-shell">
+      <main className="homepage-main homepage-single">
+        <h1>Stránka nebyla nalezena</h1>
+        <p>Omlouváme se, ale požadovaná stránka neexistuje. Zkuste se vrátit na domovskou stránku.</p>
+        <a className="homepage-back-link" href="/">
+          Zpět na Zelenou ligu
+        </a>
+      </main>
+    </div>
+  );
+}
+
+function InfoPage({
+  eyebrow,
+  title,
+  lead,
+  links,
+  backHref = '/',
+}: {
+  eyebrow?: string;
+  title: string;
+  lead: string;
+  links?: InfoLink[];
+  backHref?: string;
+}) {
+  return (
+    <div className="homepage-shell">
+      <main className="homepage-main homepage-single" aria-labelledby="info-heading">
+        {eyebrow ? <p className="homepage-eyebrow">{eyebrow}</p> : null}
+        <h1 id="info-heading">{title}</h1>
+        <p className="homepage-lead">{lead}</p>
+        <div className="homepage-card">
+          {links && links.length > 0 ? (
+            <ul className="homepage-list">
+              {links.map((link) => (
+                <li key={link.href}>
+                  <a className="homepage-inline-link" href={link.href}>
+                    {link.label}
+                  </a>
+                  {link.description ? <p>{link.description}</p> : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>Obsah stránky připravujeme. Sleduj novinky na hlavní stránce.</p>
+          )}
+        </div>
+        <a className="homepage-back-link" href={backHref}>
+          Zpět na hlavní stránku
+        </a>
+      </main>
+    </div>
+  );
+}
+
 function Homepage() {
   return (
     <div className="homepage-shell">
@@ -364,17 +449,7 @@ function EventPage({ slug }: EventPageProps) {
   const event = EVENTS.find((item) => item.slug === slug);
 
   if (!event) {
-    return (
-      <div className="homepage-shell">
-        <main className="homepage-main homepage-single">
-          <h1>Stránka nebyla nalezena</h1>
-          <p>Omlouváme se, ale požadovaná stránka neexistuje. Zkuste se vrátit na domovskou stránku.</p>
-          <a className="homepage-back-link" href="/">
-            Zpět na Zelenou ligu
-          </a>
-        </main>
-      </div>
-    );
+    return <NotFoundPage />;
   }
 
   return (
@@ -398,18 +473,198 @@ function EventPage({ slug }: EventPageProps) {
 }
 
 export default function ZelenaligaSite() {
-  const path = window.location.pathname.replace(/\/$/, '') || '/' ;
+  const path = window.location.pathname.replace(/\/$/, '') || '/';
+  const segments = path.split('/').filter(Boolean);
 
   if (path === '/') {
     return <Homepage />;
   }
 
-  const slugMatch = path.match(/^\/(.+)$/);
-  const slug = slugMatch ? slugMatch[1] : null;
+  if (segments.length > 0) {
+    const slug = segments[0];
+    const event = EVENTS.find((item) => item.slug === slug);
+    if (event) {
+      return <EventPage slug={slug} />;
+    }
 
-  if (slug) {
-    return <EventPage slug={slug} />;
+    if (slug === 'souteze') {
+      return (
+        <InfoPage
+          eyebrow="SPTO · Soutěže"
+          title="Soutěže SPTO"
+          lead="Přehled hlavních závodů, které tvoří Zelenou ligu."
+          links={EVENTS.map((item) => ({
+            label: item.name,
+            description: item.description,
+            href: item.href,
+          }))}
+        />
+      );
+    }
+
+    if (slug === 'zelena-liga') {
+      return (
+        <InfoPage
+          eyebrow="SPTO · Zelená liga"
+          title="Zelená liga"
+          lead="Celoroční soutěžní rámec oddílů SPTO, který sbírá body z jednotlivých závodů."
+          links={[
+            {
+              label: 'Aktuální pořadí',
+              description: 'Podívej se na průběžné výsledky a bodové součty.',
+              href: '/setonuv-zavod/vysledky',
+            },
+            {
+              label: 'Jak se zapojit',
+              description: 'Informace o přihláškách a pravidlech hlavních závodů.',
+              href: '/souteze',
+            },
+          ]}
+        />
+      );
+    }
+
+    if (slug === 'aplikace') {
+      return (
+        <InfoPage
+          eyebrow="SPTO · Aplikace"
+          title="Soutěže a aplikace"
+          lead="Digitální nástroje pro správu závodů, bodování i výsledků."
+          links={APPLICATION_LINKS}
+        />
+      );
+    }
+
+    if (slug === 'oddily') {
+      if (segments.length > 1) {
+        const troopSlug = segments[1];
+        const troop = TROOPS.find((item) => item.href.split('/').pop() === troopSlug);
+        if (!troop) {
+          return <NotFoundPage />;
+        }
+        return (
+          <InfoPage
+            eyebrow="SPTO · Oddíly"
+            title={troop.name}
+            lead={`${troop.city} · ${troop.description}`}
+            links={[
+              {
+                label: 'Zpět na seznam oddílů',
+                href: '/oddily',
+              },
+            ]}
+            backHref="/oddily"
+          />
+        );
+      }
+      return (
+        <InfoPage
+          eyebrow="SPTO · Oddíly"
+          title="Oddíly SPTO"
+          lead="Seznam oddílů zapojených do pionýrského tábornictví."
+          links={TROOPS.map((item) => ({
+            label: item.name,
+            description: `${item.city} · ${item.description}`,
+            href: item.href,
+          }))}
+        />
+      );
+    }
+
+    if (slug === 'clanky') {
+      if (segments.length > 1) {
+        const articleSlug = segments[1];
+        const article = ARTICLES.find((item) => item.href.split('/').pop() === articleSlug);
+        if (!article) {
+          return <NotFoundPage />;
+        }
+        return (
+          <InfoPage
+            eyebrow="SPTO · Článek"
+            title={article.title}
+            lead={`${article.dateLabel} · ${article.excerpt}`}
+            links={[
+              {
+                label: 'Zpět na seznam článků',
+                href: '/clanky',
+              },
+            ]}
+            backHref="/clanky"
+          />
+        );
+      }
+      return (
+        <InfoPage
+          eyebrow="SPTO · Články"
+          title="Články ze soutěží"
+          lead="Reportáže a novinky z posledních akcí."
+          links={ARTICLES.map((item) => ({
+            label: item.title,
+            description: `${item.dateLabel} · ${item.excerpt}`,
+            href: item.href,
+          }))}
+        />
+      );
+    }
+
+    if (slug === 'fotogalerie') {
+      if (segments.length > 1) {
+        const galleryTitle = segments
+          .slice(1)
+          .map((segment) => slugify(segment).replace(/-/g, ' '))
+          .join(' · ');
+        return (
+          <InfoPage
+            eyebrow="SPTO · Fotogalerie"
+            title={`Fotogalerie ${galleryTitle}`}
+            lead="Fotky z vybrané akce připravujeme. Kompletní galerie budou postupně doplňovány."
+            links={[
+              {
+                label: 'Zpět na fotogalerii',
+                href: '/fotogalerie',
+              },
+            ]}
+            backHref="/fotogalerie"
+          />
+        );
+      }
+      return (
+        <InfoPage
+          eyebrow="SPTO · Fotogalerie"
+          title="Fotogalerie"
+          lead="Fotky z výprav a závodů SPTO. Další alba přidáme brzy."
+          links={[
+            {
+              label: 'Zelená liga 2024/2025',
+              description: 'Ukázkové album ze Setonova závodu.',
+              href: '/fotogalerie/2024-2025/setonuv-zavod',
+            },
+          ]}
+        />
+      );
+    }
+
+    if (slug === 'historie') {
+      return (
+        <InfoPage
+          eyebrow="SPTO · Historie"
+          title="Historie SPTO"
+          lead="Pionýrské tábornictví má desítky let tradice. Připravujeme podrobnější přehled historie."
+        />
+      );
+    }
+
+    if (segments.length === 1) {
+      const readableSlug = slugify(slug).replace(/-/g, ' ');
+      return (
+        <InfoPage
+          eyebrow="SPTO · Zelená liga"
+          title={readableSlug}
+          lead="Obsah stránky připravujeme. Podívej se na hlavní rozcestník."
+        />
+      );
+    }
   }
 
-  return <Homepage />;
+  return <NotFoundPage />;
 }
