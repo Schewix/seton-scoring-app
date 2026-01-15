@@ -15,6 +15,13 @@ function formatDuration(ms: number) {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+function formatPoints(points?: number | null) {
+  if (typeof points !== 'number' || !Number.isFinite(points)) {
+    return '—';
+  }
+  return `${points.toFixed(2)}b`;
+}
+
 function slaClass(ms: number) {
   const minutes = ms / 60000;
   if (minutes >= 10) return 'ticket-critical';
@@ -136,6 +143,8 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
             <ul>
               {grouped.done.map((ticket) => {
                 const waitMs = computeWaitTime(ticket);
+                const waitLabel = waitMs > 0 ? formatDuration(waitMs) : '—';
+                const pointsLabel = formatPoints(ticket.points);
                 return (
                   <li key={ticket.id} className="ticket ticket-done">
                     <div>
@@ -143,7 +152,7 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
                       <span>{ticket.teamName}</span>
                     </div>
                     <div className="ticket-meta">
-                      <span>{waitMs > 0 ? formatDuration(waitMs) : '—'}</span>
+                      <span>{`${waitLabel} | ${pointsLabel}`}</span>
                     </div>
                   </li>
                 );
