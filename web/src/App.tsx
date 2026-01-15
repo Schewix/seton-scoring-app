@@ -1944,6 +1944,16 @@ function StationApp({
         return false;
       }
 
+      if (scannerPatrol && scannerPatrol.id === data.id) {
+        pushAlert('Hlídka už je načtená.');
+        return false;
+      }
+
+      if (activePatrol && activePatrol.id === data.id) {
+        pushAlert('Hlídka už je právě obsluhovaná.');
+        return false;
+      }
+
       if (stationCode !== 'T' && stationPassageVisitedSet.has(data.id)) {
         pushAlert('Hlídka už na stanovišti byla.');
         void appendScanRecord(eventId, stationId, {
@@ -1973,10 +1983,12 @@ function StationApp({
       return true;
     },
     [
+      activePatrol,
       cachedPatrolMap,
       eventId,
       isCategoryAllowed,
       pushAlert,
+      scannerPatrol,
       stationCode,
       stationId,
       stationPassageVisitedSet,

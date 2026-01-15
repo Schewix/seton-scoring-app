@@ -1,7 +1,6 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import Picker from 'react-mobile-picker';
-import { triggerHaptic } from '../utils/haptics';
 
 const PATROL_CODE_REGEX = /^[NMSR][HD]-(?:0?[1-9]|[1-3][0-9]|40)$/;
 
@@ -69,13 +68,6 @@ interface PatrolCodeInputProps {
   id?: string;
   label?: string;
   excludePatrolIds?: ReadonlySet<string> | null;
-}
-
-function logInteraction(event: string, payload: Record<string, unknown>) {
-  if (typeof console === 'undefined') {
-    return;
-  }
-  console.info(`[patrol-code-input] ${event}`, payload);
 }
 
 function formatNumberLabel(raw: string) {
@@ -319,8 +311,6 @@ export default function PatrolCodeInput({
         const preferred = scoped?.find((item) => !item.disabled) ?? null;
         nextValue += preferred ? `-${preferred.value}` : '-';
       }
-      logInteraction('category-change', { category: option });
-      triggerHaptic('selection');
       onChange(nextValue);
     },
     [numbersByGroup, onChange, selectedCategory, selectedGender],
@@ -335,8 +325,6 @@ export default function PatrolCodeInput({
       const preferred = scoped?.find((item) => !item.disabled) ?? null;
       let nextValue = `${selectedCategory}${option}`;
       nextValue += preferred ? `-${preferred.value}` : '-';
-      logInteraction('gender-change', { category: selectedCategory, gender: option });
-      triggerHaptic('selection');
       onChange(nextValue);
     },
     [numbersByGroup, onChange, selectedCategory, selectedGender],
@@ -347,12 +335,6 @@ export default function PatrolCodeInput({
       if (!selectedCategory || !selectedGender || option === selectedNumber) {
         return;
       }
-      logInteraction('number-change', {
-        category: selectedCategory,
-        gender: selectedGender,
-        number: option,
-      });
-      triggerHaptic('selection');
       onChange(`${selectedCategory}${selectedGender}-${option}`);
     },
     [onChange, selectedCategory, selectedGender, selectedNumber],
@@ -434,11 +416,6 @@ export default function PatrolCodeInput({
       prev.message !== validationState.message
     ) {
       onValidationChange(validationState);
-      logInteraction('validation', {
-        code: validationState.code,
-        valid: validationState.valid,
-        reason: validationState.reason,
-      });
       lastValidationRef.current = validationState;
     }
   }, [onValidationChange, validationState]);
