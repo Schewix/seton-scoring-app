@@ -508,6 +508,7 @@ body {
   flex-direction: column;
   gap: 12px;
   flex: 1 1 220px;
+  min-width: 0;
 }
 
 .patrol-code-input__label,
@@ -551,6 +552,7 @@ body {
   font-weight: 600;
   color: var(--text-muted);
   padding-inline: 12px;
+  min-width: 0;
 }
 
 .patrol-code-input__wheel-headings span {
@@ -662,6 +664,7 @@ body {
 .patrol-code-input__picker-column {
   flex: 1 1 0%;
   max-width: 33.3333%;
+  min-width: 0;
 }
 
 .patrol-code-input__picker-item {
@@ -1308,7 +1311,9 @@ textarea {
 }
 
 .manual-entry .patrol-code-input {
-  flex: 1 1 360px;
+  flex: 1 1 260px;
+  min-width: 0;
+  width: min(100%, 560px);
   max-width: 560px;
 }
 
