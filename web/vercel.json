@@ -112,6 +112,50 @@
     {
       "source": "/scoreboard/(.*)",
       "destination": "/"
+    },
+    {
+      "source": "/draci-smycka",
+      "destination": "/"
+    },
+    {
+      "source": "/souteze",
+      "destination": "/"
+    },
+    {
+      "source": "/zelena-liga",
+      "destination": "/"
+    },
+    {
+      "source": "/aplikace",
+      "destination": "/"
+    },
+    {
+      "source": "/oddily",
+      "destination": "/"
+    },
+    {
+      "source": "/oddily/(.*)",
+      "destination": "/"
+    },
+    {
+      "source": "/fotogalerie",
+      "destination": "/"
+    },
+    {
+      "source": "/fotogalerie/(.*)",
+      "destination": "/"
+    },
+    {
+      "source": "/clanky",
+      "destination": "/"
+    },
+    {
+      "source": "/clanky/(.*)",
+      "destination": "/"
+    },
+    {
+      "source": "/historie",
+      "destination": "/"
     }
   ]
 }
