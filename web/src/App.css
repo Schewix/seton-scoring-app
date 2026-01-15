@@ -262,13 +262,80 @@ body {
   transform: translateX(2px);
 }
 
-.hero-panel--actions .logout-button {
-  max-width: 240px;
-  width: 100%;
-  align-self: center;
+.hero-panel--menu {
+  gap: 16px;
 }
 
-.hero-panel--actions .logout-button {
+.hero-menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  width: 100%;
+}
+
+.hero-menu-icon {
+  width: 18px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  position: relative;
+  display: inline-block;
+}
+
+.hero-menu-icon::before,
+.hero-menu-icon::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+}
+
+.hero-menu-icon::before {
+  top: -6px;
+}
+
+.hero-menu-icon::after {
+  top: 6px;
+}
+
+.station-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 24, 17, 0.55);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 40;
+}
+
+.station-menu {
+  width: min(480px, 100%);
+  height: 100%;
+  background: var(--zl-green-50);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  box-shadow: -24px 0 60px rgba(12, 24, 17, 0.35);
+}
+
+.station-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.station-menu-header h2 {
+  margin: 0;
+  color: var(--text);
+}
+
+.station-menu-card .logout-button {
   width: 100%;
 }
 
@@ -291,9 +358,8 @@ body {
     align-items: flex-start;
   }
 
-  .hero-panel--actions .logout-button {
+  .hero-menu-button {
     width: auto;
-    align-self: center;
   }
 }
 
