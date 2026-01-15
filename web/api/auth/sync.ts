@@ -117,6 +117,9 @@ async function processSubmission(
   judgeDisplayName: string,
 ) {
   const submission = signed.data;
+  if (!Number.isInteger(submission.points) || submission.points < 0 || submission.points > 12) {
+    throw new Error('invalid-points');
+  }
 
   const passageRes = await supabaseAdmin
     .from('station_passages')

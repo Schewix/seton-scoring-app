@@ -16,6 +16,7 @@ export interface Ticket {
   waitAccumMs: number;
   serveStartedAt?: string;
   serveAccumMs: number;
+  points?: number | null;
 }
 
 const TICKETS_KEY_PREFIX = 'station_tickets_v1_';
@@ -29,6 +30,8 @@ type StoredTicket = Ticket & { state?: TicketState | 'paused' };
 function sanitizeTicket(raw: StoredTicket): Ticket {
   const state: TicketState = raw.state === 'serving' || raw.state === 'done' ? raw.state : 'waiting';
   const waitStartedAt = state === 'waiting' ? raw.waitStartedAt : undefined;
+  const points =
+    typeof raw.points === 'number' && Number.isFinite(raw.points) ? raw.points : raw.points ?? null;
   return {
     id: raw.id,
     patrolId: raw.patrolId,
@@ -42,6 +45,7 @@ function sanitizeTicket(raw: StoredTicket): Ticket {
     waitAccumMs: raw.waitAccumMs ?? 0,
     serveStartedAt: undefined,
     serveAccumMs: 0,
+    points,
   } satisfies Ticket;
 }
 
@@ -89,6 +93,7 @@ export function createTicket(data: {
     waitAccumMs: 0,
     serveStartedAt: undefined,
     serveAccumMs: 0,
+    points: null,
   };
 }
 
