@@ -77,6 +77,7 @@ interface PendingOperation {
   nextAttemptAt: number;
   lastError?: string;
   sessionId?: string;
+  blockedReason?: 'station-mismatch' | 'event-mismatch' | 'session-mismatch' | 'manifest-mismatch';
 }
 
 interface StationScoreRow {
@@ -504,6 +505,7 @@ function StationApp({
   const [pendingItems, setPendingItems] = useState<PendingOperation[]>([]);
   const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [manualCodeDraft, setManualCodeDraft] = useState('');
   const [confirmedManualCode, setConfirmedManualCode] = useState('');
   const [patrolRegistryEntries, setPatrolRegistryEntries] = useState<PatrolRegistryEntry[]>([]);
@@ -1638,7 +1640,8 @@ function StationApp({
   const syncQueue = useCallback(async () => {
     let queue = await readQueue(queueKey);
 
-    const staleIds = new Set<string>();
+    const blockedMap = new Map<string, PendingOperation['blockedReason']>();
+    let newBlockedCount = 0;
     for (const op of queue) {
       const payload = op.payload;
       let signatureMetadata: {
@@ -1676,19 +1679,19 @@ function StationApp({
 
       const effectiveStationId = payload?.station_id ?? signatureMetadata.station_id;
       if (effectiveStationId && effectiveStationId !== stationId) {
-        staleIds.add(op.id);
+        blockedMap.set(op.id, 'station-mismatch');
         continue;
       }
 
       const effectiveEventId = payload?.event_id ?? signatureMetadata.event_id;
       if (effectiveEventId && effectiveEventId !== eventId) {
-        staleIds.add(op.id);
+        blockedMap.set(op.id, 'event-mismatch');
         continue;
       }
 
       const effectiveSessionId = op.sessionId ?? signatureMetadata.session_id;
       if (effectiveSessionId && effectiveSessionId !== auth.tokens.sessionId) {
-        staleIds.add(op.id);
+        blockedMap.set(op.id, 'session-mismatch');
         continue;
       }
 
@@ -1700,26 +1703,44 @@ function StationApp({
         typeof effectiveManifestVersion === 'number' &&
         effectiveManifestVersion !== manifest.manifestVersion
       ) {
-        staleIds.add(op.id);
+        blockedMap.set(op.id, 'manifest-mismatch');
       }
     }
 
-    if (staleIds.size) {
-      const filtered = queue.filter((op) => !staleIds.has(op.id));
-      queue = filtered;
-      await writeQueue(queueKey, filtered);
-      pushAlert(
-        staleIds.size === 1
-          ? 'Odebrán 1 záznam z dřívější relace – nelze jej odeslat.'
-          : `Odebráno ${staleIds.size} záznamů z dřívější relace – nelze je odeslat.`,
-      );
+    if (blockedMap.size || queue.some((op) => op.blockedReason)) {
+      const updatedQueue = queue.map((op) => {
+        const blockedReason = blockedMap.get(op.id);
+        if (!blockedReason) {
+          if (op.blockedReason) {
+            return { ...op, blockedReason: undefined };
+          }
+          return op;
+        }
+        if (op.blockedReason !== blockedReason) {
+          newBlockedCount += 1;
+        }
+        return { ...op, blockedReason, inProgress: false };
+      });
+      if (updatedQueue.some((op, index) => op !== queue[index])) {
+        queue = updatedQueue;
+        await writeQueue(queueKey, updatedQueue);
+      }
+      if (newBlockedCount > 0) {
+        pushAlert(
+          newBlockedCount === 1
+            ? 'Ve frontě je 1 záznam z jiné relace – pro odeslání se přihlas se stejným účtem.'
+            : `Ve frontě je ${newBlockedCount} záznamů z jiné relace – pro odeslání se přihlas se stejným účtem.`,
+        );
+      }
     }
 
     updateQueueState(queue);
     if (syncing) return;
 
     const now = Date.now();
-    const ready = queue.filter((op) => !op.inProgress && op.nextAttemptAt <= now);
+    const ready = queue.filter(
+      (op) => !op.inProgress && op.nextAttemptAt <= now && !op.blockedReason,
+    );
     if (!ready.length) {
       return;
     }
@@ -2528,10 +2549,17 @@ function StationApp({
                 </a>
               </div>
             </div>
-            <div className="hero-panel hero-panel--actions">
-              <span className="hero-panel-label">Účet</span>
-              <button type="button" className="logout-button" onClick={handleLogout}>
-                Odhlásit se
+            <div className="hero-panel hero-panel--menu">
+              <span className="hero-panel-label">Menu</span>
+              <button
+                type="button"
+                className="hero-menu-button"
+                onClick={() => setMenuOpen((prev) => !prev)}
+                aria-expanded={menuOpen}
+                aria-controls="station-menu"
+              >
+                <span className="hero-menu-icon" aria-hidden="true" />
+                {menuOpen ? 'Zavřít menu' : 'Otevřít menu'}
               </button>
             </div>
           </div>
@@ -2546,6 +2574,192 @@ function StationApp({
           ) : null}
         </div>
       </header>
+      {menuOpen ? (
+        <div
+          className="station-menu-backdrop"
+          role="dialog"
+          aria-modal="true"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setMenuOpen(false);
+            }
+          }}
+        >
+          <aside className="station-menu" id="station-menu">
+            <header className="station-menu-header">
+              <h2>Menu</h2>
+              <button type="button" className="ghost station-menu-close" onClick={() => setMenuOpen(false)}>
+                Zavřít
+              </button>
+            </header>
+            <section className="card station-menu-card">
+              <header className="card-header">
+                <h3>Účet</h3>
+              </header>
+              <p className="card-hint">Odhlásíš se z aktuální relace.</p>
+              <button type="button" className="logout-button" onClick={handleLogout}>
+                Odhlásit se
+              </button>
+            </section>
+            <section className="card station-summary-card">
+              <header className="card-header">
+                <div>
+                  <h2>Přehled průchodů</h2>
+                  <p className="card-subtitle">
+                    Sleduj, kolik hlídek už stanoviště navštívilo podle kategorií.
+                  </p>
+                </div>
+                <div className="card-actions">
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={handleRefreshStationPassages}
+                    disabled={stationPassageLoading}
+                  >
+                    {stationPassageLoading ? 'Načítám…' : 'Obnovit'}
+                  </button>
+                </div>
+              </header>
+              {stationPassageError ? <p className="error-text">{stationPassageError}</p> : null}
+              {stationCategorySummary.items.length ? (
+                <>
+                  <div className="station-summary-grid">
+                    {stationCategorySummary.items.map((item) => {
+                      const missingCount = Math.max(0, item.expected - item.visited);
+                      let statusLabel = 'Žádné hlídky';
+                      if (item.expected > 0) {
+                        statusLabel = missingCount === 0 ? 'Splněno' : `Chybí ${missingCount}`;
+                      }
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          className="station-summary-chip"
+                          data-missing={missingCount > 0 ? '1' : '0'}
+                          data-empty={item.expected === 0 ? '1' : '0'}
+                          data-active={selectedSummaryCategory === item.key ? '1' : '0'}
+                          onClick={() => handleSelectSummaryCategory(item.key)}
+                        >
+                          <span className="station-summary-chip-label">
+                            {formatStationCategoryChipLabel(item.key)}
+                          </span>
+                          <span className="station-summary-chip-value">
+                            {item.visited}/{item.expected}
+                          </span>
+                          <span className="station-summary-chip-status">{statusLabel}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="card-hint">
+                    Celkem: {stationCategorySummary.totalVisited}/{stationCategorySummary.totalExpected} hlídek
+                    {stationCategorySummary.totalExpected === 0
+                      ? '.'
+                      : stationSummaryRemaining > 0
+                        ? `, chybí ${stationSummaryRemaining}.`
+                        : ', vše splněno.'}
+                  </p>
+                </>
+              ) : (
+                <p className="card-hint">Pro toto stanoviště nejsou žádné hlídky k zobrazení.</p>
+              )}
+              {selectedSummaryDetail ? (
+                <div className="station-summary-detail" role="region" aria-live="polite">
+                  <div className="station-summary-detail-header">
+                    <h3>{formatStationCategoryDetailLabel(selectedSummaryDetail.key)}</h3>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => setSelectedSummaryCategory(null)}
+                    >
+                      Zavřít
+                    </button>
+                  </div>
+                  <p className="card-hint">
+                    {selectedSummaryDetail.expected === 0
+                      ? 'Tato kategorie nemá žádné hlídky.'
+                      : `Absolvováno ${selectedSummaryDetail.visited} z ${selectedSummaryDetail.expected} hlídek.`}
+                    {selectedSummaryDetail.expected > 0 && selectedSummaryDetail.missing.length > 0
+                      ? ` Chybí ${selectedSummaryDetail.missing.length}.`
+                      : selectedSummaryDetail.expected > 0
+                        ? ' Všechny hlídky již stanoviště navštívily.'
+                        : null}
+                  </p>
+                  <div className="station-summary-sections">
+                    <div className="station-summary-section">
+                      <div className="station-summary-section-header">
+                        <h4>Chybějící hlídky ({selectedSummaryDetail.missing.length})</h4>
+                        <span className="card-hint">Kliknutím vybereš hlídku k obsluze.</span>
+                      </div>
+                      {selectedSummaryDetail.missing.length ? (
+                        <ul className="station-summary-list">
+                          {selectedSummaryDetail.missing.map((patrol) => {
+                            const codeLabel = formatSummaryPatrolLabel(patrol);
+                            const isSelectable = !patrol.visited || stationCode === 'T';
+                            return (
+                              <li key={patrol.id}>
+                                <button
+                                  type="button"
+                                  className="station-summary-item"
+                                  data-visited={patrol.visited ? '1' : '0'}
+                                  onClick={() => handleSelectSummaryPatrol(patrol)}
+                                  disabled={!isSelectable}
+                                  aria-label={`Vybrat hlídku ${codeLabel}`}
+                                >
+                                  <div className="station-summary-item-header">
+                                    <strong>{codeLabel}</strong>
+                                    <span className="station-summary-item-status">Chybí</span>
+                                  </div>
+                                  {patrol.teamName ? <span>{patrol.teamName}</span> : null}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="card-hint">Všechny hlídky už byly na stanovišti.</p>
+                      )}
+                    </div>
+                    <div className="station-summary-section">
+                      <div className="station-summary-section-header">
+                        <h4>Splněné hlídky ({selectedSummaryDetail.completed.length})</h4>
+                      </div>
+                      {selectedSummaryDetail.completed.length ? (
+                        <ul className="station-summary-list">
+                          {selectedSummaryDetail.completed.map((patrol) => {
+                            const codeLabel = formatSummaryPatrolLabel(patrol);
+                            return (
+                              <li key={patrol.id}>
+                                <button
+                                  type="button"
+                                  className="station-summary-item"
+                                  data-visited="1"
+                                  onClick={() => handleSelectSummaryPatrol(patrol)}
+                                  disabled={stationCode !== 'T'}
+                                  aria-label={`Vybrat hlídku ${codeLabel}`}
+                                >
+                                  <div className="station-summary-item-header">
+                                    <strong>{codeLabel}</strong>
+                                    <span className="station-summary-item-status">Hotovo</span>
+                                  </div>
+                                  {patrol.teamName ? <span>{patrol.teamName}</span> : null}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="card-hint">Zatím tu nejsou hotové hlídky.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+            <LastScoresList eventId={eventId} stationId={stationId} isTargetStation={isTargetStation} />
+          </aside>
+        </div>
+      ) : null}
       {showPatrolChoice && scannerPatrol ? (
         <div className="patrol-choice-backdrop" role="dialog" aria-modal="true">
           <div className="patrol-choice-modal">
@@ -2582,163 +2796,6 @@ function StationApp({
 
       <main className="content">
         <>
-          <section className="card station-summary-card">
-            <header className="card-header">
-              <div>
-                <h2>Přehled průchodů</h2>
-                <p className="card-subtitle">
-                  Sleduj, kolik hlídek už stanoviště navštívilo podle kategorií.
-                </p>
-              </div>
-              <div className="card-actions">
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={handleRefreshStationPassages}
-                  disabled={stationPassageLoading}
-                >
-                  {stationPassageLoading ? 'Načítám…' : 'Obnovit'}
-                </button>
-              </div>
-            </header>
-            {stationPassageError ? <p className="error-text">{stationPassageError}</p> : null}
-            {stationCategorySummary.items.length ? (
-              <>
-                <div className="station-summary-grid">
-                  {stationCategorySummary.items.map((item) => {
-                    const missingCount = Math.max(0, item.expected - item.visited);
-                    let statusLabel = 'Žádné hlídky';
-                    if (item.expected > 0) {
-                      statusLabel = missingCount === 0 ? 'Splněno' : `Chybí ${missingCount}`;
-                    }
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        className="station-summary-chip"
-                        data-missing={missingCount > 0 ? '1' : '0'}
-                        data-empty={item.expected === 0 ? '1' : '0'}
-                        data-active={selectedSummaryCategory === item.key ? '1' : '0'}
-                        onClick={() => handleSelectSummaryCategory(item.key)}
-                      >
-                        <span className="station-summary-chip-label">
-                          {formatStationCategoryChipLabel(item.key)}
-                        </span>
-                        <span className="station-summary-chip-value">
-                          {item.visited}/{item.expected}
-                        </span>
-                        <span className="station-summary-chip-status">{statusLabel}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="card-hint">
-                  Celkem: {stationCategorySummary.totalVisited}/{stationCategorySummary.totalExpected} hlídek
-                  {stationCategorySummary.totalExpected === 0
-                    ? '.'
-                    : stationSummaryRemaining > 0
-                      ? `, chybí ${stationSummaryRemaining}.`
-                      : ', vše splněno.'}
-                </p>
-              </>
-            ) : (
-              <p className="card-hint">Pro toto stanoviště nejsou žádné hlídky k zobrazení.</p>
-            )}
-            {selectedSummaryDetail ? (
-              <div className="station-summary-detail" role="region" aria-live="polite">
-                <div className="station-summary-detail-header">
-                  <h3>{formatStationCategoryDetailLabel(selectedSummaryDetail.key)}</h3>
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={() => setSelectedSummaryCategory(null)}
-                  >
-                    Zavřít
-                  </button>
-                </div>
-                <p className="card-hint">
-                  {selectedSummaryDetail.expected === 0
-                    ? 'Tato kategorie nemá žádné hlídky.'
-                    : `Absolvováno ${selectedSummaryDetail.visited} z ${selectedSummaryDetail.expected} hlídek.`}
-                  {selectedSummaryDetail.expected > 0 && selectedSummaryDetail.missing.length > 0
-                    ? ` Chybí ${selectedSummaryDetail.missing.length}.`
-                    : selectedSummaryDetail.expected > 0
-                      ? ' Všechny hlídky již stanoviště navštívily.'
-                      : null}
-                </p>
-                <div className="station-summary-sections">
-                  <div className="station-summary-section">
-                    <div className="station-summary-section-header">
-                      <h4>Chybějící hlídky ({selectedSummaryDetail.missing.length})</h4>
-                      <span className="card-hint">Kliknutím vybereš hlídku k obsluze.</span>
-                    </div>
-                    {selectedSummaryDetail.missing.length ? (
-                      <ul className="station-summary-list">
-                        {selectedSummaryDetail.missing.map((patrol) => {
-                          const codeLabel = formatSummaryPatrolLabel(patrol);
-                          const isSelectable = !patrol.visited || stationCode === 'T';
-                          return (
-                            <li key={patrol.id}>
-                              <button
-                                type="button"
-                                className="station-summary-item"
-                                data-visited={patrol.visited ? '1' : '0'}
-                                onClick={() => handleSelectSummaryPatrol(patrol)}
-                                disabled={!isSelectable}
-                                aria-label={`Vybrat hlídku ${codeLabel}`}
-                              >
-                                <div className="station-summary-item-header">
-                                  <strong>{codeLabel}</strong>
-                                  <span className="station-summary-item-status">Chybí</span>
-                                </div>
-                                {patrol.teamName ? <span>{patrol.teamName}</span> : null}
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : (
-                      <p className="card-hint">Žádné chybějící hlídky.</p>
-                    )}
-                  </div>
-                  <div className="station-summary-section">
-                    <div className="station-summary-section-header">
-                      <h4>Absolvované hlídky ({selectedSummaryDetail.completed.length})</h4>
-                    </div>
-                    {selectedSummaryDetail.completed.length ? (
-                      <ul className="station-summary-list">
-                        {selectedSummaryDetail.completed.map((patrol) => {
-                          const codeLabel = formatSummaryPatrolLabel(patrol);
-                          const isSelectable = !patrol.visited || stationCode === 'T';
-                          return (
-                            <li key={patrol.id}>
-                              <button
-                                type="button"
-                                className="station-summary-item"
-                                data-visited={patrol.visited ? '1' : '0'}
-                                onClick={() => handleSelectSummaryPatrol(patrol)}
-                                disabled={!isSelectable}
-                                aria-label={`Vybrat hlídku ${codeLabel}`}
-                              >
-                                <div className="station-summary-item-header">
-                                  <strong>{codeLabel}</strong>
-                                  <span className="station-summary-item-status">Absolvováno</span>
-                                </div>
-                                {patrol.teamName ? <span>{patrol.teamName}</span> : null}
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : (
-                      <p className="card-hint">Zatím žádné absolvované hlídky.</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </section>
-
           <section className="card scanner-card">
             <header className="card-header">
               <div>
@@ -3164,12 +3221,28 @@ function StationApp({
                               const answers = payload.useTargetScoring
                                 ? formatAnswersForInput(payload.normalizedAnswers || '')
                                 : '';
+                              const blockedLabel = (() => {
+                                switch (item.blockedReason) {
+                                  case 'station-mismatch':
+                                    return 'Záznam patří jinému stanovišti';
+                                  case 'event-mismatch':
+                                    return 'Záznam patří jinému závodu';
+                                  case 'session-mismatch':
+                                    return 'Záznam je z jiné relace';
+                                  case 'manifest-mismatch':
+                                    return 'Záznam je z jiné verze manifestu';
+                                  default:
+                                    return null;
+                                }
+                              })();
                               const patrolLabel = payload.team_name || 'Neznámá hlídka';
                               const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';
                               const categoryLabel = payload.sex ? `${payload.category}/${payload.sex}` : payload.category;
                               const statusLabel = item.inProgress
                                 ? 'Odesílám…'
-                                : item.retryCount > 0
+                                : blockedLabel
+                                  ? 'Nelze odeslat'
+                                  : item.retryCount > 0
                                   ? `Další pokus v ${formatTime(new Date(item.nextAttemptAt).toISOString())}`
                                   : 'Čeká na odeslání';
                               return (
@@ -3200,6 +3273,9 @@ function StationApp({
                                   <td>
                                     <div className="pending-status">
                                       <span>{statusLabel}</span>
+                                      {blockedLabel ? (
+                                        <span className="pending-subline">{blockedLabel}</span>
+                                      ) : null}
                                       {item.lastError ? (
                                         <span className="pending-subline">Chyba: {item.lastError}</span>
                                       ) : null}
@@ -3218,7 +3294,6 @@ function StationApp({
             ) : null}
           </section>
 
-          <LastScoresList eventId={eventId} stationId={stationId} isTargetStation={isTargetStation} />
         </>
       </main>
       <AppFooter />
