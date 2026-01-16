@@ -581,6 +581,27 @@ function StationApp({
     () => new Set<StationCategoryKey>(allowedStationCategories),
     [allowedStationCategories],
   );
+  const allowedStationCategoryLabel = useMemo(() => {
+    if (!allowedStationCategories.length) {
+      return '—';
+    }
+    return allowedStationCategories.map((category) => formatStationCategoryChipLabel(category)).join(', ');
+  }, [allowedStationCategories]);
+  const stationRules = useMemo(() => {
+    const rules: string[] = [];
+    if (isTargetStation) {
+      rules.push('Zapiš čas doběhu ve formátu HH:MM.');
+      rules.push('12 bodů je za limitní čas dle kategorie, za každých započatých 10 minut navíc se odečte 1 bod.');
+      rules.push('Zadej odpovědi v terčovém úseku, body se spočítají automaticky.');
+    } else {
+      rules.push('Zapisuj body v rozsahu 0–12.');
+      rules.push('Čekání zadávej ve formátu HH:MM (bez vteřin).');
+      if (enableTicketQueue) {
+        rules.push('Hlídku můžeš vrátit do fronty nebo ji obsloužit hned.');
+      }
+    }
+    return rules;
+  }, [enableTicketQueue, isTargetStation]);
   useEffect(() => {
     setSelectedSummaryCategory((previous) => {
       if (!previous) {
@@ -2547,6 +2568,54 @@ function StationApp({
               <button type="button" className="logout-button" onClick={handleLogout}>
                 Odhlásit se
               </button>
+            </section>
+            <section className="card station-menu-card">
+              <header className="card-header">
+                <h3>Stanoviště</h3>
+              </header>
+              <ul className="station-menu-list">
+                <li>
+                  <span className="card-hint">Název</span>
+                  <strong>{stationDisplayName}</strong>
+                </li>
+                <li>
+                  <span className="card-hint">Kód</span>
+                  <strong>{stationCode || '—'}</strong>
+                </li>
+                <li>
+                  <span className="card-hint">Událost</span>
+                  <strong>{manifest.event.name}</strong>
+                </li>
+                <li>
+                  <span className="card-hint">Kategorie</span>
+                  <strong>{allowedStationCategoryLabel}</strong>
+                </li>
+              </ul>
+            </section>
+            <section className="card station-menu-card">
+              <header className="card-header">
+                <h3>Rozhodčí</h3>
+              </header>
+              <ul className="station-menu-list">
+                <li>
+                  <span className="card-hint">Jméno</span>
+                  <strong>{manifest.judge.displayName}</strong>
+                </li>
+                <li>
+                  <span className="card-hint">Email</span>
+                  <strong>{manifest.judge.email}</strong>
+                </li>
+              </ul>
+            </section>
+            <section className="card station-menu-card">
+              <header className="card-header">
+                <h3>Pravidla</h3>
+              </header>
+              <ul className="station-menu-rules">
+                {stationRules.map((rule) => (
+                  <li key={rule}>{rule}</li>
+                ))}
+              </ul>
             </section>
           </aside>
         </div>

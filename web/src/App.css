@@ -354,6 +354,29 @@ body {
   width: 100%;
 }
 
+.station-menu-list,
+.station-menu-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.station-menu-rules li {
+  position: relative;
+  padding-left: 18px;
+}
+
+.station-menu-rules li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--zl-green-700);
+}
+
 @media (min-width: 720px) {
   .hero {
     padding: 56px 32px 120px;
