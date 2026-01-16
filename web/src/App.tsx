@@ -2332,6 +2332,16 @@ function StationApp({
     () => (activePatrol ? parseAnswerLetters(categoryAnswers[activePatrol.category] || '').length : 0),
     [activePatrol, categoryAnswers]
   );
+  const heroBadges = useMemo(() => {
+    const badges = [`Event: ${manifest.event.name}`];
+    if (enableTicketQueue) {
+      const queueLabel = pendingCount ? `Offline fronta: ${pendingCount}` : 'Offline fronta prázdná';
+      badges.push(queueLabel);
+    }
+    return badges;
+  }, [enableTicketQueue, manifest.event.name, pendingCount]);
+
+  const failedCount = useMemo(() => pendingItems.filter((item) => Boolean(item.lastError)).length, [pendingItems]);
   const nextAttemptAtIso = useMemo(() => {
     const future = pendingItems
       .filter((item) => !item.inProgress && item.nextAttemptAt > Date.now())
