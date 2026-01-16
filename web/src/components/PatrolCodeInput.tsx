@@ -1,8 +1,9 @@
 
-import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, type ChangeEvent } from 'react';
 import Picker from 'react-mobile-picker';
 
 const PATROL_CODE_REGEX = /^[NMSR][HD]-(?:0?[1-9]|[1-3][0-9]|40)$/;
+const PARTIAL_PATROL_CODE_REGEX = /^(?:[NMSR]|[NMSR]-|[NMSR][HD](?:-\d{0,2})?)$/;
 
 const CATEGORY_OPTIONS = ['N', 'M', 'S', 'R'] as const;
 const GENDER_OPTIONS = ['H', 'D'] as const;
@@ -174,8 +175,11 @@ export default function PatrolCodeInput({
   const inputId = id ?? generatedId;
   const labelId = label ? `${inputId}-label` : undefined;
   const feedbackId = `${inputId}-feedback`;
+  const textInputId = `${inputId}-text`;
+  const textHintId = `${inputId}-hint`;
 
   const normalisedValue = useMemo(() => normalisePatrolCode(value), [value]);
+  const textInputValue = normalisedValue ? formatDisplayValue(normalisedValue) : '';
 
   const { selectedCategory, selectedGender, selectedNumber } = useMemo(() => {
     const category = CATEGORY_OPTIONS.find((option) => normalisedValue.startsWith(option)) ?? '';
@@ -356,6 +360,14 @@ export default function PatrolCodeInput({
         valid: false,
         reason: 'error',
         message: registry.error || 'Nepodařilo se načíst dostupná čísla hlídek.',
+      };
+    }
+    if (canonical && !PARTIAL_PATROL_CODE_REGEX.test(canonical)) {
+      return {
+        code: canonical,
+        valid: false,
+        reason: 'format',
+        message: 'Formát kódu je neplatný.',
       };
     }
     if (!selectedCategory || !selectedGender || !selectedNumber) {
@@ -543,6 +555,13 @@ export default function PatrolCodeInput({
     ],
   );
 
+  const handleTextInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      onChange(normalisePatrolCode(event.target.value));
+    },
+    [onChange],
+  );
+
   return (
     <div className="patrol-code-input">
       {label ? (
@@ -550,6 +569,21 @@ export default function PatrolCodeInput({
           {label}
         </span>
       ) : null}
+      <div className="patrol-code-input__text">
+        <label htmlFor={textInputId}>Zadání z klávesnice</label>
+        <input
+          id={textInputId}
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          placeholder="Např. RH-01"
+          value={textInputValue}
+          onChange={handleTextInputChange}
+          aria-describedby={`${textHintId}${validationState.message ? ` ${feedbackId}` : ''}`}
+          aria-invalid={validationState.reason === 'format' ? true : undefined}
+        />
+        <small id={textHintId}>Formát: N/M/S/R + H/D + číslo 01–40.</small>
+      </div>
       <div className="patrol-code-input__wheel-headings" aria-hidden="true">
         <span>Kategorie</span>
         <span>Pohlaví</span>
