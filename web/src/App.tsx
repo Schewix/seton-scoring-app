@@ -8,7 +8,6 @@ import PatrolCodeInput, {
   PatrolValidationState,
 } from './components/PatrolCodeInput';
 import PointsInput from './components/PointsInput';
-import OfflineHealth from './components/OfflineHealth';
 import AppFooter from './components/AppFooter';
 import { supabase } from './supabaseClient';
 import './App.css';
@@ -25,8 +24,6 @@ import { appendScanRecord } from './storage/scanHistory';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
 import { ROUTE_PREFIX, SCOREBOARD_ROUTE_PREFIX, getStationPath, isStationAppPath } from './routing';
-import competitionRulesPdf from './assets/pravidla-souteze.pdf';
-import stationRulesPdf from './assets/pravidla-stanovist.pdf';
 import {
   createStationCategoryRecord,
   getAllowedStationCategories,
@@ -490,7 +487,6 @@ function StationApp({
   const isTargetStation = stationCode === 'T';
   const canReviewStationScores =
     isTargetStation || manifest.allowedTasks.some((task) => SCORE_REVIEW_TASK_KEYS.has(task));
-  const showScoreboardLink = canReviewStationScores;
   const scoringDisabled = scoringLocked && !isTargetStation;
   const [activePatrol, setActivePatrol] = useState<Patrol | null>(null);
   const [scannerPatrol, setScannerPatrol] = useState<Patrol | null>(null);
@@ -532,7 +528,6 @@ function StationApp({
     }
     return alerts;
   }, [alerts, scoringDisabled]);
-  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [arrivedAt, setArrivedAt] = useState<string | null>(null);
   const [finishAt, setFinishAt] = useState<string | null>(null);
   const [totalWaitMinutes, setTotalWaitMinutes] = useState<number | null>(null);
@@ -544,7 +539,6 @@ function StationApp({
   const ticketQueueRef = useRef<HTMLElement | null>(null);
   const pointsInputRef = useRef<HTMLButtonElement | null>(null);
   const answersInputRef = useRef<HTMLInputElement | null>(null);
-  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [startTime, setStartTime] = useState<string | null>(null);
   const [finishTimeInput, setFinishTimeInput] = useState('');
   const [scoreReviewRows, setScoreReviewRows] = useState<StationScoreRow[]>([]);
@@ -755,17 +749,6 @@ function StationApp({
     setTimeout(() => {
       setAlerts((prev) => prev.slice(1));
     }, 4500);
-  }, []);
-
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
   }, []);
 
   useEffect(() => {
@@ -1852,7 +1835,6 @@ function StationApp({
 
       if (flushed) {
         pushAlert(`Synchronizováno ${flushed} záznamů.`);
-        setLastSavedAt(new Date().toISOString());
         void loadStationPassages();
       }
     } catch (error) {
@@ -1975,7 +1957,6 @@ function StationApp({
 
   useEffect(() => {
     resetForm();
-    setLastSavedAt(null);
     setShowPendingDetails(false);
   }, [resetForm, stationId]);
 
@@ -2318,7 +2299,6 @@ function StationApp({
     }
     setShowPendingDetails(false);
     pushAlert(`Záznam uložen do fronty (${queuePayload.team_name ?? queuePayload.patrol_code}).`);
-    setLastSavedAt(now);
     resetForm();
     scrollToQueue();
     void syncQueue();
@@ -2352,17 +2332,6 @@ function StationApp({
     () => (activePatrol ? parseAnswerLetters(categoryAnswers[activePatrol.category] || '').length : 0),
     [activePatrol, categoryAnswers]
   );
-  const heroBadges = useMemo(() => {
-    const badges = [`Event: ${manifest.event.name}`];
-    if (enableTicketQueue) {
-      const queueLabel = pendingCount ? `Offline fronta: ${pendingCount}` : 'Offline fronta prázdná';
-      badges.push(queueLabel);
-    }
-    return badges;
-  }, [enableTicketQueue, manifest.event.name, pendingCount]);
-
-  const failedCount = useMemo(() => pendingItems.filter((item) => Boolean(item.lastError)).length, [pendingItems]);
-
   const nextAttemptAtIso = useMemo(() => {
     const future = pendingItems
       .filter((item) => !item.inProgress && item.nextAttemptAt > Date.now())
@@ -2483,72 +2452,6 @@ function StationApp({
             </div>
           </div>
           <div className="hero-meta">
-            <div className="hero-panel hero-panel--station">
-              <span className="hero-panel-label">Stanoviště</span>
-              <strong className="hero-panel-value">{stationCode || '—'}</strong>
-              {stationDisplayName ? <span className="hero-panel-sub">{stationDisplayName}</span> : null}
-            </div>
-            <div className="hero-panel hero-panel--judge">
-              <span className="hero-panel-label">Rozhodčí</span>
-              <strong className="hero-panel-value">{manifest.judge.displayName}</strong>
-              <span className="hero-panel-sub">{manifest.judge.email}</span>
-            </div>
-            <div className="hero-panel hero-panel--status">
-              <span className="hero-panel-label">Stav závodu</span>
-              <div className="hero-badges">
-                {heroBadges.map((badge) => (
-                  <span key={badge} className="meta-pill">
-                    {badge}
-                  </span>
-                ))}
-                {lastSavedAt ? (
-                  <span className="meta-pill subtle">Poslední záznam: {formatTime(lastSavedAt)}</span>
-                ) : null}
-                {syncing ? <span className="meta-pill subtle">Synchronizuji frontu…</span> : null}
-              </div>
-            </div>
-            <div className="hero-panel hero-panel--health">
-              <span className="hero-panel-label">Offline fronta</span>
-              <OfflineHealth
-                isOnline={isOnline}
-                pendingCount={pendingCount}
-                failedCount={failedCount}
-                syncing={syncing}
-                nextAttemptAt={nextAttemptAtIso}
-                lastSyncedAt={lastSavedAt}
-              />
-            </div>
-            <div className="hero-panel hero-panel--links">
-              <span className="hero-panel-label">{stationCode === 'T' ? 'Odkazy' : 'Pravidla'}</span>
-              {showScoreboardLink ? (
-                <a
-                  className="hero-panel-link"
-                  href={SCOREBOARD_ROUTE_PREFIX}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Otevřít výsledky
-                </a>
-              ) : null}
-              <div className="hero-panel-links">
-                <a
-                  className="hero-panel-link"
-                  href={competitionRulesPdf}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Pravidla soutěže
-                </a>
-                <a
-                  className="hero-panel-link"
-                  href={stationRulesPdf}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Pravidla stanovišť
-                </a>
-              </div>
-            </div>
             <div className="hero-panel hero-panel--menu">
               <span className="hero-panel-label">Menu</span>
               <button
@@ -2592,69 +2495,6 @@ function StationApp({
                 Zavřít
               </button>
             </header>
-            <section className="station-menu-panels" aria-label="Rychlý přehled stanoviště">
-              <div className="hero-panel hero-panel--judge">
-                <span className="hero-panel-label">Rozhodčí</span>
-                <strong className="hero-panel-value">{manifest.judge.displayName}</strong>
-                <span className="hero-panel-sub">{manifest.judge.email}</span>
-              </div>
-              <div className="hero-panel hero-panel--status">
-                <span className="hero-panel-label">Stav závodu</span>
-                <div className="hero-badges">
-                  {heroBadges.map((badge) => (
-                    <span key={badge} className="meta-pill">
-                      {badge}
-                    </span>
-                  ))}
-                  {lastSavedAt ? (
-                    <span className="meta-pill subtle">Poslední záznam: {formatTime(lastSavedAt)}</span>
-                  ) : null}
-                  {syncing ? <span className="meta-pill subtle">Synchronizuji frontu…</span> : null}
-                </div>
-              </div>
-              <div className="hero-panel hero-panel--health">
-                <span className="hero-panel-label">Offline fronta</span>
-                <OfflineHealth
-                  isOnline={isOnline}
-                  pendingCount={pendingCount}
-                  failedCount={failedCount}
-                  syncing={syncing}
-                  nextAttemptAt={nextAttemptAtIso}
-                  lastSyncedAt={lastSavedAt}
-                />
-              </div>
-              <div className="hero-panel hero-panel--links">
-                <span className="hero-panel-label">{stationCode === 'T' ? 'Odkazy' : 'Pravidla'}</span>
-                {showScoreboardLink ? (
-                  <a
-                    className="hero-panel-link"
-                    href={SCOREBOARD_ROUTE_PREFIX}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Otevřít výsledky
-                  </a>
-                ) : null}
-                <div className="hero-panel-links">
-                  <a
-                    className="hero-panel-link"
-                    href={competitionRulesPdf}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Pravidla soutěže
-                  </a>
-                  <a
-                    className="hero-panel-link"
-                    href={stationRulesPdf}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Pravidla stanovišť
-                  </a>
-                </div>
-              </div>
-            </section>
             <section className="card station-menu-card">
               <header className="card-header">
                 <h3>Účet</h3>
