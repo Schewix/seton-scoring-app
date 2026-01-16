@@ -173,14 +173,6 @@ function parseWaitDraft(value: string) {
     return NaN;
   }
 
-  if (/^\d+$/.test(trimmed)) {
-    const numeric = Number(trimmed);
-    if (Number.isInteger(numeric) && numeric >= 0 && numeric <= WAIT_MINUTES_MAX) {
-      return numeric;
-    }
-    return NaN;
-  }
-
   const match = trimmed.match(/^(\d{1,2}):([0-5]\d)$/);
   if (!match) {
     return NaN;
@@ -531,7 +523,7 @@ function StationApp({
   const [arrivedAt, setArrivedAt] = useState<string | null>(null);
   const [finishAt, setFinishAt] = useState<string | null>(null);
   const [totalWaitMinutes, setTotalWaitMinutes] = useState<number | null>(null);
-  const [waitDurationSeconds, setWaitDurationSeconds] = useState<number | null>(null);
+  const [waitDraft, setWaitDraft] = useState(WAIT_TIME_ZERO);
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
   const tempCodesRef = useRef<Map<string, string>>(new Map());
   const tempCounterRef = useRef(1);
@@ -852,7 +844,7 @@ function StationApp({
   );
 
   const clearWait = useCallback(() => {
-    setWaitDurationSeconds(null);
+    setWaitDraft(WAIT_TIME_ZERO);
   }, []);
 
   const patrolById = useMemo(() => {
@@ -1102,9 +1094,10 @@ function StationApp({
 
       clearWait();
 
-      if (typeof options?.waitSeconds === 'number' && !isTargetStation) {
-        setWaitDurationSeconds(options.waitSeconds);
-      }
+      const waitMinutes = !isTargetStation && typeof options?.waitSeconds === 'number'
+        ? waitSecondsToMinutes(options.waitSeconds)
+        : 0;
+      setWaitDraft(formatWaitMinutes(waitMinutes));
 
       const stored = categoryAnswers[data.category] || '';
       const total = parseAnswerLetters(stored).length;
@@ -2217,8 +2210,11 @@ function StationApp({
       scorePoints = parsed;
     }
 
-    const effectiveWaitSeconds = useTargetScoring ? 0 : Math.max(0, waitDurationSeconds ?? 0);
-    const waitMinutes = useTargetScoring ? 0 : waitSecondsToMinutes(effectiveWaitSeconds);
+    const waitMinutes = useTargetScoring ? 0 : parseWaitDraft(waitDraft);
+    if (!Number.isInteger(waitMinutes) || waitMinutes < 0 || waitMinutes > WAIT_MINUTES_MAX) {
+      pushAlert(`Čekání musí být čas v rozsahu 00:00–${WAIT_TIME_MAX}.`);
+      return;
+    }
 
     const now = new Date().toISOString();
     const arrivalIso = arrivedAt || now;
@@ -2312,7 +2308,7 @@ function StationApp({
     resetForm,
     updateQueueState,
     updateTickets,
-    waitDurationSeconds,
+    waitDraft,
     arrivedAt,
     stationId,
     queueKey,
@@ -2427,7 +2423,6 @@ function StationApp({
     return tickets.some((ticket) => ticket.patrolId === scannerPatrol.id && ticket.state !== 'done');
   }, [scannerPatrol, tickets]);
 
-  const waitSecondsDisplay = useTargetScoring ? null : waitDurationSeconds;
 
   return (
     <div className="app-shell">
@@ -2832,13 +2827,17 @@ function StationApp({
                   <div className="wait-field">
                     <span className="wait-label">Čekání</span>
                     <div className="wait-display">
-                      <strong>
-                        {typeof waitSecondsDisplay === 'number'
-                          ? formatWaitDuration(waitSecondsDisplay)
-                          : '—'}
-                      </strong>
+                      <input
+                        type="time"
+                        step={60}
+                        min={WAIT_TIME_ZERO}
+                        max={WAIT_TIME_MAX}
+                        value={waitDraft}
+                        onChange={(event) => setWaitDraft(event.target.value)}
+                        placeholder="hh:mm"
+                      />
                     </div>
-                    <p className="wait-hint">Čas čekání se načítá automaticky z fronty hlídek.</p>
+                    <p className="wait-hint">Zadej čekání ručně ve formátu HH:MM (bez vteřin).</p>
                   </div>
                 ) : null}
                 {stationCode === 'T' ? (

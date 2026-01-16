@@ -1945,6 +1945,12 @@ textarea {
   color: var(--text-muted);
 }
 
+.score-wait-label {
+  font-size: 0.7rem;
+  color: #475569;
+  margin-top: 6px;
+}
+
 .score-team-box {
   flex: 1;
   display: flex;
@@ -1968,6 +1974,48 @@ textarea {
   font-size: 0.8rem;
   color: #64748b;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+.score-edit-toggle {
+  margin-left: auto;
+}
+
+.score-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+}
+
+.score-edit label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.score-edit input,
+.score-edit textarea {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+
+.score-edit textarea {
+  min-height: 70px;
+  resize: vertical;
+}
+
+.score-edit-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   flex-wrap: wrap;
 }
 
