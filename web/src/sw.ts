@@ -30,6 +30,11 @@ registerRoute(
 );
 
 registerRoute(
+  ({ request, url }) => request.destination === 'manifest' || url.pathname.endsWith('/manifest.json'),
+  new NetworkFirst({ cacheName: 'manifest', networkTimeoutSeconds: 3 })
+);
+
+registerRoute(
   ({ request }) => request.destination === 'style' || request.destination === 'script',
   new StaleWhileRevalidate({ cacheName: 'assets' })
 );
