@@ -12,6 +12,7 @@ import AppFooter from './components/AppFooter';
 import { supabase } from './supabaseClient';
 import './App.css';
 import zelenaLigaLogo from './assets/znak_SPTO_transparent.png';
+import { ManifestFetchError } from './auth/api';
 import { useAuth } from './auth/context';
 import LoginScreen from './auth/LoginScreen';
 import ChangePasswordScreen from './auth/ChangePasswordScreen';
@@ -751,6 +752,8 @@ function StationApp({
     }, 4500);
   }, []);
 
+  const lastManifestToastAtRef = useRef<number | null>(null);
+
   useEffect(() => {
     tempCodesRef.current.clear();
     tempCounterRef.current = 1;
@@ -781,14 +784,47 @@ function StationApp({
 
   useEffect(() => {
     let cancelled = false;
+    let onlineListener: (() => void) | null = null;
+    const toastCooldownMs = 10 * 60 * 1000;
+
+    const scheduleRetryOnOnline = () => {
+      if (onlineListener) return;
+      onlineListener = () => {
+        onlineListener = null;
+        if (!cancelled) {
+          void refresh();
+        }
+      };
+      window.addEventListener('online', onlineListener, { once: true });
+    };
 
     const refresh = async () => {
       try {
+        if (navigator.onLine === false) {
+          scheduleRetryOnOnline();
+          return;
+        }
         await refreshManifest();
       } catch (error) {
         console.error('Manifest refresh failed', error);
+        if (navigator.onLine === false) {
+          scheduleRetryOnOnline();
+          return;
+        }
         if (!cancelled) {
-          pushAlert('Nepodařilo se obnovit manifest. Zkusím to znovu později.');
+          const now = Date.now();
+          const lastToastAt = lastManifestToastAtRef.current ?? 0;
+          const isThrottled = now - lastToastAt < toastCooldownMs;
+          const isDev = import.meta.env.DEV;
+          const manifestError = error instanceof ManifestFetchError ? error : null;
+          const isNotFoundOrHtml =
+            manifestError?.isNotFound || manifestError?.isHtmlResponse || manifestError?.kind === 'content-type';
+          const allowToast = isDev || (!isThrottled && !isNotFoundOrHtml);
+
+          if (allowToast) {
+            lastManifestToastAtRef.current = now;
+            pushAlert('Nepodařilo se obnovit manifest. Zkusím to znovu později.');
+          }
         }
       }
     };
@@ -799,6 +835,9 @@ function StationApp({
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      if (onlineListener) {
+        window.removeEventListener('online', onlineListener);
+      }
     };
   }, [refreshManifest, pushAlert]);
 
