@@ -600,6 +600,41 @@ body {
   color: var(--text-muted);
 }
 
+.patrol-code-input__text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.patrol-code-input__text label {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.patrol-code-input__text input {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-soft);
+}
+
+.patrol-code-input__text input:focus {
+  outline: 2px solid var(--zl-yellow);
+  outline-offset: 2px;
+}
+
+.patrol-code-input__text input[aria-invalid='true'] {
+  border-color: rgba(248, 113, 113, 0.7);
+  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.2);
+}
+
 .patrol-code-input__wheel-group {
   position: relative;
   display: flex;
