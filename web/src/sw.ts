@@ -40,6 +40,18 @@ registerRoute(
 );
 
 registerRoute(
+  ({ request, url }) =>
+    request.method === 'GET' &&
+    request.destination === '' &&
+    (url.pathname.startsWith('/api/') ||
+      url.pathname.startsWith('/manifest') ||
+      url.pathname.startsWith('/auth/') ||
+      url.pathname.includes('/rest/v1/') ||
+      url.pathname.includes('/auth/v1/')),
+  new NetworkFirst({ cacheName: 'api-data', networkTimeoutSeconds: 3 })
+);
+
+registerRoute(
   ({ request }) => request.destination === 'image',
   new CacheFirst({
     cacheName: 'images',

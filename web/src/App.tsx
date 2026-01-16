@@ -34,6 +34,11 @@ import {
 } from './utils/stationCategories';
 import { env } from './envVars';
 import { CategoryKey, formatAnswersForInput, isCategoryKey, packAnswersForStorage, parseAnswerLetters } from './utils/targetAnswers';
+import {
+  fetchPatrolRegistryEntries,
+  loadPatrolRegistryCache,
+  savePatrolRegistryCache,
+} from './data/patrolRegistry';
 
 
 interface Patrol {
@@ -627,96 +632,61 @@ function StationApp({
   useEffect(() => {
     let cancelled = false;
 
-    type RawRegistryRow = {
-      id: string;
-      patrol_code: string | null;
-      category: string | null;
-      sex: string | null;
-      active: boolean | null;
-    };
-
     const loadRegistry = async () => {
       setPatrolRegistryLoading(true);
       setPatrolRegistryError(null);
 
-      const { data, error } = await supabase
-        .from('patrols')
-        .select('id, patrol_code, category, sex, active')
-        .eq('event_id', eventId)
-        .order('category')
-        .order('sex')
-        .order('patrol_code');
+      const cachedRegistry = await loadPatrolRegistryCache(eventId);
+      if (!cancelled && cachedRegistry?.entries?.length) {
+        setPatrolRegistryEntries(cachedRegistry.entries);
+      }
+
+      const registryResult = await fetchPatrolRegistryEntries({
+        online: navigator.onLine,
+        cachedEntries: cachedRegistry?.entries ?? null,
+        fetchRows: async () => {
+          const { data, error } = await supabase
+            .from('patrols')
+            .select('id, patrol_code, category, sex, active')
+            .eq('event_id', eventId)
+            .order('category')
+            .order('sex')
+            .order('patrol_code');
+          return { data, error };
+        },
+        isCategoryAllowed,
+      });
 
       if (cancelled) {
         return;
       }
 
-      if (error) {
-        console.error('Failed to load patrol registry', error);
-        setPatrolRegistryEntries([]);
-        setPatrolRegistryError('Nepodařilo se načíst dostupná čísla hlídek.');
-        setPatrolRegistryLoading(false);
-        return;
+      if (!registryResult.fetched && registryResult.error) {
+        console.error('Failed to load patrol registry', registryResult.error);
       }
 
-      const rows = (data ?? []) as RawRegistryRow[];
-      const entries: PatrolRegistryEntry[] = [];
-      const availabilityStats = new Map<string, { total: number; inactive: number }>();
-      let totalInactive = 0;
-      rows.forEach((row) => {
-        const normalized = normalisePatrolCode(row.patrol_code ?? '');
-        const match = normalized.match(/^([NMSR])([HD])-(\d{1,2})$/);
-        if (!match) {
-          return;
-        }
-        const [, category, gender, digits] = match;
-        if (!isCategoryAllowed(category)) {
-          return;
-        }
-        const numeric = Number.parseInt(digits, 10);
-        if (!Number.isFinite(numeric)) {
-          return;
-        }
-        const statsKey = `${category}-${gender}`;
-        const stats = availabilityStats.get(statsKey) ?? { total: 0, inactive: 0 };
-        stats.total += 1;
-        const isActive = row.active !== false;
-        if (!isActive) {
-          stats.inactive += 1;
-          totalInactive += 1;
-        }
-        availabilityStats.set(statsKey, stats);
-        entries.push({
-          id: row.id,
-          code: normalized,
-          category,
-          gender,
-          number: String(numeric),
-          active: isActive,
-        });
-      });
+      if (registryResult.entries) {
+        setPatrolRegistryEntries(registryResult.entries);
+      }
 
-      setPatrolRegistryEntries(entries);
-      const ratio = entries.length > 0 ? totalInactive / entries.length : 0;
-      const breakdown = Array.from(availabilityStats.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([group, stats]) => {
-          const [category, gender] = group.split('-');
-          const groupRatio = stats.total > 0 ? stats.inactive / stats.total : 0;
-          return {
-            category,
-            gender,
-            total: stats.total,
-            inactive: stats.inactive,
-            inactiveRatio: Number(groupRatio.toFixed(3)),
-          };
-        });
-      console.info('[patrol-code-input] registry-loaded', {
-        total: entries.length,
-        inactive: totalInactive,
-        inactiveRatio: Number(ratio.toFixed(3)),
-        breakdown,
-      });
+      if (registryResult.fetched && registryResult.entries) {
+        try {
+          await savePatrolRegistryCache(eventId, registryResult.entries);
+        } catch (storageError) {
+          console.warn('Failed to cache patrol registry', storageError);
+        }
+      }
+
+      if (registryResult.stats) {
+        console.info('[patrol-code-input] registry-loaded', registryResult.stats);
+      }
+
+      if (registryResult.error) {
+        setPatrolRegistryError(registryResult.error);
+      } else if (!registryResult.entries?.length && cachedRegistry?.entries?.length) {
+        setPatrolRegistryError(null);
+      }
+
       setPatrolRegistryLoading(false);
     };
 
