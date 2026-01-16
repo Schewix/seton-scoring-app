@@ -10,6 +10,8 @@ interface ScoreRow {
   note: string | null;
   judge: string | null;
   patrol_id: string;
+  waitMinutes: number | null;
+  waitRecorded: boolean;
   patrols?: {
     patrol_code: string | null;
     team_name: string;
@@ -27,7 +29,45 @@ function parseAnswerLetters(value?: string | null) {
   return (value?.match(/[A-D]/gi) || []).map((l) => l.toUpperCase());
 }
 
-type ScoreRowRecord = Omit<ScoreRow, 'patrols'> & {
+const WAIT_MINUTES_MAX = 600;
+
+function formatWaitMinutesValue(totalMinutes: number) {
+  const clamped = Math.max(0, Math.min(WAIT_MINUTES_MAX, Math.round(totalMinutes)));
+  const hours = Math.floor(clamped / 60)
+    .toString()
+    .padStart(2, '0');
+  const minutes = (clamped % 60).toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function formatWaitLabel(totalMinutes: number | null) {
+  if (typeof totalMinutes !== 'number' || Number.isNaN(totalMinutes)) {
+    return '—';
+  }
+  return formatWaitMinutesValue(totalMinutes);
+}
+
+function parseWaitInput(value: string) {
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return NaN;
+  }
+
+  const match = trimmed.match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!match) {
+    return NaN;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const total = hours * 60 + minutes;
+  if (!Number.isInteger(total) || total < 0 || total > WAIT_MINUTES_MAX) {
+    return NaN;
+  }
+  return total;
+}
+
+type ScoreRowRecord = Omit<ScoreRow, 'patrols' | 'waitMinutes' | 'waitRecorded'> & {
   patrols?: ScoreRow['patrols'] | ScoreRow['patrols'][] | null;
 };
 
@@ -39,6 +79,8 @@ function mapScoreRows(rows: ScoreRowRecord[] = []): ScoreRow[] {
   return rows.map((row) => ({
     ...row,
     patrols: unwrapRelation(row.patrols) ?? null,
+    waitMinutes: null,
+    waitRecorded: false,
   }));
 }
 
@@ -56,7 +98,13 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
   const [rows, setRows] = useState<ScoreRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [hidden, setHidden] = useState(false);
+  const [hidden, setHidden] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editPoints, setEditPoints] = useState('');
+  const [editWait, setEditWait] = useState(formatWaitMinutesValue(0));
+  const [editNote, setEditNote] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   const refreshTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -65,6 +113,32 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
       if (!skipLoader) {
         setLoading(true);
       }
+
+      const loadWaits = async (patrolIds: string[]) => {
+        if (!patrolIds.length) {
+          return new Map<string, number | null>();
+        }
+
+        const { data, error } = await supabase
+          .from('station_passages')
+          .select('patrol_id, wait_minutes')
+          .eq('event_id', eventId)
+          .eq('station_id', stationId)
+          .in('patrol_id', patrolIds);
+
+        if (error) {
+          console.error('Nepodařilo se načíst čekání hlídek', error);
+          return new Map<string, number | null>();
+        }
+
+        const map = new Map<string, number | null>();
+        (data ?? []).forEach((row) => {
+          if (row.patrol_id) {
+            map.set(row.patrol_id, row.wait_minutes ?? null);
+          }
+        });
+        return map;
+      };
 
       const scoresQuery = supabase
         .from('station_scores')
@@ -99,9 +173,13 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
           quizMap.set(patrol_id, quiz);
         });
 
-        const merged = mapScoreRows((scoresRes.data ?? []) as ScoreRowRecord[]).map((row) => ({
+        const baseRows = mapScoreRows((scoresRes.data ?? []) as ScoreRowRecord[]);
+        const waitMap = await loadWaits(baseRows.map((row) => row.patrol_id));
+        const merged = baseRows.map((row) => ({
           ...row,
           quiz: quizMap.get(row.patrol_id) || undefined,
+          waitMinutes: waitMap.get(row.patrol_id) ?? null,
+          waitRecorded: waitMap.has(row.patrol_id),
         }));
 
         setRows(merged);
@@ -116,7 +194,15 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
         return;
       }
 
-      setRows(mapScoreRows((scoresRes.data ?? []) as ScoreRowRecord[]));
+      const baseRows = mapScoreRows((scoresRes.data ?? []) as ScoreRowRecord[]);
+      const waitMap = await loadWaits(baseRows.map((row) => row.patrol_id));
+      setRows(
+        baseRows.map((row) => ({
+          ...row,
+          waitMinutes: waitMap.get(row.patrol_id) ?? null,
+          waitRecorded: waitMap.has(row.patrol_id),
+        }))
+      );
     },
     [eventId, stationId, isTargetStation]
   );
@@ -180,6 +266,91 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
     setRefreshing(false);
   };
 
+  const beginEdit = (row: ScoreRow) => {
+    setEditingId(row.id);
+    setEditPoints(String(row.points));
+    setEditWait(formatWaitMinutesValue(row.waitMinutes ?? 0));
+    setEditNote(row.note ?? '');
+    setEditError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditError(null);
+  };
+
+  const saveEdit = async (row: ScoreRow) => {
+    const pointsValue = Number(editPoints.trim());
+    const waitValue = parseWaitInput(editWait);
+    if (!Number.isInteger(pointsValue) || pointsValue < 0 || pointsValue > 12) {
+      setEditError('Body musí být celé číslo 0–12.');
+      return;
+    }
+    if (!Number.isInteger(waitValue) || waitValue < 0 || waitValue > WAIT_MINUTES_MAX) {
+      setEditError(`Čekání musí být čas v rozsahu 00:00–${formatWaitMinutesValue(WAIT_MINUTES_MAX)}.`);
+      return;
+    }
+
+    setSavingId(row.id);
+    setEditError(null);
+
+    const trimmedNote = editNote.trim();
+    const { error: scoreError } = await supabase
+      .from('station_scores')
+      .update({ points: pointsValue, note: trimmedNote ? trimmedNote : null })
+      .eq('id', row.id)
+      .eq('event_id', eventId)
+      .eq('station_id', stationId);
+
+    if (scoreError) {
+      setEditError('Nepodařilo se uložit body.');
+      setSavingId(null);
+      return;
+    }
+
+    if (row.waitRecorded) {
+      const { error: waitError } = await supabase
+        .from('station_passages')
+        .update({ wait_minutes: waitValue })
+        .eq('event_id', eventId)
+        .eq('station_id', stationId)
+        .eq('patrol_id', row.patrol_id);
+      if (waitError) {
+        setEditError('Nepodařilo se uložit čekání.');
+        setSavingId(null);
+        return;
+      }
+    } else if (waitValue !== 0) {
+      const { error: waitError } = await supabase.from('station_passages').insert({
+        event_id: eventId,
+        station_id: stationId,
+        patrol_id: row.patrol_id,
+        wait_minutes: waitValue,
+      });
+      if (waitError) {
+        setEditError('Nepodařilo se uložit čekání.');
+        setSavingId(null);
+        return;
+      }
+    }
+
+    setRows((prev) =>
+      prev.map((item) =>
+        item.id === row.id
+          ? {
+            ...item,
+            points: pointsValue,
+            note: trimmedNote ? trimmedNote : null,
+            waitMinutes: waitValue,
+            waitRecorded: item.waitRecorded || waitValue !== 0,
+          }
+          : item
+      )
+    );
+    setSavingId(null);
+    setEditingId(null);
+  };
+
   const countLabel = loading ? '…' : rows.length;
 
   return (
@@ -219,12 +390,16 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
                   sex: '?',
                 } satisfies ScoreRow['patrols']);
               const quizLetters = parseAnswerLetters(row.quiz?.answers);
+              const isEditing = editingId === row.id;
               return (
                 <li key={row.id} className="score-item">
                   <div className="score-split">
                     <div className="score-points-box">
                       <span className="score-points-value">{row.points}</span>
                       <span className="score-points-label">body</span>
+                      <span className="score-wait-label">
+                        Čekání: {formatWaitLabel(row.waitMinutes)}
+                      </span>
                     </div>
                     <div className="score-team-box">
                       <strong>{patrol.team_name}</strong>
@@ -238,8 +413,65 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
                   <div className="score-meta">
                     <span>{new Date(row.created_at).toLocaleString()}</span>
                     {row.judge ? <span>{row.judge}</span> : null}
+                    <button
+                      type="button"
+                      className="ghost score-edit-toggle"
+                      onClick={() => (isEditing ? cancelEdit() : beginEdit(row))}
+                    >
+                      {isEditing ? 'Zavřít editaci' : 'Upravit'}
+                    </button>
                   </div>
                   {row.note ? <p className="score-note">„{row.note}“</p> : null}
+                  {isEditing ? (
+                    <div className="score-edit">
+                      <label>
+                        Body
+                        <input
+                          type="number"
+                          min={0}
+                          max={12}
+                          inputMode="numeric"
+                          value={editPoints}
+                          onChange={(event) => setEditPoints(event.target.value)}
+                          disabled={savingId === row.id}
+                        />
+                      </label>
+                      <label>
+                        Čekání (HH:MM)
+                        <input
+                          type="time"
+                          step={60}
+                          min="00:00"
+                          max={formatWaitMinutesValue(WAIT_MINUTES_MAX)}
+                          value={editWait}
+                          onChange={(event) => setEditWait(event.target.value)}
+                          disabled={savingId === row.id}
+                        />
+                      </label>
+                      <label>
+                        Poznámka
+                        <textarea
+                          value={editNote}
+                          onChange={(event) => setEditNote(event.target.value)}
+                          disabled={savingId === row.id}
+                        />
+                      </label>
+                      <div className="score-edit-actions">
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => saveEdit(row)}
+                          disabled={savingId === row.id}
+                        >
+                          {savingId === row.id ? 'Ukládám…' : 'Uložit změny'}
+                        </button>
+                        <button type="button" onClick={cancelEdit} disabled={savingId === row.id}>
+                          Zrušit
+                        </button>
+                      </div>
+                      {editError ? <p className="error-text">{editError}</p> : null}
+                    </div>
+                  ) : null}
                   {isTargetStation && row.quiz ? (
                     <div className="score-quiz">
                       Terčový úsek: {row.quiz.correct_count}

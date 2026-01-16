@@ -1,4 +1,4 @@
-import { forwardRef, useMemo, useState } from 'react';
+import { forwardRef, useMemo } from 'react';
 import type { Ticket } from '../auth/tickets';
 import { computeWaitTime } from '../auth/tickets';
 
@@ -15,13 +15,6 @@ function formatDuration(ms: number) {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-function formatPoints(points?: number | null) {
-  if (typeof points !== 'number' || !Number.isFinite(points)) {
-    return '—';
-  }
-  return `${points.toFixed(2)}b`;
-}
-
 function slaClass(ms: number) {
   const minutes = ms / 60000;
   if (minutes >= 10) return 'ticket-critical';
@@ -36,7 +29,6 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
   const grouped = useMemo(() => {
     const waiting: Ticket[] = [];
     const serving: Ticket[] = [];
-    const done: Ticket[] = [];
 
     tickets.forEach((ticket) => {
       switch (ticket.state) {
@@ -46,19 +38,15 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
         case 'serving':
           serving.push(ticket);
           break;
-        case 'done':
-          done.push(ticket);
-          break;
         default:
           break;
       }
     });
 
-    return { waiting, serving, done };
+    return { waiting, serving };
   }, [tickets, heartbeat]);
 
   const nextUp = grouped.waiting[0];
-  const [showDone, setShowDone] = useState(true);
 
   return (
     <section ref={ref} className="card tickets-card">
@@ -68,11 +56,6 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
           <p className="card-subtitle">
             čekání / obsluha hlídky, stav se počítá z časových značek (zvládne offline i restart).
           </p>
-        </div>
-        <div className="card-actions">
-          <button type="button" className="ghost" onClick={() => setShowDone((current) => !current)}>
-            {showDone ? 'Skrýt hotové' : 'Zobrazit hotové'}
-          </button>
         </div>
       </header>
 
@@ -134,32 +117,6 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
             })}
           </ul>
         </div>
-        {showDone ? (
-          <div className="tickets-column">
-            <div className="tickets-column-header">
-              <h3>Hotové</h3>
-              <span>{grouped.done.length}</span>
-            </div>
-            <ul>
-              {grouped.done.map((ticket) => {
-                const waitMs = computeWaitTime(ticket);
-                const waitLabel = waitMs > 0 ? formatDuration(waitMs) : '—';
-                const pointsLabel = formatPoints(ticket.points);
-                return (
-                  <li key={ticket.id} className="ticket ticket-done">
-                    <div>
-                      <strong>{ticket.patrolCode}</strong>
-                      <span>{ticket.teamName}</span>
-                    </div>
-                    <div className="ticket-meta">
-                      <span>{`${waitLabel} | ${pointsLabel}`}</span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ) : null}
       </div>
 
       {nextUp ? (
