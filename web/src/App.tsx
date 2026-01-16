@@ -2846,6 +2846,8 @@ function StationApp({
                   registry={patrolRegistryState}
                   onValidationChange={setManualValidation}
                   excludePatrolIds={stationPassageVisitedSet}
+                  allowedCategories={allowedCategorySet}
+                  validationMode="station-only"
                 />
                 <button
                   type="button"
@@ -2853,7 +2855,7 @@ function StationApp({
                   onClick={() => {
                     void handleManualConfirm();
                   }}
-                  disabled={!manualValidation.valid || patrolRegistryLoading}
+                  disabled={!manualValidation.valid}
                 >
                   Načíst hlídku
                 </button>
