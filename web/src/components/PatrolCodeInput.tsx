@@ -42,6 +42,7 @@ export type PatrolValidationReason =
   | 'error'
   | 'incomplete'
   | 'format'
+  | 'category-not-allowed'
   | 'not-found'
   | 'inactive'
   | 'valid';
@@ -69,6 +70,8 @@ interface PatrolCodeInputProps {
   id?: string;
   label?: string;
   excludePatrolIds?: ReadonlySet<string> | null;
+  allowedCategories?: ReadonlySet<string> | null;
+  validationMode?: 'registry' | 'station-only';
 }
 
 function formatNumberLabel(raw: string) {
@@ -170,6 +173,8 @@ export default function PatrolCodeInput({
   id,
   label,
   excludePatrolIds,
+  allowedCategories,
+  validationMode = 'registry',
 }: PatrolCodeInputProps) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
@@ -225,6 +230,16 @@ export default function PatrolCodeInput({
     });
     return map;
   }, [registryEntries]);
+
+  const isCategoryAllowed = useCallback(
+    (category: string) => {
+      if (!allowedCategories || allowedCategories.size === 0) {
+        return true;
+      }
+      return allowedCategories.has(category);
+    },
+    [allowedCategories],
+  );
 
   const numbersByGroup = useMemo(() => {
     const map = new Map<string, WheelColumnOption[]>();
@@ -346,21 +361,23 @@ export default function PatrolCodeInput({
 
   const validationState = useMemo<PatrolValidationState>(() => {
     const canonical = normalisedValue;
-    if (registry.loading) {
-      return {
-        code: canonical,
-        valid: false,
-        reason: 'loading',
-        message: 'Načítám dostupná čísla hlídek…',
-      };
-    }
-    if (registry.error) {
-      return {
-        code: canonical,
-        valid: false,
-        reason: 'error',
-        message: registry.error || 'Nepodařilo se načíst dostupná čísla hlídek.',
-      };
+    if (validationMode === 'registry') {
+      if (registry.loading) {
+        return {
+          code: canonical,
+          valid: false,
+          reason: 'loading',
+          message: 'Načítám dostupná čísla hlídek…',
+        };
+      }
+      if (registry.error) {
+        return {
+          code: canonical,
+          valid: false,
+          reason: 'error',
+          message: registry.error || 'Nepodařilo se načíst dostupná čísla hlídek.',
+        };
+      }
     }
     if (canonical && !PARTIAL_PATROL_CODE_REGEX.test(canonical)) {
       return {
@@ -368,6 +385,14 @@ export default function PatrolCodeInput({
         valid: false,
         reason: 'format',
         message: 'Formát kódu je neplatný.',
+      };
+    }
+    if (selectedCategory && !isCategoryAllowed(selectedCategory)) {
+      return {
+        code: canonical,
+        valid: false,
+        reason: 'category-not-allowed',
+        message: 'Hlídka této kategorie na stanoviště nepatří.',
       };
     }
     if (!selectedCategory || !selectedGender || !selectedNumber) {
@@ -384,6 +409,14 @@ export default function PatrolCodeInput({
         valid: false,
         reason: 'format',
         message: 'Formát kódu je neplatný.',
+      };
+    }
+    if (validationMode === 'station-only') {
+      return {
+        code: canonical,
+        valid: true,
+        reason: 'valid',
+        message: 'Kód je platný',
       };
     }
     const entry = registryMap.get(canonical);
@@ -411,7 +444,17 @@ export default function PatrolCodeInput({
       reason: 'valid',
       message: 'Kód je platný',
     };
-  }, [normalisedValue, registry.error, registry.loading, registryMap, selectedCategory, selectedGender, selectedNumber]);
+  }, [
+    isCategoryAllowed,
+    normalisedValue,
+    registry.error,
+    registry.loading,
+    registryMap,
+    selectedCategory,
+    selectedGender,
+    selectedNumber,
+    validationMode,
+  ]);
 
   const lastValidationRef = useRef<PatrolValidationState | null>(null);
   useEffect(() => {
