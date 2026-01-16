@@ -446,7 +446,7 @@ function waitSecondsToMinutes(seconds: number) {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return 0;
   }
-  return Math.max(0, Math.round(seconds / 60));
+  return Math.max(0, Math.floor(seconds / 60));
 }
 
 function getStationDisplayName(name: string, code: string | null | undefined): string {
