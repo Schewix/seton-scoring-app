@@ -2593,11 +2593,6 @@ function StationApp({
               </button>
             </header>
             <section className="station-menu-panels" aria-label="Rychlý přehled stanoviště">
-              <div className="hero-panel hero-panel--station">
-                <span className="hero-panel-label">Stanoviště</span>
-                <strong className="hero-panel-value">{stationCode || '—'}</strong>
-                {stationDisplayName ? <span className="hero-panel-sub">{stationDisplayName}</span> : null}
-              </div>
               <div className="hero-panel hero-panel--judge">
                 <span className="hero-panel-label">Rozhodčí</span>
                 <strong className="hero-panel-value">{manifest.judge.displayName}</strong>
