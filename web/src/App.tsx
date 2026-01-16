@@ -2362,7 +2362,6 @@ function StationApp({
   }, [enableTicketQueue, manifest.event.name, pendingCount]);
 
   const failedCount = useMemo(() => pendingItems.filter((item) => Boolean(item.lastError)).length, [pendingItems]);
-
   const nextAttemptAtIso = useMemo(() => {
     const future = pendingItems
       .filter((item) => !item.inProgress && item.nextAttemptAt > Date.now())
@@ -2483,72 +2482,6 @@ function StationApp({
             </div>
           </div>
           <div className="hero-meta">
-            <div className="hero-panel hero-panel--station">
-              <span className="hero-panel-label">Stanoviště</span>
-              <strong className="hero-panel-value">{stationCode || '—'}</strong>
-              {stationDisplayName ? <span className="hero-panel-sub">{stationDisplayName}</span> : null}
-            </div>
-            <div className="hero-panel hero-panel--judge">
-              <span className="hero-panel-label">Rozhodčí</span>
-              <strong className="hero-panel-value">{manifest.judge.displayName}</strong>
-              <span className="hero-panel-sub">{manifest.judge.email}</span>
-            </div>
-            <div className="hero-panel hero-panel--status">
-              <span className="hero-panel-label">Stav závodu</span>
-              <div className="hero-badges">
-                {heroBadges.map((badge) => (
-                  <span key={badge} className="meta-pill">
-                    {badge}
-                  </span>
-                ))}
-                {lastSavedAt ? (
-                  <span className="meta-pill subtle">Poslední záznam: {formatTime(lastSavedAt)}</span>
-                ) : null}
-                {syncing ? <span className="meta-pill subtle">Synchronizuji frontu…</span> : null}
-              </div>
-            </div>
-            <div className="hero-panel hero-panel--health">
-              <span className="hero-panel-label">Offline fronta</span>
-              <OfflineHealth
-                isOnline={isOnline}
-                pendingCount={pendingCount}
-                failedCount={failedCount}
-                syncing={syncing}
-                nextAttemptAt={nextAttemptAtIso}
-                lastSyncedAt={lastSavedAt}
-              />
-            </div>
-            <div className="hero-panel hero-panel--links">
-              <span className="hero-panel-label">{stationCode === 'T' ? 'Odkazy' : 'Pravidla'}</span>
-              {showScoreboardLink ? (
-                <a
-                  className="hero-panel-link"
-                  href={SCOREBOARD_ROUTE_PREFIX}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Otevřít výsledky
-                </a>
-              ) : null}
-              <div className="hero-panel-links">
-                <a
-                  className="hero-panel-link"
-                  href={competitionRulesPdf}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Pravidla soutěže
-                </a>
-                <a
-                  className="hero-panel-link"
-                  href={stationRulesPdf}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Pravidla stanovišť
-                </a>
-              </div>
-            </div>
             <div className="hero-panel hero-panel--menu">
               <span className="hero-panel-label">Menu</span>
               <button
