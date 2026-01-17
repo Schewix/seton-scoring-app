@@ -232,21 +232,24 @@ function InfoPage({
 }
 
 function Homepage() {
+  const [featuredPhoto, ...galleryThumbnails] = GALLERY_PREVIEW;
+
   return (
     <div className="homepage-shell">
-      <header className="homepage-hero">
-        <a
-          className="homepage-hero-logo"
-          href="https://zelenaliga.cz"
-          target="_blank"
-          rel="noreferrer"
-        >
-          <img src={logo} alt="Logo Zelená liga" />
-          <span className="homepage-logo-caption">SPTO Brno</span>
-        </a>
-        <div className="homepage-hero-copy">
+      <header
+        className="homepage-hero"
+        style={{
+          maxWidth: '1120px',
+          marginBottom: '56px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          textAlign: 'left',
+          justifyItems: 'start',
+          alignItems: 'center',
+        }}
+      >
+        <div className="homepage-hero-copy" style={{ maxWidth: '640px' }}>
           <p className="homepage-eyebrow">SPTO · Zelená liga</p>
-          <span className="homepage-eyebrow-accent" aria-hidden="true" />
+          <span className="homepage-eyebrow-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
           <h1>SPTO a Zelená liga</h1>
           <p className="homepage-lead">
             SPTO sdružuje pionýrské tábornické oddíly (PTO), které vedou děti a mladé k pobytu v přírodě,
@@ -257,33 +260,83 @@ function Homepage() {
             Zelená liga je celoroční soutěžní rámec SPTO. Skládá se z několika závodů během roku
             (například Setonův závod) a soutěžící jsou rozděleni do věkových kategorií.
           </p>
-          <div className="homepage-cta-group" role="group" aria-label="Hlavní odkazy">
-            <a className="homepage-cta primary" href="/zelena-liga">
+          <div
+            className="homepage-cta-group"
+            role="group"
+            aria-label="Hlavní odkazy"
+            style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}
+          >
+            <a className="homepage-cta primary" href="/zelena-liga" style={{ minHeight: '48px' }}>
               Aktuální pořadí Zelené ligy
             </a>
-            <a className="homepage-cta secondary" href="/aplikace">
+            <a
+              className="homepage-cta secondary"
+              href="/aplikace"
+              style={{
+                minHeight: '48px',
+                background: 'transparent',
+                border: '1px solid rgba(4, 55, 44, 0.2)',
+              }}
+            >
               Soutěže a aplikace
             </a>
           </div>
         </div>
+        <div className="homepage-card" style={{ margin: 0, justifySelf: 'end', width: '100%', maxWidth: '360px' }}>
+          <a
+            className="homepage-hero-logo"
+            href="https://zelenaliga.cz"
+            target="_blank"
+            rel="noreferrer"
+            style={{ width: '100%' }}
+          >
+            <img src={logo} alt="Logo Zelená liga" style={{ width: '140px' }} />
+            <span className="homepage-logo-caption">SPTO Brno</span>
+          </a>
+        </div>
       </header>
 
-      <main className="homepage-main" aria-labelledby="homepage-overview-heading">
+      <main className="homepage-main" aria-labelledby="homepage-overview-heading" style={{ maxWidth: '1120px', gap: '64px' }}>
         <section className="homepage-section" aria-labelledby="homepage-overview-heading">
-          <div className="homepage-section-header">
+          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="homepage-overview-heading">Rychlý přehled</h2>
-            <span className="homepage-section-accent" aria-hidden="true" />
+            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
             <p>Vše důležité na jednom místě – rozcestník pro rodiče, děti i vedoucí.</p>
           </div>
-          <div className="homepage-quick-grid">
+          <div
+            className="homepage-quick-grid"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', alignItems: 'stretch' }}
+          >
             {QUICK_LINKS.map((item) => (
-              <a key={item.title} className="homepage-quick-card" href={item.href}>
-                <span className="homepage-quick-icon" aria-hidden="true">
+              <a key={item.title} className="homepage-quick-card" href={item.href} style={{ minHeight: '180px' }}>
+                <span
+                  className="homepage-quick-icon"
+                  aria-hidden="true"
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '999px',
+                    background: 'rgba(87, 170, 39, 0.12)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
                   {item.icon}
                 </span>
                 <div className="homepage-quick-body">
                   <h3>{item.title}</h3>
-                  <p>{item.description}</p>
+                  <p
+                    style={{
+                      display: '-webkit-box',
+                      WebkitBoxOrient: 'vertical',
+                      WebkitLineClamp: 2,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {item.description}
+                  </p>
                 </div>
               </a>
             ))}
@@ -291,17 +344,21 @@ function Homepage() {
         </section>
 
         <section className="homepage-section" aria-labelledby="homepage-league-heading">
-          <div className="homepage-section-header">
+          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="homepage-league-heading">Zelená liga</h2>
-            <span className="homepage-section-accent" aria-hidden="true" />
+            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
             <p>Celoroční soutěžní rámec SPTO spojující oddíly napříč republikou.</p>
           </div>
-          <div className="homepage-card homepage-league-card">
-            <div className="homepage-league-copy">
+          <div
+            className="homepage-card homepage-league-card"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '32px' }}
+          >
+            <div className="homepage-league-copy" style={{ maxWidth: '520px' }}>
               <p>
                 Zelená liga sbírá body z několika soutěží během školního roku a motivuje oddíly
                 k pravidelné činnosti, týmové práci a rozvoji dovedností v přírodě.
               </p>
+              <div aria-hidden="true" style={{ height: '1px', background: 'rgba(4, 55, 44, 0.12)' }} />
               <div className="homepage-toggle" role="group" aria-label="Přepnout zobrazení ligy">
                 <button type="button" className="homepage-toggle-button is-active" aria-pressed="true">
                   Aktuální sezóna
@@ -314,13 +371,18 @@ function Homepage() {
                 Zobrazit celé pořadí
               </a>
             </div>
-            <div className="homepage-league-top">
+            <div className="homepage-league-top" style={{ padding: '24px' }}>
               <h3>Top 5 oddílů</h3>
               <ol>
                 {LEAGUE_TOP.map((troop, index) => (
-                  <li key={troop.name}>
-                    <span className="homepage-league-rank">{index + 1}.</span>
-                    <div>
+                  <li
+                    key={troop.name}
+                    style={{ display: 'grid', gridTemplateColumns: '32px 1fr', gap: '12px', alignItems: 'center' }}
+                  >
+                    <span className="homepage-league-rank" style={{ textAlign: 'right' }}>
+                      {index + 1}.
+                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       <strong>{troop.name}</strong>
                       <span>{troop.city}</span>
                     </div>
@@ -332,21 +394,50 @@ function Homepage() {
         </section>
 
         <section className="homepage-section" aria-labelledby="homepage-articles-heading">
-          <div className="homepage-section-header">
+          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="homepage-articles-heading">Články ze soutěží</h2>
-            <span className="homepage-section-accent" aria-hidden="true" />
+            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
             <p>Krátké reportáže a novinky z posledních závodů a akcí.</p>
           </div>
-          <div className="homepage-article-grid">
+          <div className="homepage-article-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
             {ARTICLES.map((article) => (
-              <article key={article.title} className="homepage-article-card">
-                <div className="homepage-article-meta">
-                  <time dateTime={article.dateISO}>{article.dateLabel}</time>
+              <article key={article.title} className="homepage-article-card" style={{ minHeight: '220px' }}>
+                <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <time
+                    dateTime={article.dateISO}
+                    style={{
+                      display: 'inline-flex',
+                      padding: '4px 10px',
+                      borderRadius: '999px',
+                      background: 'rgba(4, 55, 44, 0.08)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {article.dateLabel}
+                  </time>
                 </div>
-                <h3>{article.title}</h3>
-                <p>{article.excerpt}</p>
-                <a className="homepage-inline-link" href={article.href}>
-                  Číst článek
+                <h3
+                  style={{
+                    display: '-webkit-box',
+                    WebkitBoxOrient: 'vertical',
+                    WebkitLineClamp: 2,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {article.title}
+                </h3>
+                <p
+                  style={{
+                    display: '-webkit-box',
+                    WebkitBoxOrient: 'vertical',
+                    WebkitLineClamp: 2,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {article.excerpt}
+                </p>
+                <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  Číst článek <span aria-hidden="true">→</span>
                 </a>
               </article>
             ))}
@@ -359,16 +450,55 @@ function Homepage() {
         </section>
 
         <section className="homepage-section" aria-labelledby="homepage-gallery-heading">
-          <div className="homepage-section-header">
+          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="homepage-gallery-heading">Fotogalerie</h2>
-            <span className="homepage-section-accent" aria-hidden="true" />
+            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
             <p>Malý výběr z poslední akce – kompletní alba najdeš ve fotogalerii.</p>
           </div>
           <div className="homepage-card homepage-gallery-card">
-            <div className="homepage-gallery-grid">
-              {GALLERY_PREVIEW.map((photo) => (
-                <img key={photo.id} src={photo.src} alt={photo.alt} loading="lazy" />
-              ))}
+            <div
+              className="homepage-gallery-grid"
+              style={{
+                gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                gap: '16px',
+              }}
+            >
+              {featuredPhoto ? (
+                <div
+                  style={{
+                    borderRadius: '20px',
+                    overflow: 'hidden',
+                    border: '1px solid rgba(4, 55, 44, 0.12)',
+                    background: 'rgba(4, 55, 44, 0.06)',
+                  }}
+                >
+                  <img
+                    src={featuredPhoto.src}
+                    alt={featuredPhoto.alt}
+                    loading="lazy"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', aspectRatio: '16 / 9' }}
+                  />
+                </div>
+              ) : null}
+              <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                {galleryThumbnails.slice(0, 3).map((photo) => (
+                  <img
+                    key={photo.id}
+                    src={photo.src}
+                    alt={photo.alt}
+                    loading="lazy"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      borderRadius: '16px',
+                      border: '1px solid rgba(4, 55, 44, 0.1)',
+                      aspectRatio: '16 / 9',
+                      background: 'rgba(4, 55, 44, 0.05)',
+                    }}
+                  />
+                ))}
+              </div>
             </div>
             <div className="homepage-gallery-actions">
               <a className="homepage-cta secondary" href="/fotogalerie">
@@ -382,17 +512,31 @@ function Homepage() {
         </section>
 
         <section className="homepage-section" aria-labelledby="homepage-troops-heading">
-          <div className="homepage-section-header">
+          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="homepage-troops-heading">Oddíly SPTO</h2>
-            <span className="homepage-section-accent" aria-hidden="true" />
+            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
             <p>Čtyři oddíly na ukázku – další najdeš v kompletním seznamu.</p>
           </div>
           <div className="homepage-troop-grid">
             {TROOPS.map((troop) => (
               <a key={troop.name} className="homepage-troop-card" href={troop.href}>
-                <h3>{troop.name}</h3>
-                <span className="homepage-troop-city">{troop.city}</span>
-                <p>{troop.description}</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <h3>{troop.name}</h3>
+                  <span className="homepage-troop-city">{troop.city}</span>
+                </div>
+                <p
+                  style={{
+                    display: '-webkit-box',
+                    WebkitBoxOrient: 'vertical',
+                    WebkitLineClamp: 2,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {troop.description}
+                </p>
+                <span className="homepage-inline-link" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  Detail oddílu <span aria-hidden="true">→</span>
+                </span>
               </a>
             ))}
           </div>
@@ -404,12 +548,12 @@ function Homepage() {
         </section>
 
         <section className="homepage-section" aria-labelledby="homepage-history-heading">
-          <div className="homepage-section-header">
+          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="homepage-history-heading">Historie SPTO stručně</h2>
-            <span className="homepage-section-accent" aria-hidden="true" />
+            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
             <p>Tradice pionýrského tábornictví sahá desítky let zpět.</p>
           </div>
-          <div className="homepage-card">
+          <div className="homepage-card" style={{ maxWidth: '880px' }}>
             <p>
               SPTO vzniklo jako dobrovolné sdružení oddílů, které chtěly rozvíjet pobyt v přírodě,
               týmovou spolupráci a zodpovědnost u dětí i vedoucích. Postupně se rozrostlo o nové soutěže,
@@ -422,8 +566,8 @@ function Homepage() {
         </section>
       </main>
 
-      <footer className="homepage-footer">
-        <div className="homepage-footer-text">
+      <footer className="homepage-footer" style={{ maxWidth: '1120px', textAlign: 'left', alignItems: 'flex-start' }}>
+        <div className="homepage-footer-text" style={{ textAlign: 'left' }}>
           <p>&copy; 2025 Zelená liga SPTO</p>
           <p>Projekt SPTO Brno · Součást Pionýra</p>
           <p>Vytvořili 32. PTO Severka a Ševa</p>
