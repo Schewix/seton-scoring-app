@@ -1809,6 +1809,22 @@ textarea {
   flex-wrap: wrap;
 }
 
+.pending-auth-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #eaf2fb;
+  color: var(--py-blue);
+  font-weight: 600;
+}
+
+.pending-auth-text {
+  font-size: 13px;
+}
+
 .pending-banner-actions {
   display: flex;
   gap: 8px;
