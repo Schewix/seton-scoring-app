@@ -80,7 +80,7 @@ interface PendingOperation {
   nextAttemptAt: number;
   lastError?: string;
   sessionId?: string;
-  blockedReason?: 'station-mismatch' | 'event-mismatch' | 'session-mismatch' | 'manifest-mismatch';
+  blockedReason?: 'station-mismatch' | 'event-mismatch' | 'session-mismatch' | 'manifest-mismatch' | 'needs-auth';
 }
 
 interface StationScoreRow {
@@ -467,6 +467,35 @@ function formatStationCategoryDetailLabel(category: StationCategoryKey): string 
   return STATION_CATEGORY_LABELS[category]?.detail ?? category;
 }
 
+const NO_SESSION_ERROR = 'NO_SESSION';
+
+async function requireSupabaseSession() {
+  const { data } = await supabase.auth.getSession();
+  let session = data?.session ?? null;
+  if (import.meta.env.DEV) {
+    console.debug('[queue] session?', Boolean(session));
+  }
+  if (session) {
+    return { session };
+  }
+  try {
+    await supabase.auth.refreshSession();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.debug('[queue] refreshSession failed', error);
+    }
+  }
+  const { data: refreshed } = await supabase.auth.getSession();
+  session = refreshed?.session ?? null;
+  if (import.meta.env.DEV) {
+    console.debug('[queue] session after refresh?', Boolean(session));
+  }
+  if (!session) {
+    return { session: null, error: NO_SESSION_ERROR };
+  }
+  return { session };
+}
+
 function StationApp({
   auth,
   refreshManifest,
@@ -734,6 +763,52 @@ function StationApp({
       setAlerts((prev) => prev.slice(1));
     }, 4500);
   }, []);
+
+  const updateQueueAuthBlock = useCallback(
+    async (items: PendingOperation[], mode: 'block' | 'unblock') => {
+      const now = Date.now();
+      let changed = false;
+      const updatedQueue = items.map((op) => {
+        if (mode === 'block') {
+          if (op.blockedReason && op.blockedReason !== 'needs-auth') {
+            return op;
+          }
+          if (
+            op.blockedReason === 'needs-auth' &&
+            !op.inProgress &&
+            !op.lastError &&
+            op.nextAttemptAt <= now
+          ) {
+            return op;
+          }
+          changed = true;
+          return {
+            ...op,
+            blockedReason: 'needs-auth',
+            inProgress: false,
+            lastError: undefined,
+            nextAttemptAt: now,
+          };
+        }
+        if (op.blockedReason !== 'needs-auth') {
+          return op;
+        }
+        changed = true;
+        return {
+          ...op,
+          blockedReason: undefined,
+          inProgress: false,
+          lastError: undefined,
+          nextAttemptAt: now,
+        };
+      });
+      if (changed) {
+        await writeQueue(queueKey, updatedQueue);
+      }
+      return { updatedQueue, changed };
+    },
+    [queueKey],
+  );
 
   const lastManifestToastAtRef = useRef<number | null>(null);
 
@@ -1740,6 +1815,18 @@ function StationApp({
       }
     }
 
+    const sessionResult = await requireSupabaseSession();
+    if (!sessionResult.session) {
+      const { updatedQueue } = await updateQueueAuthBlock(queue, 'block');
+      updateQueueState(updatedQueue);
+      if (import.meta.env.DEV) {
+        console.debug('[queue] auth block', { error: sessionResult.error ?? NO_SESSION_ERROR });
+      }
+      return;
+    }
+
+    const { updatedQueue: unblockedQueue } = await updateQueueAuthBlock(queue, 'unblock');
+    queue = unblockedQueue;
     updateQueueState(queue);
     if (syncing) return;
 
@@ -1773,23 +1860,6 @@ function StationApp({
       updateQueueState(rollbackQueue);
       setSyncing(false);
     };
-
-    const hasSession = Boolean(auth.tokens.sessionId);
-    const expiresAt = auth.tokens.accessTokenExpiresAt;
-    if (!hasSession || (typeof expiresAt === 'number' && expiresAt <= Date.now())) {
-      await releaseLocks((op) => {
-        const retryCount = op.retryCount + 1;
-        return {
-          ...op,
-          inProgress: false,
-          retryCount,
-          nextAttemptAt: Date.now() + computeBackoffMs(retryCount),
-          lastError: 'missing-session',
-        };
-      });
-      pushAlert('Přihlášení vypršelo, po obnovení připojení se znovu přihlas pro odeslání fronty.');
-      return;
-    }
 
     try {
       const response = await fetch(`${baseUrl}/auth/sync`, {
@@ -1864,6 +1934,14 @@ function StationApp({
       const syncError = error as Error & { shouldLogout?: boolean };
       const message = syncError instanceof Error ? syncError.message : 'unknown-error';
       const shouldForceLogout = Boolean(syncError?.shouldLogout);
+      const isNetworkIssue = /fetch/i.test(message) || /network/i.test(message) || /timeout/i.test(message);
+      if (import.meta.env.DEV) {
+        console.debug('[queue] sync failed', {
+          error: message,
+          authBlocked: false,
+          retryReason: isNetworkIssue ? 'network' : 'server',
+        });
+      }
       await releaseLocks((op) => {
         const retryCount = op.retryCount + 1;
         return {
@@ -1887,9 +1965,11 @@ function StationApp({
     eventId,
     manifest.manifestVersion,
     loadStationPassages,
+    logout,
     queueKey,
     stationId,
     syncing,
+    updateQueueAuthBlock,
     updateQueueState,
     pushAlert,
   ]);
@@ -1906,6 +1986,29 @@ function StationApp({
   useEffect(() => {
     syncQueue();
   }, [syncQueue, tick]);
+
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        void (async () => {
+          const queue = await readQueue(queueKey);
+          const { updatedQueue } = await updateQueueAuthBlock(queue, 'unblock');
+          updateQueueState(updatedQueue);
+          await syncQueue();
+        })();
+      }
+      if (event === 'SIGNED_OUT') {
+        void (async () => {
+          const queue = await readQueue(queueKey);
+          const { updatedQueue } = await updateQueueAuthBlock(queue, 'block');
+          updateQueueState(updatedQueue);
+        })();
+      }
+    });
+    return () => {
+      data.subscription.unsubscribe();
+    };
+  }, [queueKey, syncQueue, updateQueueAuthBlock, updateQueueState]);
 
   const resetForm = useCallback(() => {
     setActivePatrol(null);
@@ -1977,6 +2080,15 @@ function StationApp({
     tickets,
     updateTickets,
   ]);
+
+  const needsAuthCount = useMemo(
+    () => pendingItems.filter((item) => item.blockedReason === 'needs-auth').length,
+    [pendingItems],
+  );
+
+  const handleLoginPrompt = useCallback(() => {
+    void logout();
+  }, [logout]);
 
   useEffect(() => {
     resetForm();
@@ -3190,6 +3302,16 @@ function StationApp({
                     </button>
                   </div>
                 </div>
+                {needsAuthCount > 0 ? (
+                  <div className="pending-auth-banner" role="status">
+                    <div className="pending-auth-text">
+                      Pro odeslání fronty se přihlas ({needsAuthCount} čeká na přihlášení).
+                    </div>
+                    <button type="button" className="ghost" onClick={handleLoginPrompt}>
+                      Přihlásit
+                    </button>
+                  </div>
+                ) : null}
                 {showPendingDetails ? (
                   <div className="pending-preview">
                     {pendingItems.length === 0 ? (
@@ -3214,6 +3336,8 @@ function StationApp({
                                 : '';
                               const blockedLabel = (() => {
                                 switch (item.blockedReason) {
+                                  case 'needs-auth':
+                                    return 'Pro odeslání se přihlas';
                                   case 'station-mismatch':
                                     return 'Záznam patří jinému stanovišti';
                                   case 'event-mismatch':
@@ -3231,7 +3355,9 @@ function StationApp({
                               const categoryLabel = payload.sex ? `${payload.category}/${payload.sex}` : payload.category;
                               const statusLabel = item.inProgress
                                 ? 'Odesílám…'
-                                : blockedLabel
+                                : item.blockedReason === 'needs-auth'
+                                  ? 'Čeká na přihlášení'
+                                  : blockedLabel
                                   ? 'Nelze odeslat'
                                   : item.retryCount > 0
                                   ? `Další pokus v ${formatTime(new Date(item.nextAttemptAt).toISOString())}`

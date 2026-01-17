@@ -216,6 +216,14 @@ vi.mock('../supabaseClient', () => {
         },
         error: null,
       })),
+      refreshSession: vi.fn(async () => ({ data: { session: null }, error: null })),
+      onAuthStateChange: vi.fn(() => ({
+        data: {
+          subscription: {
+            unsubscribe: vi.fn(),
+          },
+        },
+      })),
     },
     __setMock(table: string, factory: () => unknown) {
       tableFactories.set(table, factory);
