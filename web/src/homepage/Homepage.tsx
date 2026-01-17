@@ -1,8 +1,8 @@
 import './Homepage.css';
 import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
+import AppFooter from '../components/AppFooter';
 import logo from '../assets/znak_SPTO_transparent.png';
-import pionyrLogo from '../assets/pionyr1_vert_rgb.png';
 
 interface EventLink {
   slug: string;
@@ -118,6 +118,8 @@ const TROOPS = [
   },
 ];
 
+const HEADER_SUBTITLE = 'Soutěže, oddíly a informace na jednom místě.';
+
 const APPLICATION_LINKS = [
   {
     label: 'Setonův závod – aplikace',
@@ -148,7 +150,7 @@ function slugify(value: string): string {
 
 function NotFoundPage() {
   return (
-    <div className="homepage-shell">
+    <SiteShell>
       <main className="homepage-main homepage-single">
         <h1>Stránka nebyla nalezena</h1>
         <p>Omlouváme se, ale požadovaná stránka neexistuje. Zkuste se vrátit na domovskou stránku.</p>
@@ -156,7 +158,7 @@ function NotFoundPage() {
           Zpět na Zelenou ligu
         </a>
       </main>
-    </div>
+    </SiteShell>
   );
 }
 
@@ -174,7 +176,7 @@ function InfoPage({
   backHref?: string;
 }) {
   return (
-    <div className="homepage-shell">
+    <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="info-heading">
         {eyebrow ? <p className="homepage-eyebrow">{eyebrow}</p> : null}
         <h1 id="info-heading">{title}</h1>
@@ -199,6 +201,79 @@ function InfoPage({
           Zpět na hlavní stránku
         </a>
       </main>
+    </SiteShell>
+  );
+}
+
+function SiteHeader({
+  activeSection,
+  onNavClick,
+}: {
+  activeSection?: string;
+  onNavClick?: (id: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
+}) {
+  return (
+    <>
+      <header className="homepage-header">
+        <div className="homepage-header-inner">
+          <a className="homepage-hero-logo" href="https://zelenaliga.cz" target="_blank" rel="noreferrer">
+            <img src={logo} alt="Logo Zelená liga" />
+            <span className="homepage-logo-caption">SPTO Brno</span>
+          </a>
+          <div className="homepage-header-copy">
+            <p className="homepage-eyebrow">SPTO · Zelená liga</p>
+            <h1>SPTO a Zelená liga</h1>
+            <p className="homepage-subtitle">{HEADER_SUBTITLE}</p>
+          </div>
+          <div className="homepage-cta-group" role="group" aria-label="Hlavní odkazy">
+            <a className="homepage-cta primary" href="/zelena-liga">
+              Aktuální pořadí Zelené ligy
+            </a>
+            <a className="homepage-cta secondary homepage-cta-accent" href="/aplikace">
+              Soutěže a aplikace
+            </a>
+          </div>
+        </div>
+      </header>
+
+      <nav className="homepage-nav" aria-label="Hlavní navigace">
+        <div className="homepage-nav-inner">
+          {NAV_ITEMS.map((item) => {
+            const isActive = activeSection === item.id;
+            const href = onNavClick ? `#${item.id}` : `/#${item.id}`;
+            return (
+              <a
+                key={item.id}
+                href={href}
+                onClick={onNavClick ? onNavClick(item.id) : undefined}
+                aria-current={isActive ? 'page' : undefined}
+                className={`homepage-nav-link${isActive ? ' is-active' : ''}`}
+              >
+                <span className="homepage-nav-dot" aria-hidden="true" />
+                {item.label}
+              </a>
+            );
+          })}
+        </div>
+      </nav>
+    </>
+  );
+}
+
+function SiteShell({
+  children,
+  activeSection,
+  onNavClick,
+}: {
+  children: React.ReactNode;
+  activeSection?: string;
+  onNavClick?: (id: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
+}) {
+  return (
+    <div className="homepage-shell" style={{ scrollBehavior: 'smooth' }}>
+      <SiteHeader activeSection={activeSection} onNavClick={onNavClick} />
+      {children}
+      <AppFooter className="homepage-footer" />
     </div>
   );
 }
@@ -247,126 +322,12 @@ function Homepage() {
   };
 
   return (
-    <div className="homepage-shell" style={{ scrollBehavior: 'smooth' }}>
-      <header style={{ width: '100%', maxWidth: '1120px', marginBottom: '24px' }}>
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '24px',
-          }}
-        >
-          <a
-            className="homepage-hero-logo"
-            href="https://zelenaliga.cz"
-            target="_blank"
-            rel="noreferrer"
-            style={{ flex: '0 1 180px', alignItems: 'flex-start', gap: '6px' }}
-          >
-            <img src={logo} alt="Logo Zelená liga" style={{ width: '120px' }} />
-            <span className="homepage-logo-caption">SPTO Brno</span>
-          </a>
-          <div style={{ flex: '1 1 360px', minWidth: '240px' }}>
-            <p className="homepage-eyebrow">SPTO · Zelená liga</p>
-            <h1 style={{ margin: '12px 0 6px', fontSize: 'clamp(2.1rem, 5vw, 2.8rem)' }}>SPTO a Zelená liga</h1>
-            <p className="homepage-subtitle" style={{ margin: 0 }}>
-              Profesionální zázemí pro pionýrské tábornické oddíly, soutěže i oddílové novinky.
-            </p>
-          </div>
-          <div
-            className="homepage-cta-group"
-            role="group"
-            aria-label="Hlavní odkazy"
-            style={{ flex: '0 1 320px', justifyContent: 'flex-end', alignItems: 'center' }}
-          >
-            <a className="homepage-cta primary" href="/zelena-liga" style={{ minHeight: '48px' }}>
-              Aktuální pořadí Zelené ligy
-            </a>
-            <a
-              className="homepage-cta secondary"
-              href="/aplikace"
-              style={{
-                minHeight: '48px',
-                background: 'transparent',
-                border: '1px solid rgba(4, 55, 44, 0.2)',
-              }}
-            >
-              Soutěže a aplikace
-            </a>
-          </div>
-        </div>
-      </header>
-
-      <nav
-        aria-label="Hlavní navigace"
-        style={{
-          width: '100%',
-          maxWidth: '1120px',
-          marginBottom: '48px',
-          padding: '12px 16px',
-          borderRadius: '999px',
-          border: '1px solid rgba(4, 55, 44, 0.16)',
-          background: 'rgba(255, 255, 255, 0.7)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            gap: '12px',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflowX: 'auto',
-            padding: '2px 4px',
-            scrollbarWidth: 'none',
-          }}
-        >
-          {NAV_ITEMS.map((item) => {
-            const isActive = activeSection === item.id;
-            return (
-              <a
-                key={item.id}
-                href={`#${item.id}`}
-                onClick={handleNavClick(item.id)}
-                aria-current={isActive ? 'page' : undefined}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '8px 14px',
-                  borderRadius: '999px',
-                  textDecoration: 'none',
-                  color: '#04372c',
-                  fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                  background: isActive ? 'rgba(255, 204, 51, 0.2)' : 'transparent',
-                  border: isActive ? '1px solid rgba(255, 204, 51, 0.7)' : '1px solid transparent',
-                }}
-              >
-                <span
-                  aria-hidden="true"
-                  style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '999px',
-                    background: isActive ? '#ffcc33' : 'rgba(4, 55, 44, 0.35)',
-                    display: 'inline-block',
-                  }}
-                />
-                {item.label}
-              </a>
-            );
-          })}
-        </div>
-      </nav>
-
+    <SiteShell activeSection={activeSection} onNavClick={handleNavClick}>
       <main className="homepage-main" aria-labelledby="homepage-intro-heading" style={{ maxWidth: '1120px', gap: '64px' }}>
         <section className="homepage-section" aria-labelledby="homepage-intro-heading">
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="homepage-intro-heading">O SPTO a Zelené lize</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
-            <p>Tradiční pionýrské tábornictví s moderním zázemím a jasnými informacemi.</p>
           </div>
           <div className="homepage-card" style={{ maxWidth: '920px', boxShadow: 'none' }}>
             <p>
@@ -626,23 +587,7 @@ function Homepage() {
           </div>
         </section>
       </main>
-
-      <footer className="homepage-footer" style={{ maxWidth: '1120px', textAlign: 'left', alignItems: 'flex-start' }}>
-        <div className="homepage-footer-text" style={{ textAlign: 'left' }}>
-          <p>&copy; 2025 Zelená liga SPTO</p>
-          <p>Projekt SPTO Brno · Součást Pionýra</p>
-          <p>Vytvořili 32. PTO Severka a Ševa</p>
-        </div>
-        <div className="homepage-footer-logos" aria-label="Logo SPTO Brno a Pionýr">
-          <a href="https://jihomoravsky.pionyr.cz/pto/" target="_blank" rel="noreferrer" aria-label="SPTO Brno">
-            <img src={logo} alt="SPTO Brno" />
-          </a>
-          <a href="https://pionyr.cz/" target="_blank" rel="noreferrer" aria-label="Pionýr">
-            <img src={pionyrLogo} alt="Pionýr" />
-          </a>
-        </div>
-      </footer>
-    </div>
+    </SiteShell>
   );
 }
 
@@ -658,7 +603,7 @@ function EventPage({ slug }: EventPageProps) {
   }
 
   return (
-    <div className="homepage-shell">
+    <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="event-heading">
         <p className="homepage-eyebrow">Zelená liga</p>
         <h1 id="event-heading">{event.name}</h1>
@@ -673,7 +618,7 @@ function EventPage({ slug }: EventPageProps) {
           Zpět na hlavní stránku
         </a>
       </main>
-    </div>
+    </SiteShell>
   );
 }
 
