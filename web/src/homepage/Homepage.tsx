@@ -1,4 +1,6 @@
 import './Homepage.css';
+import { useEffect, useState } from 'react';
+import type { MouseEvent } from 'react';
 import logo from '../assets/znak_SPTO_transparent.png';
 import pionyrLogo from '../assets/pionyr1_vert_rgb.png';
 
@@ -28,43 +30,13 @@ const EVENTS: EventLink[] = [
   },
 ];
 
-const QUICK_LINKS = [
-  {
-    title: 'Soutěže',
-    description: 'Přehled soutěží SPTO a jejich pravidel.',
-    href: '/souteze',
-    icon: '⛺',
-  },
-  {
-    title: 'Zelená liga',
-    description: 'Celoroční soutěžní rámec oddílů PTO.',
-    href: '/zelena-liga',
-    icon: '🌿',
-  },
-  {
-    title: 'Oddíly SPTO',
-    description: 'Seznam oddílů, měst a kontaktů.',
-    href: '/oddily',
-    icon: '🤝',
-  },
-  {
-    title: 'Fotogalerie',
-    description: 'Nejnovější fotky z výprav a závodů.',
-    href: '/fotogalerie',
-    icon: '📸',
-  },
-  {
-    title: 'Články a novinky',
-    description: 'Reportáže, výsledky a zajímavosti.',
-    href: '/clanky',
-    icon: '📰',
-  },
-  {
-    title: 'Historie SPTO',
-    description: 'Jak vznikla tradice tábornictví v SPTO.',
-    href: '/historie',
-    icon: '📜',
-  },
+const NAV_ITEMS = [
+  { id: 'souteze', label: 'Soutěže', icon: '⛺' },
+  { id: 'zelenaliga', label: 'Zelená liga', icon: '🌿' },
+  { id: 'oddily', label: 'Oddíly SPTO', icon: '🤝' },
+  { id: 'fotogalerie', label: 'Fotogalerie', icon: '📸' },
+  { id: 'clanky', label: 'Články a novinky', icon: '📰' },
+  { id: 'historie', label: 'Historie SPTO', icon: '📜' },
 ];
 
 const LEAGUE_TOP = [
@@ -233,38 +205,81 @@ function InfoPage({
 
 function Homepage() {
   const [featuredPhoto, ...galleryThumbnails] = GALLERY_PREVIEW;
+  const [activeSection, setActiveSection] = useState(NAV_ITEMS[0]?.id ?? '');
+
+  useEffect(() => {
+    const sections = NAV_ITEMS.map((item) => document.getElementById(item.id)).filter(
+      (section): section is HTMLElement => Boolean(section),
+    );
+
+    if (sections.length === 0) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visibleEntry = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+
+        if (visibleEntry?.target instanceof HTMLElement) {
+          setActiveSection(visibleEntry.target.id);
+        }
+      },
+      { threshold: [0.25, 0.5, 0.75], rootMargin: '-10% 0px -55% 0px' },
+    );
+
+    sections.forEach((section) => observer.observe(section));
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  const handleNavClick = (id: string) => (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    const target = document.getElementById(id);
+    if (!target) {
+      return;
+    }
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.history.replaceState(null, '', `#${id}`);
+  };
 
   return (
-    <div className="homepage-shell">
-      <header
-        className="homepage-hero"
-        style={{
-          maxWidth: '1120px',
-          marginBottom: '56px',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          textAlign: 'left',
-          justifyItems: 'start',
-          alignItems: 'center',
-        }}
-      >
-        <div className="homepage-hero-copy" style={{ maxWidth: '640px' }}>
-          <p className="homepage-eyebrow">SPTO · Zelená liga</p>
-          <span className="homepage-eyebrow-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
-          <h1>SPTO a Zelená liga</h1>
-          <p className="homepage-lead">
-            SPTO sdružuje pionýrské tábornické oddíly (PTO), které vedou děti a mladé k pobytu v přírodě,
-            spolupráci a dobrodružství. Pravidelné schůzky, víkendové výpravy i letní tábory jsou otevřené všem,
-            kdo chtějí zažít táborový život naplno.
-          </p>
-          <p className="homepage-lead">
-            Zelená liga je celoroční soutěžní rámec SPTO. Skládá se z několika závodů během roku
-            (například Setonův závod) a soutěžící jsou rozděleni do věkových kategorií.
-          </p>
+    <div className="homepage-shell" style={{ scrollBehavior: 'smooth' }}>
+      <header style={{ width: '100%', maxWidth: '1120px', marginBottom: '24px' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '24px',
+          }}
+        >
+          <a
+            className="homepage-hero-logo"
+            href="https://zelenaliga.cz"
+            target="_blank"
+            rel="noreferrer"
+            style={{ flex: '0 1 180px', alignItems: 'flex-start', gap: '6px' }}
+          >
+            <img src={logo} alt="Logo Zelená liga" style={{ width: '120px' }} />
+            <span className="homepage-logo-caption">SPTO Brno</span>
+          </a>
+          <div style={{ flex: '1 1 360px', minWidth: '240px' }}>
+            <p className="homepage-eyebrow">SPTO · Zelená liga</p>
+            <h1 style={{ margin: '12px 0 6px', fontSize: 'clamp(2.1rem, 5vw, 2.8rem)' }}>SPTO a Zelená liga</h1>
+            <p className="homepage-subtitle" style={{ margin: 0 }}>
+              Profesionální zázemí pro pionýrské tábornické oddíly, soutěže i oddílové novinky.
+            </p>
+          </div>
           <div
             className="homepage-cta-group"
             role="group"
             aria-label="Hlavní odkazy"
-            style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}
+            style={{ flex: '0 1 320px', justifyContent: 'flex-end', alignItems: 'center' }}
           >
             <a className="homepage-cta primary" href="/zelena-liga" style={{ minHeight: '48px' }}>
               Aktuální pořadí Zelené ligy
@@ -282,70 +297,116 @@ function Homepage() {
             </a>
           </div>
         </div>
-        <div className="homepage-card" style={{ margin: 0, justifySelf: 'end', width: '100%', maxWidth: '360px' }}>
-          <a
-            className="homepage-hero-logo"
-            href="https://zelenaliga.cz"
-            target="_blank"
-            rel="noreferrer"
-            style={{ width: '100%' }}
-          >
-            <img src={logo} alt="Logo Zelená liga" style={{ width: '140px' }} />
-            <span className="homepage-logo-caption">SPTO Brno</span>
-          </a>
-        </div>
       </header>
 
-      <main className="homepage-main" aria-labelledby="homepage-overview-heading" style={{ maxWidth: '1120px', gap: '64px' }}>
-        <section className="homepage-section" aria-labelledby="homepage-overview-heading">
-          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
-            <h2 id="homepage-overview-heading">Rychlý přehled</h2>
-            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
-            <p>Vše důležité na jednom místě – rozcestník pro rodiče, děti i vedoucí.</p>
-          </div>
-          <div
-            className="homepage-quick-grid"
-            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', alignItems: 'stretch' }}
-          >
-            {QUICK_LINKS.map((item) => (
-              <a key={item.title} className="homepage-quick-card" href={item.href} style={{ minHeight: '180px' }}>
+      <nav
+        aria-label="Hlavní navigace"
+        style={{
+          width: '100%',
+          maxWidth: '1120px',
+          marginBottom: '48px',
+          padding: '12px 16px',
+          borderRadius: '999px',
+          border: '1px solid rgba(4, 55, 44, 0.16)',
+          background: 'rgba(255, 255, 255, 0.7)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            gap: '12px',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflowX: 'auto',
+            padding: '2px 4px',
+            scrollbarWidth: 'none',
+          }}
+        >
+          {NAV_ITEMS.map((item) => {
+            const isActive = activeSection === item.id;
+            return (
+              <a
+                key={item.id}
+                href={`#${item.id}`}
+                onClick={handleNavClick(item.id)}
+                aria-current={isActive ? 'page' : undefined}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 14px',
+                  borderRadius: '999px',
+                  textDecoration: 'none',
+                  color: '#04372c',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  background: isActive ? 'rgba(255, 204, 51, 0.2)' : 'transparent',
+                  border: isActive ? '1px solid rgba(255, 204, 51, 0.7)' : '1px solid transparent',
+                }}
+              >
                 <span
-                  className="homepage-quick-icon"
                   aria-hidden="true"
                   style={{
-                    width: '44px',
-                    height: '44px',
+                    width: '8px',
+                    height: '8px',
                     borderRadius: '999px',
-                    background: 'rgba(87, 170, 39, 0.12)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
+                    background: isActive ? '#ffcc33' : 'rgba(4, 55, 44, 0.35)',
+                    display: 'inline-block',
                   }}
-                >
-                  {item.icon}
-                </span>
-                <div className="homepage-quick-body">
-                  <h3>{item.title}</h3>
-                  <p
-                    style={{
-                      display: '-webkit-box',
-                      WebkitBoxOrient: 'vertical',
-                      WebkitLineClamp: 2,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {item.description}
-                  </p>
-                </div>
+                />
+                {item.label}
               </a>
-            ))}
+            );
+          })}
+        </div>
+      </nav>
+
+      <main className="homepage-main" aria-labelledby="homepage-intro-heading" style={{ maxWidth: '1120px', gap: '64px' }}>
+        <section className="homepage-section" aria-labelledby="homepage-intro-heading">
+          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
+            <h2 id="homepage-intro-heading">O SPTO a Zelené lize</h2>
+            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
+            <p>Tradiční pionýrské tábornictví s moderním zázemím a jasnými informacemi.</p>
+          </div>
+          <div className="homepage-card" style={{ maxWidth: '920px', boxShadow: 'none' }}>
+            <p>
+              SPTO sdružuje pionýrské tábornické oddíly (PTO), které vedou děti a mladé k pobytu v přírodě,
+              spolupráci a dobrodružství. Pravidelné schůzky, víkendové výpravy i letní tábory jsou otevřené všem,
+              kdo chtějí zažít táborový život naplno.
+            </p>
+            <p style={{ marginTop: '12px' }}>
+              Zelená liga je celoroční soutěžní rámec SPTO. Skládá se z několika závodů během roku
+              (například Setonův závod) a soutěžící jsou rozděleni do věkových kategorií.
+            </p>
           </div>
         </section>
 
-        <section className="homepage-section" aria-labelledby="homepage-league-heading">
+        <section className="homepage-section" id="souteze" aria-labelledby="souteze-heading">
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
-            <h2 id="homepage-league-heading">Zelená liga</h2>
+            <h2 id="souteze-heading">Soutěže</h2>
+            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
+            <p>Stručný rozcestník k hlavním soutěžím a jejich digitálním aplikacím.</p>
+          </div>
+          <div className="homepage-card" style={{ maxWidth: '920px', boxShadow: 'none' }}>
+            <ul className="homepage-list">
+              {EVENTS.map((event) => (
+                <li key={event.slug}>
+                  <a className="homepage-inline-link" href={event.href}>
+                    {event.name}
+                  </a>{' '}
+                  – {event.description}
+                </li>
+              ))}
+            </ul>
+            <a className="homepage-inline-link" href="/souteze" style={{ marginTop: '12px', display: 'inline-flex' }}>
+              Zobrazit všechny soutěže
+            </a>
+          </div>
+        </section>
+
+        <section className="homepage-section" id="zelenaliga" aria-labelledby="zelenaliga-heading">
+          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
+            <h2 id="zelenaliga-heading">Zelená liga</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
             <p>Celoroční soutěžní rámec SPTO spojující oddíly napříč republikou.</p>
           </div>
@@ -393,9 +454,9 @@ function Homepage() {
           </div>
         </section>
 
-        <section className="homepage-section" aria-labelledby="homepage-articles-heading">
+        <section className="homepage-section" id="clanky" aria-labelledby="clanky-heading">
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
-            <h2 id="homepage-articles-heading">Články ze soutěží</h2>
+            <h2 id="clanky-heading">Články ze soutěží</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
             <p>Krátké reportáže a novinky z posledních závodů a akcí.</p>
           </div>
@@ -449,9 +510,9 @@ function Homepage() {
           </div>
         </section>
 
-        <section className="homepage-section" aria-labelledby="homepage-gallery-heading">
+        <section className="homepage-section" id="fotogalerie" aria-labelledby="fotogalerie-heading">
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
-            <h2 id="homepage-gallery-heading">Fotogalerie</h2>
+            <h2 id="fotogalerie-heading">Fotogalerie</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
             <p>Malý výběr z poslední akce – kompletní alba najdeš ve fotogalerii.</p>
           </div>
@@ -511,9 +572,9 @@ function Homepage() {
           </div>
         </section>
 
-        <section className="homepage-section" aria-labelledby="homepage-troops-heading">
+        <section className="homepage-section" id="oddily" aria-labelledby="oddily-heading">
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
-            <h2 id="homepage-troops-heading">Oddíly SPTO</h2>
+            <h2 id="oddily-heading">Oddíly SPTO</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
             <p>Čtyři oddíly na ukázku – další najdeš v kompletním seznamu.</p>
           </div>
@@ -547,9 +608,9 @@ function Homepage() {
           </div>
         </section>
 
-        <section className="homepage-section" aria-labelledby="homepage-history-heading">
+        <section className="homepage-section" id="historie" aria-labelledby="historie-heading">
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
-            <h2 id="homepage-history-heading">Historie SPTO stručně</h2>
+            <h2 id="historie-heading">Historie SPTO stručně</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
             <p>Tradice pionýrského tábornictví sahá desítky let zpět.</p>
           </div>
