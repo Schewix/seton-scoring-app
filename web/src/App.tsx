@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import localforage from 'localforage';
 // import QRScanner from './components/QRScanner';
 import LastScoresList from './components/LastScoresList';
@@ -470,15 +471,43 @@ function formatStationCategoryDetailLabel(category: StationCategoryKey): string 
 }
 
 const NO_SESSION_ERROR = 'NO_SESSION';
+const SESSION_STALE_THRESHOLD_MS = 60_000;
+
+function isSessionStale(session: Session | null) {
+  if (!session) {
+    return true;
+  }
+  if (!session.expires_at) {
+    return false;
+  }
+  return session.expires_at * 1000 - Date.now() <= SESSION_STALE_THRESHOLD_MS;
+}
+
+async function refreshSupabaseSession(reason: string) {
+  const { data } = await supabase.auth.getSession();
+  const session = data?.session ?? null;
+  if (!session || isSessionStale(session)) {
+    try {
+      await supabase.auth.refreshSession();
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.debug(`[auth] refreshSession failed (${reason})`, error);
+      }
+    }
+  }
+}
 
 async function requireSupabaseSession() {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return { session: null, error: 'OFFLINE', shouldBlock: false };
+  }
   const { data } = await supabase.auth.getSession();
   let session = data?.session ?? null;
   if (import.meta.env.DEV) {
     console.debug('[queue] session?', Boolean(session));
   }
   if (session) {
-    return { session };
+    return { session, shouldBlock: true };
   }
   try {
     await supabase.auth.refreshSession();
@@ -493,9 +522,9 @@ async function requireSupabaseSession() {
     console.debug('[queue] session after refresh?', Boolean(session));
   }
   if (!session) {
-    return { session: null, error: NO_SESSION_ERROR };
+    return { session: null, error: NO_SESSION_ERROR, shouldBlock: true };
   }
-  return { session };
+  return { session, shouldBlock: true };
 }
 
 function StationApp({
@@ -531,6 +560,7 @@ function StationApp({
   const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [authNeedsLogin, setAuthNeedsLogin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [manualCodeDraft, setManualCodeDraft] = useState('');
   const [confirmedManualCode, setConfirmedManualCode] = useState('');
@@ -1834,10 +1864,12 @@ function StationApp({
 
     const sessionResult = await requireSupabaseSession();
     if (!sessionResult.session) {
-      const { updatedQueue } = await updateQueueAuthBlock(queue, 'block');
-      updateQueueState(updatedQueue);
-      if (import.meta.env.DEV) {
-        console.debug('[queue] auth block', { error: sessionResult.error ?? NO_SESSION_ERROR });
+      if (sessionResult.shouldBlock) {
+        const { updatedQueue } = await updateQueueAuthBlock(queue, 'block');
+        updateQueueState(updatedQueue);
+        if (import.meta.env.DEV) {
+          console.debug('[queue] auth block', { error: sessionResult.error ?? NO_SESSION_ERROR });
+        }
       }
       return;
     }
@@ -1972,7 +2004,10 @@ function StationApp({
       pushAlert('Synchronizace selhala, zkusím to znovu později.');
       if (shouldForceLogout) {
         pushAlert('Přihlášení vypršelo, přihlas se prosím znovu.');
-        void logout();
+        setAuthNeedsLogin(true);
+        const latestQueue = await readQueue(queueKey);
+        const { updatedQueue } = await updateQueueAuthBlock(latestQueue, 'block');
+        updateQueueState(updatedQueue);
       }
     } finally {
       setSyncing(false);
@@ -1982,13 +2017,13 @@ function StationApp({
     eventId,
     manifest.manifestVersion,
     loadStationPassages,
-    logout,
     queueKey,
     stationId,
     syncing,
     updateQueueAuthBlock,
     updateQueueState,
     pushAlert,
+    setAuthNeedsLogin,
   ]);
 
   useEffect(() => {
@@ -2007,6 +2042,7 @@ function StationApp({
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        setAuthNeedsLogin(false);
         void (async () => {
           const queue = await readQueue(queueKey);
           const { updatedQueue } = await updateQueueAuthBlock(queue, 'unblock');
@@ -2015,6 +2051,10 @@ function StationApp({
         })();
       }
       if (event === 'SIGNED_OUT') {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          return;
+        }
+        setAuthNeedsLogin(true);
         void (async () => {
           const queue = await readQueue(queueKey);
           const { updatedQueue } = await updateQueueAuthBlock(queue, 'block');
@@ -2025,7 +2065,7 @@ function StationApp({
     return () => {
       data.subscription.unsubscribe();
     };
-  }, [queueKey, syncQueue, updateQueueAuthBlock, updateQueueState]);
+  }, [queueKey, setAuthNeedsLogin, syncQueue, updateQueueAuthBlock, updateQueueState]);
 
   const resetForm = useCallback(() => {
     setActivePatrol(null);
@@ -2104,8 +2144,21 @@ function StationApp({
   );
 
   const handleLoginPrompt = useCallback(() => {
-    void logout();
-  }, [logout]);
+    if (!isOnline) {
+      pushAlert('Jste offline, přihlášení ověříme po obnovení připojení.');
+      return;
+    }
+    void (async () => {
+      await refreshSupabaseSession('manual');
+      const { data } = await supabase.auth.getSession();
+      if (data?.session) {
+        setAuthNeedsLogin(false);
+        await syncQueue();
+      } else {
+        setAuthNeedsLogin(true);
+      }
+    })();
+  }, [isOnline, pushAlert, setAuthNeedsLogin, syncQueue]);
 
   useEffect(() => {
     resetForm();
@@ -3371,6 +3424,20 @@ function StationApp({
             ) : (
               <p className="form-placeholder">Nejprve načti hlídku a otevři formulář.</p>
             )}
+            {authNeedsLogin ? (
+              <div className="pending-auth-banner" role="status">
+                <div className="pending-auth-text">
+                  {isOnline
+                    ? 'Přihlášení vypršelo, obnov ho prosím pro synchronizaci.'
+                    : 'Jste offline – přihlášení ověříme po návratu online.'}
+                </div>
+                {isOnline ? (
+                  <button type="button" className="ghost" onClick={handleLoginPrompt}>
+                    Obnovit přihlášení
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             {pendingCount > 0 ? (
               <div className="pending-banner">
                 <div className="pending-banner-main">
@@ -3548,10 +3615,54 @@ export function useStationRouting(status: AuthStatus) {
 
 function App() {
   const { status, refreshManifest, logout } = useAuth();
+  const [supabaseAuthReady, setSupabaseAuthReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const initializeSupabaseAuth = async () => {
+      if (typeof window === 'undefined') {
+        if (active) {
+          setSupabaseAuthReady(true);
+        }
+        return;
+      }
+      try {
+        await supabase.auth.getSession();
+      } finally {
+        if (active) {
+          setSupabaseAuthReady(true);
+        }
+      }
+    };
+    void initializeSupabaseAuth();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supabaseAuthReady || typeof window === 'undefined' || typeof document === 'undefined') {
+      return;
+    }
+    const handleOnline = () => {
+      void refreshSupabaseSession('online');
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshSupabaseSession('visibility');
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [supabaseAuthReady]);
 
   useStationRouting(status);
 
-  if (status.state === 'loading') {
+  if (!supabaseAuthReady || status.state === 'loading') {
     return (
       <div className="auth-shell auth-overlay">
         <div className="auth-shell-content">
