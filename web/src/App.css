@@ -364,6 +364,12 @@ body {
   gap: 12px;
 }
 
+.station-menu-rules-actions {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
 .station-menu-rules li {
   position: relative;
   padding-left: 18px;
