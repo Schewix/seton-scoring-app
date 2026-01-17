@@ -39,6 +39,8 @@ import {
   loadPatrolRegistryCache,
   savePatrolRegistryCache,
 } from './data/patrolRegistry';
+import competitionRulesPdf from './assets/pravidla-souteze.pdf';
+import stationRulesPdf from './assets/pravidla-stanovist.pdf';
 
 
 interface Patrol {
@@ -528,6 +530,7 @@ function StationApp({
   const [pendingItems, setPendingItems] = useState<PendingOperation[]>([]);
   const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [manualCodeDraft, setManualCodeDraft] = useState('');
   const [confirmedManualCode, setConfirmedManualCode] = useState('');
@@ -576,6 +579,20 @@ function StationApp({
   const [stationPassageLoading, setStationPassageLoading] = useState(false);
   const [stationPassageError, setStationPassageError] = useState<string | null>(null);
   const [selectedSummaryCategory, setSelectedSummaryCategory] = useState<StationCategoryKey | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const queueKey = useMemo(() => `${QUEUE_KEY_PREFIX}_${stationId}`, [stationId]);
   const enableTicketQueue = !isTargetStation;
@@ -2490,6 +2507,29 @@ function StationApp({
     const earliest = Math.min(...future);
     return new Date(earliest).toISOString();
   }, [pendingItems]);
+  const nextAttemptAtLabel = useMemo(() => {
+    if (!nextAttemptAtIso) {
+      return null;
+    }
+    return formatTime(nextAttemptAtIso);
+  }, [nextAttemptAtIso]);
+  const offlineQueueSummaryLabel =
+    pendingCount === 0 ? 'Offline fronta prázdná' : `Čeká na odeslání: ${pendingCount}`;
+  const offlineSyncLabel = useMemo(() => {
+    if (syncing) {
+      return 'Odesílám…';
+    }
+    if (pendingCount === 0) {
+      return 'Zatím žádné odesílání';
+    }
+    if (nextAttemptAtLabel) {
+      return `Další pokus v ${nextAttemptAtLabel}`;
+    }
+    return 'Čeká na odeslání';
+  }, [nextAttemptAtLabel, pendingCount, syncing]);
+  const handleOpenRules = useCallback((url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, []);
 
   useEffect(() => {
     if (!nextAttemptAtIso) {
@@ -2653,6 +2693,27 @@ function StationApp({
             </section>
             <section className="card station-menu-card">
               <header className="card-header">
+                <h3>Stav závodu</h3>
+              </header>
+              <ul className="station-menu-list">
+                <li>
+                  <span className="card-hint">Event</span>
+                  <strong>{manifest.event.name}</strong>
+                </li>
+                <li>
+                  <span className="card-hint">Offline fronta</span>
+                  <strong>{offlineQueueSummaryLabel}</strong>
+                </li>
+                {failedCount > 0 ? (
+                  <li>
+                    <span className="card-hint">Chyby</span>
+                    <strong>{failedCount}</strong>
+                  </li>
+                ) : null}
+              </ul>
+            </section>
+            <section className="card station-menu-card">
+              <header className="card-header">
                 <h3>Stanoviště</h3>
               </header>
               <ul className="station-menu-list">
@@ -2691,8 +2752,35 @@ function StationApp({
             </section>
             <section className="card station-menu-card">
               <header className="card-header">
+                <h3>Offline fronta</h3>
+              </header>
+              <ul className="station-menu-list">
+                <li>
+                  <span className="card-hint">Síť</span>
+                  <strong>{isOnline ? 'Online' : 'Offline'}</strong>
+                </li>
+                <li>
+                  <span className="card-hint">Synchronizace</span>
+                  <strong>{offlineSyncLabel}</strong>
+                </li>
+                <li>
+                  <span className="card-hint">Fronta</span>
+                  <strong>{pendingCount === 0 ? 'prázdná' : `${pendingCount} položek`}</strong>
+                </li>
+              </ul>
+            </section>
+            <section className="card station-menu-card">
+              <header className="card-header">
                 <h3>Pravidla</h3>
               </header>
+              <div className="station-menu-rules-actions">
+                <button type="button" className="primary" onClick={() => handleOpenRules(competitionRulesPdf)}>
+                  Pravidla soutěže
+                </button>
+                <button type="button" className="ghost" onClick={() => handleOpenRules(stationRulesPdf)}>
+                  Pravidla stanovišť
+                </button>
+              </div>
               <ul className="station-menu-rules">
                 {stationRules.map((rule) => (
                   <li key={rule}>{rule}</li>
