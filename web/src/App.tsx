@@ -77,6 +77,10 @@ interface PendingOperation {
   payload: PendingSubmissionPayload;
   signature: string;
   signature_payload: string;
+  eventId?: string;
+  stationId?: string;
+  createdAt?: string;
+  unknownSession?: boolean;
   created_at: string;
   inProgress: boolean;
   retryCount: number;
@@ -289,6 +293,13 @@ async function readQueue(key: string): Promise<PendingOperation[]> {
       const operation = item as PendingOperation & {
         payload: PendingSubmissionPayload & { judge?: string; judge_id?: string; session_id?: string };
       };
+      const hasSessionMetadata =
+        typeof operation.eventId === 'string' &&
+        operation.eventId.length > 0 &&
+        typeof operation.stationId === 'string' &&
+        operation.stationId.length > 0 &&
+        typeof operation.createdAt === 'string' &&
+        operation.createdAt.length > 0;
       const { judge: _legacyJudge, judge_id: _legacyJudgeId, session_id: _legacySessionId, ...rest } =
         operation.payload as PendingSubmissionPayload & {
           judge?: string;
@@ -307,6 +318,7 @@ async function readQueue(key: string): Promise<PendingOperation[]> {
         sessionId: typeof operation.sessionId === 'string' && operation.sessionId.length
           ? operation.sessionId
           : legacySessionId,
+        unknownSession: operation.unknownSession ?? !hasSessionMetadata,
         payload: {
           ...rest,
           manifest_version: typeof rest.manifest_version === 'number' ? rest.manifest_version : 0,
@@ -319,6 +331,7 @@ async function readQueue(key: string): Promise<PendingOperation[]> {
     return {
       id: generateOperationId(),
       type: 'submission' as const,
+      unknownSession: true,
       payload: {
         event_id: legacy.event_id,
         station_id: legacy.station_id,
@@ -570,7 +583,6 @@ function StationApp({
   const [answersError, setAnswersError] = useState('');
   const [useTargetScoring, setUseTargetScoring] = useState(false);
   const [categoryAnswers, setCategoryAnswers] = useState<Record<string, string>>({});
-  const [pendingCount, setPendingCount] = useState(0);
   const [pendingItems, setPendingItems] = useState<PendingOperation[]>([]);
   const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -811,12 +823,8 @@ function StationApp({
   );
 
   const updateQueueState = useCallback((items: PendingOperation[]) => {
-    setPendingCount(items.length);
     const sorted = [...items].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
     setPendingItems(sorted);
-    if (items.length === 0) {
-      setShowPendingDetails(false);
-    }
   }, []);
 
   const pushAlert = useCallback((message: string) => {
@@ -825,6 +833,76 @@ function StationApp({
       setAlerts((prev) => prev.slice(1));
     }, 4500);
   }, []);
+
+  const getQueueSessionStatus = useCallback(
+    (item: PendingOperation) => {
+      const hasMetadata =
+        !item.unknownSession &&
+        typeof item.eventId === 'string' &&
+        item.eventId.length > 0 &&
+        typeof item.stationId === 'string' &&
+        item.stationId.length > 0 &&
+        typeof item.createdAt === 'string' &&
+        item.createdAt.length > 0;
+      if (!hasMetadata) {
+        return 'unknown';
+      }
+      if (item.eventId === eventId && item.stationId === stationId) {
+        return 'current';
+      }
+      return 'other';
+    },
+    [eventId, stationId],
+  );
+
+  const currentSessionItems = useMemo(
+    () => pendingItems.filter((item) => getQueueSessionStatus(item) === 'current'),
+    [getQueueSessionStatus, pendingItems],
+  );
+  const otherSessionItems = useMemo(
+    () => pendingItems.filter((item) => getQueueSessionStatus(item) === 'other'),
+    [getQueueSessionStatus, pendingItems],
+  );
+  const unknownSessionItems = useMemo(
+    () => pendingItems.filter((item) => getQueueSessionStatus(item) === 'unknown'),
+    [getQueueSessionStatus, pendingItems],
+  );
+  const pendingCount = currentSessionItems.length;
+
+  useEffect(() => {
+    if (pendingItems.length === 0) {
+      setShowPendingDetails(false);
+    }
+  }, [pendingItems.length]);
+
+  const handleClearOtherSessions = useCallback(async () => {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('Opravdu chcete vyčistit záznamy z jiné relace?');
+      if (!confirmed) {
+        return;
+      }
+    }
+    const queue = await readQueue(queueKey);
+    const filtered = queue.filter((item) => getQueueSessionStatus(item) !== 'other');
+    await writeQueue(queueKey, filtered);
+    updateQueueState(filtered);
+    pushAlert('Staré záznamy z jiné relace byly odstraněny.');
+  }, [getQueueSessionStatus, pushAlert, queueKey, updateQueueState]);
+
+  const handleClearUnknownSessions = useCallback(async () => {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('Opravdu chcete vyčistit záznamy s neznámou relací?');
+      if (!confirmed) {
+        return;
+      }
+    }
+    const queue = await readQueue(queueKey);
+    const filtered = queue.filter((item) => getQueueSessionStatus(item) !== 'unknown');
+    await writeQueue(queueKey, filtered);
+    updateQueueState(filtered);
+    pushAlert('Záznamy s neznámou relací byly odstraněny.');
+  }, [getQueueSessionStatus, pushAlert, queueKey, updateQueueState]);
+
 
   const updateQueueAuthBlock = useCallback(
     async (items: PendingOperation[], mode: 'block' | 'unblock') => {
@@ -1039,7 +1117,7 @@ function StationApp({
       }
     });
 
-    pendingItems.forEach((item) => {
+    currentSessionItems.forEach((item) => {
       if (item.type !== 'submission') {
         return;
       }
@@ -1053,7 +1131,7 @@ function StationApp({
     });
 
     return visited;
-  }, [eventId, pendingItems, stationId, stationPassageIds]);
+  }, [currentSessionItems, eventId, stationId, stationPassageIds]);
 
 
   const loadTimingData = useCallback(
@@ -1785,7 +1863,9 @@ function StationApp({
 
     const blockedMap = new Map<string, PendingOperation['blockedReason']>();
     let newBlockedCount = 0;
-    for (const op of queue) {
+    const currentQueue = queue.filter((op) => getQueueSessionStatus(op) === 'current');
+    const currentIds = new Set(currentQueue.map((op) => op.id));
+    for (const op of currentQueue) {
       const payload = op.payload;
       let signatureMetadata: {
         station_id?: string;
@@ -1852,6 +1932,12 @@ function StationApp({
 
     if (blockedMap.size || queue.some((op) => op.blockedReason)) {
       const updatedQueue = queue.map((op) => {
+        if (!currentIds.has(op.id)) {
+          if (op.blockedReason || op.inProgress) {
+            return { ...op, blockedReason: undefined, inProgress: false };
+          }
+          return op;
+        }
         const blockedReason = blockedMap.get(op.id);
         if (!blockedReason) {
           if (op.blockedReason) {
@@ -1871,8 +1957,8 @@ function StationApp({
       if (newBlockedCount > 0) {
         pushAlert(
           newBlockedCount === 1
-            ? 'Ve frontě je 1 záznam z jiné relace – pro odeslání se přihlas se stejným účtem.'
-            : `Ve frontě je ${newBlockedCount} záznamů z jiné relace – pro odeslání se přihlas se stejným účtem.`,
+            ? 'Ve frontě je 1 záznam, který teď nejde odeslat.'
+            : `Ve frontě je ${newBlockedCount} záznamů, které teď nejdou odeslat.`,
         );
       }
     }
@@ -1896,7 +1982,11 @@ function StationApp({
 
     const now = Date.now();
     const ready = queue.filter(
-      (op) => !op.inProgress && op.nextAttemptAt <= now && !op.blockedReason,
+      (op) =>
+        currentIds.has(op.id) &&
+        !op.inProgress &&
+        op.nextAttemptAt <= now &&
+        !op.blockedReason,
     );
     if (!ready.length) {
       return;
@@ -2030,6 +2120,7 @@ function StationApp({
   }, [
     auth.tokens.sessionId,
     eventId,
+    getQueueSessionStatus,
     manifest.manifestVersion,
     loadStationPassages,
     queueKey,
@@ -2154,8 +2245,8 @@ function StationApp({
   ]);
 
   const needsAuthCount = useMemo(
-    () => pendingItems.filter((item) => item.blockedReason === 'needs-auth').length,
-    [pendingItems],
+    () => currentSessionItems.filter((item) => item.blockedReason === 'needs-auth').length,
+    [currentSessionItems],
   );
 
   const handleLoginPrompt = useCallback(() => {
@@ -2533,6 +2624,9 @@ function StationApp({
       payload: queuePayload,
       signature: signatureResult.signature,
       signature_payload: signatureResult.canonical,
+      eventId,
+      stationId,
+      createdAt: now,
       created_at: now,
       inProgress: false,
       retryCount: 0,
@@ -2595,9 +2689,12 @@ function StationApp({
     return badges;
   }, [enableTicketQueue, manifest.event.name, pendingCount]);
 
-  const failedCount = useMemo(() => pendingItems.filter((item) => Boolean(item.lastError)).length, [pendingItems]);
+  const failedCount = useMemo(
+    () => currentSessionItems.filter((item) => Boolean(item.lastError)).length,
+    [currentSessionItems],
+  );
   const nextAttemptAtIso = useMemo(() => {
-    const future = pendingItems
+    const future = currentSessionItems
       .filter((item) => !item.inProgress && item.nextAttemptAt > Date.now())
       .map((item) => item.nextAttemptAt);
     if (!future.length) {
@@ -2605,7 +2702,7 @@ function StationApp({
     }
     const earliest = Math.min(...future);
     return new Date(earliest).toISOString();
-  }, [pendingItems]);
+  }, [currentSessionItems]);
   const nextAttemptAtLabel = useMemo(() => {
     if (!nextAttemptAtIso) {
       return null;
@@ -3486,12 +3583,17 @@ function StationApp({
                 ) : null}
               </div>
             ) : null}
-            {pendingCount > 0 ? (
+            {pendingItems.length > 0 ? (
               <div className="pending-banner">
                 <div className="pending-banner-main">
                   <div>
                     Čeká na odeslání: {pendingCount} {syncing ? '(synchronizuji…)' : ''}
                   </div>
+                  {otherSessionItems.length > 0 || unknownSessionItems.length > 0 ? (
+                    <div className="pending-banner-note">
+                      Jiná relace: {otherSessionItems.length} · Neznámá relace: {unknownSessionItems.length}
+                    </div>
+                  ) : null}
                   <div className="pending-banner-actions">
                     <button
                       type="button"
@@ -3500,7 +3602,7 @@ function StationApp({
                     >
                       {showPendingDetails ? 'Skrýt frontu' : 'Zobrazit frontu'}
                     </button>
-                    <button type="button" onClick={syncQueue} disabled={syncing}>
+                    <button type="button" onClick={syncQueue} disabled={syncing || pendingCount === 0}>
                       {syncing ? 'Pracuji…' : 'Odeslat nyní'}
                     </button>
                   </div>
@@ -3520,93 +3622,240 @@ function StationApp({
                     {pendingItems.length === 0 ? (
                       <p>Fronta je prázdná.</p>
                     ) : (
-                      <div className="table-scroll">
-                        <table className="pending-table">
-                          <thead>
-                            <tr>
-                              <th>Hlídka</th>
-                              <th>Body / Terč</th>
-                              <th>Rozhodčí</th>
-                              <th>Poznámka</th>
-                              <th>Stav</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {pendingItems.map((item, index) => {
-                              const payload = item.payload;
-                              const answers = payload.useTargetScoring
-                                ? formatAnswersForInput(payload.normalizedAnswers || '')
-                                : '';
-                              const blockedLabel = (() => {
-                                switch (item.blockedReason) {
-                                  case 'needs-auth':
-                                    return 'Pro odeslání se přihlas';
-                                  case 'station-mismatch':
-                                    return 'Záznam patří jinému stanovišti';
-                                  case 'event-mismatch':
-                                    return 'Záznam patří jinému závodu';
-                                  case 'session-mismatch':
-                                    return 'Záznam je z jiné relace';
-                                  case 'manifest-mismatch':
-                                    return 'Záznam je z jiné verze manifestu';
-                                  default:
-                                    return null;
-                                }
-                              })();
-                              const patrolLabel = payload.team_name || 'Neznámá hlídka';
-                              const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';
-                              const categoryLabel = payload.sex ? `${payload.category}/${payload.sex}` : payload.category;
-                              const statusLabel = item.inProgress
-                                ? 'Odesílám…'
-                                : item.blockedReason === 'needs-auth'
-                                  ? 'Čeká na přihlášení'
-                                  : blockedLabel
-                                  ? 'Nelze odeslat'
-                                  : item.retryCount > 0
-                                  ? `Další pokus v ${formatTime(new Date(item.nextAttemptAt).toISOString())}`
-                                  : 'Čeká na odeslání';
-                              return (
-                                <tr key={`${item.id}-${index}`}>
-                                  <td>
-                                    <div className="pending-patrol">
-                                      <strong>
-                                        {patrolLabel}
-                                        {codeLabel}
-                                      </strong>
-                                      <span className="pending-subline">{categoryLabel}</span>
-                                      <span className="pending-subline">Čekání: {payload.wait_minutes} min</span>
-                                    </div>
-                                  </td>
-                                  <td>
-                                    <div className="pending-score">
-                                      <span className="pending-score-points">{payload.points} b</span>
-                                      <span className="pending-subline">
-                                        {payload.useTargetScoring ? 'Terčový úsek' : 'Manuální body'}
-                                      </span>
-                                      {payload.useTargetScoring ? (
-                                        <span className="pending-answers">{answers || '—'}</span>
-                                      ) : null}
-                                    </div>
-                                  </td>
-                                  <td>{manifest.judge.displayName || '—'}</td>
-                                  <td>{payload.note ? payload.note : '—'}</td>
-                                  <td>
-                                    <div className="pending-status">
-                                      <span>{statusLabel}</span>
-                                      {blockedLabel ? (
-                                        <span className="pending-subline">{blockedLabel}</span>
-                                      ) : null}
-                                      {item.lastError ? (
-                                        <span className="pending-subline">Chyba: {item.lastError}</span>
-                                      ) : null}
-                                    </div>
-                                  </td>
+                      <>
+                        {currentSessionItems.length > 0 ? (
+                          <div className="table-scroll">
+                            <table className="pending-table">
+                              <thead>
+                                <tr>
+                                  <th>Hlídka</th>
+                                  <th>Body / Terč</th>
+                                  <th>Rozhodčí</th>
+                                  <th>Poznámka</th>
+                                  <th>Stav</th>
                                 </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                              </thead>
+                              <tbody>
+                                {currentSessionItems.map((item, index) => {
+                                  const payload = item.payload;
+                                  const answers = payload.useTargetScoring
+                                    ? formatAnswersForInput(payload.normalizedAnswers || '')
+                                    : '';
+                                  const blockedLabel = (() => {
+                                    switch (item.blockedReason) {
+                                      case 'needs-auth':
+                                        return 'Pro odeslání se přihlas';
+                                      case 'station-mismatch':
+                                        return 'Záznam patří jinému stanovišti';
+                                      case 'event-mismatch':
+                                        return 'Záznam patří jinému závodu';
+                                      case 'session-mismatch':
+                                        return 'Záznam patří k jiné relaci, proto ho teď neodesíláme.';
+                                      case 'manifest-mismatch':
+                                        return 'Záznam je z jiné verze manifestu';
+                                      default:
+                                        return null;
+                                    }
+                                  })();
+                                  const patrolLabel = payload.team_name || 'Neznámá hlídka';
+                                  const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';
+                                  const categoryLabel = payload.sex ? `${payload.category}/${payload.sex}` : payload.category;
+                                  const statusLabel = item.inProgress
+                                    ? 'Odesílám…'
+                                    : item.blockedReason === 'needs-auth'
+                                      ? 'Čeká na přihlášení'
+                                      : blockedLabel
+                                      ? 'Nelze odeslat'
+                                      : item.retryCount > 0
+                                      ? `Další pokus v ${formatTime(new Date(item.nextAttemptAt).toISOString())}`
+                                      : 'Čeká na odeslání';
+                                  return (
+                                    <tr key={`${item.id}-${index}`}>
+                                      <td>
+                                        <div className="pending-patrol">
+                                          <strong>
+                                            {patrolLabel}
+                                            {codeLabel}
+                                          </strong>
+                                          <span className="pending-subline">{categoryLabel}</span>
+                                          <span className="pending-subline">Čekání: {payload.wait_minutes} min</span>
+                                        </div>
+                                      </td>
+                                      <td>
+                                        <div className="pending-score">
+                                          <span className="pending-score-points">{payload.points} b</span>
+                                          <span className="pending-subline">
+                                            {payload.useTargetScoring ? 'Terčový úsek' : 'Manuální body'}
+                                          </span>
+                                          {payload.useTargetScoring ? (
+                                            <span className="pending-answers">{answers || '—'}</span>
+                                          ) : null}
+                                        </div>
+                                      </td>
+                                      <td>{manifest.judge.displayName || '—'}</td>
+                                      <td>{payload.note ? payload.note : '—'}</td>
+                                      <td>
+                                        <div className="pending-status">
+                                          <span>{statusLabel}</span>
+                                          {blockedLabel ? (
+                                            <span className="pending-subline">{blockedLabel}</span>
+                                          ) : null}
+                                          {item.lastError ? (
+                                            <span className="pending-subline">Chyba: {item.lastError}</span>
+                                          ) : null}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <p>Aktuální relace je prázdná.</p>
+                        )}
+                        {otherSessionItems.length > 0 ? (
+                          <div className="pending-section">
+                            <div className="pending-section-header">
+                              <h4>Jiná relace</h4>
+                              <button type="button" className="ghost" onClick={handleClearOtherSessions}>
+                                Vyčistit staré záznamy
+                              </button>
+                            </div>
+                            <p className="pending-section-note">
+                              Záznamy patří k jiné relaci, proto je teď neodesíláme.
+                            </p>
+                            <div className="table-scroll">
+                              <table className="pending-table">
+                                <thead>
+                                  <tr>
+                                    <th>Hlídka</th>
+                                    <th>Body / Terč</th>
+                                    <th>Relace</th>
+                                    <th>Stav</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {otherSessionItems.map((item, index) => {
+                                    const payload = item.payload;
+                                    const answers = payload.useTargetScoring
+                                      ? formatAnswersForInput(payload.normalizedAnswers || '')
+                                      : '';
+                                    const patrolLabel = payload.team_name || 'Neznámá hlídka';
+                                    const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';
+                                    const categoryLabel = payload.sex
+                                      ? `${payload.category}/${payload.sex}`
+                                      : payload.category;
+                                    const sessionLabel = `Závod: ${item.eventId ?? '—'}, Stanoviště: ${item.stationId ?? '—'}`;
+                                    return (
+                                      <tr key={`${item.id}-other-${index}`}>
+                                        <td>
+                                          <div className="pending-patrol">
+                                            <strong>
+                                              {patrolLabel}
+                                              {codeLabel}
+                                            </strong>
+                                            <span className="pending-subline">{categoryLabel}</span>
+                                            <span className="pending-subline">Čekání: {payload.wait_minutes} min</span>
+                                          </div>
+                                        </td>
+                                        <td>
+                                          <div className="pending-score">
+                                            <span className="pending-score-points">{payload.points} b</span>
+                                            <span className="pending-subline">
+                                              {payload.useTargetScoring ? 'Terčový úsek' : 'Manuální body'}
+                                            </span>
+                                            {payload.useTargetScoring ? (
+                                              <span className="pending-answers">{answers || '—'}</span>
+                                            ) : null}
+                                          </div>
+                                        </td>
+                                        <td>{sessionLabel}</td>
+                                        <td>
+                                          <div className="pending-status">
+                                            <span>Neodesíláme</span>
+                                            <span className="pending-subline">
+                                              Záznam patří k jiné relaci, proto ho teď neodesíláme.
+                                            </span>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ) : null}
+                        {unknownSessionItems.length > 0 ? (
+                          <div className="pending-section">
+                            <div className="pending-section-header">
+                              <h4>Neznámá relace</h4>
+                              <button type="button" className="ghost" onClick={handleClearUnknownSessions}>
+                                Vyčistit
+                              </button>
+                            </div>
+                            <p className="pending-section-note">
+                              Tyto záznamy nemají informace o relaci, proto je neumíme přiřadit.
+                            </p>
+                            <div className="table-scroll">
+                              <table className="pending-table">
+                                <thead>
+                                  <tr>
+                                    <th>Hlídka</th>
+                                    <th>Body / Terč</th>
+                                    <th>Stav</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {unknownSessionItems.map((item, index) => {
+                                    const payload = item.payload;
+                                    const answers = payload.useTargetScoring
+                                      ? formatAnswersForInput(payload.normalizedAnswers || '')
+                                      : '';
+                                    const patrolLabel = payload.team_name || 'Neznámá hlídka';
+                                    const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';
+                                    const categoryLabel = payload.sex
+                                      ? `${payload.category}/${payload.sex}`
+                                      : payload.category;
+                                    return (
+                                      <tr key={`${item.id}-unknown-${index}`}>
+                                        <td>
+                                          <div className="pending-patrol">
+                                            <strong>
+                                              {patrolLabel}
+                                              {codeLabel}
+                                            </strong>
+                                            <span className="pending-subline">{categoryLabel}</span>
+                                            <span className="pending-subline">Čekání: {payload.wait_minutes} min</span>
+                                          </div>
+                                        </td>
+                                        <td>
+                                          <div className="pending-score">
+                                            <span className="pending-score-points">{payload.points} b</span>
+                                            <span className="pending-subline">
+                                              {payload.useTargetScoring ? 'Terčový úsek' : 'Manuální body'}
+                                            </span>
+                                            {payload.useTargetScoring ? (
+                                              <span className="pending-answers">{answers || '—'}</span>
+                                            ) : null}
+                                          </div>
+                                        </td>
+                                        <td>
+                                          <div className="pending-status">
+                                            <span>Neznámá relace</span>
+                                            <span className="pending-subline">Záznam neumíme automaticky odeslat.</span>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
                     )}
                   </div>
                 ) : null}

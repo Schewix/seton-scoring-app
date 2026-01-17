@@ -1945,6 +1945,12 @@ textarea {
   flex-wrap: wrap;
 }
 
+.pending-banner-note {
+  width: 100%;
+  font-size: 12px;
+  color: #7d6d60;
+}
+
 .pending-auth-banner {
   display: flex;
   align-items: center;
@@ -1973,6 +1979,31 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.pending-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pending-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pending-section-header h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.pending-section-note {
+  margin: 0;
+  font-size: 12px;
+  color: #7d6d60;
 }
 
 .table-scroll {
