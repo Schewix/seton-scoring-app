@@ -2698,16 +2698,16 @@ function StationApp({
               <ul className="station-menu-list">
                 <li>
                   <span className="card-hint">Event</span>
-                  <strong>{manifest.event.name}</strong>
+                  <strong className="station-menu-value">{manifest.event.name}</strong>
                 </li>
                 <li>
                   <span className="card-hint">Offline fronta</span>
-                  <strong>{offlineQueueSummaryLabel}</strong>
+                  <strong className="station-menu-value">{offlineQueueSummaryLabel}</strong>
                 </li>
                 {failedCount > 0 ? (
                   <li>
                     <span className="card-hint">Chyby</span>
-                    <strong>{failedCount}</strong>
+                    <strong className="station-menu-value">{failedCount}</strong>
                   </li>
                 ) : null}
               </ul>
@@ -2719,19 +2719,19 @@ function StationApp({
               <ul className="station-menu-list">
                 <li>
                   <span className="card-hint">Název</span>
-                  <strong>{stationDisplayName}</strong>
+                  <strong className="station-menu-value station-menu-value--emphasis">{stationDisplayName}</strong>
                 </li>
                 <li>
                   <span className="card-hint">Kód</span>
-                  <strong>{stationCode || '—'}</strong>
+                  <span className="station-menu-code">{stationCode || '—'}</span>
                 </li>
                 <li>
                   <span className="card-hint">Událost</span>
-                  <strong>{manifest.event.name}</strong>
+                  <strong className="station-menu-value">{manifest.event.name}</strong>
                 </li>
                 <li>
                   <span className="card-hint">Kategorie</span>
-                  <strong>{allowedStationCategoryLabel}</strong>
+                  <strong className="station-menu-value">{allowedStationCategoryLabel}</strong>
                 </li>
               </ul>
             </section>
@@ -2742,11 +2742,11 @@ function StationApp({
               <ul className="station-menu-list">
                 <li>
                   <span className="card-hint">Jméno</span>
-                  <strong>{manifest.judge.displayName}</strong>
+                  <strong className="station-menu-value station-menu-value--emphasis">{manifest.judge.displayName}</strong>
                 </li>
                 <li>
                   <span className="card-hint">Email</span>
-                  <strong>{manifest.judge.email}</strong>
+                  <strong className="station-menu-value station-menu-value--muted">{manifest.judge.email}</strong>
                 </li>
               </ul>
             </section>
@@ -2757,15 +2757,17 @@ function StationApp({
               <ul className="station-menu-list">
                 <li>
                   <span className="card-hint">Síť</span>
-                  <strong>{isOnline ? 'Online' : 'Offline'}</strong>
+                  <strong className="station-menu-value">{isOnline ? 'Online' : 'Offline'}</strong>
                 </li>
                 <li>
                   <span className="card-hint">Synchronizace</span>
-                  <strong>{offlineSyncLabel}</strong>
+                  <strong className="station-menu-value">{offlineSyncLabel}</strong>
                 </li>
                 <li>
                   <span className="card-hint">Fronta</span>
-                  <strong>{pendingCount === 0 ? 'prázdná' : `${pendingCount} položek`}</strong>
+                  <strong className="station-menu-value">
+                    {pendingCount === 0 ? 'prázdná' : `${pendingCount} položek`}
+                  </strong>
                 </li>
               </ul>
             </section>
