@@ -1,8 +1,8 @@
 
-import { useCallback, useEffect, useId, useMemo, useRef, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import Picker from 'react-mobile-picker';
 
-const PATROL_CODE_REGEX = /^[NMSR][HD]-(?:0?[1-9]|[1-3][0-9]|40)$/;
+const PATROL_CODE_REGEX = /^(N|M|S|R)(H|D)-(0[1-9]|[12][0-9]|3[0-9]|40)$/;
 const PARTIAL_PATROL_CODE_REGEX = /^(?:[NMSR]|[NMSR]-|[NMSR][HD](?:-\d{0,2})?)$/;
 
 const CATEGORY_OPTIONS = ['N', 'M', 'S', 'R'] as const;
@@ -155,6 +155,26 @@ export function normalisePatrolCode(raw: string) {
   return result;
 }
 
+function toCanonicalPatrolCode(normalised: string) {
+  const fullMatch = normalised.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  if (!fullMatch) {
+    return normalised;
+  }
+  return `${fullMatch[1]}${fullMatch[2]}-${fullMatch[3].padStart(2, '0')}`;
+}
+
+function parsePatrolCodeParts(normalised: string) {
+  const fullMatch = normalised.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  if (!fullMatch) {
+    return null;
+  }
+  return {
+    category: fullMatch[1],
+    gender: fullMatch[2],
+    number: String(Number.parseInt(fullMatch[3], 10)),
+  };
+}
+
 type PatrolCodePickerValue = {
   category: string;
   gender: string;
@@ -184,9 +204,10 @@ export default function PatrolCodeInput({
   const textHintId = `${inputId}-hint`;
 
   const normalisedValue = useMemo(() => normalisePatrolCode(value), [value]);
+  const canonicalValue = useMemo(() => toCanonicalPatrolCode(normalisedValue), [normalisedValue]);
   const textInputValue = normalisedValue ? formatDisplayValue(normalisedValue) : '';
 
-  const { selectedCategory, selectedGender, selectedNumber } = useMemo(() => {
+  const { manualCategory, manualGender, manualNumber } = useMemo(() => {
     const category = CATEGORY_OPTIONS.find((option) => normalisedValue.startsWith(option)) ?? '';
     const genderCandidate = normalisedValue.charAt(1);
     const gender =
@@ -195,11 +216,32 @@ export default function PatrolCodeInput({
     const parsedNumber = digitsMatch ? Number.parseInt(digitsMatch[1], 10) : NaN;
     const number = Number.isNaN(parsedNumber) ? '' : String(parsedNumber);
     return {
-      selectedCategory: category ?? '',
-      selectedGender: gender ?? '',
-      selectedNumber: number ?? '',
+      manualCategory: category ?? '',
+      manualGender: gender ?? '',
+      manualNumber: number ?? '',
     };
   }, [normalisedValue]);
+
+  const [inputMode, setInputMode] = useState<'manual' | 'picker'>('manual');
+  const [pickerValue, setPickerValue] = useState<PatrolCodePickerValue>({
+    category: PLACEHOLDER_VALUE,
+    gender: PLACEHOLDER_VALUE,
+    number: PLACEHOLDER_VALUE,
+  });
+  const [isInputFocused, setIsInputFocused] = useState(false);
+
+  const updatePickerValue = useCallback((nextValue: PatrolCodePickerValue) => {
+    setPickerValue((previous) => {
+      if (
+        previous.category === nextValue.category &&
+        previous.gender === nextValue.gender &&
+        previous.number === nextValue.number
+      ) {
+        return previous;
+      }
+      return nextValue;
+    });
+  }, []);
 
   const registryEntries = registry.entries ?? [];
 
@@ -288,14 +330,19 @@ export default function PatrolCodeInput({
   }, [excludedPatrolIdSet, registryEntries]);
 
   const availableNumberOptions = useMemo<WheelColumnOption[]>(() => {
+    const selectedCategory = isPlaceholder(pickerValue.category) ? '' : pickerValue.category;
+    const selectedGender = isPlaceholder(pickerValue.gender) ? '' : pickerValue.gender;
     if (!selectedCategory || !selectedGender) {
       return [];
     }
     const key = `${selectedCategory}${selectedGender}`;
     return numbersByGroup.get(key) ?? [];
-  }, [numbersByGroup, selectedCategory, selectedGender]);
+  }, [numbersByGroup, pickerValue.category, pickerValue.gender]);
 
   useEffect(() => {
+    const selectedCategory = isPlaceholder(pickerValue.category) ? '' : pickerValue.category;
+    const selectedGender = isPlaceholder(pickerValue.gender) ? '' : pickerValue.gender;
+    const selectedNumber = isPlaceholder(pickerValue.number) ? '' : pickerValue.number;
     if (!selectedCategory || !selectedGender) {
       return;
     }
@@ -303,7 +350,11 @@ export default function PatrolCodeInput({
     const scoped = numbersByGroup.get(key);
     if (!scoped || scoped.length === 0) {
       if (selectedNumber) {
-        onChange(`${selectedCategory}${selectedGender}-`);
+        updatePickerValue({
+          category: selectedCategory,
+          gender: selectedGender,
+          number: PLACEHOLDER_VALUE,
+        });
       }
       return;
     }
@@ -311,56 +362,24 @@ export default function PatrolCodeInput({
     if (!match || match.disabled) {
       const firstAvailable = scoped.find((option) => !option.disabled) ?? null;
       if (firstAvailable) {
-        onChange(`${selectedCategory}${selectedGender}-${firstAvailable.value}`);
+        updatePickerValue({
+          category: selectedCategory,
+          gender: selectedGender,
+          number: firstAvailable.value,
+        });
       } else if (selectedNumber) {
-        onChange(`${selectedCategory}${selectedGender}-`);
+        updatePickerValue({
+          category: selectedCategory,
+          gender: selectedGender,
+          number: PLACEHOLDER_VALUE,
+        });
       }
     }
-  }, [numbersByGroup, onChange, selectedCategory, selectedGender, selectedNumber]);
-
-  const handleCategorySelect = useCallback(
-    (option: string) => {
-      if (!isCategoryOption(option) || option === selectedCategory) {
-        return;
-      }
-      let nextValue = option;
-      if (selectedGender) {
-        nextValue += selectedGender;
-        const scoped = numbersByGroup.get(`${option}${selectedGender}`);
-        const preferred = scoped?.find((item) => !item.disabled) ?? null;
-        nextValue += preferred ? `-${preferred.value}` : '-';
-      }
-      onChange(nextValue);
-    },
-    [numbersByGroup, onChange, selectedCategory, selectedGender],
-  );
-
-  const handleGenderSelect = useCallback(
-    (option: string) => {
-      if (!selectedCategory || !isGenderOption(option) || option === selectedGender) {
-        return;
-      }
-      const scoped = numbersByGroup.get(`${selectedCategory}${option}`);
-      const preferred = scoped?.find((item) => !item.disabled) ?? null;
-      let nextValue = `${selectedCategory}${option}`;
-      nextValue += preferred ? `-${preferred.value}` : '-';
-      onChange(nextValue);
-    },
-    [numbersByGroup, onChange, selectedCategory, selectedGender],
-  );
-
-  const handleNumberSelect = useCallback(
-    (option: string) => {
-      if (!selectedCategory || !selectedGender || option === selectedNumber) {
-        return;
-      }
-      onChange(`${selectedCategory}${selectedGender}-${option}`);
-    },
-    [onChange, selectedCategory, selectedGender, selectedNumber],
-  );
+  }, [numbersByGroup, pickerValue.category, pickerValue.gender, pickerValue.number, updatePickerValue]);
 
   const validationState = useMemo<PatrolValidationState>(() => {
-    const canonical = normalisedValue;
+    const canonical = canonicalValue;
+    const registryKey = normalisedValue;
     if (validationMode === 'registry') {
       if (registry.loading) {
         return {
@@ -387,7 +406,7 @@ export default function PatrolCodeInput({
         message: 'Formát kódu je neplatný.',
       };
     }
-    if (selectedCategory && !isCategoryAllowed(selectedCategory)) {
+    if (manualCategory && !isCategoryAllowed(manualCategory)) {
       return {
         code: canonical,
         valid: false,
@@ -395,7 +414,7 @@ export default function PatrolCodeInput({
         message: 'Hlídka této kategorie na stanoviště nepatří.',
       };
     }
-    if (!selectedCategory || !selectedGender || !selectedNumber) {
+    if (!manualCategory || !manualGender || !manualNumber) {
       return {
         code: canonical,
         valid: false,
@@ -419,7 +438,7 @@ export default function PatrolCodeInput({
         message: 'Kód je platný',
       };
     }
-    const entry = registryMap.get(canonical);
+    const entry = registryMap.get(registryKey);
     if (!entry) {
       return {
         code: canonical,
@@ -446,13 +465,14 @@ export default function PatrolCodeInput({
     };
   }, [
     isCategoryAllowed,
+    canonicalValue,
     normalisedValue,
     registry.error,
     registry.loading,
     registryMap,
-    selectedCategory,
-    selectedGender,
-    selectedNumber,
+    manualCategory,
+    manualGender,
+    manualNumber,
     validationMode,
   ]);
 
@@ -511,33 +531,50 @@ export default function PatrolCodeInput({
     ];
   }, [availableNumberOptions]);
 
-  const pickerValue = useMemo<PatrolCodePickerValue>(
-    () => ({
-      category: selectedCategory || PLACEHOLDER_VALUE,
-      gender: selectedGender || PLACEHOLDER_VALUE,
-      number: selectedNumber || PLACEHOLDER_VALUE,
-    }),
-    [selectedCategory, selectedGender, selectedNumber],
-  );
-
   const wheelIsDisabled = registry.loading || Boolean(registry.error);
+  const wheelInteractionDisabled = wheelIsDisabled || isInputFocused;
+  const selectedCategory = isPlaceholder(pickerValue.category) ? '' : pickerValue.category;
+  const selectedGender = isPlaceholder(pickerValue.gender) ? '' : pickerValue.gender;
   const displayValue = formatDisplayValue(normalisedValue) || '—';
 
   const handlePickerChange = useCallback(
     (nextValue: PatrolCodePickerValue, key: string) => {
       const nextOption = String(nextValue[key as keyof PatrolCodePickerValue] ?? '');
-      if (wheelIsDisabled) {
+      if (wheelInteractionDisabled) {
         return;
       }
+      setInputMode('picker');
+      const selectedCategory = isPlaceholder(pickerValue.category) ? '' : pickerValue.category;
+      const selectedGender = isPlaceholder(pickerValue.gender) ? '' : pickerValue.gender;
+      const selectedNumber = isPlaceholder(pickerValue.number) ? '' : pickerValue.number;
       if (key === 'category') {
         if (isPlaceholder(nextOption)) {
-          if (normalisedValue) {
-            onChange('');
-          }
+          updatePickerValue({
+            category: PLACEHOLDER_VALUE,
+            gender: PLACEHOLDER_VALUE,
+            number: PLACEHOLDER_VALUE,
+          });
           return;
         }
         if (isCategoryOption(nextOption)) {
-          handleCategorySelect(nextOption);
+          if (nextOption === selectedCategory) {
+            return;
+          }
+          if (!selectedGender) {
+            updatePickerValue({
+              category: nextOption,
+              gender: PLACEHOLDER_VALUE,
+              number: PLACEHOLDER_VALUE,
+            });
+            return;
+          }
+          const scoped = numbersByGroup.get(`${nextOption}${selectedGender}`);
+          const preferred = scoped?.find((item) => !item.disabled) ?? null;
+          updatePickerValue({
+            category: nextOption,
+            gender: selectedGender,
+            number: preferred ? preferred.value : PLACEHOLDER_VALUE,
+          });
         }
         return;
       }
@@ -546,11 +583,24 @@ export default function PatrolCodeInput({
           return;
         }
         if (isPlaceholder(nextOption)) {
-          onChange(`${selectedCategory}-`);
+          updatePickerValue({
+            category: selectedCategory,
+            gender: PLACEHOLDER_VALUE,
+            number: PLACEHOLDER_VALUE,
+          });
           return;
         }
         if (isGenderOption(nextOption)) {
-          handleGenderSelect(nextOption);
+          if (nextOption === selectedGender) {
+            return;
+          }
+          const scoped = numbersByGroup.get(`${selectedCategory}${nextOption}`);
+          const preferred = scoped?.find((item) => !item.disabled) ?? null;
+          updatePickerValue({
+            category: selectedCategory,
+            gender: nextOption,
+            number: preferred ? preferred.value : PLACEHOLDER_VALUE,
+          });
         }
         return;
       }
@@ -558,7 +608,11 @@ export default function PatrolCodeInput({
         return;
       }
       if (isPlaceholder(nextOption)) {
-        onChange(`${selectedCategory}${selectedGender}-`);
+        updatePickerValue({
+          category: selectedCategory,
+          gender: selectedGender,
+          number: PLACEHOLDER_VALUE,
+        });
         return;
       }
       const keyId = `${selectedCategory}${selectedGender}`;
@@ -570,40 +624,101 @@ export default function PatrolCodeInput({
           for (let offset = 1; offset < scoped.length; offset += 1) {
             const forward = scoped[targetIndex + offset];
             if (forward && !forward.disabled) {
-              handleNumberSelect(forward.value);
+              updatePickerValue({
+                category: selectedCategory,
+                gender: selectedGender,
+                number: forward.value,
+              });
               return;
             }
             const backward = scoped[targetIndex - offset];
             if (backward && !backward.disabled) {
-              handleNumberSelect(backward.value);
+              updatePickerValue({
+                category: selectedCategory,
+                gender: selectedGender,
+                number: backward.value,
+              });
               return;
             }
           }
         }
-        onChange(`${selectedCategory}${selectedGender}-`);
+        updatePickerValue({
+          category: selectedCategory,
+          gender: selectedGender,
+          number: PLACEHOLDER_VALUE,
+        });
         return;
       }
-      handleNumberSelect(nextOption);
+      if (nextOption === selectedNumber) {
+        return;
+      }
+      updatePickerValue({
+        category: selectedCategory,
+        gender: selectedGender,
+        number: nextOption,
+      });
     },
     [
-      handleCategorySelect,
-      handleGenderSelect,
-      handleNumberSelect,
-      normalisedValue,
       numbersByGroup,
-      onChange,
-      selectedCategory,
-      selectedGender,
-      wheelIsDisabled,
+      pickerValue.category,
+      pickerValue.gender,
+      pickerValue.number,
+      updatePickerValue,
+      wheelInteractionDisabled,
     ],
   );
 
   const handleTextInputChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
-      onChange(normalisePatrolCode(event.target.value));
+      const nextValue = normalisePatrolCode(event.target.value);
+      if (nextValue) {
+        setInputMode('manual');
+      }
+      onChange(nextValue);
     },
     [onChange],
   );
+
+  useEffect(() => {
+    if (inputMode !== 'manual') {
+      return;
+    }
+    const parsed = parsePatrolCodeParts(normalisedValue);
+    if (!parsed) {
+      return;
+    }
+    updatePickerValue({
+      category: parsed.category,
+      gender: parsed.gender,
+      number: parsed.number,
+    });
+  }, [inputMode, normalisedValue, updatePickerValue]);
+
+  useEffect(() => {
+    if (inputMode !== 'picker') {
+      return;
+    }
+    const nextCategory = isPlaceholder(pickerValue.category) ? '' : pickerValue.category;
+    const nextGender = isPlaceholder(pickerValue.gender) ? '' : pickerValue.gender;
+    const nextNumber = isPlaceholder(pickerValue.number) ? '' : pickerValue.number;
+
+    let nextManual = '';
+    if (nextCategory) {
+      nextManual = nextCategory;
+      if (nextGender) {
+        nextManual += nextGender;
+        if (nextNumber) {
+          nextManual += `-${nextNumber}`;
+        } else {
+          nextManual += '-';
+        }
+      }
+    }
+
+    if (nextManual !== normalisedValue) {
+      onChange(nextManual);
+    }
+  }, [inputMode, normalisedValue, onChange, pickerValue.category, pickerValue.gender, pickerValue.number]);
 
   return (
     <div className="patrol-code-input">
@@ -622,6 +737,8 @@ export default function PatrolCodeInput({
           placeholder="Např. RH-01"
           value={textInputValue}
           onChange={handleTextInputChange}
+          onFocus={() => setIsInputFocused(true)}
+          onBlur={() => setIsInputFocused(false)}
           aria-describedby={`${textHintId}${validationState.message ? ` ${feedbackId}` : ''}`}
           aria-invalid={validationState.reason === 'format' ? true : undefined}
         />
@@ -636,6 +753,13 @@ export default function PatrolCodeInput({
         className={`patrol-code-input__wheel-group${wheelIsDisabled ? ' is-disabled' : ''}`}
         role="group"
         aria-labelledby={labelId}
+        onWheelCapture={
+          isInputFocused
+            ? (event) => {
+              event.preventDefault();
+            }
+            : undefined
+        }
       >
         <div className="picker-highlight" aria-hidden="true" />
         <Picker

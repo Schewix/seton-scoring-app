@@ -215,6 +215,21 @@ function formatSummaryPatrolLabel(patrol: StationSummaryPatrol) {
   return patrol.code || `${patrol.baseCategory}/${patrol.sex}`;
 }
 
+function createManualPatrolFromCode(code: string): Patrol | null {
+  const normalized = code.trim().toUpperCase();
+  const match = normalized.match(/^([NMSR])([HD])-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+  return {
+    id: `manual-${normalized}`,
+    team_name: 'Ruční hlídka',
+    category: match[1],
+    sex: match[2],
+    patrol_code: normalized,
+  };
+}
+
 function getSummaryPatrolSortKey(patrol: StationSummaryPatrol) {
   const normalized = normalisePatrolCode(patrol.code || '');
   const match = normalized.match(/^([NMSR])([HD])-(\d{1,2})$/);
@@ -2198,29 +2213,55 @@ function StationApp({
   }, [auth.patrols, isCategoryAllowed]);
 
   const fetchPatrol = useCallback(
-    async (patrolCode: string) => {
+    async (patrolCode: string, options?: { allowFallback?: boolean }) => {
       const normalized = patrolCode.trim().toUpperCase();
       let data = cachedPatrolMap.get(normalized) || null;
+      let usedFallback = false;
 
       if (!data) {
-        const { data: fetched, error } = await supabase
-          .from('patrols')
-          .select('id, team_name, category, sex, patrol_code')
-          .eq('event_id', eventId)
-          .eq('patrol_code', normalized)
-          .maybeSingle();
+        if (isOnline) {
+          const { data: fetched, error } = await supabase
+            .from('patrols')
+            .select('id, team_name, category, sex, patrol_code')
+            .eq('event_id', eventId)
+            .eq('patrol_code', normalized)
+            .maybeSingle();
 
-        if (error || !fetched) {
-          pushAlert('Hlídka nenalezena.');
-          void appendScanRecord(eventId, stationId, {
-            code: normalized,
-            scannedAt: new Date().toISOString(),
-            status: 'failed',
-            reason: error ? 'fetch-error' : 'not-found',
-          }).catch((err) => console.debug('scan history store failed', err));
+          if (error || !fetched) {
+            if (options?.allowFallback) {
+              const fallback = createManualPatrolFromCode(normalized);
+              if (fallback) {
+                data = fallback;
+                usedFallback = true;
+              }
+            } else {
+              pushAlert('Hlídka nenalezena.');
+              void appendScanRecord(eventId, stationId, {
+                code: normalized,
+                scannedAt: new Date().toISOString(),
+                status: 'failed',
+                reason: error ? 'fetch-error' : 'not-found',
+              }).catch((err) => console.debug('scan history store failed', err));
+              return false;
+            }
+          } else {
+            data = fetched as Patrol;
+          }
+        } else if (options?.allowFallback) {
+          const fallback = createManualPatrolFromCode(normalized);
+          if (fallback) {
+            data = fallback;
+            usedFallback = true;
+          }
+        } else {
+          pushAlert('Offline režim: hlídku nelze načíst.');
           return false;
         }
-        data = fetched as Patrol;
+      }
+
+      if (!data) {
+        pushAlert('Hlídka nenalezena.');
+        return false;
       }
 
       if (!isCategoryAllowed(data.category)) {
@@ -2265,6 +2306,10 @@ function StationApp({
       setManualCodeDraft('');
       setConfirmedManualCode(normalized);
 
+      if (usedFallback) {
+        pushAlert('Hlídka není v cache. Pokračuji s ručním záznamem.');
+      }
+
       void appendScanRecord(eventId, stationId, {
         code: normalized,
         scannedAt: new Date().toISOString(),
@@ -2280,6 +2325,7 @@ function StationApp({
       cachedPatrolMap,
       eventId,
       isCategoryAllowed,
+      isOnline,
       pushAlert,
       scannerPatrol,
       stationCode,
@@ -2306,7 +2352,7 @@ function StationApp({
     });
     const hapticType = normalized === confirmedManualCode ? 'light' : 'heavy';
     triggerHaptic(hapticType);
-    void fetchPatrol(normalized);
+    void fetchPatrol(normalized, { allowFallback: true });
   }, [confirmedManualCode, fetchPatrol, manualValidation]);
 
   const handleScanResult = useCallback(
