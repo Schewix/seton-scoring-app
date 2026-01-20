@@ -91,32 +91,169 @@ const GALLERY_PREVIEW = [
   { id: '6', src: logo, alt: 'Ukázková fotka z přírody s oddílem' },
 ];
 
-const TROOPS = [
+type Troop = {
+  number: string;
+  name: string;
+  year?: string;
+  leader: string;
+  href: string;
+};
+
+const TROOPS: Troop[] = [
   {
-    name: 'PTO Severka',
-    city: 'Brno',
-    description: 'Tradiční oddíl se zaměřením na tábornictví a hry v přírodě.',
-    href: '/oddily/severka',
+    number: '2',
+    name: 'Poutníci',
+    year: '1987',
+    leader: 'Anna Dalecká',
+    href: '/oddily/2-poutnici',
   },
   {
-    name: 'PTO Ševa',
-    city: 'Brno',
-    description: 'Silná parta vedoucích, víkendové výpravy a letní expedice.',
-    href: '/oddily/seva',
+    number: '6',
+    name: 'Nibowaka',
+    year: '1982',
+    leader: 'Tomáš Hála',
+    href: '/oddily/6-nibowaka',
   },
   {
-    name: 'PTO Orion',
-    city: 'Blansko',
-    description: 'Oddíl pro mladší i starší, důraz na spolupráci a dovednosti.',
-    href: '/oddily/orion',
+    number: '10',
+    name: 'Severka',
+    year: '1984',
+    leader: 'Ondřej Uldrijan',
+    href: '/oddily/10-severka',
   },
   {
-    name: 'PTO Rosa',
-    city: 'Hodonín',
-    description: 'Pestrý program, tábory u vody a tradice pionýrských hodnot.',
-    href: '/oddily/rosa',
+    number: '11',
+    name: 'Iktomi',
+    year: '2013',
+    leader: 'Linda Rahelová (Ovce)',
+    href: '/oddily/11-iktomi',
+  },
+  {
+    number: '15',
+    name: 'Vatra',
+    year: '1975',
+    leader: 'Luděk Maar',
+    href: '/oddily/15-vatra',
+  },
+  {
+    number: '21',
+    name: 'Hády',
+    year: '1983',
+    leader: 'Alena Nekvapilova',
+    href: '/oddily/21-hady',
+  },
+  {
+    number: '24',
+    name: 'Života v přírodě',
+    year: '1972',
+    leader: 'Markéta Rokytová (Makýša)',
+    href: '/oddily/24-zivota-v-prirode',
+  },
+  {
+    number: '25',
+    name: 'Ochrany přírody',
+    leader: 'Vojtěch Hynšt',
+    href: '/oddily/25-ochrany-prirody',
+  },
+  {
+    number: '26',
+    name: 'Kulturní historie',
+    leader: 'Tobias Filouš (Lachtan)',
+    href: '/oddily/26-kulturni-historie',
+  },
+  {
+    number: '27',
+    name: 'Lesní moudrosti',
+    year: '1972',
+    leader: 'František Urban',
+    href: '/oddily/27-lesni-moudrosti',
+  },
+  {
+    number: '32',
+    name: 'Severka',
+    year: '1985',
+    leader: 'Eliška Masaříková (Elis)',
+    href: '/oddily/32-severka',
+  },
+  {
+    number: '34',
+    name: 'Tulák',
+    year: '1981',
+    leader: 'František Reitter',
+    href: '/oddily/34-tulak',
+  },
+  {
+    number: '41',
+    name: 'Dráčata',
+    year: '1992',
+    leader: 'Ing. Jaroslav Pipota',
+    href: '/oddily/41-dracata',
+  },
+  {
+    number: '48',
+    name: 'Stezka',
+    year: '1983',
+    leader: 'Ivana Krumlova',
+    href: '/oddily/48-stezka',
+  },
+  {
+    number: '63',
+    name: 'Phoenix',
+    year: '1992',
+    leader: 'Roman Valenta (Rogi)',
+    href: '/oddily/63-phoenix',
+  },
+  {
+    number: '64',
+    name: 'Lorien',
+    year: '1996',
+    leader: 'René Hrabovský (Renda)',
+    href: '/oddily/64-lorien',
+  },
+  {
+    number: '66',
+    name: 'Brabrouci Modřice',
+    year: '1998',
+    leader: 'Veronika Obdržálková (Špion)',
+    href: '/oddily/66-brabrouci-modrice',
+  },
+  {
+    number: '99',
+    name: 'Kamzíci',
+    leader: 'Radek Slavík (Bambus)',
+    href: '/oddily/99-kamzici',
+  },
+  {
+    number: '111',
+    name: 'Vinohrady',
+    year: '1990',
+    leader: 'Radek Zeman',
+    href: '/oddily/111-vinohrady',
+  },
+  {
+    number: '172',
+    name: 'Pegas',
+    year: '1993',
+    leader: 'Michal Kubeš (Pat)',
+    href: '/oddily/172-pegas',
+  },
+  {
+    number: '176',
+    name: 'Vlčata',
+    year: '1971',
+    leader: 'Adam Vyklický (Áda)',
+    href: '/oddily/176-vlcata',
+  },
+  {
+    number: 'x',
+    name: 'Žabky',
+    year: '1993',
+    leader: 'Pavlína Héčová (Spajdik)',
+    href: '/oddily/x-zabky',
   },
 ];
+
+const TROOP_HIGHLIGHTS = TROOPS.slice(0, 4);
 
 const HEADER_SUBTITLE = 'Soutěže, oddíly a informace na jednom místě.';
 
@@ -203,6 +340,21 @@ function InfoPage({
       </main>
     </SiteShell>
   );
+}
+
+function formatTroopName(troop: Troop) {
+  return `${troop.number}. ${troop.name}`;
+}
+
+function formatTroopDescription(troop: Troop) {
+  const detailParts = [];
+  if (troop.year) {
+    detailParts.push(`založeno ${troop.year}`);
+  }
+  if (troop.leader) {
+    detailParts.push(`vedoucí ${troop.leader}`);
+  }
+  return detailParts.join(' · ');
 }
 
 function SiteHeader({
@@ -540,11 +692,11 @@ function Homepage() {
             <p>Čtyři oddíly na ukázku – další najdeš v kompletním seznamu.</p>
           </div>
           <div className="homepage-troop-grid">
-            {TROOPS.map((troop) => (
-              <a key={troop.name} className="homepage-troop-card" href={troop.href}>
+            {TROOP_HIGHLIGHTS.map((troop) => (
+              <a key={troop.href} className="homepage-troop-card" href={troop.href}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <h3>{troop.name}</h3>
-                  <span className="homepage-troop-city">{troop.city}</span>
+                  <h3>{formatTroopName(troop)}</h3>
+                  <span className="homepage-troop-city">{troop.leader}</span>
                 </div>
                 <p
                   style={{
@@ -554,7 +706,7 @@ function Homepage() {
                     overflow: 'hidden',
                   }}
                 >
-                  {troop.description}
+                  {formatTroopDescription(troop)}
                 </p>
                 <span className="homepage-inline-link" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                   Detail oddílu <span aria-hidden="true">→</span>
@@ -692,11 +844,16 @@ export default function ZelenaligaSite() {
         if (!troop) {
           return <NotFoundPage />;
         }
+        const detailParts = [];
+        if (troop.year) {
+          detailParts.push(`založeno ${troop.year}`);
+        }
+        detailParts.push(`vedoucí ${troop.leader}`);
         return (
           <InfoPage
             eyebrow="SPTO · Oddíly"
-            title={troop.name}
-            lead={`${troop.city} · ${troop.description}`}
+            title={formatTroopName(troop)}
+            lead={detailParts.join(' · ')}
             links={[
               {
                 label: 'Zpět na seznam oddílů',
@@ -713,8 +870,8 @@ export default function ZelenaligaSite() {
           title="Oddíly SPTO"
           lead="Seznam oddílů zapojených do pionýrského tábornictví."
           links={TROOPS.map((item) => ({
-            label: item.name,
-            description: `${item.city} · ${item.description}`,
+            label: formatTroopName(item),
+            description: formatTroopDescription(item),
             href: item.href,
           }))}
         />
