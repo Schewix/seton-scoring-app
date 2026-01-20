@@ -2259,17 +2259,8 @@ function StationApp({
       pushAlert('Jste offline, přihlášení ověříme po obnovení připojení.');
       return;
     }
-    void (async () => {
-      await refreshSupabaseSession('manual');
-      const { data } = await supabase.auth.getSession();
-      if (data?.session) {
-        setAuthNeedsLogin(false);
-        await syncQueue();
-      } else {
-        setAuthNeedsLogin(true);
-      }
-    })();
-  }, [isOnline, pushAlert, setAuthNeedsLogin, syncQueue]);
+    void logout();
+  }, [isOnline, logout, pushAlert]);
 
   useEffect(() => {
     resetForm();
