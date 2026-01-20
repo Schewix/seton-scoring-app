@@ -672,7 +672,7 @@ describe('station workflow', () => {
       expect(screen.queryByText(/Čeká na odeslání:/)).not.toBeInTheDocument();
     });
     const [, init] = fetchMock.mock.calls.at(-1)!;
-    expect(init?.headers?.Authorization).toBeUndefined();
+    expect(init?.headers?.Authorization).toBe('Bearer access-test');
     expect(init?.credentials).toBe('include');
     const body = JSON.parse((init?.body as string) ?? '{}');
     expect(body.operations).toHaveLength(1);

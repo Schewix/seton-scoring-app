@@ -2006,7 +2006,14 @@ function StationApp({
       signature_payload: op.signature_payload,
     }));
 
+    const accessToken = auth.tokens.accessToken;
     const baseUrl = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
 
     const releaseLocks = async (updater: (op: PendingOperation) => PendingOperation) => {
       const rollbackQueue = queueWithLocks.map((op) => (readyIds.has(op.id) ? updater(op) : op));
@@ -2018,9 +2025,7 @@ function StationApp({
     try {
       const response = await fetch(`${baseUrl}/auth/sync`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         credentials: 'include',
         body: JSON.stringify({ operations: operationsPayload }),
       });
