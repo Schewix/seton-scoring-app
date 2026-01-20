@@ -2602,7 +2602,14 @@ function StationApp({
       data: submissionData,
     };
 
-    const signatureResult = await signPayload(auth.deviceKey, signaturePayload);
+    let signatureResult: Awaited<ReturnType<typeof signPayload>>;
+    try {
+      signatureResult = await signPayload(auth.deviceKey, signaturePayload);
+    } catch (error) {
+      console.error('Failed to sign submission payload', error);
+      pushAlert('Nepodařilo se připravit podpis. Zkus to prosím znovu.');
+      return;
+    }
 
     const queuePayload: PendingSubmissionPayload = {
       event_id: submissionData.event_id,
@@ -2639,10 +2646,17 @@ function StationApp({
       sessionId: auth.tokens.sessionId || undefined,
     };
 
-    const queueBefore = await readQueue(queueKey);
-    const queueWithOperation = [...queueBefore, operation];
-    await writeQueue(queueKey, queueWithOperation);
-    updateQueueState(queueWithOperation);
+    let queueWithOperation: PendingOperation[];
+    try {
+      const queueBefore = await readQueue(queueKey);
+      queueWithOperation = [...queueBefore, operation];
+      await writeQueue(queueKey, queueWithOperation);
+      updateQueueState(queueWithOperation);
+    } catch (error) {
+      console.error('Failed to persist submission queue', error);
+      pushAlert('Nepodařilo se uložit záznam do fronty. Zkus to prosím znovu.');
+      return;
+    }
     if (enableTicketQueue) {
       updateTickets((current) =>
         current.map((ticket) =>
