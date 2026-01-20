@@ -381,7 +381,7 @@ function SiteHeader({
             <a className="homepage-cta primary" href="/zelena-liga">
               Aktuální pořadí Zelené ligy
             </a>
-            <a className="homepage-cta secondary homepage-cta-accent" href="/aplikace">
+            <a className="homepage-cta primary" href="/aplikace">
               Soutěže a aplikace
             </a>
           </div>
