@@ -280,7 +280,7 @@ function SiteShell({
 
 function Homepage() {
   const [featuredPhoto, ...galleryThumbnails] = GALLERY_PREVIEW;
-  const [activeSection, setActiveSection] = useState(NAV_ITEMS[0]?.id ?? '');
+  const [activeSection, setActiveSection] = useState('');
 
   useEffect(() => {
     const sections = NAV_ITEMS.map((item) => document.getElementById(item.id)).filter(
