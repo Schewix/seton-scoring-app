@@ -87,6 +87,27 @@ create table if not exists station_scores (
   unique (event_id, patrol_id, station_id)
 );
 
+do $$ begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'station_scores' and column_name = 'client_event_id'
+  ) then
+    alter table station_scores add column client_event_id uuid;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'station_scores' and column_name = 'client_created_at'
+  ) then
+    alter table station_scores add column client_created_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'station_scores' and column_name = 'submitted_by'
+  ) then
+    alter table station_scores add column submitted_by uuid;
+  end if;
+exception when duplicate_column then null; end $$;
+
 create table if not exists station_category_answers (
   id uuid primary key default gen_random_uuid(),
   event_id uuid not null references events(id) on delete cascade,
@@ -111,6 +132,48 @@ create table if not exists station_quiz_responses (
   unique (event_id, station_id, patrol_id)
 );
 
+do $$ begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'station_passages' and column_name = 'client_event_id'
+  ) then
+    alter table station_passages add column client_event_id uuid;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'station_passages' and column_name = 'client_created_at'
+  ) then
+    alter table station_passages add column client_created_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'station_passages' and column_name = 'submitted_by'
+  ) then
+    alter table station_passages add column submitted_by uuid;
+  end if;
+exception when duplicate_column then null; end $$;
+
+do $$ begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'station_quiz_responses' and column_name = 'client_event_id'
+  ) then
+    alter table station_quiz_responses add column client_event_id uuid;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'station_quiz_responses' and column_name = 'client_created_at'
+  ) then
+    alter table station_quiz_responses add column client_created_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'station_quiz_responses' and column_name = 'submitted_by'
+  ) then
+    alter table station_quiz_responses add column submitted_by uuid;
+  end if;
+exception when duplicate_column then null; end $$;
+
 create table if not exists timings (
   event_id uuid references events(id) on delete cascade,
   patrol_id uuid references patrols(id) on delete cascade,
@@ -119,11 +182,36 @@ create table if not exists timings (
   primary key (event_id, patrol_id)
 );
 
+do $$ begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'timings' and column_name = 'client_event_id'
+  ) then
+    alter table timings add column client_event_id uuid;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'timings' and column_name = 'client_created_at'
+  ) then
+    alter table timings add column client_created_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'timings' and column_name = 'submitted_by'
+  ) then
+    alter table timings add column submitted_by uuid;
+  end if;
+exception when duplicate_column then null; end $$;
+
 create index if not exists patrols_event_idx on patrols(event_id);
 create index if not exists station_scores_event_station_idx on station_scores(event_id, station_id);
 create index if not exists passages_event_station_idx on station_passages(event_id, station_id);
 create index if not exists category_answers_event_station_idx on station_category_answers(event_id, station_id);
 create index if not exists quiz_responses_event_station_idx on station_quiz_responses(event_id, station_id);
+create unique index if not exists station_scores_client_event_id_idx on station_scores(client_event_id);
+create unique index if not exists station_passages_client_event_id_idx on station_passages(client_event_id);
+create unique index if not exists station_quiz_responses_client_event_id_idx on station_quiz_responses(client_event_id);
+create unique index if not exists timings_client_event_id_idx on timings(client_event_id);
 
 create table if not exists judges (
   id uuid primary key default gen_random_uuid(),

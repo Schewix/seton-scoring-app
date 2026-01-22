@@ -25,6 +25,23 @@ interface ScoreRow {
   } | null;
 }
 
+type StationScorePayloadInput = {
+  event_id: string;
+  station_id: string;
+  patrol_id: string;
+  category: string;
+  arrived_at: string;
+  wait_minutes: number;
+  points: number;
+  note: string;
+  use_target_scoring: boolean;
+  normalized_answers: string | null;
+  finish_time: string | null;
+  patrol_code: string;
+  team_name?: string;
+  sex?: string;
+};
+
 function parseAnswerLetters(value?: string | null) {
   return (value?.match(/[A-D]/gi) || []).map((l) => l.toUpperCase());
 }
@@ -92,9 +109,15 @@ interface LastScoresListProps {
   eventId: string;
   stationId: string;
   isTargetStation: boolean;
+  onQueueScoreUpdate: (payload: StationScorePayloadInput) => Promise<boolean>;
 }
 
-export function LastScoresList({ eventId, stationId, isTargetStation }: LastScoresListProps) {
+export function LastScoresList({
+  eventId,
+  stationId,
+  isTargetStation,
+  onQueueScoreUpdate,
+}: LastScoresListProps) {
   const [rows, setRows] = useState<ScoreRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -295,43 +318,33 @@ export function LastScoresList({ eventId, stationId, isTargetStation }: LastScor
     setEditError(null);
 
     const trimmedNote = editNote.trim();
-    const { error: scoreError } = await supabase
-      .from('station_scores')
-      .update({ points: pointsValue, note: trimmedNote ? trimmedNote : null })
-      .eq('id', row.id)
-      .eq('event_id', eventId)
-      .eq('station_id', stationId);
-
-    if (scoreError) {
-      setEditError('Nepodařilo se uložit body.');
+    if (!row.patrols?.category) {
+      setEditError('Nepodařilo se načíst kategorii hlídky.');
       setSavingId(null);
       return;
     }
+    const payload: StationScorePayloadInput = {
+      event_id: eventId,
+      station_id: stationId,
+      patrol_id: row.patrol_id,
+      category: row.patrols.category,
+      arrived_at: row.created_at,
+      wait_minutes: waitValue,
+      points: pointsValue,
+      note: trimmedNote ? trimmedNote : '',
+      use_target_scoring: Boolean(row.quiz),
+      normalized_answers: row.quiz?.answers ?? null,
+      finish_time: null,
+      patrol_code: row.patrols.patrol_code ?? row.patrol_id,
+      team_name: row.patrols?.team_name ?? undefined,
+      sex: row.patrols?.sex ?? undefined,
+    };
 
-    if (row.waitRecorded) {
-      const { error: waitError } = await supabase
-        .from('station_passages')
-        .update({ wait_minutes: waitValue })
-        .eq('event_id', eventId)
-        .eq('station_id', stationId)
-        .eq('patrol_id', row.patrol_id);
-      if (waitError) {
-        setEditError('Nepodařilo se uložit čekání.');
-        setSavingId(null);
-        return;
-      }
-    } else if (waitValue !== 0) {
-      const { error: waitError } = await supabase.from('station_passages').insert({
-        event_id: eventId,
-        station_id: stationId,
-        patrol_id: row.patrol_id,
-        wait_minutes: waitValue,
-      });
-      if (waitError) {
-        setEditError('Nepodařilo se uložit čekání.');
-        setSavingId(null);
-        return;
-      }
+    const queued = await onQueueScoreUpdate(payload);
+    if (!queued) {
+      setEditError('Nepodařilo se uložit body.');
+      setSavingId(null);
+      return;
     }
 
     setRows((prev) =>
