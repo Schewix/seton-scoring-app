@@ -10,7 +10,7 @@ const pbkdf2 = promisify(pbkdf2Callback);
 const REQUIRED_ENV_VARS = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
-  'JWT_SECRET',
+  'SUPABASE_JWT_SECRET',
   'REFRESH_TOKEN_SECRET',
 ];
 
@@ -22,7 +22,7 @@ for (const name of REQUIRED_ENV_VARS) {
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const JWT_SECRET = process.env.JWT_SECRET!;
+const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET!;
 const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET!;
 const ACCESS_TOKEN_TTL_SECONDS = Number(process.env.ACCESS_TOKEN_TTL_SECONDS ?? 900);
 const REFRESH_TOKEN_TTL_SECONDS = Number(process.env.REFRESH_TOKEN_TTL_SECONDS ?? 60 * 60 * 24 * 14);
@@ -49,8 +49,26 @@ function randomToken(bytes = 32) {
   return randomBytes(bytes).toString('hex');
 }
 
-function createAccessToken(payload: { sub: string; stationId: string; sessionId: string; eventId: string }) {
-  return jwt.sign({ ...payload, type: 'access' }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL_SECONDS });
+function createAccessToken(payload: {
+  sub: string;
+  stationId: string;
+  sessionId: string;
+  eventId: string;
+  email?: string | null;
+}) {
+  return jwt.sign(
+    {
+      sub: payload.sub,
+      role: 'authenticated',
+      email: payload.email ?? undefined,
+      event_id: payload.eventId,
+      station_id: payload.stationId,
+      sessionId: payload.sessionId,
+      type: 'access',
+    },
+    SUPABASE_JWT_SECRET,
+    { expiresIn: ACCESS_TOKEN_TTL_SECONDS },
+  );
 }
 
 function createRefreshToken(payload: { sub: string; stationId: string; sessionId: string; eventId: string }) {
@@ -295,6 +313,7 @@ export default async function handler(req: any, res: any) {
       stationId: station.id,
       sessionId,
       eventId: event.id,
+      email: judge.email,
     });
 
     const refreshTokenHash = hashRefreshToken(refreshToken);
