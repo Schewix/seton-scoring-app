@@ -39,6 +39,7 @@ import {
   loadPatrolRegistryCache,
   savePatrolRegistryCache,
 } from './data/patrolRegistry';
+import { ACCESS_DENIED_MESSAGE } from './auth/messages';
 import competitionRulesPdf from './assets/pravidla-souteze.pdf';
 import stationRulesPdf from './assets/pravidla-stanovist.pdf';
 
@@ -438,34 +439,17 @@ async function refreshSupabaseSession(reason: string) {
   }
 }
 
-async function requireSupabaseSession() {
+function requireAccessToken(accessToken: string | null) {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    return { session: null, error: 'OFFLINE', shouldBlock: false };
+    return { accessToken: null, error: 'OFFLINE', shouldBlock: false };
   }
-  const { data } = await supabase.auth.getSession();
-  let session = data?.session ?? null;
   if (import.meta.env.DEV) {
-    console.debug('[queue] session?', Boolean(session));
+    console.debug('[queue] token?', Boolean(accessToken));
   }
-  if (session) {
-    return { session, shouldBlock: true };
+  if (accessToken) {
+    return { accessToken, shouldBlock: true };
   }
-  try {
-    await supabase.auth.refreshSession();
-  } catch (error) {
-    if (import.meta.env.DEV) {
-      console.debug('[queue] refreshSession failed', error);
-    }
-  }
-  const { data: refreshed } = await supabase.auth.getSession();
-  session = refreshed?.session ?? null;
-  if (import.meta.env.DEV) {
-    console.debug('[queue] session after refresh?', Boolean(session));
-  }
-  if (!session) {
-    return { session: null, error: NO_SESSION_ERROR, shouldBlock: true };
-  }
-  return { session, shouldBlock: true };
+  return { accessToken: null, error: NO_SESSION_ERROR, shouldBlock: true };
 }
 
 function StationApp({
@@ -509,6 +493,7 @@ function StationApp({
   const [patrolRegistryEntries, setPatrolRegistryEntries] = useState<PatrolRegistryEntry[]>([]);
   const [patrolRegistryLoading, setPatrolRegistryLoading] = useState(true);
   const [patrolRegistryError, setPatrolRegistryError] = useState<string | null>(null);
+  const [accessDeniedMessage, setAccessDeniedMessage] = useState<string | null>(null);
   const [manualValidation, setManualValidation] = useState<PatrolValidationState>({
     code: '',
     valid: false,
@@ -662,13 +647,16 @@ function StationApp({
         online: navigator.onLine,
         cachedEntries: cachedRegistry?.entries ?? null,
         fetchRows: async () => {
-          const { data, error } = await supabase
+          const { data, error, status } = await supabase
             .from('patrols')
             .select('id, patrol_code, category, sex, active')
             .eq('event_id', eventId)
             .order('category')
             .order('sex')
             .order('patrol_code');
+          if (error) {
+            reportSupabaseError('patrols.registry', error, status);
+          }
           return { data, error };
         },
         isCategoryAllowed,
@@ -712,7 +700,7 @@ function StationApp({
     return () => {
       cancelled = true;
     };
-  }, [eventId, isCategoryAllowed]);
+  }, [eventId, isCategoryAllowed, reportSupabaseError]);
 
   const patrolRegistryState = useMemo(
     () => ({
@@ -747,6 +735,22 @@ function StationApp({
       setAlerts((prev) => prev.slice(1));
     }, 4500);
   }, []);
+
+  const reportSupabaseError = useCallback(
+    (context: string, error: { message?: string } | null, status?: number) => {
+      if (import.meta.env.DEV) {
+        console.debug('[supabase] request failed', {
+          context,
+          status,
+          message: error?.message ?? null,
+        });
+      }
+      if (status === 403) {
+        setAccessDeniedMessage(ACCESS_DENIED_MESSAGE);
+      }
+    },
+    [],
+  );
 
   const normalizeOutboxForSession = useCallback(
     async (items: OutboxEntry[]) => {
@@ -1014,7 +1018,10 @@ function StationApp({
         return;
       }
 
-      const [{ data: timingRows, error: timingError }, { data: passageRows, error: waitError }] =
+      const [
+        { data: timingRows, error: timingError, status: timingStatus },
+        { data: passageRows, error: waitError, status: waitStatus },
+      ] =
         await Promise.all([
           supabase
             .from('timings')
@@ -1029,6 +1036,7 @@ function StationApp({
         ]);
 
       if (timingError) {
+        reportSupabaseError('timings.load', timingError, timingStatus);
         console.error('Failed to load finish time', timingError);
         setStartTime(null);
         setFinishAt(null);
@@ -1042,6 +1050,7 @@ function StationApp({
       setFinishAt(timing?.finish_time ?? null);
 
       if (waitError) {
+        reportSupabaseError('station_passages.wait', waitError, waitStatus);
         console.error('Failed to load wait data', waitError);
         setTotalWaitMinutes(null);
       } else {
@@ -1053,7 +1062,7 @@ function StationApp({
         setTotalWaitMinutes(total);
       }
     },
-    [eventId, stationCode],
+    [eventId, reportSupabaseError, stationCode],
   );
 
   const loadScoreReview = useCallback(
@@ -1090,6 +1099,9 @@ function StationApp({
         setScoreReviewLoading(false);
 
         if (stationsRes.error || scoresRes.error || waitsRes.error) {
+          reportSupabaseError('stations.review', stationsRes.error, stationsRes.status);
+          reportSupabaseError('station_scores.review', scoresRes.error, scoresRes.status);
+          reportSupabaseError('station_passages.review', waitsRes.error, waitsRes.status);
           console.error(
             'Failed to load station scores for review',
             stationsRes.error,
@@ -1189,7 +1201,7 @@ function StationApp({
         console.error('Failed to load station score review', error);
       }
     },
-    [eventId, canReviewStationScores],
+    [eventId, canReviewStationScores, reportSupabaseError],
   );
 
   const initializeFormForPatrol = useCallback(
@@ -1519,13 +1531,14 @@ function StationApp({
     if (!stationId) {
       return;
     }
-    const { data, error } = await supabase
+    const { data, error, status } = await supabase
       .from('station_category_answers')
       .select('category, correct_answers')
       .eq('event_id', eventId)
       .eq('station_id', stationId);
 
     if (error) {
+      reportSupabaseError('station_category_answers.load', error, status);
       console.error(error);
       pushAlert('Nepodařilo se načíst správné odpovědi.');
       return;
@@ -1536,20 +1549,21 @@ function StationApp({
       map[row.category] = row.correct_answers;
     });
     setCategoryAnswers(map);
-  }, [eventId, stationId, pushAlert]);
+  }, [eventId, stationId, pushAlert, reportSupabaseError]);
 
   const loadStationPassages = useCallback(async () => {
     setStationPassageLoading(true);
     setStationPassageError(null);
 
     try {
-      const { data, error } = await supabase
+      const { data, error, status } = await supabase
         .from('station_passages')
         .select('patrol_id')
         .eq('event_id', eventId)
         .eq('station_id', stationId);
 
       if (error) {
+        reportSupabaseError('station_passages.summary', error, status);
         throw error;
       }
 
@@ -1564,7 +1578,7 @@ function StationApp({
     } finally {
       setStationPassageLoading(false);
     }
-  }, [eventId, stationId]);
+  }, [eventId, stationId, reportSupabaseError]);
 
   const stationCategorySummary = useMemo<StationCategorySummary>(() => {
     const record = createStationCategoryRecord(() => ({
@@ -1734,8 +1748,8 @@ function StationApp({
       return;
     }
 
-    const sessionResult = await requireSupabaseSession();
-    if (!sessionResult.session) {
+    const sessionResult = requireAccessToken(auth.tokens.accessToken);
+    if (!sessionResult.accessToken) {
       if (sessionResult.shouldBlock) {
         const updated = items.map((item) => {
           if (
@@ -1793,7 +1807,7 @@ function StationApp({
     setSyncing(true);
 
     try {
-      const accessToken = sessionResult.session.access_token;
+      const accessToken = sessionResult.accessToken;
       const baseUrl = env.VITE_SUPABASE_URL?.replace(/\/$/, '') ?? '';
       const endpoint = `${baseUrl}/functions/v1/submit-station-record`;
       const resultMap = new Map<string, OutboxEntry>();
@@ -1882,6 +1896,7 @@ function StationApp({
       setSyncing(false);
     }
   }, [
+    auth.tokens.accessToken,
     eventId,
     loadStationPassages,
     normalizeOutboxForSession,
@@ -2066,7 +2081,7 @@ function StationApp({
 
       if (!data) {
         if (isOnline) {
-          const { data: fetched, error } = await supabase
+          const { data: fetched, error, status } = await supabase
             .from('patrols')
             .select('id, team_name, category, sex, patrol_code')
             .eq('event_id', eventId)
@@ -2074,6 +2089,9 @@ function StationApp({
             .maybeSingle();
 
           if (error || !fetched) {
+            if (error) {
+              reportSupabaseError('patrols.fetch', error, status);
+            }
             if (options?.allowFallback) {
               const fallback = createManualPatrolFromCode(normalized);
               if (fallback) {
@@ -2173,6 +2191,7 @@ function StationApp({
       isCategoryAllowed,
       isOnline,
       pushAlert,
+      reportSupabaseError,
       scannerPatrol,
       stationCode,
       stationId,
@@ -2764,6 +2783,7 @@ function StationApp({
 
       <main className="content">
         <>
+          {accessDeniedMessage ? <p className="error-text">{accessDeniedMessage}</p> : null}
           <section className="card station-summary-card">
             <header className="card-header">
               <div>
