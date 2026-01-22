@@ -18,7 +18,6 @@ import { useAuth } from './auth/context';
 import LoginScreen from './auth/LoginScreen';
 import ChangePasswordScreen from './auth/ChangePasswordScreen';
 import type { AuthStatus } from './auth/types';
-import { signPayload } from './auth/crypto';
 import TicketQueue from './components/TicketQueue';
 import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket, TicketState } from './auth/tickets';
 import { registerPendingSync, setupSyncListener } from './backgroundSync';
@@ -52,7 +51,11 @@ interface Patrol {
   patrol_code: string | null;
 }
 
-interface PendingSubmissionPayload {
+type OutboxState = 'queued' | 'sending' | 'sent' | 'failed' | 'needs_auth' | 'blocked_other_session';
+
+interface StationScorePayload {
+  client_event_id: string;
+  client_created_at: string;
   event_id: string;
   station_id: string;
   patrol_id: string;
@@ -61,33 +64,26 @@ interface PendingSubmissionPayload {
   wait_minutes: number;
   points: number;
   note: string;
-  useTargetScoring: boolean;
-  normalizedAnswers: string | null;
-  shouldDeleteQuiz: boolean;
+  use_target_scoring: boolean;
+  normalized_answers: string | null;
+  finish_time: string | null;
   patrol_code: string;
   team_name?: string;
   sex?: string;
-  finish_time?: string | null;
-  manifest_version: number;
 }
 
-interface PendingOperation {
-  id: string;
-  type: 'submission';
-  payload: PendingSubmissionPayload;
-  signature: string;
-  signature_payload: string;
-  eventId?: string;
-  stationId?: string;
-  createdAt?: string;
-  unknownSession?: boolean;
+interface OutboxEntry {
+  client_event_id: string;
+  type: 'station_score';
+  payload: StationScorePayload;
+  event_id: string;
+  station_id: string;
+  state: OutboxState;
+  attempts: number;
+  last_error?: string;
+  next_attempt_at: number;
   created_at: string;
-  inProgress: boolean;
-  retryCount: number;
-  nextAttemptAt: number;
-  lastError?: string;
-  sessionId?: string;
-  blockedReason?: 'station-mismatch' | 'event-mismatch' | 'session-mismatch' | 'manifest-mismatch' | 'needs-auth';
+  response?: Record<string, unknown> | null;
 }
 
 interface StationScoreRow {
@@ -134,19 +130,10 @@ interface StationCategorySummary {
   totalMissing: StationSummaryPatrol[];
 }
 
-type LegacyPendingSubmission = PendingSubmissionPayload & {
-  judge?: string;
-  judge_id?: string;
-  session_id?: string;
-  signature: string;
-  signature_payload: string;
-};
-
 type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 
-const QUEUE_KEY_PREFIX = 'web_pending_ops_v1';
-const LEGACY_QUEUE_KEY_PREFIX = 'web_pending_station_submissions_v1';
 const WAIT_MINUTES_MAX = 600;
+const OUTBOX_BATCH_SIZE = 5;
 const SCORE_REVIEW_TASK_KEYS = new Set([
   'score-review',
   'score_review',
@@ -159,6 +146,11 @@ const SCORE_REVIEW_TASK_KEYS = new Set([
 
 localforage.config({
   name: 'seton-web',
+});
+
+const outboxStore = localforage.createInstance({
+  name: 'seton-web',
+  storeName: 'outbox',
 });
 
 function formatWaitMinutes(totalMinutes: number) {
@@ -269,124 +261,45 @@ function compareSummaryPatrols(a: StationSummaryPatrol, b: StationSummaryPatrol)
   return keyA.label.localeCompare(keyB.label, 'cs');
 }
 
-async function readQueue(key: string): Promise<PendingOperation[]> {
-  let raw = await localforage.getItem<(PendingOperation | LegacyPendingSubmission)[]>(key);
-  let migratedFromLegacy = false;
-
-  if ((!raw || !Array.isArray(raw) || raw.length === 0) && key.startsWith(QUEUE_KEY_PREFIX)) {
-    const legacyKey = key.replace(QUEUE_KEY_PREFIX, LEGACY_QUEUE_KEY_PREFIX);
-    const legacyRaw = await localforage.getItem<(LegacyPendingSubmission | PendingOperation)[]>(legacyKey);
-    if (legacyRaw && Array.isArray(legacyRaw) && legacyRaw.length) {
-      raw = legacyRaw;
-      migratedFromLegacy = true;
-      await localforage.removeItem(legacyKey);
-    }
-  }
-
-  if (!raw || !Array.isArray(raw)) {
+async function readOutbox(): Promise<OutboxEntry[]> {
+  const keys = await outboxStore.keys();
+  if (!keys.length) {
     return [];
   }
-
-  let mutated = false;
-  const mapped = raw.map((item) => {
-    if (item && typeof item === 'object' && 'type' in item && 'payload' in item) {
-      const operation = item as PendingOperation & {
-        payload: PendingSubmissionPayload & { judge?: string; judge_id?: string; session_id?: string };
-      };
-      const hasSessionMetadata =
-        typeof operation.eventId === 'string' &&
-        operation.eventId.length > 0 &&
-        typeof operation.stationId === 'string' &&
-        operation.stationId.length > 0 &&
-        typeof operation.createdAt === 'string' &&
-        operation.createdAt.length > 0;
-      const { judge: _legacyJudge, judge_id: _legacyJudgeId, session_id: _legacySessionId, ...rest } =
-        operation.payload as PendingSubmissionPayload & {
-          judge?: string;
-          judge_id?: string;
-          session_id?: string;
-        };
-      const legacySessionId =
-        typeof _legacySessionId === 'string' && _legacySessionId.length ? _legacySessionId : undefined;
-      const hasLegacyIdentity =
-        typeof _legacyJudge !== 'undefined' || typeof _legacyJudgeId !== 'undefined' || legacySessionId;
-      if (hasLegacyIdentity || typeof operation.sessionId === 'undefined') {
-        mutated = true;
-      }
-      return {
-        ...operation,
-        sessionId: typeof operation.sessionId === 'string' && operation.sessionId.length
-          ? operation.sessionId
-          : legacySessionId,
-        unknownSession: operation.unknownSession ?? !hasSessionMetadata,
-        payload: {
-          ...rest,
-          manifest_version: typeof rest.manifest_version === 'number' ? rest.manifest_version : 0,
-        },
-      } satisfies PendingOperation;
-    }
-
-    mutated = true;
-    const legacy = item as LegacyPendingSubmission;
-    return {
-      id: generateOperationId(),
-      type: 'submission' as const,
-      unknownSession: true,
-      payload: {
-        event_id: legacy.event_id,
-        station_id: legacy.station_id,
-        patrol_id: legacy.patrol_id,
-        category: legacy.category,
-        arrived_at: legacy.arrived_at,
-        wait_minutes: legacy.wait_minutes,
-        points: legacy.points,
-        note: legacy.note,
-        useTargetScoring: legacy.useTargetScoring,
-        normalizedAnswers: legacy.normalizedAnswers,
-        shouldDeleteQuiz: legacy.shouldDeleteQuiz,
-        patrol_code: legacy.patrol_code,
-        team_name: legacy.team_name,
-        sex: legacy.sex,
-        finish_time: legacy.finish_time,
-        manifest_version: legacy.manifest_version,
-      },
-      signature: legacy.signature,
-      signature_payload: legacy.signature_payload,
-      created_at: new Date().toISOString(),
-      inProgress: false,
-      retryCount: 0,
-      nextAttemptAt: Date.now(),
-      sessionId:
-        legacy.session_id && typeof legacy.session_id === 'string' && legacy.session_id.length
-          ? legacy.session_id
-          : undefined,
-    } satisfies PendingOperation;
-  });
-
-  if (mutated || migratedFromLegacy) {
-    await writeQueue(key, mapped);
-  }
-
-  return mapped;
+  const entries = await Promise.all(keys.map((key) => outboxStore.getItem<OutboxEntry>(key)));
+  return entries.filter((entry): entry is OutboxEntry => Boolean(entry));
 }
 
-async function writeQueue(key: string, items: PendingOperation[]) {
+async function writeOutboxEntries(items: OutboxEntry[]) {
   if (!items.length) {
-    await localforage.removeItem(key);
-  } else {
-    await localforage.setItem(key, items);
-    if (typeof window !== 'undefined') {
-      void registerPendingSync();
-    }
+    return;
+  }
+  await Promise.all(items.map((item) => outboxStore.setItem(item.client_event_id, item)));
+  if (typeof window !== 'undefined') {
+    void registerPendingSync();
   }
 }
 
-function generateOperationId() {
+async function writeOutboxEntry(item: OutboxEntry) {
+  await outboxStore.setItem(item.client_event_id, item);
+  if (typeof window !== 'undefined') {
+    void registerPendingSync();
+  }
+}
+
+async function deleteOutboxEntries(ids: string[]) {
+  if (!ids.length) {
+    return;
+  }
+  await Promise.all(ids.map((id) => outboxStore.removeItem(id)));
+}
+
+function generateClientEventId() {
   const cryptoObj = typeof globalThis !== 'undefined' ? (globalThis.crypto as Crypto | undefined) : undefined;
   if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
     return cryptoObj.randomUUID();
   }
-  return `op-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function computeBackoffMs(retryCount: number) {
@@ -559,10 +472,12 @@ function StationApp({
   auth,
   refreshManifest,
   logout,
+  supabaseAuthReady,
 }: {
   auth: AuthenticatedState;
   refreshManifest: () => Promise<void>;
   logout: () => Promise<void>;
+  supabaseAuthReady: boolean;
 }) {
   const manifest = auth.manifest;
   const eventId = manifest.event.id;
@@ -583,7 +498,7 @@ function StationApp({
   const [answersError, setAnswersError] = useState('');
   const [useTargetScoring, setUseTargetScoring] = useState(false);
   const [categoryAnswers, setCategoryAnswers] = useState<Record<string, string>>({});
-  const [pendingItems, setPendingItems] = useState<PendingOperation[]>([]);
+  const [outboxItems, setOutboxItems] = useState<OutboxEntry[]>([]);
   const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -651,7 +566,6 @@ function StationApp({
     };
   }, []);
 
-  const queueKey = useMemo(() => `${QUEUE_KEY_PREFIX}_${stationId}`, [stationId]);
   const enableTicketQueue = !isTargetStation;
   const scrollToQueue = useCallback(() => {
     if (!enableTicketQueue) {
@@ -822,9 +736,9 @@ function StationApp({
     [stationId],
   );
 
-  const updateQueueState = useCallback((items: PendingOperation[]) => {
+  const updateOutboxState = useCallback((items: OutboxEntry[]) => {
     const sorted = [...items].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    setPendingItems(sorted);
+    setOutboxItems(sorted);
   }, []);
 
   const pushAlert = useCallback((message: string) => {
@@ -834,46 +748,61 @@ function StationApp({
     }, 4500);
   }, []);
 
-  const getQueueSessionStatus = useCallback(
-    (item: PendingOperation) => {
-      const hasMetadata =
-        !item.unknownSession &&
-        typeof item.eventId === 'string' &&
-        item.eventId.length > 0 &&
-        typeof item.stationId === 'string' &&
-        item.stationId.length > 0 &&
-        typeof item.createdAt === 'string' &&
-        item.createdAt.length > 0;
-      if (!hasMetadata) {
-        return 'unknown';
+  const normalizeOutboxForSession = useCallback(
+    async (items: OutboxEntry[]) => {
+      const now = Date.now();
+      let changed = false;
+      const updated = items.map((item) => {
+        if (item.state === 'sent') {
+          return item;
+        }
+        const isCurrent = item.event_id === eventId && item.station_id === stationId;
+        if (!isCurrent && item.state !== 'blocked_other_session') {
+          changed = true;
+          return { ...item, state: 'blocked_other_session', next_attempt_at: now };
+        }
+        if (isCurrent && item.state === 'blocked_other_session') {
+          changed = true;
+          return { ...item, state: 'queued', next_attempt_at: now };
+        }
+        return item;
+      });
+      if (changed) {
+        await writeOutboxEntries(updated);
       }
-      if (item.eventId === eventId && item.stationId === stationId) {
-        return 'current';
-      }
-      return 'other';
+      return updated;
     },
     [eventId, stationId],
   );
 
-  const currentSessionItems = useMemo(
-    () => pendingItems.filter((item) => getQueueSessionStatus(item) === 'current'),
-    [getQueueSessionStatus, pendingItems],
-  );
-  const otherSessionItems = useMemo(
-    () => pendingItems.filter((item) => getQueueSessionStatus(item) === 'other'),
-    [getQueueSessionStatus, pendingItems],
-  );
-  const unknownSessionItems = useMemo(
-    () => pendingItems.filter((item) => getQueueSessionStatus(item) === 'unknown'),
-    [getQueueSessionStatus, pendingItems],
-  );
-  const pendingCount = currentSessionItems.length;
+  const refreshOutbox = useCallback(async () => {
+    const items = await readOutbox();
+    const normalized = await normalizeOutboxForSession(items);
+    updateOutboxState(normalized);
+  }, [normalizeOutboxForSession, updateOutboxState]);
 
   useEffect(() => {
-    if (pendingItems.length === 0) {
+    void refreshOutbox();
+  }, [refreshOutbox]);
+
+  const currentSessionItems = useMemo(
+    () => outboxItems.filter((item) => item.event_id === eventId && item.station_id === stationId),
+    [eventId, outboxItems, stationId],
+  );
+  const otherSessionItems = useMemo(
+    () => outboxItems.filter((item) => item.event_id !== eventId || item.station_id !== stationId),
+    [eventId, outboxItems, stationId],
+  );
+  const pendingCount = useMemo(
+    () => currentSessionItems.filter((item) => item.state !== 'sent').length,
+    [currentSessionItems],
+  );
+
+  useEffect(() => {
+    if (outboxItems.length === 0) {
       setShowPendingDetails(false);
     }
-  }, [pendingItems.length]);
+  }, [outboxItems.length]);
 
   const handleClearOtherSessions = useCallback(async () => {
     if (typeof window !== 'undefined') {
@@ -882,73 +811,15 @@ function StationApp({
         return;
       }
     }
-    const queue = await readQueue(queueKey);
-    const filtered = queue.filter((item) => getQueueSessionStatus(item) !== 'other');
-    await writeQueue(queueKey, filtered);
-    updateQueueState(filtered);
-    pushAlert('Staré záznamy z jiné relace byly odstraněny.');
-  }, [getQueueSessionStatus, pushAlert, queueKey, updateQueueState]);
-
-  const handleClearUnknownSessions = useCallback(async () => {
-    if (typeof window !== 'undefined') {
-      const confirmed = window.confirm('Opravdu chcete vyčistit záznamy s neznámou relací?');
-      if (!confirmed) {
-        return;
-      }
+    const idsToRemove = otherSessionItems.map((item) => item.client_event_id);
+    if (!idsToRemove.length) {
+      return;
     }
-    const queue = await readQueue(queueKey);
-    const filtered = queue.filter((item) => getQueueSessionStatus(item) !== 'unknown');
-    await writeQueue(queueKey, filtered);
-    updateQueueState(filtered);
-    pushAlert('Záznamy s neznámou relací byly odstraněny.');
-  }, [getQueueSessionStatus, pushAlert, queueKey, updateQueueState]);
-
-
-  const updateQueueAuthBlock = useCallback(
-    async (items: PendingOperation[], mode: 'block' | 'unblock') => {
-      const now = Date.now();
-      let changed = false;
-      const updatedQueue = items.map((op) => {
-        if (mode === 'block') {
-          if (op.blockedReason && op.blockedReason !== 'needs-auth') {
-            return op;
-          }
-          if (
-            op.blockedReason === 'needs-auth' &&
-            !op.inProgress &&
-            !op.lastError &&
-            op.nextAttemptAt <= now
-          ) {
-            return op;
-          }
-          changed = true;
-          return {
-            ...op,
-            blockedReason: 'needs-auth',
-            inProgress: false,
-            lastError: undefined,
-            nextAttemptAt: now,
-          };
-        }
-        if (op.blockedReason !== 'needs-auth') {
-          return op;
-        }
-        changed = true;
-        return {
-          ...op,
-          blockedReason: undefined,
-          inProgress: false,
-          lastError: undefined,
-          nextAttemptAt: now,
-        };
-      });
-      if (changed) {
-        await writeQueue(queueKey, updatedQueue);
-      }
-      return { updatedQueue, changed };
-    },
-    [queueKey],
-  );
+    await deleteOutboxEntries(idsToRemove);
+    const filtered = outboxItems.filter((item) => !idsToRemove.includes(item.client_event_id));
+    updateOutboxState(filtered);
+    pushAlert('Staré záznamy z jiné relace byly odstraněny.');
+  }, [otherSessionItems, outboxItems, pushAlert, updateOutboxState]);
 
   const lastManifestToastAtRef = useRef<number | null>(null);
 
@@ -1118,7 +989,7 @@ function StationApp({
     });
 
     currentSessionItems.forEach((item) => {
-      if (item.type !== 'submission') {
+      if (item.type !== 'station_score') {
         return;
       }
       const payload = item.payload;
@@ -1497,53 +1368,24 @@ function StationApp({
       });
 
       try {
-        if (baseRow.hasScore) {
-          const { error } = await supabase
-            .from('station_scores')
-            .update({ points: pointsValue })
-            .eq('event_id', eventId)
-            .eq('station_id', stationId)
-            .eq('patrol_id', activePatrol.id);
-          if (error) {
-            throw error;
-          }
-        } else {
-          const { error } = await supabase.from('station_scores').insert({
-            event_id: eventId,
-            station_id: stationId,
-            patrol_id: activePatrol.id,
-            points: pointsValue,
-            judge: manifest.judge.displayName,
-          });
-          if (error) {
-            throw error;
-          }
-        }
-
-        const waitBase = baseRow.waitMinutes ?? 0;
-
-        if (baseRow.hasWait) {
-          if (waitValue !== waitBase) {
-            const { error } = await supabase
-              .from('station_passages')
-              .update({ wait_minutes: waitValue })
-              .eq('event_id', eventId)
-              .eq('station_id', stationId)
-              .eq('patrol_id', activePatrol.id);
-            if (error) {
-              throw error;
-            }
-          }
-        } else if (waitValue !== 0) {
-          const { error } = await supabase.from('station_passages').insert({
-            event_id: eventId,
-            station_id: stationId,
-            patrol_id: activePatrol.id,
-            wait_minutes: waitValue,
-          });
-          if (error) {
-            throw error;
-          }
+        const queued = await enqueueStationScore({
+          event_id: eventId,
+          station_id: stationId,
+          patrol_id: activePatrol.id,
+          category: activePatrol.category,
+          arrived_at: new Date().toISOString(),
+          wait_minutes: waitValue,
+          points: pointsValue,
+          note: baseRow.note ?? '',
+          use_target_scoring: false,
+          normalized_answers: null,
+          finish_time: null,
+          patrol_code: resolvePatrolCode(activePatrol),
+          team_name: activePatrol.team_name,
+          sex: activePatrol.sex,
+        });
+        if (!queued) {
+          throw new Error('queue-failed');
         }
 
         pushAlert(`Záznam pro stanoviště ${baseRow.stationCode || stationId} aktualizován.`);
@@ -1581,7 +1423,16 @@ function StationApp({
         pushAlert('Nepodařilo se uložit záznam pro vybrané stanoviště.');
       }
     },
-    [eventId, loadScoreReview, manifest.judge.displayName, activePatrol, pushAlert, scoreReviewRows, scoreReviewState],
+    [
+      enqueueStationScore,
+      eventId,
+      loadScoreReview,
+      activePatrol,
+      pushAlert,
+      resolvePatrolCode,
+      scoreReviewRows,
+      scoreReviewState,
+    ],
   );
 
   const handleRefreshScoreReview = useCallback(() => {
@@ -1858,325 +1709,233 @@ function StationApp({
     loadStationPassages();
   }, [loadStationPassages]);
 
-  const syncQueue = useCallback(async () => {
-    let queue = await readQueue(queueKey);
-
-    const blockedMap = new Map<string, PendingOperation['blockedReason']>();
-    let newBlockedCount = 0;
-    const currentQueue = queue.filter((op) => getQueueSessionStatus(op) === 'current');
-    const currentIds = new Set(currentQueue.map((op) => op.id));
-    for (const op of currentQueue) {
-      const payload = op.payload;
-      let signatureMetadata: {
-        station_id?: string;
-        event_id?: string;
-        session_id?: string;
-        manifest_version?: number;
-      } = {};
-
-      if (typeof op.signature_payload === 'string' && op.signature_payload.length) {
-        try {
-          const parsed = JSON.parse(op.signature_payload) as Record<string, unknown> | null;
-          if (parsed && typeof parsed === 'object') {
-            const manifestVersion = parsed.manifest_version;
-            if (typeof manifestVersion === 'number') {
-              signatureMetadata.manifest_version = manifestVersion;
-            }
-            const sessionId = parsed.session_id;
-            if (typeof sessionId === 'string') {
-              signatureMetadata.session_id = sessionId;
-            }
-            const stationFromSignature = parsed.station_id;
-            if (typeof stationFromSignature === 'string') {
-              signatureMetadata.station_id = stationFromSignature;
-            }
-            const eventFromSignature = parsed.event_id;
-            if (typeof eventFromSignature === 'string') {
-              signatureMetadata.event_id = eventFromSignature;
-            }
-          }
-        } catch (error) {
-          console.error('Failed to parse signature payload metadata', error);
-        }
-      }
-
-      const effectiveStationId = payload?.station_id ?? signatureMetadata.station_id;
-      if (effectiveStationId && effectiveStationId !== stationId) {
-        blockedMap.set(op.id, 'station-mismatch');
-        continue;
-      }
-
-      const effectiveEventId = payload?.event_id ?? signatureMetadata.event_id;
-      if (effectiveEventId && effectiveEventId !== eventId) {
-        blockedMap.set(op.id, 'event-mismatch');
-        continue;
-      }
-
-      const effectiveSessionId = op.sessionId ?? signatureMetadata.session_id;
-      if (effectiveSessionId && effectiveSessionId !== auth.tokens.sessionId) {
-        blockedMap.set(op.id, 'session-mismatch');
-        continue;
-      }
-
-      const manifestVersionFromPayload =
-        typeof payload?.manifest_version === 'number' ? payload.manifest_version : undefined;
-      const effectiveManifestVersion =
-        manifestVersionFromPayload ?? signatureMetadata.manifest_version;
-      if (
-        typeof effectiveManifestVersion === 'number' &&
-        effectiveManifestVersion !== manifest.manifestVersion
-      ) {
-        blockedMap.set(op.id, 'manifest-mismatch');
-      }
-    }
-
-    if (blockedMap.size || queue.some((op) => op.blockedReason)) {
-      const updatedQueue = queue.map((op) => {
-        if (!currentIds.has(op.id)) {
-          if (op.blockedReason || op.inProgress) {
-            return { ...op, blockedReason: undefined, inProgress: false };
-          }
-          return op;
-        }
-        const blockedReason = blockedMap.get(op.id);
-        if (!blockedReason) {
-          if (op.blockedReason) {
-            return { ...op, blockedReason: undefined };
-          }
-          return op;
-        }
-        if (op.blockedReason !== blockedReason) {
-          newBlockedCount += 1;
-        }
-        return { ...op, blockedReason, inProgress: false };
-      });
-      if (updatedQueue.some((op, index) => op !== queue[index])) {
-        queue = updatedQueue;
-        await writeQueue(queueKey, updatedQueue);
-      }
-      if (newBlockedCount > 0) {
-        pushAlert(
-          newBlockedCount === 1
-            ? 'Ve frontě je 1 záznam, který teď nejde odeslat.'
-            : `Ve frontě je ${newBlockedCount} záznamů, které teď nejdou odeslat.`,
-        );
-      }
-    }
-
-    const sessionResult = await requireSupabaseSession();
-    if (!sessionResult.session) {
-      if (sessionResult.shouldBlock) {
-        const { updatedQueue } = await updateQueueAuthBlock(queue, 'block');
-        updateQueueState(updatedQueue);
-        if (import.meta.env.DEV) {
-          console.debug('[queue] auth block', { error: sessionResult.error ?? NO_SESSION_ERROR });
-        }
-      }
+  const flushOutbox = useCallback(async () => {
+    if (!supabaseAuthReady) {
       return;
     }
 
-    const { updatedQueue: unblockedQueue } = await updateQueueAuthBlock(queue, 'unblock');
-    queue = unblockedQueue;
-    updateQueueState(queue);
-    if (syncing) return;
+    let items = await readOutbox();
+    items = await normalizeOutboxForSession(items);
+    updateOutboxState(items);
+
+    if (syncing) {
+      return;
+    }
 
     const now = Date.now();
-    const ready = queue.filter(
-      (op) =>
-        currentIds.has(op.id) &&
-        !op.inProgress &&
-        op.nextAttemptAt <= now &&
-        !op.blockedReason,
+    const ready = items.filter(
+      (item) =>
+        item.event_id === eventId &&
+        item.station_id === stationId &&
+        (item.state === 'queued' || item.state === 'failed') &&
+        item.next_attempt_at <= now,
     );
     if (!ready.length) {
       return;
     }
 
-    setSyncing(true);
-
-    const readyIds = new Set(ready.map((op) => op.id));
-    const queueWithLocks = queue.map((op) => (readyIds.has(op.id) ? { ...op, inProgress: true } : op));
-    await writeQueue(queueKey, queueWithLocks);
-    updateQueueState(queueWithLocks);
-
-    const operationsPayload = ready.map((op) => ({
-      id: op.id,
-      type: op.type,
-      signature: op.signature,
-      signature_payload: op.signature_payload,
-    }));
-
-    const accessToken = auth.tokens.accessToken;
-    const baseUrl = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (accessToken) {
-      headers.Authorization = `Bearer ${accessToken}`;
+    const sessionResult = await requireSupabaseSession();
+    if (!sessionResult.session) {
+      if (sessionResult.shouldBlock) {
+        const updated = items.map((item) => {
+          if (
+            item.event_id !== eventId ||
+            item.station_id !== stationId ||
+            item.state === 'sent' ||
+            item.state === 'blocked_other_session'
+          ) {
+            return item;
+          }
+          if (item.state === 'needs_auth') {
+            return item;
+          }
+          return {
+            ...item,
+            state: 'needs_auth',
+            last_error: sessionResult.error ?? NO_SESSION_ERROR,
+            next_attempt_at: now,
+          };
+        });
+        await writeOutboxEntries(updated);
+        updateOutboxState(updated);
+        setAuthNeedsLogin(true);
+        if (import.meta.env.DEV) {
+          console.debug('[outbox] auth block', { error: sessionResult.error ?? NO_SESSION_ERROR });
+        }
+      }
+      return;
     }
 
-    const releaseLocks = async (updater: (op: PendingOperation) => PendingOperation) => {
-      const rollbackQueue = queueWithLocks.map((op) => (readyIds.has(op.id) ? updater(op) : op));
-      await writeQueue(queueKey, rollbackQueue);
-      updateQueueState(rollbackQueue);
-      setSyncing(false);
-    };
+    const cleared = items.map((item) => {
+      if (item.event_id === eventId && item.station_id === stationId && item.state === 'needs_auth') {
+        return { ...item, state: 'queued', last_error: undefined, next_attempt_at: now };
+      }
+      return item;
+    });
+    if (cleared.some((item, index) => item !== items[index])) {
+      await writeOutboxEntries(cleared);
+      items = cleared;
+      updateOutboxState(items);
+      setAuthNeedsLogin(false);
+    }
+
+    if (syncing) {
+      return;
+    }
+
+    const batch = ready.slice(0, OUTBOX_BATCH_SIZE);
+    const batchIds = new Set(batch.map((item) => item.client_event_id));
+    const sendingItems = items.map((item) =>
+      batchIds.has(item.client_event_id) ? { ...item, state: 'sending' } : item,
+    );
+    await writeOutboxEntries(sendingItems);
+    updateOutboxState(sendingItems);
+    setSyncing(true);
 
     try {
-      const response = await fetch(`${baseUrl}/auth/sync`, {
-        method: 'POST',
-        headers,
-        credentials: 'include',
-        body: JSON.stringify({ operations: operationsPayload }),
-      });
-
-      if (!response.ok) {
-        let message = `HTTP ${response.status}`;
-        const shouldForceLogout = response.status === 401 || response.status === 403;
-        try {
-          const errorBody = await response.json();
-          const errorMessage = typeof errorBody?.error === 'string' ? errorBody.error.trim() : '';
-          if (errorMessage) {
-            message = errorMessage;
-          }
-        } catch (parseError) {
-          console.debug('Failed to parse sync error response', parseError);
-        }
-
-        const syncError = new Error(message) as Error & { shouldLogout?: boolean };
-        if (shouldForceLogout) {
-          syncError.shouldLogout = true;
-        }
-        throw syncError;
-      }
-
-      const resultBody: { results?: { id: string; status: 'done' | 'failed'; error?: string }[] } = await response.json();
-      const resultMap = new Map<string, { status: 'done' | 'failed'; error?: string }>();
-      for (const result of resultBody.results ?? []) {
-        resultMap.set(result.id, { status: result.status, error: result.error });
-      }
-
-      const updatedQueue: PendingOperation[] = [];
+      const accessToken = sessionResult.session.access_token;
+      const baseUrl = env.VITE_SUPABASE_URL?.replace(/\/$/, '') ?? '';
+      const endpoint = `${baseUrl}/functions/v1/submit-station-record`;
+      const resultMap = new Map<string, OutboxEntry>();
       let flushed = 0;
 
-      for (const op of queueWithLocks) {
-        if (!readyIds.has(op.id)) {
-          updatedQueue.push(op);
-          continue;
-        }
+      for (const item of batch) {
+        try {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify(item.payload),
+          });
 
-        const result = resultMap.get(op.id);
-        if (result && result.status === 'done') {
-          flushed += 1;
-          continue;
-        }
+          let body: Record<string, unknown> | null = null;
+          try {
+            body = (await response.json()) as Record<string, unknown>;
+          } catch (error) {
+            body = null;
+          }
 
-        const retryCount = op.retryCount + 1;
-        const lastError = result?.error || 'sync-failed';
-        updatedQueue.push({
-          ...op,
-          inProgress: false,
-          retryCount,
-          nextAttemptAt: Date.now() + computeBackoffMs(retryCount),
-          lastError,
-        });
+          if (response.ok) {
+            flushed += 1;
+            resultMap.set(item.client_event_id, {
+              ...item,
+              state: 'sent',
+              last_error: undefined,
+              response: body,
+            });
+            continue;
+          }
+
+          if (response.status === 401) {
+            setAuthNeedsLogin(true);
+            resultMap.set(item.client_event_id, {
+              ...item,
+              state: 'needs_auth',
+              last_error: body?.error ? String(body.error) : 'missing-session',
+              next_attempt_at: now,
+            });
+            continue;
+          }
+
+          if (response.status === 403) {
+            resultMap.set(item.client_event_id, {
+              ...item,
+              state: 'blocked_other_session',
+              last_error: body?.error ? String(body.error) : 'forbidden',
+              next_attempt_at: now,
+            });
+            continue;
+          }
+
+          const retryCount = item.attempts + 1;
+          resultMap.set(item.client_event_id, {
+            ...item,
+            state: 'failed',
+            attempts: retryCount,
+            last_error: body?.error ? String(body.error) : `HTTP ${response.status}`,
+            next_attempt_at: Date.now() + computeBackoffMs(retryCount),
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'network-error';
+          const retryCount = item.attempts + 1;
+          resultMap.set(item.client_event_id, {
+            ...item,
+            state: 'failed',
+            attempts: retryCount,
+            last_error: message,
+            next_attempt_at: Date.now() + computeBackoffMs(retryCount),
+          });
+        }
       }
 
-      await writeQueue(queueKey, updatedQueue);
-      updateQueueState(updatedQueue);
+      const updated = sendingItems.map((item) => resultMap.get(item.client_event_id) ?? item);
+      await writeOutboxEntries(updated);
+      updateOutboxState(updated);
 
       if (flushed) {
         pushAlert(`Synchronizováno ${flushed} záznamů.`);
         void loadStationPassages();
       }
-    } catch (error) {
-      const syncError = error as Error & { shouldLogout?: boolean };
-      const message = syncError instanceof Error ? syncError.message : 'unknown-error';
-      const shouldForceLogout = Boolean(syncError?.shouldLogout);
-      const isNetworkIssue = /fetch/i.test(message) || /network/i.test(message) || /timeout/i.test(message);
-      if (import.meta.env.DEV) {
-        console.debug('[queue] sync failed', {
-          error: message,
-          authBlocked: false,
-          retryReason: isNetworkIssue ? 'network' : 'server',
-        });
-      }
-      await releaseLocks((op) => {
-        const retryCount = op.retryCount + 1;
-        return {
-          ...op,
-          inProgress: false,
-          retryCount,
-          nextAttemptAt: Date.now() + computeBackoffMs(retryCount),
-          lastError: message,
-        };
-      });
-      pushAlert('Synchronizace selhala, zkusím to znovu později.');
-      if (shouldForceLogout) {
-        pushAlert('Přihlášení vypršelo, přihlas se prosím znovu.');
-        setAuthNeedsLogin(true);
-        const latestQueue = await readQueue(queueKey);
-        const { updatedQueue } = await updateQueueAuthBlock(latestQueue, 'block');
-        updateQueueState(updatedQueue);
-      }
     } finally {
       setSyncing(false);
     }
   }, [
-    auth.tokens.sessionId,
     eventId,
-    getQueueSessionStatus,
-    manifest.manifestVersion,
     loadStationPassages,
-    queueKey,
-    stationId,
-    syncing,
-    updateQueueAuthBlock,
-    updateQueueState,
+    normalizeOutboxForSession,
     pushAlert,
     setAuthNeedsLogin,
+    stationId,
+    supabaseAuthReady,
+    syncing,
+    updateOutboxState,
   ]);
 
   useEffect(() => {
-    syncQueue();
-    const onOnline = () => syncQueue();
+    void flushOutbox();
+    const onOnline = () => flushOutbox();
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
-  }, [syncQueue]);
-
-  useEffect(() => setupSyncListener(syncQueue), [syncQueue]);
+  }, [flushOutbox]);
 
   useEffect(() => {
-    syncQueue();
-  }, [syncQueue, tick]);
+    if (typeof document === 'undefined') {
+      return;
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void flushOutbox();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [flushOutbox]);
+
+  useEffect(() => setupSyncListener(flushOutbox), [flushOutbox]);
+
+  useEffect(() => {
+    void flushOutbox();
+  }, [flushOutbox, tick]);
 
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         setAuthNeedsLogin(false);
-        void (async () => {
-          const queue = await readQueue(queueKey);
-          const { updatedQueue } = await updateQueueAuthBlock(queue, 'unblock');
-          updateQueueState(updatedQueue);
-          await syncQueue();
-        })();
+        void flushOutbox();
       }
       if (event === 'SIGNED_OUT') {
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           return;
         }
         setAuthNeedsLogin(true);
-        void (async () => {
-          const queue = await readQueue(queueKey);
-          const { updatedQueue } = await updateQueueAuthBlock(queue, 'block');
-          updateQueueState(updatedQueue);
-        })();
       }
     });
     return () => {
       data.subscription.unsubscribe();
     };
-  }, [queueKey, setAuthNeedsLogin, syncQueue, updateQueueAuthBlock, updateQueueState]);
+  }, [flushOutbox, setAuthNeedsLogin]);
 
   const resetForm = useCallback(() => {
     setActivePatrol(null);
@@ -2250,7 +2009,7 @@ function StationApp({
   ]);
 
   const needsAuthCount = useMemo(
-    () => currentSessionItems.filter((item) => item.blockedReason === 'needs-auth').length,
+    () => currentSessionItems.filter((item) => item.state === 'needs_auth').length,
     [currentSessionItems],
   );
 
@@ -2509,13 +2268,50 @@ function StationApp({
     void logout();
   }, [logout]);
 
+  const enqueueStationScore = useCallback(
+    async (payload: Omit<StationScorePayload, 'client_event_id' | 'client_created_at'>) => {
+      const now = new Date().toISOString();
+      const clientEventId = generateClientEventId();
+      const submission: StationScorePayload = {
+        ...payload,
+        client_event_id: clientEventId,
+        client_created_at: now,
+      };
+      const outboxEntry: OutboxEntry = {
+        client_event_id: clientEventId,
+        type: 'station_score',
+        payload: submission,
+        event_id: payload.event_id,
+        station_id: payload.station_id,
+        state: 'queued',
+        attempts: 0,
+        next_attempt_at: Date.now(),
+        created_at: now,
+        response: null,
+      };
+      try {
+        await writeOutboxEntry(outboxEntry);
+        await refreshOutbox();
+        if (typeof navigator === 'undefined' || navigator.onLine) {
+          void flushOutbox();
+        }
+        return true;
+      } catch (error) {
+        console.error('Failed to persist submission queue', error);
+        pushAlert('Nepodařilo se uložit záznam do fronty. Zkus to prosím znovu.');
+        return false;
+      }
+    },
+    [flushOutbox, pushAlert, refreshOutbox],
+  );
+
   const handleSave = useCallback(async () => {
     if (scoringDisabled) {
       pushAlert('Závod byl ukončen. Zapisování bodů je uzamčeno.');
       return;
     }
     if (!activePatrol) return;
-    if (!stationId || !queueKey) {
+    if (!stationId) {
       pushAlert('Vyber stanoviště před uložením záznamu.');
       return;
     }
@@ -2581,71 +2377,8 @@ function StationApp({
       team_name: activePatrol.team_name,
       sex: activePatrol.sex,
     };
-
-    const signaturePayload = {
-      version: 1,
-      manifest_version: manifest.manifestVersion,
-      session_id: auth.tokens.sessionId,
-      judge_id: manifest.judge.id,
-      station_id: stationId,
-      event_id: eventId,
-      signed_at: now,
-      data: submissionData,
-    };
-
-    let signatureResult: Awaited<ReturnType<typeof signPayload>>;
-    try {
-      signatureResult = await signPayload(auth.deviceKey, signaturePayload);
-    } catch (error) {
-      console.error('Failed to sign submission payload', error);
-      pushAlert('Nepodařilo se připravit podpis. Zkus to prosím znovu.');
-      return;
-    }
-
-    const queuePayload: PendingSubmissionPayload = {
-      event_id: submissionData.event_id,
-      station_id: submissionData.station_id,
-      patrol_id: submissionData.patrol_id,
-      category: submissionData.category,
-      arrived_at: submissionData.arrived_at,
-      wait_minutes: submissionData.wait_minutes,
-      points: submissionData.points,
-      note: submissionData.note,
-      useTargetScoring,
-      normalizedAnswers,
-      shouldDeleteQuiz: !useTargetScoring,
-      patrol_code: effectivePatrolCode,
-      team_name: submissionData.team_name,
-      sex: submissionData.sex,
-      finish_time: submissionData.finish_time,
-      manifest_version: manifest.manifestVersion,
-    };
-
-    const operation: PendingOperation = {
-      id: generateOperationId(),
-      type: 'submission',
-      payload: queuePayload,
-      signature: signatureResult.signature,
-      signature_payload: signatureResult.canonical,
-      eventId,
-      stationId,
-      createdAt: now,
-      created_at: now,
-      inProgress: false,
-      retryCount: 0,
-      nextAttemptAt: Date.now(),
-      sessionId: auth.tokens.sessionId || undefined,
-    };
-
-    let queueWithOperation: PendingOperation[];
-    try {
-      const queueBefore = await readQueue(queueKey);
-      queueWithOperation = [...queueBefore, operation];
-      await writeQueue(queueKey, queueWithOperation);
-      updateQueueState(queueWithOperation);
-    } catch (error) {
-      console.error('Failed to persist submission queue', error);
-      pushAlert('Nepodařilo se uložit záznam do fronty. Zkus to prosím znovu.');
+    const queued = await enqueueStationScore(submissionData);
+    if (!queued) {
       return;
     }
     if (enableTicketQueue) {
@@ -2656,10 +2389,9 @@ function StationApp({
       );
     }
     setShowPendingDetails(false);
-    pushAlert(`Záznam uložen do fronty (${queuePayload.team_name ?? queuePayload.patrol_code}).`);
+    pushAlert(`Záznam uložen do fronty (${submissionData.team_name ?? submissionData.patrol_code}).`);
     resetForm();
     scrollToQueue();
-    void syncQueue();
   }, [
     autoScore,
     note,
@@ -2667,22 +2399,16 @@ function StationApp({
     points,
     useTargetScoring,
     pushAlert,
+    enqueueStationScore,
     resetForm,
-    updateQueueState,
     updateTickets,
     waitDraft,
     arrivedAt,
     stationId,
-    queueKey,
     finishAt,
-    manifest.judge.displayName,
-    manifest.judge.id,
-    manifest.manifestVersion,
-    auth.deviceKey,
     resolvePatrolCode,
     scoringDisabled,
     scrollToQueue,
-    syncQueue,
     enableTicketQueue,
   ]);
 
@@ -2700,13 +2426,17 @@ function StationApp({
   }, [enableTicketQueue, manifest.event.name, pendingCount]);
 
   const failedCount = useMemo(
-    () => currentSessionItems.filter((item) => Boolean(item.lastError)).length,
+    () => currentSessionItems.filter((item) => item.state === 'failed').length,
     [currentSessionItems],
   );
   const nextAttemptAtIso = useMemo(() => {
     const future = currentSessionItems
-      .filter((item) => !item.inProgress && item.nextAttemptAt > Date.now())
-      .map((item) => item.nextAttemptAt);
+      .filter(
+        (item) =>
+          (item.state === 'queued' || item.state === 'failed') &&
+          item.next_attempt_at > Date.now(),
+      )
+      .map((item) => item.next_attempt_at);
     if (!future.length) {
       return null;
     }
@@ -2749,11 +2479,11 @@ function StationApp({
 
     const delay = Math.max(0, targetTime - Date.now());
     const timeout = window.setTimeout(() => {
-      void syncQueue();
+      void flushOutbox();
     }, delay);
 
     return () => window.clearTimeout(timeout);
-  }, [nextAttemptAtIso, syncQueue]);
+  }, [nextAttemptAtIso, flushOutbox]);
 
   const timeOnCourse = useMemo(() => {
     if (!startTime || !finishAt) {
@@ -3593,15 +3323,15 @@ function StationApp({
                 ) : null}
               </div>
             ) : null}
-            {pendingItems.length > 0 ? (
+            {outboxItems.length > 0 ? (
               <div className="pending-banner">
                 <div className="pending-banner-main">
                   <div>
                     Čeká na odeslání: {pendingCount} {syncing ? '(synchronizuji…)' : ''}
                   </div>
-                  {otherSessionItems.length > 0 || unknownSessionItems.length > 0 ? (
+                  {otherSessionItems.length > 0 ? (
                     <div className="pending-banner-note">
-                      Jiná relace: {otherSessionItems.length} · Neznámá relace: {unknownSessionItems.length}
+                      Jiná relace: {otherSessionItems.length}
                     </div>
                   ) : null}
                   <div className="pending-banner-actions">
@@ -3612,7 +3342,7 @@ function StationApp({
                     >
                       {showPendingDetails ? 'Skrýt frontu' : 'Zobrazit frontu'}
                     </button>
-                    <button type="button" onClick={syncQueue} disabled={syncing || pendingCount === 0}>
+                    <button type="button" onClick={flushOutbox} disabled={syncing || pendingCount === 0}>
                       {syncing ? 'Pracuji…' : 'Odeslat nyní'}
                     </button>
                   </div>
@@ -3629,7 +3359,7 @@ function StationApp({
                 ) : null}
                 {showPendingDetails ? (
                   <div className="pending-preview">
-                    {pendingItems.length === 0 ? (
+                    {outboxItems.length === 0 ? (
                       <p>Fronta je prázdná.</p>
                     ) : (
                       <>
@@ -3648,39 +3378,34 @@ function StationApp({
                               <tbody>
                                 {currentSessionItems.map((item, index) => {
                                   const payload = item.payload;
-                                  const answers = payload.useTargetScoring
-                                    ? formatAnswersForInput(payload.normalizedAnswers || '')
+                                  const answers = payload.use_target_scoring
+                                    ? formatAnswersForInput(payload.normalized_answers || '')
                                     : '';
-                                  const blockedLabel = (() => {
-                                    switch (item.blockedReason) {
-                                      case 'needs-auth':
-                                        return 'Pro odeslání se přihlas';
-                                      case 'station-mismatch':
-                                        return 'Záznam patří jinému stanovišti';
-                                      case 'event-mismatch':
-                                        return 'Záznam patří jinému závodu';
-                                      case 'session-mismatch':
-                                        return 'Záznam patří k jiné relaci, proto ho teď neodesíláme.';
-                                      case 'manifest-mismatch':
-                                        return 'Záznam je z jiné verze manifestu';
-                                      default:
-                                        return null;
-                                    }
-                                  })();
+                                  const blockedLabel =
+                                    item.state === 'blocked_other_session'
+                                      ? 'Záznam patří k jiné relaci.'
+                                      : null;
                                   const patrolLabel = payload.team_name || 'Neznámá hlídka';
                                   const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';
                                   const categoryLabel = payload.sex ? `${payload.category}/${payload.sex}` : payload.category;
-                                  const statusLabel = item.inProgress
-                                    ? 'Odesílám…'
-                                    : item.blockedReason === 'needs-auth'
-                                      ? 'Čeká na přihlášení'
-                                      : blockedLabel
-                                      ? 'Nelze odeslat'
-                                      : item.retryCount > 0
-                                      ? `Další pokus v ${formatTime(new Date(item.nextAttemptAt).toISOString())}`
-                                      : 'Čeká na odeslání';
+                                  const statusLabel = (() => {
+                                    switch (item.state) {
+                                      case 'sending':
+                                        return 'Odesílám…';
+                                      case 'needs_auth':
+                                        return 'Čeká na přihlášení';
+                                      case 'blocked_other_session':
+                                        return 'Nelze odeslat';
+                                      case 'failed':
+                                        return `Další pokus v ${formatTime(new Date(item.next_attempt_at).toISOString())}`;
+                                      case 'sent':
+                                        return 'Odesláno';
+                                      default:
+                                        return 'Čeká na odeslání';
+                                    }
+                                  })();
                                   return (
-                                    <tr key={`${item.id}-${index}`}>
+                                    <tr key={`${item.client_event_id}-${index}`}>
                                       <td>
                                         <div className="pending-patrol">
                                           <strong>
@@ -3695,9 +3420,9 @@ function StationApp({
                                         <div className="pending-score">
                                           <span className="pending-score-points">{payload.points} b</span>
                                           <span className="pending-subline">
-                                            {payload.useTargetScoring ? 'Terčový úsek' : 'Manuální body'}
+                                            {payload.use_target_scoring ? 'Terčový úsek' : 'Manuální body'}
                                           </span>
-                                          {payload.useTargetScoring ? (
+                                          {payload.use_target_scoring ? (
                                             <span className="pending-answers">{answers || '—'}</span>
                                           ) : null}
                                         </div>
@@ -3710,8 +3435,8 @@ function StationApp({
                                           {blockedLabel ? (
                                             <span className="pending-subline">{blockedLabel}</span>
                                           ) : null}
-                                          {item.lastError ? (
-                                            <span className="pending-subline">Chyba: {item.lastError}</span>
+                                          {item.last_error ? (
+                                            <span className="pending-subline">Chyba: {item.last_error}</span>
                                           ) : null}
                                         </div>
                                       </td>
@@ -3748,17 +3473,17 @@ function StationApp({
                                 <tbody>
                                   {otherSessionItems.map((item, index) => {
                                     const payload = item.payload;
-                                    const answers = payload.useTargetScoring
-                                      ? formatAnswersForInput(payload.normalizedAnswers || '')
+                                    const answers = payload.use_target_scoring
+                                      ? formatAnswersForInput(payload.normalized_answers || '')
                                       : '';
                                     const patrolLabel = payload.team_name || 'Neznámá hlídka';
                                     const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';
                                     const categoryLabel = payload.sex
                                       ? `${payload.category}/${payload.sex}`
                                       : payload.category;
-                                    const sessionLabel = `Závod: ${item.eventId ?? '—'}, Stanoviště: ${item.stationId ?? '—'}`;
+                                    const sessionLabel = `Závod: ${item.event_id ?? '—'}, Stanoviště: ${item.station_id ?? '—'}`;
                                     return (
-                                      <tr key={`${item.id}-other-${index}`}>
+                                      <tr key={`${item.client_event_id}-other-${index}`}>
                                         <td>
                                           <div className="pending-patrol">
                                             <strong>
@@ -3773,9 +3498,9 @@ function StationApp({
                                           <div className="pending-score">
                                             <span className="pending-score-points">{payload.points} b</span>
                                             <span className="pending-subline">
-                                              {payload.useTargetScoring ? 'Terčový úsek' : 'Manuální body'}
+                                              {payload.use_target_scoring ? 'Terčový úsek' : 'Manuální body'}
                                             </span>
-                                            {payload.useTargetScoring ? (
+                                            {payload.use_target_scoring ? (
                                               <span className="pending-answers">{answers || '—'}</span>
                                             ) : null}
                                           </div>
@@ -3797,74 +3522,6 @@ function StationApp({
                             </div>
                           </div>
                         ) : null}
-                        {unknownSessionItems.length > 0 ? (
-                          <div className="pending-section">
-                            <div className="pending-section-header">
-                              <h4>Neznámá relace</h4>
-                              <button type="button" className="ghost" onClick={handleClearUnknownSessions}>
-                                Vyčistit
-                              </button>
-                            </div>
-                            <p className="pending-section-note">
-                              Tyto záznamy nemají informace o relaci, proto je neumíme přiřadit.
-                            </p>
-                            <div className="table-scroll">
-                              <table className="pending-table">
-                                <thead>
-                                  <tr>
-                                    <th>Hlídka</th>
-                                    <th>Body / Terč</th>
-                                    <th>Stav</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {unknownSessionItems.map((item, index) => {
-                                    const payload = item.payload;
-                                    const answers = payload.useTargetScoring
-                                      ? formatAnswersForInput(payload.normalizedAnswers || '')
-                                      : '';
-                                    const patrolLabel = payload.team_name || 'Neznámá hlídka';
-                                    const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';
-                                    const categoryLabel = payload.sex
-                                      ? `${payload.category}/${payload.sex}`
-                                      : payload.category;
-                                    return (
-                                      <tr key={`${item.id}-unknown-${index}`}>
-                                        <td>
-                                          <div className="pending-patrol">
-                                            <strong>
-                                              {patrolLabel}
-                                              {codeLabel}
-                                            </strong>
-                                            <span className="pending-subline">{categoryLabel}</span>
-                                            <span className="pending-subline">Čekání: {payload.wait_minutes} min</span>
-                                          </div>
-                                        </td>
-                                        <td>
-                                          <div className="pending-score">
-                                            <span className="pending-score-points">{payload.points} b</span>
-                                            <span className="pending-subline">
-                                              {payload.useTargetScoring ? 'Terčový úsek' : 'Manuální body'}
-                                            </span>
-                                            {payload.useTargetScoring ? (
-                                              <span className="pending-answers">{answers || '—'}</span>
-                                            ) : null}
-                                          </div>
-                                        </td>
-                                        <td>
-                                          <div className="pending-status">
-                                            <span>Neznámá relace</span>
-                                            <span className="pending-subline">Záznam neumíme automaticky odeslat.</span>
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        ) : null}
                       </>
                     )}
                   </div>
@@ -3873,7 +3530,12 @@ function StationApp({
             ) : null}
           </section>
 
-          <LastScoresList eventId={eventId} stationId={stationId} isTargetStation={isTargetStation} />
+          <LastScoresList
+            eventId={eventId}
+            stationId={stationId}
+            isTargetStation={isTargetStation}
+            onQueueScoreUpdate={enqueueStationScore}
+          />
 
         </>
       </main>
@@ -4018,7 +3680,14 @@ function App() {
   }
 
   if (status.state === 'authenticated') {
-    return <StationApp auth={status} refreshManifest={refreshManifest} logout={logout} />;
+    return (
+      <StationApp
+        auth={status}
+        refreshManifest={refreshManifest}
+        logout={logout}
+        supabaseAuthReady={supabaseAuthReady}
+      />
+    );
   }
 
   return null;
