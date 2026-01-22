@@ -22,7 +22,8 @@ const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 const corsHeaders = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'POST, OPTIONS',
-  'access-control-allow-headers': 'authorization, content-type',
+  'access-control-allow-headers': 'authorization, content-type, apikey, x-client-info',
+  'access-control-max-age': '86400',
 };
 
 const UUID_REGEX =
@@ -55,6 +56,18 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
       'content-type': 'application/json',
     },
   });
+}
+
+function logError(context: string, error: unknown) {
+  const safeError =
+    error && typeof error === 'object'
+      ? {
+          message: (error as { message?: string }).message,
+          code: (error as { code?: string }).code,
+          details: (error as { details?: string }).details,
+        }
+      : { message: String(error) };
+  console.error(`[submit-station-record] ${context}`, safeError);
 }
 
 function decodeJwt(token: string): Record<string, unknown> | null {
@@ -119,7 +132,7 @@ function ensurePayload(body: unknown): SubmissionPayload | null {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
@@ -134,6 +147,7 @@ Deno.serve(async (req) => {
   const token = authHeader.slice('Bearer '.length).trim();
   const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
   if (userError || !userData?.user) {
+    logError('auth.getUser failed', userError);
     return jsonResponse({ error: 'Invalid session' }, 401);
   }
 
@@ -168,6 +182,7 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (existingError) {
+    logError('station_scores lookup failed', existingError);
     return jsonResponse({ error: 'Lookup failed' }, 500);
   }
 
@@ -195,6 +210,7 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (scoreError) {
+    logError('station_scores upsert failed', scoreError);
     return jsonResponse({ error: 'Score insert failed' }, 500);
   }
 
@@ -215,6 +231,7 @@ Deno.serve(async (req) => {
     );
 
   if (passageError) {
+    logError('station_passages upsert failed', passageError);
     return jsonResponse({ error: 'Passage upsert failed' }, 500);
   }
 
@@ -234,6 +251,7 @@ Deno.serve(async (req) => {
       );
 
     if (timingError) {
+      logError('timings upsert failed', timingError);
       return jsonResponse({ error: 'Timing upsert failed' }, 500);
     }
   }
@@ -257,6 +275,7 @@ Deno.serve(async (req) => {
       );
 
     if (quizError) {
+      logError('station_quiz_responses upsert failed', quizError);
       return jsonResponse({ error: 'Quiz upsert failed' }, 500);
     }
   } else if (!body.use_target_scoring) {
@@ -270,6 +289,7 @@ Deno.serve(async (req) => {
       });
 
     if (deleteError) {
+      logError('station_quiz_responses delete failed', deleteError);
       return jsonResponse({ error: 'Quiz delete failed' }, 500);
     }
   }
