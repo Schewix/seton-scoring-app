@@ -45,6 +45,18 @@ export function translateLoginError(error: unknown): LoginErrorFeedback {
     return fallback;
   }
 
+  if (normalized.includes('chybí přístupový token')) {
+    return fallback;
+  }
+
+  if (normalized.includes('přístupový token není platný jwt')) {
+    return { message };
+  }
+
+  if (normalized.includes('účet není přiřazen')) {
+    return { message };
+  }
+
   if (normalized.includes('locked') || normalized.includes('suspended') || normalized.includes('blocked')) {
     return { message: 'Účet je dočasně zablokován. Zkuste to za 15 minut.', field: 'password' };
   }

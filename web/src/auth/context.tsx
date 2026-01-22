@@ -32,6 +32,8 @@ import { deriveWrappingKey, encryptDeviceKey, generateDeviceKey, decryptDeviceKe
 import { toBase64 } from './base64';
 import { decodeJwt } from './jwt';
 import { env } from '../envVars';
+import { setSupabaseAccessToken } from '../supabaseClient';
+import { ACCESS_DENIED_MESSAGE, INVALID_JWT_MESSAGE } from './messages';
 
 interface AuthContextValue {
   status: AuthStatus;
@@ -46,6 +48,16 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const AUTH_BYPASS = env.VITE_AUTH_BYPASS === '1' || env.VITE_AUTH_BYPASS === 'true';
 
+type SupabaseJwtClaims = {
+  sub?: string;
+  role?: string;
+  email?: string;
+  event_id?: string;
+  station_id?: string;
+  exp?: number;
+  sessionId?: string;
+};
+
 function isPasswordChangeResponse(
   response: LoginResponse,
 ): response is LoginRequiresPasswordChangeResponse {
@@ -54,6 +66,61 @@ function isPasswordChangeResponse(
 
 function isLoginSuccessResponse(response: LoginResponse): response is LoginSuccessResponse {
   return 'access_token' in response && typeof response.access_token === 'string';
+}
+
+function validateSupabaseAccessToken(token: string) {
+  let claims: SupabaseJwtClaims;
+  try {
+    claims = decodeJwt<SupabaseJwtClaims>(token);
+  } catch (error) {
+    throw new Error(INVALID_JWT_MESSAGE);
+  }
+
+  const sub = typeof claims.sub === 'string' && claims.sub.length > 0 ? claims.sub : null;
+  const role = typeof claims.role === 'string' && claims.role.length > 0 ? claims.role : null;
+  const eventId = typeof claims.event_id === 'string' && claims.event_id.length > 0 ? claims.event_id : null;
+  const stationId =
+    typeof claims.station_id === 'string' && claims.station_id.length > 0 ? claims.station_id : null;
+
+  if (!sub || !role || !eventId || !stationId) {
+    throw new Error(ACCESS_DENIED_MESSAGE);
+  }
+
+  if (role !== 'authenticated' && role !== 'service_role') {
+    throw new Error(ACCESS_DENIED_MESSAGE);
+  }
+
+  return claims;
+}
+
+function logAccessTokenClaims(token: string, source: string) {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  try {
+    const claims = decodeJwt<SupabaseJwtClaims>(token);
+    console.debug('[auth] token claims', {
+      source,
+      sub: claims.sub,
+      role: claims.role,
+      event_id: claims.event_id,
+      station_id: claims.station_id,
+      exp: claims.exp,
+    });
+  } catch (error) {
+    console.debug('[auth] token decode failed', { source, error });
+  }
+}
+
+function isTokenValidationError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return (
+    error.message === ACCESS_DENIED_MESSAGE ||
+    error.message === INVALID_JWT_MESSAGE ||
+    error.message === 'Chybí přístupový token.'
+  );
 }
 
 async function bootstrap(): Promise<
@@ -92,11 +159,12 @@ function useInitialization(setStatus: (status: AuthStatus) => void) {
     let cancelled = false;
     const initialize = async () => {
       try {
-        if (AUTH_BYPASS) {
-          if (!cancelled) {
-            setStatus({
-              state: 'authenticated',
-              manifest: {
+      if (AUTH_BYPASS) {
+        if (!cancelled) {
+          setSupabaseAccessToken(null);
+          setStatus({
+            state: 'authenticated',
+            manifest: {
                 judge: { id: 'judge-test', email: 'test@example.com', displayName: 'Test Judge' },
                 station: {
                   id: env.VITE_STATION_ID || 'station-test',
@@ -138,6 +206,9 @@ function useInitialization(setStatus: (status: AuthStatus) => void) {
 
         const { manifest, patrols, tokens, encryptedDeviceKey, pinHash } = cached;
         try {
+          if (tokens.accessToken) {
+            logAccessTokenClaims(tokens.accessToken, 'bootstrap');
+          }
           const wrappingKey = await deriveWrappingKey(tokens.refreshToken, encryptedDeviceKey.deviceSalt);
           const deviceKey = await decryptDeviceKey(
             {
@@ -152,6 +223,14 @@ function useInitialization(setStatus: (status: AuthStatus) => void) {
           if (pinHash) {
             setStatus({ state: 'locked', requiresPin: true });
           } else {
+            if (!tokens.accessToken) {
+              if (import.meta.env.DEV) {
+                console.debug('[auth] missing access token (bootstrap)');
+              }
+              throw new Error('Chybí přístupový token.');
+            }
+            validateSupabaseAccessToken(tokens.accessToken);
+            setSupabaseAccessToken(tokens.accessToken);
             setStatus({
               state: 'authenticated',
               manifest,
@@ -166,6 +245,16 @@ function useInitialization(setStatus: (status: AuthStatus) => void) {
             });
           }
         } catch (error) {
+          if (isTokenValidationError(error)) {
+            console.error('Cached token invalid', error);
+            if (!cancelled) {
+              setStatus({
+                state: 'error',
+                message: error instanceof Error ? error.message : 'Neplatný přístupový token.',
+              });
+            }
+            return;
+          }
           console.error('Failed to decrypt device key', error);
           if (!cancelled) {
             setStatus({ state: 'locked', requiresPin: !!pinHash });
@@ -241,6 +330,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const success = response;
       const accessClaims = decodeJwt<{ sessionId?: string }>(success.access_token);
+      logAccessTokenClaims(success.access_token, 'login');
+      validateSupabaseAccessToken(success.access_token);
       const sessionId = typeof accessClaims.sessionId === 'string' && accessClaims.sessionId.length
         ? accessClaims.sessionId
         : (() => {
@@ -274,6 +365,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         encryptedDeviceKey: { ...encrypted, deviceSalt: success.device_salt },
       });
 
+      setSupabaseAccessToken(success.access_token);
       setStatus({
         state: 'authenticated',
         manifest: success.manifest,
@@ -356,6 +448,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         wrappingKey,
       );
 
+      const accessToken = cachedData.tokens.accessToken || '';
+      if (!accessToken) {
+        if (import.meta.env.DEV) {
+          console.debug('[auth] missing access token (unlock)');
+        }
+        throw new Error('Chybí přístupový token.');
+      }
+      logAccessTokenClaims(accessToken, 'unlock');
+      validateSupabaseAccessToken(accessToken);
+      setSupabaseAccessToken(accessToken);
       setStatus({
         state: 'authenticated',
         manifest: cachedData.manifest,
@@ -381,6 +483,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPinHash(null),
     ]);
     setCachedData(null);
+    setSupabaseAccessToken(null);
     setStatus({ state: 'unauthenticated' });
   }, []);
 
