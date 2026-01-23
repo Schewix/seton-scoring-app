@@ -39,6 +39,16 @@ Vytvoř soubor `.env.local` (nebo `.env`) s minimálně těmito klíči:
 | `VITE_AUTH_API_URL` | URL Express backendu pro přihlášení (`/auth/login`, `/manifest`). Volitelné při bypass režimu. |
 | `VITE_AUTH_BYPASS` | Hodnota `1` přeskočí přihlášení a dovolí ruční výběr stanoviště (jen pro lokální vývoj). |
 | `VITE_ADMIN_MODE` | Hodnota `1` zapne administrátorské nástroje (správa správných odpovědí, zobrazení terčových výsledků). |
+| `VITE_SANITY_PROJECT_ID` | ID Sanity projektu pro veřejné stránky. |
+| `VITE_SANITY_DATASET` | Název datasetu Sanity (např. `production`). |
+| `VITE_SANITY_API_VERSION` | API verze Sanity (např. `2024-06-01`). |
+
+Pro serverless fotogalerii (Vercel funkce) přidej do environmentu také:
+
+| Proměnná | Význam |
+| --- | --- |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | E-mail service accountu s přístupem do Drive. |
+| `GOOGLE_PRIVATE_KEY` | Privátní klíč service accountu (s `\\n` místo nových řádků). |
 
 Další proměnné (`VITE_STATION_PRESET`, `VITE_SCOREBOARD_REFRESH_MS`, …) lze doplnit dle potřeby – viz `src/config.ts`.
 

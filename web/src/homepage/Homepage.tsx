@@ -1,8 +1,20 @@
 import './Homepage.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
+import { PortableText } from '@portabletext/react';
 import AppFooter from '../components/AppFooter';
 import logo from '../assets/znak_SPTO_transparent.png';
+import {
+  fetchAlbumBySlug,
+  fetchAlbums,
+  fetchArticleBySlug,
+  fetchArticles,
+  fetchHomepage,
+  hasSanityConfig,
+  type SanityAlbum,
+  type SanityArticle,
+  type SanityHomepage,
+} from '../data/sanity';
 
 interface EventLink {
   slug: string;
@@ -53,8 +65,22 @@ type Article = {
   dateISO: string;
   excerpt: string;
   href: string;
-  body: string[];
+  body: string[] | any[];
   author?: string;
+  coverImage?: { url: string; alt?: string | null } | null;
+};
+
+type GalleryPhoto = {
+  fileId: string;
+  name: string;
+  thumbnailLink: string | null;
+  fullImageUrl: string | null;
+  webContentLink: string | null;
+};
+
+type GalleryPreview = {
+  files: GalleryPhoto[];
+  totalCount: number | null;
 };
 
 const ARTICLES: Article[] = [
@@ -338,6 +364,53 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+function formatDateLabel(dateISO: string) {
+  const date = new Date(dateISO);
+  if (Number.isNaN(date.getTime())) {
+    return dateISO;
+  }
+  return date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+const portableTextComponents = {
+  types: {
+    image: ({ value }: { value: { asset?: { url?: string }; alt?: string } }) => {
+      const src = value?.asset?.url;
+      if (!src) {
+        return null;
+      }
+      return <img src={src} alt={value.alt ?? ''} loading="lazy" />;
+    },
+  },
+};
+
+function mapSanityArticle(article: SanityArticle): Article {
+  const dateISO = article.publishedAt;
+  return {
+    title: article.title,
+    dateISO,
+    dateLabel: formatDateLabel(dateISO),
+    excerpt: article.excerpt ?? '',
+    href: `/clanky/${article.slug}`,
+    body: article.body ?? [],
+    author: article.author ?? undefined,
+    coverImage: article.coverImage ?? undefined,
+  };
+}
+
+async function fetchAlbumPreview(folderId: string): Promise<GalleryPreview> {
+  const params = new URLSearchParams({
+    folderId,
+    pageSize: '4',
+    includeCount: '1',
+  });
+  const response = await fetch(`/api/gallery/album?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error('Failed to load album preview.');
+  }
+  return response.json();
+}
+
 function NotFoundPage() {
   return (
     <SiteShell>
@@ -396,6 +469,7 @@ function InfoPage({
 }
 
 function ArticlePage({ article }: { article: Article }) {
+  const isPortableText = Array.isArray(article.body) && typeof article.body[0] === 'object';
   return (
     <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="article-heading">
@@ -405,9 +479,21 @@ function ArticlePage({ article }: { article: Article }) {
           {article.dateLabel} · {article.excerpt}
         </p>
         <div className="homepage-card">
-          {article.body.map((paragraph, index) => (
-            <p key={`${article.href}-${index}`}>{paragraph}</p>
-          ))}
+          {article.coverImage?.url ? (
+            <img
+              className="homepage-article-cover"
+              src={article.coverImage.url}
+              alt={article.coverImage.alt ?? ''}
+              loading="lazy"
+            />
+          ) : null}
+          {isPortableText ? (
+            <PortableText value={article.body} components={portableTextComponents} />
+          ) : (
+            (article.body as string[]).map((paragraph, index) => (
+              <p key={`${article.href}-${index}`}>{paragraph}</p>
+            ))
+          )}
           {article.author ? (
             <p style={{ marginTop: '24px', fontWeight: 600 }}>{article.author}</p>
           ) : null}
@@ -418,6 +504,327 @@ function ArticlePage({ article }: { article: Article }) {
       </main>
     </SiteShell>
   );
+}
+
+function GalleryAlbumCard({ album }: { album: SanityAlbum }) {
+  const [preview, setPreview] = useState<GalleryPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (!album.driveFolderId) {
+      return undefined;
+    }
+    setLoading(true);
+    fetchAlbumPreview(album.driveFolderId)
+      .then((data) => {
+        if (active) {
+          setPreview(data);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [album.driveFolderId]);
+
+  const coverUrl =
+    album.coverImage?.url ?? preview?.files?.find((file) => file.thumbnailLink)?.thumbnailLink ?? null;
+  const previewPhotos = preview?.files ?? [];
+
+  return (
+    <a className="gallery-album-card" href={`/fotogalerie/${album.slug}`}>
+      <div className="gallery-album-cover">
+        {coverUrl ? (
+          <img src={coverUrl} alt={album.coverImage?.alt ?? album.title} loading="lazy" />
+        ) : (
+          <div className="gallery-album-cover-placeholder" />
+        )}
+        <span className="gallery-album-date">{formatDateLabel(album.date)}</span>
+      </div>
+      <div className="gallery-album-body">
+        <div>
+          <h3>{album.title}</h3>
+          <p>{album.schoolYear}</p>
+        </div>
+        <p className="gallery-album-count">
+          {loading
+            ? 'Načítám…'
+            : preview?.totalCount !== null && preview?.totalCount !== undefined
+              ? `${preview.totalCount} fotek`
+              : 'Fotky se načítají'}
+        </p>
+      </div>
+      <div className="gallery-album-thumbs">
+        {previewPhotos.length > 0 ? (
+          previewPhotos.slice(0, 4).map((photo) => (
+            <img key={photo.fileId} src={photo.thumbnailLink ?? ''} alt={photo.name} loading="lazy" />
+          ))
+        ) : (
+          <div className="gallery-album-thumbs-placeholder">Náhledy se připravují</div>
+        )}
+      </div>
+    </a>
+  );
+}
+
+function GalleryOverviewPage({ albums, loading }: { albums: SanityAlbum[]; loading: boolean }) {
+  const grouped = useMemo(() => {
+    const groups = new Map<string, SanityAlbum[]>();
+    albums.forEach((album) => {
+      const key = album.schoolYear || 'Ostatní';
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key)!.push(album);
+    });
+    groups.forEach((items) => items.sort((a, b) => b.date.localeCompare(a.date)));
+    return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [albums]);
+
+  return (
+    <SiteShell>
+      <main className="homepage-main homepage-single" aria-labelledby="gallery-heading">
+        <p className="homepage-eyebrow">SPTO · Fotogalerie</p>
+        <h1 id="gallery-heading">Fotogalerie</h1>
+        <p className="homepage-lead">Veřejná galerie akcí SPTO s fotkami uloženými na Google Drive.</p>
+        {loading ? (
+          <div className="homepage-card">Načítám alba…</div>
+        ) : null}
+        {!loading && albums.length === 0 ? (
+          <div className="homepage-card">Zatím nejsou publikovaná žádná alba.</div>
+        ) : null}
+        {grouped.map(([year, items]) => (
+          <section key={year} className="gallery-year-section">
+            <div className="gallery-year-header">
+              <h2>{year}</h2>
+            </div>
+            <div className="gallery-album-grid">
+              {items.map((album) => (
+                <GalleryAlbumCard key={album.slug} album={album} />
+              ))}
+            </div>
+          </section>
+        ))}
+      </main>
+    </SiteShell>
+  );
+}
+
+function GalleryAlbumPage({ slug, albums }: { slug: string; albums: SanityAlbum[] }) {
+  const [album, setAlbum] = useState<SanityAlbum | null>(() => albums.find((item) => item.slug === slug) ?? null);
+  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    const match = albums.find((item) => item.slug === slug) ?? null;
+    if (match) {
+      setAlbum(match);
+    }
+  }, [albums, slug]);
+
+  useEffect(() => {
+    let active = true;
+    if (album || !slug) {
+      return undefined;
+    }
+    fetchAlbumBySlug(slug).then((data) => {
+      if (active) {
+        setAlbum(data);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [album, slug]);
+
+  useEffect(() => {
+    let active = true;
+    if (!album?.driveFolderId) {
+      return undefined;
+    }
+    setLoading(true);
+    const params = new URLSearchParams({ folderId: album.driveFolderId, pageSize: '36' });
+    fetch(`/api/gallery/album?${params.toString()}`)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load album photos.');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        if (!active) {
+          return;
+        }
+        setPhotos(data.files ?? []);
+        setNextPageToken(data.nextPageToken ?? null);
+      })
+      .catch(() => {
+        if (active) {
+          setPhotos([]);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [album?.driveFolderId]);
+
+  const handleLoadMore = async () => {
+    if (!album?.driveFolderId || !nextPageToken || loading) {
+      return;
+    }
+    setLoading(true);
+    const params = new URLSearchParams({
+      folderId: album.driveFolderId,
+      pageSize: '36',
+      pageToken: nextPageToken,
+    });
+    try {
+      const response = await fetch(`/api/gallery/album?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error('Failed to load more photos.');
+      }
+      const data = await response.json();
+      setPhotos((prev) => [...prev, ...(data.files ?? [])]);
+      setNextPageToken(data.nextPageToken ?? null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const activePhoto = lightboxIndex !== null ? photos[lightboxIndex] : null;
+  const isFirstPhoto = lightboxIndex === 0;
+  const isLastPhoto = lightboxIndex !== null && lightboxIndex === photos.length - 1;
+
+  if (!album) {
+    return <NotFoundPage />;
+  }
+
+  return (
+    <SiteShell>
+      <main className="homepage-main homepage-single" aria-labelledby="album-heading">
+        <p className="homepage-eyebrow">SPTO · Fotogalerie</p>
+        <h1 id="album-heading">{album.title}</h1>
+        <p className="homepage-lead">
+          {formatDateLabel(album.date)} · {album.schoolYear}
+        </p>
+        <div className="gallery-photo-grid">
+          {photos.map((photo, index) => (
+            <button
+              key={photo.fileId}
+              type="button"
+              className="gallery-photo-thumb"
+              onClick={() => setLightboxIndex(index)}
+            >
+              {photo.thumbnailLink ? (
+                <img src={photo.thumbnailLink} alt={photo.name} loading="lazy" />
+              ) : (
+                <span>{photo.name}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        {!loading && photos.length === 0 ? <div className="gallery-loading">Zatím zde nejsou žádné fotky.</div> : null}
+        {loading ? <div className="gallery-loading">Načítám fotky…</div> : null}
+        {nextPageToken ? (
+          <button type="button" className="homepage-cta secondary gallery-load-more" onClick={handleLoadMore} disabled={loading}>
+            Načíst další fotky
+          </button>
+        ) : null}
+        <a className="homepage-back-link" href="/fotogalerie">
+          Zpět na fotogalerii
+        </a>
+      </main>
+      {activePhoto ? (
+        <div className="gallery-lightbox" role="dialog" aria-modal="true">
+          <button type="button" className="gallery-lightbox-close" onClick={() => setLightboxIndex(null)}>
+            ✕
+          </button>
+          <button
+            type="button"
+            className="gallery-lightbox-nav prev"
+            onClick={() => setLightboxIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev))}
+            aria-label="Předchozí fotka"
+            disabled={isFirstPhoto}
+          >
+            ‹
+          </button>
+          <figure>
+            <img
+              src={activePhoto.fullImageUrl ?? activePhoto.webContentLink ?? activePhoto.thumbnailLink ?? ''}
+              alt={activePhoto.name}
+            />
+            <figcaption>{activePhoto.name}</figcaption>
+          </figure>
+          <button
+            type="button"
+            className="gallery-lightbox-nav next"
+            onClick={() =>
+              setLightboxIndex((prev) => (prev !== null && prev < photos.length - 1 ? prev + 1 : prev))
+            }
+            aria-label="Další fotka"
+            disabled={isLastPhoto}
+          >
+            ›
+          </button>
+        </div>
+      ) : null}
+    </SiteShell>
+  );
+}
+
+function ArticlePageLoader({ slug, articles }: { slug: string; articles: Article[] }) {
+  const [article, setArticle] = useState<Article | null>(
+    () => articles.find((item) => item.href.split('/').pop() === slug) ?? null,
+  );
+
+  useEffect(() => {
+    const match = articles.find((item) => item.href.split('/').pop() === slug) ?? null;
+    if (match) {
+      setArticle(match);
+    }
+  }, [articles, slug]);
+
+  useEffect(() => {
+    let active = true;
+    if (article || !hasSanityConfig()) {
+      return undefined;
+    }
+    fetchArticleBySlug(slug).then((data) => {
+      if (!active || !data) {
+        return;
+      }
+      setArticle(mapSanityArticle(data));
+    });
+    return () => {
+      active = false;
+    };
+  }, [article, slug]);
+
+  if (!article) {
+    return (
+      <InfoPage
+        eyebrow="SPTO · Články"
+        title="Načítám článek"
+        lead="Obsah článku se právě připravuje."
+        backHref="/clanky"
+      />
+    );
+  }
+
+  return <ArticlePage article={article} />;
 }
 
 function formatTroopName(troop: Troop) {
@@ -438,9 +845,13 @@ function formatTroopDescription(troop: Troop) {
 function SiteHeader({
   activeSection,
   onNavClick,
+  title,
+  subtitle,
 }: {
   activeSection?: string;
   onNavClick?: (id: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
+  title?: string;
+  subtitle?: string;
 }) {
   return (
     <>
@@ -452,8 +863,8 @@ function SiteHeader({
           </a>
           <div className="homepage-header-copy">
             <p className="homepage-eyebrow">SPTO · Zelená liga</p>
-            <h1>SPTO a Zelená liga</h1>
-            <p className="homepage-subtitle">{HEADER_SUBTITLE}</p>
+            <h1>{title ?? 'SPTO a Zelená liga'}</h1>
+            <p className="homepage-subtitle">{subtitle ?? HEADER_SUBTITLE}</p>
           </div>
           <div className="homepage-cta-group" role="group" aria-label="Hlavní odkazy">
             <a className="homepage-cta primary" href="/zelena-liga">
@@ -494,23 +905,51 @@ function SiteShell({
   children,
   activeSection,
   onNavClick,
+  headerTitle,
+  headerSubtitle,
 }: {
   children: React.ReactNode;
   activeSection?: string;
   onNavClick?: (id: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
+  headerTitle?: string;
+  headerSubtitle?: string;
 }) {
   return (
     <div className="homepage-shell" style={{ scrollBehavior: 'smooth' }}>
-      <SiteHeader activeSection={activeSection} onNavClick={onNavClick} />
+      <SiteHeader
+        activeSection={activeSection}
+        onNavClick={onNavClick}
+        title={headerTitle}
+        subtitle={headerSubtitle}
+      />
       {children}
       <AppFooter className="homepage-footer" />
     </div>
   );
 }
 
-function Homepage() {
-  const [featuredPhoto, ...galleryThumbnails] = GALLERY_PREVIEW;
+function Homepage({
+  homepageContent,
+  articles,
+  featuredPreview,
+}: {
+  homepageContent: SanityHomepage | null;
+  articles: Article[];
+  featuredPreview: GalleryPreview | null;
+}) {
+  const previewPhotos = featuredPreview?.files?.length
+    ? featuredPreview.files
+        .filter((file) => Boolean(file.thumbnailLink))
+        .map((file) => ({
+          id: file.fileId,
+          src: file.thumbnailLink ?? '',
+          alt: file.name,
+        }))
+    : GALLERY_PREVIEW;
+  const [featuredPhoto, ...galleryThumbnails] = previewPhotos;
   const [activeSection, setActiveSection] = useState('');
+  const headerTitle = homepageContent?.heroTitle ?? undefined;
+  const headerSubtitle = homepageContent?.heroSubtitle ?? undefined;
 
   useEffect(() => {
     const sections = NAV_ITEMS.map((item) => document.getElementById(item.id)).filter(
@@ -552,7 +991,12 @@ function Homepage() {
   };
 
   return (
-    <SiteShell activeSection={activeSection} onNavClick={handleNavClick}>
+    <SiteShell
+      activeSection={activeSection}
+      onNavClick={handleNavClick}
+      headerTitle={headerTitle ?? undefined}
+      headerSubtitle={headerSubtitle ?? undefined}
+    >
       <main className="homepage-main" aria-labelledby="homepage-intro-heading" style={{ maxWidth: '1120px', gap: '64px' }}>
         <section className="homepage-section" aria-labelledby="homepage-intro-heading">
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
@@ -560,15 +1004,21 @@ function Homepage() {
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
           </div>
           <div className="homepage-card" style={{ maxWidth: '920px', boxShadow: 'none' }}>
-            <p>
-              SPTO sdružuje pionýrské tábornické oddíly (PTO), které vedou děti a mladé k pobytu v přírodě,
-              spolupráci a dobrodružství. Pravidelné schůzky, víkendové výpravy i letní tábory jsou otevřené všem,
-              kdo chtějí zažít táborový život naplno.
-            </p>
-            <p style={{ marginTop: '12px' }}>
-              Zelená liga je celoroční soutěžní rámec SPTO. Skládá se z několika závodů během roku
-              (například Setonův závod) a soutěžící jsou rozděleni do věkových kategorií.
-            </p>
+            {homepageContent?.intro?.length ? (
+              <PortableText value={homepageContent.intro} components={portableTextComponents} />
+            ) : (
+              <>
+                <p>
+                  SPTO sdružuje pionýrské tábornické oddíly (PTO), které vedou děti a mladé k pobytu v přírodě,
+                  spolupráci a dobrodružství. Pravidelné schůzky, víkendové výpravy i letní tábory jsou otevřené všem,
+                  kdo chtějí zažít táborový život naplno.
+                </p>
+                <p style={{ marginTop: '12px' }}>
+                  Zelená liga je celoroční soutěžní rámec SPTO. Skládá se z několika závodů během roku
+                  (například Setonův závod) a soutěžící jsou rozděleni do věkových kategorií.
+                </p>
+              </>
+            )}
           </div>
         </section>
 
@@ -652,7 +1102,7 @@ function Homepage() {
             <p>Krátké reportáže a novinky z posledních závodů a akcí.</p>
           </div>
           <div className="homepage-article-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-            {ARTICLES.map((article) => (
+            {articles.map((article) => (
               <article key={article.title} className="homepage-article-card" style={{ minHeight: '220px' }}>
                 <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <time
@@ -705,7 +1155,11 @@ function Homepage() {
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="fotogalerie-heading">Fotogalerie</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
-            <p>Malý výběr z poslední akce – kompletní alba najdeš ve fotogalerii.</p>
+            {homepageContent?.galleryIntro?.length ? (
+              <PortableText value={homepageContent.galleryIntro} components={portableTextComponents} />
+            ) : (
+              <p>Malý výběr z poslední akce – kompletní alba najdeš ve fotogalerii.</p>
+            )}
           </div>
           <div className="homepage-card homepage-gallery-card">
             <div
@@ -757,7 +1211,7 @@ function Homepage() {
                 Otevřít fotogalerii
               </a>
               <p className="homepage-gallery-note">
-                Odkazy na roky: <a href="/fotogalerie">/fotogalerie</a>, akce: <a href="/fotogalerie/2024-2025/setonuv-zavod">/fotogalerie/[rok]/[akce]</a>
+                Kompletní galerie: <a href="/fotogalerie">/fotogalerie</a>, detail alba: <a href="/fotogalerie/setonuv-zavod-2025">/fotogalerie/[slug]</a>
               </p>
             </div>
           </div>
@@ -853,11 +1307,67 @@ function EventPage({ slug }: EventPageProps) {
 }
 
 export default function ZelenaligaSite() {
+  const [homepageContent, setHomepageContent] = useState<SanityHomepage | null>(null);
+  const [articles, setArticles] = useState<Article[]>(ARTICLES);
+  const [albums, setAlbums] = useState<SanityAlbum[]>([]);
+  const [albumsLoading, setAlbumsLoading] = useState(false);
+  const [featuredPreview, setFeaturedPreview] = useState<GalleryPreview | null>(null);
   const path = window.location.pathname.replace(/\/$/, '') || '/';
   const segments = path.split('/').filter(Boolean);
 
+  useEffect(() => {
+    if (!hasSanityConfig()) {
+      return;
+    }
+    let active = true;
+    setAlbumsLoading(true);
+    Promise.all([fetchHomepage(), fetchArticles(), fetchAlbums()])
+      .then(([homepageData, articlesData, albumsData]) => {
+        if (!active) {
+          return;
+        }
+        setHomepageContent(homepageData);
+        if (articlesData.length > 0) {
+          setArticles(articlesData.map(mapSanityArticle));
+        }
+        setAlbums(albumsData);
+      })
+      .finally(() => {
+        if (active) {
+          setAlbumsLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const folderId = homepageContent?.featuredAlbum?.driveFolderId;
+    if (!folderId) {
+      return undefined;
+    }
+    fetchAlbumPreview(folderId)
+      .then((data) => {
+        if (active) {
+          setFeaturedPreview(data);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [homepageContent?.featuredAlbum?.driveFolderId]);
+
   if (path === '/') {
-    return <Homepage />;
+    return (
+      <Homepage
+        homepageContent={homepageContent}
+        articles={articles}
+        featuredPreview={featuredPreview}
+      />
+    );
   }
 
   if (segments.length > 0) {
@@ -959,18 +1469,14 @@ export default function ZelenaligaSite() {
     if (slug === 'clanky') {
       if (segments.length > 1) {
         const articleSlug = segments[1];
-        const article = ARTICLES.find((item) => item.href.split('/').pop() === articleSlug);
-        if (!article) {
-          return <NotFoundPage />;
-        }
-        return <ArticlePage article={article} />;
+        return <ArticlePageLoader slug={articleSlug} articles={articles} />;
       }
       return (
         <InfoPage
           eyebrow="SPTO · Články"
           title="Články ze soutěží"
           lead="Reportáže a novinky z posledních akcí."
-          links={ARTICLES.map((item) => ({
+          links={articles.map((item) => ({
             label: item.title,
             description: `${item.dateLabel} · ${item.excerpt}`,
             href: item.href,
@@ -981,39 +1487,10 @@ export default function ZelenaligaSite() {
 
     if (slug === 'fotogalerie') {
       if (segments.length > 1) {
-        const galleryTitle = segments
-          .slice(1)
-          .map((segment) => slugify(segment).replace(/-/g, ' '))
-          .join(' · ');
-        return (
-          <InfoPage
-            eyebrow="SPTO · Fotogalerie"
-            title={`Fotogalerie ${galleryTitle}`}
-            lead="Fotky z vybrané akce připravujeme. Kompletní galerie budou postupně doplňovány."
-            links={[
-              {
-                label: 'Zpět na fotogalerii',
-                href: '/fotogalerie',
-              },
-            ]}
-            backHref="/fotogalerie"
-          />
-        );
+        const albumSlug = segments[segments.length - 1];
+        return <GalleryAlbumPage slug={albumSlug} albums={albums} />;
       }
-      return (
-        <InfoPage
-          eyebrow="SPTO · Fotogalerie"
-          title="Fotogalerie"
-          lead="Fotky z výprav a závodů SPTO. Další alba přidáme brzy."
-          links={[
-            {
-              label: 'Zelená liga 2024/2025',
-              description: 'Ukázkové album ze Setonova závodu.',
-              href: '/fotogalerie/2024-2025/setonuv-zavod',
-            },
-          ]}
-        />
-      );
+      return <GalleryOverviewPage albums={albums} loading={albumsLoading} />;
     }
 
     if (slug === 'historie') {
