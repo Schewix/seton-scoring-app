@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import argon2 from 'argon2';
 import { pbkdf2 as pbkdf2Callback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { normalizeAllowedCategories } from '../_lib/categories.js';
@@ -166,198 +165,211 @@ async function verifyPassword(hash: string, password: string) {
     return verifyPbkdf2(hash, password);
   }
 
-  return argon2.verify(hash, password);
+  try {
+    const { default: argon2 } = await import('argon2');
+    return argon2.verify(hash, password);
+  } catch (error) {
+    console.error('[api/auth/login] argon2 unavailable', error);
+    throw new Error('argon2-unavailable');
+  }
 }
 
 export default async function handler(req: any, res: any) {
-  applyCors(res);
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
-
-  const { email, password, devicePublicKey } = resolveLoginPayload(req.body);
-
-  if (typeof email !== 'string' || typeof password !== 'string') {
-    return res.status(400).json({ error: 'Missing email or password.' });
-  }
-
-  let supabaseConfig;
   try {
-    supabaseConfig = getSupabaseAdminConfig();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Missing Supabase configuration.';
-    return res.status(500).json({ error: message });
-  }
+    applyCors(res);
 
-  let authConfig;
-  try {
-    authConfig = getAuthConfig();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Missing auth configuration.';
-    return res.status(500).json({ error: message });
-  }
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
 
-  const supabase = createClient(supabaseConfig.supabaseUrl, supabaseConfig.serviceRoleKey, {
-    auth: { persistSession: false },
-  });
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', 'POST');
+      return res.status(405).json({ error: 'Method Not Allowed' });
+    }
 
-  const normalizedEmail = email.trim();
+    const { email, password, devicePublicKey } = resolveLoginPayload(req.body);
 
-  const { data: judge, error: judgeError } = await supabase
-    .from<JudgeRow>('judges')
-    .select('id, email, display_name, password_hash, must_change_password')
-    .ilike('email', normalizedEmail)
-    .limit(1)
-    .maybeSingle();
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Missing email or password.' });
+    }
 
-  if (judgeError || !judge) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
+    let supabaseConfig;
+    try {
+      supabaseConfig = getSupabaseAdminConfig();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Missing Supabase configuration.';
+      console.error('[api/auth/login] config error', { message });
+      return res.status(500).json({ error: message });
+    }
 
-  if (typeof judge.password_hash !== 'string' || judge.password_hash.length === 0) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
+    let authConfig;
+    try {
+      authConfig = getAuthConfig();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Missing auth configuration.';
+      console.error('[api/auth/login] auth config error', { message });
+      return res.status(500).json({ error: message });
+    }
 
-  let passwordOk = false;
-  try {
-    passwordOk = await verifyPassword(judge.password_hash, password);
-  } catch (error) {
-    console.error('Failed to verify password', error);
-    return res.status(500).json({ error: 'Failed to verify credentials' });
-  }
-
-  if (!passwordOk) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-
-  if (judge.must_change_password) {
-    return res.json({
-      must_change_password: true,
-      id: judge.id,
-      email: judge.email ?? normalizedEmail,
+    const supabase = createClient(supabaseConfig.supabaseUrl, supabaseConfig.serviceRoleKey, {
+      auth: { persistSession: false },
     });
+
+    const normalizedEmail = email.trim();
+
+    const { data: judge, error: judgeError } = await supabase
+      .from<JudgeRow>('judges')
+      .select('id, email, display_name, password_hash, must_change_password')
+      .ilike('email', normalizedEmail)
+      .limit(1)
+      .maybeSingle();
+
+    if (judgeError || !judge) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (typeof judge.password_hash !== 'string' || judge.password_hash.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    let passwordOk = false;
+    try {
+      passwordOk = await verifyPassword(judge.password_hash, password);
+    } catch (error) {
+      console.error('[api/auth/login] failed to verify password', error);
+      return res.status(500).json({ error: 'Failed to verify credentials' });
+    }
+
+    if (!passwordOk) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (judge.must_change_password) {
+      return res.json({
+        must_change_password: true,
+        id: judge.id,
+        email: judge.email ?? normalizedEmail,
+      });
+    }
+
+    const { data: assignment, error: assignmentError } = await supabase
+      .from<AssignmentRow>('judge_assignments')
+      .select('*')
+      .eq('judge_id', judge.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (assignmentError || !assignment) {
+      return res.status(403).json({ error: 'Judge has no assignment' });
+    }
+
+    const [{ data: station }, { data: event }] = await Promise.all([
+      supabase
+        .from<StationRow>('stations')
+        .select('id, code, name')
+        .eq('id', assignment.station_id)
+        .maybeSingle(),
+      supabase
+        .from<EventRow>('events')
+        .select('id, name, scoring_locked')
+        .eq('id', assignment.event_id)
+        .maybeSingle(),
+    ]);
+
+    if (!station || !event) {
+      return res.status(500).json({ error: 'Failed to resolve assignment details' });
+    }
+
+    const allowedCategories = normalizeAllowedCategories(assignment.allowed_categories, station.code);
+
+    const manifest: StationManifest = {
+      judge: {
+        id: judge.id,
+        email: judge.email ?? normalizedEmail,
+        displayName: judge.display_name ?? normalizedEmail,
+      },
+      station: {
+        id: station.id,
+        code: station.code,
+        name: station.name,
+      },
+      event: {
+        id: event.id,
+        name: event.name,
+        scoringLocked: Boolean(event.scoring_locked),
+      },
+      allowedCategories,
+      allowedTasks: assignment.allowed_tasks ?? [],
+      manifestVersion: 1,
+    };
+
+    let patrolQuery = supabase
+      .from<PatrolRow>('patrols')
+      .select('id, team_name, category, sex, patrol_code')
+      .eq('event_id', assignment.event_id)
+      .eq('active', true);
+
+    if (allowedCategories.length > 0) {
+      patrolQuery = patrolQuery.in('category', allowedCategories);
+    }
+
+    const { data: patrolsData, error: patrolsError } = await patrolQuery.order('patrol_code', {
+      ascending: true,
+    });
+
+    if (patrolsError) {
+      return res.status(500).json({ error: 'Failed to load patrols' });
+    }
+
+    const sessionId = randomToken(16);
+    const deviceSalt = randomToken(24);
+
+    const tokenPayload = {
+      sub: judge.id,
+      sessionId,
+      stationId: station.id,
+      eventId: event.id,
+      station_id: station.id,
+      event_id: event.id,
+      role: 'authenticated',
+    } as const;
+
+    const refreshToken = createRefreshToken({ ...tokenPayload, type: 'refresh' });
+    const accessToken = createAccessToken({ ...tokenPayload, type: 'access' });
+
+    const refreshTokenHash = hashRefreshToken(refreshToken);
+    const refreshExpiresAt = new Date(Date.now() + authConfig.refreshTokenTtlSeconds * 1000);
+
+    const insertPayload = {
+      id: sessionId,
+      judge_id: judge.id,
+      station_id: station.id,
+      event_id: event.id,
+      device_salt: deviceSalt,
+      public_key: devicePublicKey ?? null,
+      manifest_version: manifest.manifestVersion,
+      refresh_token_hash: refreshTokenHash,
+      refresh_token_expires_at: toIso(refreshExpiresAt),
+    };
+
+    const { error: sessionError } = await supabase.from('judge_sessions').insert(insertPayload);
+
+    if (sessionError) {
+      return res.status(500).json({ error: 'Failed to initialise session' });
+    }
+
+    res.json({
+      access_token: accessToken,
+      access_token_expires_in: authConfig.accessTokenTtlSeconds,
+      refresh_token: refreshToken,
+      refresh_token_expires_in: authConfig.refreshTokenTtlSeconds,
+      device_salt: deviceSalt,
+      manifest,
+      patrols: (patrolsData ?? []) as PatrolRow[],
+    });
+  } catch (error) {
+    console.error('[api/auth/login] unhandled', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
-
-  const { data: assignment, error: assignmentError } = await supabase
-    .from<AssignmentRow>('judge_assignments')
-    .select('*')
-    .eq('judge_id', judge.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (assignmentError || !assignment) {
-    return res.status(403).json({ error: 'Judge has no assignment' });
-  }
-
-  const [{ data: station }, { data: event }] = await Promise.all([
-    supabase
-      .from<StationRow>('stations')
-      .select('id, code, name')
-      .eq('id', assignment.station_id)
-      .maybeSingle(),
-    supabase
-      .from<EventRow>('events')
-      .select('id, name, scoring_locked')
-      .eq('id', assignment.event_id)
-      .maybeSingle(),
-  ]);
-
-  if (!station || !event) {
-    return res.status(500).json({ error: 'Failed to resolve assignment details' });
-  }
-
-  const allowedCategories = normalizeAllowedCategories(assignment.allowed_categories, station.code);
-
-  const manifest: StationManifest = {
-    judge: {
-      id: judge.id,
-      email: judge.email ?? normalizedEmail,
-      displayName: judge.display_name ?? normalizedEmail,
-    },
-    station: {
-      id: station.id,
-      code: station.code,
-      name: station.name,
-    },
-    event: {
-      id: event.id,
-      name: event.name,
-      scoringLocked: Boolean(event.scoring_locked),
-    },
-    allowedCategories,
-    allowedTasks: assignment.allowed_tasks ?? [],
-    manifestVersion: 1,
-  };
-
-  let patrolQuery = supabase
-    .from<PatrolRow>('patrols')
-    .select('id, team_name, category, sex, patrol_code')
-    .eq('event_id', assignment.event_id)
-    .eq('active', true);
-
-  if (allowedCategories.length > 0) {
-    patrolQuery = patrolQuery.in('category', allowedCategories);
-  }
-
-  const { data: patrolsData, error: patrolsError } = await patrolQuery.order('patrol_code', {
-    ascending: true,
-  });
-
-  if (patrolsError) {
-    return res.status(500).json({ error: 'Failed to load patrols' });
-  }
-
-  const sessionId = randomToken(16);
-  const deviceSalt = randomToken(24);
-
-  const tokenPayload = {
-    sub: judge.id,
-    sessionId,
-    stationId: station.id,
-    eventId: event.id,
-    station_id: station.id,
-    event_id: event.id,
-    role: 'authenticated',
-  } as const;
-
-  const refreshToken = createRefreshToken({ ...tokenPayload, type: 'refresh' });
-  const accessToken = createAccessToken({ ...tokenPayload, type: 'access' });
-
-  const refreshTokenHash = hashRefreshToken(refreshToken);
-  const refreshExpiresAt = new Date(Date.now() + authConfig.refreshTokenTtlSeconds * 1000);
-
-  const insertPayload = {
-    id: sessionId,
-    judge_id: judge.id,
-    station_id: station.id,
-    event_id: event.id,
-    device_salt: deviceSalt,
-    public_key: devicePublicKey ?? null,
-    manifest_version: manifest.manifestVersion,
-    refresh_token_hash: refreshTokenHash,
-    refresh_token_expires_at: toIso(refreshExpiresAt),
-  };
-
-  const { error: sessionError } = await supabase.from('judge_sessions').insert(insertPayload);
-
-  if (sessionError) {
-    return res.status(500).json({ error: 'Failed to initialise session' });
-  }
-
-  res.json({
-    access_token: accessToken,
-    access_token_expires_in: authConfig.accessTokenTtlSeconds,
-    refresh_token: refreshToken,
-    refresh_token_expires_in: authConfig.refreshTokenTtlSeconds,
-    device_salt: deviceSalt,
-    manifest,
-    patrols: (patrolsData ?? []) as PatrolRow[],
-  });
 }
