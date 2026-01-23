@@ -1,8 +1,9 @@
 import localforage from 'localforage';
-import type { LocalForage } from 'localforage';
+
+type LocalForageInstance = ReturnType<typeof localforage.createInstance>;
 
 let configured = false;
-let outboxStore: LocalForage | null = null;
+let outboxStore: LocalForageInstance | null = null;
 
 function configureLocalforage() {
   if (configured) {
