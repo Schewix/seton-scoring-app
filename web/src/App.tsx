@@ -273,7 +273,7 @@ async function readOutbox(): Promise<OutboxEntry[]> {
   if (!keys.length) {
     return [];
   }
-  const entries = await Promise.all(keys.map((key) => outboxStore.getItem<OutboxEntry>(key)));
+  const entries = await Promise.all(keys.map((key: string) => outboxStore.getItem<OutboxEntry>(key)));
   return entries.filter((entry): entry is OutboxEntry => Boolean(entry));
 }
 
@@ -737,7 +737,7 @@ function StationApp({
     async (items: OutboxEntry[]) => {
       const now = Date.now();
       let changed = false;
-      const updated = items.map((item) => {
+      const updated = items.map<OutboxEntry>((item) => {
         if (item.state === 'sent') {
           return item;
         }
@@ -1603,7 +1603,7 @@ function StationApp({
     const sessionResult = requireAccessToken(auth.tokens.accessToken);
     if (!sessionResult.accessToken) {
       if (sessionResult.shouldBlock) {
-        const updated = items.map((item) => {
+        const updated = items.map<OutboxEntry>((item) => {
           if (
             item.event_id !== eventId ||
             item.station_id !== stationId ||
@@ -1632,7 +1632,7 @@ function StationApp({
       return;
     }
 
-    const cleared = items.map((item) => {
+    const cleared = items.map<OutboxEntry>((item) => {
       if (item.event_id === eventId && item.station_id === stationId && item.state === 'needs_auth') {
         return { ...item, state: 'queued', last_error: undefined, next_attempt_at: now };
       }
@@ -1651,7 +1651,7 @@ function StationApp({
 
     const batch = ready.slice(0, OUTBOX_BATCH_SIZE);
     const batchIds = new Set(batch.map((item) => item.client_event_id));
-    const sendingItems = items.map((item) =>
+    const sendingItems = items.map<OutboxEntry>((item) =>
       batchIds.has(item.client_event_id) ? { ...item, state: 'sending' } : item,
     );
     await writeOutboxEntries(sendingItems);
@@ -1739,7 +1739,9 @@ function StationApp({
         }
       }
 
-      const updated = sendingItems.map((item) => resultMap.get(item.client_event_id) ?? item);
+      const updated: OutboxEntry[] = sendingItems.map(
+        (item) => resultMap.get(item.client_event_id) ?? item,
+      );
       await writeOutboxEntries(updated);
       updateOutboxState(updated);
 

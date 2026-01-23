@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
@@ -704,7 +704,7 @@ function ScoreboardApp() {
     loadData();
   }, [loadData]);
 
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback(async () => {
     if (!groupedRanked.length || exporting) {
       return;
     }
@@ -743,7 +743,7 @@ function ScoreboardApp() {
 
     try {
       setExporting(true);
-      const workbook = XLSX.utils.book_new();
+      const workbook = new ExcelJS.Workbook();
 
       groupedRanked.forEach((group) => {
         const sheetName = formatCategoryLabel(group.category, group.sex);
@@ -812,8 +812,8 @@ function ScoreboardApp() {
             '',
           ]);
         }
-        const worksheet = XLSX.utils.aoa_to_sheet(rows);
-        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName || '—');
+        const worksheet = workbook.addWorksheet(sheetName || '—');
+        worksheet.addRows(rows);
       });
 
       const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
@@ -826,30 +826,39 @@ function ScoreboardApp() {
         .replace(/ /g, '-');
       const fileName = `${safeName || 'vysledky'}-${timestamp}.xlsx`;
 
-      XLSX.writeFile(workbook, fileName);
-      } catch (err) {
-        console.error('Failed to export scoreboard data', err);
-      } finally {
-        setExporting(false);
-      }
-    }, [eventName, exporting, groupedRanked, stationCodes]);
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error('Failed to export scoreboard data', err);
+    } finally {
+      setExporting(false);
+    }
+  }, [eventName, exporting, groupedRanked, stationCodes]);
 
-    const eventLabel = eventName || 'Název závodu není k dispozici';
-    const lastUpdatedLabel = lastUpdatedAt
-      ? lastUpdatedAt.toLocaleTimeString('cs-CZ', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-      : 'Čekám na data';
-    const lastUpdatedHint = refreshing
-      ? 'Načítám čerstvá data…'
-      : lastUpdatedAt
-        ? 'Automatická aktualizace každých 30 s.'
-        : 'Zobrazí se po načtení výsledků.';
+  const eventLabel = eventName || 'Název závodu není k dispozici';
+  const lastUpdatedLabel = lastUpdatedAt
+    ? lastUpdatedAt.toLocaleTimeString('cs-CZ', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+    : 'Čekám na data';
+  const lastUpdatedHint = refreshing
+    ? 'Načítám čerstvá data…'
+    : lastUpdatedAt
+      ? 'Automatická aktualizace každých 30 s.'
+      : 'Zobrazí se po načtení výsledků.';
 
-    const statusState = error ? 'error' : isOnline ? 'online' : 'offline';
-    const statusLabel = error ? 'Chyba synchronizace' : isOnline ? 'Online' : 'Offline';
+  const statusState = error ? 'error' : isOnline ? 'online' : 'offline';
+  const statusLabel = error ? 'Chyba synchronizace' : isOnline ? 'Online' : 'Offline';
 
     return (
       <div className="scoreboard-app">

@@ -14,7 +14,7 @@
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "types": ["vite/client"]
+    "types": ["vite/client", "react", "react-dom"]
   },
   "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]
