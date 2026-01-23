@@ -1,4 +1,4 @@
-import localforage from 'localforage';
+import { getLocalforage } from '../storage/localforage';
 import type { PatrolRegistryEntry } from '../components/PatrolCodeInput';
 import { normalisePatrolCode } from '../components/PatrolCodeInput';
 
@@ -48,10 +48,12 @@ function getRegistryCacheKey(eventId: string) {
 }
 
 export async function loadPatrolRegistryCache(eventId: string) {
+  const localforage = getLocalforage();
   return localforage.getItem<PatrolRegistryCache | null>(getRegistryCacheKey(eventId));
 }
 
 export async function savePatrolRegistryCache(eventId: string, entries: PatrolRegistryEntry[]) {
+  const localforage = getLocalforage();
   const payload: PatrolRegistryCache = {
     entries,
     updatedAt: Date.now(),

@@ -39,3 +39,47 @@ a:hover,
 a:focus-visible {
   color: var(--py-blue-hover);
 }
+
+.app-error-boundary {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--zl-green-50);
+  padding: 24px;
+}
+
+.app-error-boundary__card {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-soft);
+  padding: 32px;
+  max-width: 520px;
+  text-align: center;
+}
+
+.app-error-boundary__card h1 {
+  margin: 0 0 12px;
+  font-size: 1.5rem;
+}
+
+.app-error-boundary__card p {
+  margin: 0 0 24px;
+  color: var(--text-muted);
+}
+
+.app-error-boundary__card button {
+  border: none;
+  border-radius: 999px;
+  padding: 12px 24px;
+  font-size: 1rem;
+  background: var(--py-blue);
+  color: #fff;
+  cursor: pointer;
+}
+
+.app-error-boundary__card button:hover,
+.app-error-boundary__card button:focus-visible {
+  background: var(--py-blue-hover);
+}
