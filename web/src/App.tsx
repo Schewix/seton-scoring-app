@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import localforage from 'localforage';
 // import QRScanner from './components/QRScanner';
 import LastScoresList from './components/LastScoresList';
 import PatrolCodeInput, {
@@ -22,6 +21,7 @@ import TicketQueue from './components/TicketQueue';
 import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket, TicketState } from './auth/tickets';
 import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord } from './storage/scanHistory';
+import { getOutboxStore } from './storage/localforage';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
 import { ROUTE_PREFIX, SCOREBOARD_ROUTE_PREFIX, getStationPath, isStationAppPath } from './routing';
@@ -145,14 +145,6 @@ const SCORE_REVIEW_TASK_KEYS = new Set([
   'manage-wait-times',
 ]);
 
-localforage.config({
-  name: 'seton-web',
-});
-
-const outboxStore = localforage.createInstance({
-  name: 'seton-web',
-  storeName: 'outbox',
-});
 
 function formatWaitMinutes(totalMinutes: number) {
   const clamped = Math.max(0, Math.min(WAIT_MINUTES_MAX, Math.round(totalMinutes)));
@@ -263,6 +255,7 @@ function compareSummaryPatrols(a: StationSummaryPatrol, b: StationSummaryPatrol)
 }
 
 async function readOutbox(): Promise<OutboxEntry[]> {
+  const outboxStore = getOutboxStore();
   const keys = await outboxStore.keys();
   if (!keys.length) {
     return [];
@@ -272,6 +265,7 @@ async function readOutbox(): Promise<OutboxEntry[]> {
 }
 
 async function writeOutboxEntries(items: OutboxEntry[]) {
+  const outboxStore = getOutboxStore();
   if (!items.length) {
     return;
   }
@@ -282,6 +276,7 @@ async function writeOutboxEntries(items: OutboxEntry[]) {
 }
 
 async function writeOutboxEntry(item: OutboxEntry) {
+  const outboxStore = getOutboxStore();
   await outboxStore.setItem(item.client_event_id, item);
   if (typeof window !== 'undefined') {
     void registerPendingSync();
@@ -289,6 +284,7 @@ async function writeOutboxEntry(item: OutboxEntry) {
 }
 
 async function deleteOutboxEntries(ids: string[]) {
+  const outboxStore = getOutboxStore();
   if (!ids.length) {
     return;
   }

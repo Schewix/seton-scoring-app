@@ -1,4 +1,4 @@
-import localforage from 'localforage';
+import { getLocalforage } from './localforage';
 
 export interface ScanRecord {
   code: string;
@@ -21,6 +21,7 @@ export async function appendScanRecord(
   stationId: string,
   record: ScanRecord,
 ): Promise<void> {
+  const localforage = getLocalforage();
   const key = buildKey(eventId, stationId);
   const current = (await localforage.getItem<ScanRecord[]>(key)) ?? [];
   const next = [...current, record];
@@ -31,6 +32,7 @@ export async function appendScanRecord(
 }
 
 export async function getScanHistory(eventId: string, stationId: string): Promise<ScanRecord[]> {
+  const localforage = getLocalforage();
   const key = buildKey(eventId, stationId);
   return ((await localforage.getItem<ScanRecord[]>(key)) ?? []).slice();
 }
