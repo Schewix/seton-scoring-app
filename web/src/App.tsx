@@ -42,6 +42,18 @@ import { ACCESS_DENIED_MESSAGE } from './auth/messages';
 import competitionRulesPdf from './assets/pravidla-souteze.pdf';
 import stationRulesPdf from './assets/pravidla-stanovist.pdf';
 
+const SUPABASE_BASE_URL = (env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
+
+if (!SUPABASE_BASE_URL) {
+  throw new Error('Missing VITE_SUPABASE_URL for submit-station-record requests.');
+}
+
+const SUBMIT_STATION_RECORD_URL = `${SUPABASE_BASE_URL}/functions/v1/submit-station-record`;
+
+if (import.meta.env.DEV) {
+  console.debug('[outbox] resolved submit endpoint', { submitStationRecordUrl: SUBMIT_STATION_RECORD_URL });
+}
+
 
 interface Patrol {
   id: string;
@@ -1646,7 +1658,7 @@ function StationApp({
 
     try {
       const accessToken = sessionResult.accessToken;
-      const endpoint = '/api/submit-station-record';
+      const endpoint = SUBMIT_STATION_RECORD_URL;
       const resultMap = new Map<string, OutboxEntry>();
       let flushed = 0;
 

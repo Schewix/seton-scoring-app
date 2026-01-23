@@ -1,6 +1,17 @@
+import { env } from '../envVars';
 import type { LoginResponse, StationManifest } from './types';
 
-const BASE_URL = '/api';
+const BASE_URL = (env.VITE_AUTH_API_URL ?? env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
+
+if (!BASE_URL) {
+  throw new Error('Missing VITE_AUTH_API_URL or VITE_SUPABASE_URL for auth API requests.');
+}
+
+const MANIFEST_URL = `${BASE_URL}/auth/manifest`;
+
+if (import.meta.env.DEV) {
+  console.debug('[auth] resolved API URLs', { baseUrl: BASE_URL, manifestUrl: MANIFEST_URL });
+}
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -83,7 +94,7 @@ export function requestPasswordReset(email: string) {
 }
 
 export async function fetchManifest(accessToken: string) {
-  const url = `${BASE_URL}/manifest`;
+  const url = MANIFEST_URL;
   let response: Response;
 
   try {
