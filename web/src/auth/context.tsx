@@ -32,7 +32,6 @@ import { deriveWrappingKey, encryptDeviceKey, generateDeviceKey, decryptDeviceKe
 import { toBase64 } from './base64';
 import { decodeJwt } from './jwt';
 import { env } from '../envVars';
-import { setSupabaseAccessToken } from '../supabaseClient';
 import { ACCESS_DENIED_MESSAGE, INVALID_JWT_MESSAGE } from './messages';
 
 interface AuthContextValue {
@@ -159,12 +158,11 @@ function useInitialization(setStatus: (status: AuthStatus) => void) {
     let cancelled = false;
     const initialize = async () => {
       try {
-      if (AUTH_BYPASS) {
-        if (!cancelled) {
-          setSupabaseAccessToken(null);
-          setStatus({
-            state: 'authenticated',
-            manifest: {
+        if (AUTH_BYPASS) {
+          if (!cancelled) {
+            setStatus({
+              state: 'authenticated',
+              manifest: {
                 judge: { id: 'judge-test', email: 'test@example.com', displayName: 'Test Judge' },
                 station: {
                   id: env.VITE_STATION_ID || 'station-test',
@@ -230,7 +228,6 @@ function useInitialization(setStatus: (status: AuthStatus) => void) {
               throw new Error('Chybí přístupový token.');
             }
             validateSupabaseAccessToken(tokens.accessToken);
-            setSupabaseAccessToken(tokens.accessToken);
             setStatus({
               state: 'authenticated',
               manifest,
@@ -365,7 +362,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         encryptedDeviceKey: { ...encrypted, deviceSalt: success.device_salt },
       });
 
-      setSupabaseAccessToken(success.access_token);
       setStatus({
         state: 'authenticated',
         manifest: success.manifest,
@@ -457,7 +453,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       logAccessTokenClaims(accessToken, 'unlock');
       validateSupabaseAccessToken(accessToken);
-      setSupabaseAccessToken(accessToken);
       setStatus({
         state: 'authenticated',
         manifest: cachedData.manifest,
@@ -483,7 +478,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPinHash(null),
     ]);
     setCachedData(null);
-    setSupabaseAccessToken(null);
     setStatus({ state: 'unauthenticated' });
   }, []);
 

@@ -236,7 +236,7 @@ vi.mock('../supabaseClient', () => {
     },
   };
 
-  return { supabase, setSupabaseAccessToken: vi.fn() };
+  return { supabase };
 });
 
 vi.mock('../components/QRScanner', () => ({
