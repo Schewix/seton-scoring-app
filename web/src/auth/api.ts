@@ -1,16 +1,15 @@
 import { env } from '../envVars';
 import type { LoginResponse, StationManifest } from './types';
 
-const BASE_URL = (env.VITE_AUTH_API_URL ?? env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
+const FALLBACK_BASE_URL = import.meta.env.PROD ? '/api' : env.VITE_SUPABASE_URL ?? '';
+const BASE_URL = (env.VITE_AUTH_API_URL ?? FALLBACK_BASE_URL).replace(/\/$/, '');
 
 if (!BASE_URL) {
   throw new Error('Missing VITE_AUTH_API_URL or VITE_SUPABASE_URL for auth API requests.');
 }
 
-const MANIFEST_URL = `${BASE_URL}/auth/manifest`;
-
 if (import.meta.env.DEV) {
-  console.debug('[auth] resolved API URLs', { baseUrl: BASE_URL, manifestUrl: MANIFEST_URL });
+  console.debug('[auth] resolved API URLs', { baseUrl: BASE_URL });
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -59,6 +58,9 @@ export class ManifestFetchError extends Error {
 const loggedManifestWarnings = new Set<string>();
 
 function logManifestWarningOnce(key: string, message: string, details: Record<string, unknown>) {
+  if (!import.meta.env.DEV) {
+    return;
+  }
   if (loggedManifestWarnings.has(key)) {
     return;
   }
@@ -93,78 +95,7 @@ export function requestPasswordReset(email: string) {
   }).then((res) => handleResponse<{ success: true }>(res));
 }
 
-export async function fetchManifest(accessToken: string) {
-  const url = MANIFEST_URL;
-  let response: Response;
-
-  try {
-    response = await fetch(url, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: 'no-store',
-    });
-  } catch (error) {
-    throw new ManifestFetchError('Manifest request failed.', { url, kind: 'network' });
-  }
-
-  if (!response.ok) {
-    let message = `Manifest request failed (${response.status}).`;
-    try {
-      const body = await response.json();
-      if (body?.error) message = body.error;
-    } catch (error) {
-      // ignore
-    }
-
-    if (response.status === 404) {
-      logManifestWarningOnce('manifest-404', 'Manifest endpoint returned 404. Check API routing.', {
-        status: response.status,
-        url,
-      });
-    }
-
-    throw new ManifestFetchError(message, { url, status: response.status, kind: 'http' });
-  }
-
-  const contentType = response.headers.get('content-type') ?? '';
-  const isJson =
-    contentType.includes('application/manifest+json') || contentType.includes('application/json');
-  if (!isJson) {
-    if (contentType.includes('text/html')) {
-      logManifestWarningOnce(
-        'manifest-html',
-        'Manifest response looks like HTML. Check API base URL and routing.',
-        {
-          status: response.status,
-          url,
-          contentType,
-        },
-      );
-    } else {
-      logManifestWarningOnce('manifest-content-type', 'Manifest response has unexpected content type.', {
-        status: response.status,
-        url,
-        contentType,
-      });
-    }
-
-    throw new ManifestFetchError('Manifest response has unexpected content type.', {
-      url,
-      status: response.status,
-      contentType,
-      kind: 'content-type',
-    });
-  }
-
-  try {
-    return (await response.json()) as { manifest: StationManifest; device_salt: string };
-  } catch (error) {
-    console.error('Manifest JSON parsing failed.', { status: response.status, url });
-    throw new ManifestFetchError('Manifest response could not be parsed.', {
-      url,
-      status: response.status,
-      contentType,
-      kind: 'parse',
-    });
-  }
+export async function fetchManifest(_accessToken: string) {
+  logManifestWarningOnce('manifest-disabled', 'Manifest refresh is disabled; skipping fetch.', {});
+  return null as { manifest: StationManifest; device_salt: string } | null;
 }
