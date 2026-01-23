@@ -87,6 +87,23 @@ VITE_AUTH_BYPASS=1  # jen pro lokální vývoj bez přihlášení
 
 Běžné skripty: `npm run build`, `npm run preview`, `npm run lint`, `npm run test` (Vitest scénáře pokrývají offline frontu i automatické hodnocení terče).
 
+## Sanity CMS + fotogalerie (Google Drive)
+
+Obsah homepage a článků je spravovaný přes Sanity Studio. Metadata fotogalerií obsahují pouze odkaz na Drive složku s fotkami.
+
+- **Studio** – konfigurace je v [`sanity/`](./sanity). Lokální spuštění: `npm install && npm run dev`.
+- **Dokumentace pro editory** – viz [`sanity/README.md`](./sanity/README.md).
+- **Gallery API** – Vercel funkce v `web/api/gallery` načítají fotky z Google Drive přes service account.
+
+### Google Drive service account
+
+1. V Google Cloud Console vytvoř Service Account a aktivuj pro projekt **Google Drive API (v3)**.
+2. Vygeneruj JSON klíč a hodnoty z něj zkopíruj do `.env`:
+   - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+   - `GOOGLE_PRIVATE_KEY` (vkládej se `\\n` místo nových řádků).
+3. V Google Drive nasdílej root složku s fotkami na e-mail service accountu s rolí **Viewer**.
+4. Do Sanity alba vlož URL nebo ID podsložky – ID se automaticky uloží.
+
 ## Supabase & Google Sheets
 
 1. Spusť SQL skripty v pořadí `schema.sql`, `views.sql`, případně `rls.sql` (zapne RLS) a dle potřeby seed [`seton_2024_seed.sql`](./supabase/sql/seton_2024_seed.sql). RLS politiky předpokládají, že JWT obsahuje `event_id` a `station_id` jako textové UUID.
