@@ -48,7 +48,9 @@ if (!SUPABASE_BASE_URL) {
   throw new Error('Missing VITE_SUPABASE_URL for submit-station-record requests.');
 }
 
-const SUBMIT_STATION_RECORD_URL = `${SUPABASE_BASE_URL}/functions/v1/submit-station-record`;
+const SUBMIT_STATION_RECORD_URL = import.meta.env.PROD
+  ? '/api/submit-station-record'
+  : `${SUPABASE_BASE_URL}/functions/v1/submit-station-record`;
 
 if (import.meta.env.DEV) {
   console.debug('[outbox] resolved submit endpoint', { submitStationRecordUrl: SUBMIT_STATION_RECORD_URL });
@@ -1661,6 +1663,10 @@ function StationApp({
       const endpoint = SUBMIT_STATION_RECORD_URL;
       const resultMap = new Map<string, OutboxEntry>();
       let flushed = 0;
+
+      if (import.meta.env.DEV) {
+        console.debug('[outbox] submit batch', { endpoint, hasAccessToken: Boolean(accessToken) });
+      }
 
       for (const item of batch) {
         try {
