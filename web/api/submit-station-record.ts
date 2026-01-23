@@ -36,6 +36,24 @@ function logError(context: string, error: unknown) {
   console.error(`[api/submit-station-record] ${context}`, safeError);
 }
 
+function formatErrorDetail(error: unknown): string {
+  if (!error) return 'unknown-error';
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function respond(
+  res: any,
+  status: number,
+  message: string,
+  detail?: string,
+): ReturnType<any['status']> {
+  if (status >= 500) {
+    console.error('[api/submit-station-record]', message, detail ? { detail } : {});
+  }
+  return res.status(status).json(detail ? { error: message, detail } : { error: message });
+}
+
 function isString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -123,7 +141,7 @@ export default async function handler(req: any, res: any) {
     authConfig = getAuthConfig();
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Missing auth configuration.';
-    return res.status(500).json({ error: message });
+    return respond(res, 500, message, 'auth-config');
   }
 
   let claims: TokenClaims;
@@ -176,12 +194,33 @@ export default async function handler(req: any, res: any) {
     supabaseConfig = getSupabaseAdminConfig();
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Missing Supabase configuration.';
-    return res.status(500).json({ error: message });
+    return respond(res, 500, message, 'supabase-config');
   }
 
   const supabaseAdmin = createClient(supabaseConfig.supabaseUrl, supabaseConfig.serviceRoleKey, {
     auth: { persistSession: false },
   });
+
+  let resolvedPatrolId = body.patrol_id;
+  if (!UUID_REGEX.test(resolvedPatrolId)) {
+    const { data: patrol, error: patrolError } = await supabaseAdmin
+      .from('patrols')
+      .select('id')
+      .eq('event_id', body.event_id)
+      .eq('patrol_code', body.patrol_code)
+      .maybeSingle();
+
+    if (patrolError) {
+      logError('patrols lookup failed', patrolError);
+      return respond(res, 500, 'Patrol lookup failed', patrolError.message);
+    }
+
+    if (!patrol?.id) {
+      return respond(res, 400, 'Unknown patrol code', body.patrol_code);
+    }
+
+    resolvedPatrolId = patrol.id;
+  }
 
   const { data: session, error: sessionError } = await supabaseAdmin
     .from('judge_sessions')
@@ -192,7 +231,7 @@ export default async function handler(req: any, res: any) {
 
   if (sessionError) {
     logError('judge_sessions lookup failed', sessionError);
-    return res.status(500).json({ error: 'Session lookup failed' });
+    return respond(res, 500, 'Session lookup failed', sessionError.message);
   }
 
   if (!session || session.revoked_at) {
@@ -207,7 +246,7 @@ export default async function handler(req: any, res: any) {
 
   if (existingError) {
     logError('station_scores lookup failed', existingError);
-    return res.status(500).json({ error: 'Lookup failed' });
+    return respond(res, 500, 'Lookup failed', existingError.message);
   }
 
   if (existingScore) {
@@ -221,7 +260,7 @@ export default async function handler(req: any, res: any) {
       {
         event_id: body.event_id,
         station_id: body.station_id,
-        patrol_id: body.patrol_id,
+        patrol_id: resolvedPatrolId,
         points: body.points,
         note: body.note || null,
         client_event_id: body.client_event_id,
@@ -235,7 +274,7 @@ export default async function handler(req: any, res: any) {
 
   if (scoreError) {
     logError('station_scores upsert failed', scoreError);
-    return res.status(500).json({ error: 'Score insert failed' });
+    return respond(res, 500, 'Score insert failed', scoreError.message);
   }
 
   const { error: passageError } = await supabaseAdmin
@@ -244,7 +283,7 @@ export default async function handler(req: any, res: any) {
       {
         event_id: body.event_id,
         station_id: body.station_id,
-        patrol_id: body.patrol_id,
+        patrol_id: resolvedPatrolId,
         arrived_at: body.arrived_at,
         wait_minutes: body.wait_minutes,
         client_event_id: body.client_event_id,
@@ -256,7 +295,7 @@ export default async function handler(req: any, res: any) {
 
   if (passageError) {
     logError('station_passages upsert failed', passageError);
-    return res.status(500).json({ error: 'Passage upsert failed' });
+    return respond(res, 500, 'Passage upsert failed', passageError.message);
   }
 
   if (body.finish_time) {
@@ -265,7 +304,7 @@ export default async function handler(req: any, res: any) {
       .upsert(
         {
           event_id: body.event_id,
-          patrol_id: body.patrol_id,
+          patrol_id: resolvedPatrolId,
           finish_time: body.finish_time,
           client_event_id: body.client_event_id,
           client_created_at: body.client_created_at,
@@ -276,7 +315,7 @@ export default async function handler(req: any, res: any) {
 
     if (timingError) {
       logError('timings upsert failed', timingError);
-      return res.status(500).json({ error: 'Timing upsert failed' });
+      return respond(res, 500, 'Timing upsert failed', timingError.message);
     }
   }
 
@@ -287,7 +326,7 @@ export default async function handler(req: any, res: any) {
         {
           event_id: body.event_id,
           station_id: body.station_id,
-          patrol_id: body.patrol_id,
+          patrol_id: resolvedPatrolId,
           category: body.category,
           answers: body.normalized_answers,
           correct_count: body.points,
@@ -300,7 +339,7 @@ export default async function handler(req: any, res: any) {
 
     if (quizError) {
       logError('station_quiz_responses upsert failed', quizError);
-      return res.status(500).json({ error: 'Quiz upsert failed' });
+      return respond(res, 500, 'Quiz upsert failed', quizError.message);
     }
   } else if (!body.use_target_scoring) {
     const { error: deleteError } = await supabaseAdmin
@@ -309,12 +348,12 @@ export default async function handler(req: any, res: any) {
       .match({
         event_id: body.event_id,
         station_id: body.station_id,
-        patrol_id: body.patrol_id,
+        patrol_id: resolvedPatrolId,
       });
 
     if (deleteError) {
       logError('station_quiz_responses delete failed', deleteError);
-      return res.status(500).json({ error: 'Quiz delete failed' });
+      return respond(res, 500, 'Quiz delete failed', deleteError.message);
     }
   }
 
