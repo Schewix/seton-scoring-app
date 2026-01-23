@@ -56,6 +56,11 @@ export function getTokens() {
   return localforage.getItem<StoredTokens | null>(TOKENS_KEY);
 }
 
+export async function getAccessToken() {
+  const tokens = await getTokens();
+  return tokens?.accessToken ?? null;
+}
+
 export function setDeviceKeyPayload(payload: StoredDeviceKey | null) {
   const localforage = getLocalforage();
   if (payload) {
