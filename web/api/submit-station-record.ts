@@ -24,6 +24,23 @@ type SubmissionPayload = {
   sex?: string;
 };
 
+function normalizePatrolCodeVariants(raw: string) {
+  const cleaned = raw.trim().toUpperCase();
+  const match = cleaned.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  if (!match) {
+    return [cleaned];
+  }
+
+  const parsed = Number.parseInt(match[3], 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return [cleaned];
+  }
+
+  const noPad = `${match[1]}${match[2]}-${parsed}`;
+  const pad = `${match[1]}${match[2]}-${String(parsed).padStart(2, '0')}`;
+  return noPad === pad ? [noPad] : [noPad, pad];
+}
+
 function logError(context: string, error: unknown) {
   const safeError =
     error && typeof error === 'object'
@@ -203,11 +220,12 @@ export default async function handler(req: any, res: any) {
 
   let resolvedPatrolId = body.patrol_id;
   if (!UUID_REGEX.test(resolvedPatrolId)) {
+    const patrolCodeVariants = normalizePatrolCodeVariants(body.patrol_code);
     const { data: patrol, error: patrolError } = await supabaseAdmin
       .from('patrols')
       .select('id')
       .eq('event_id', body.event_id)
-      .eq('patrol_code', body.patrol_code)
+      .in('patrol_code', patrolCodeVariants)
       .maybeSingle();
 
     if (patrolError) {
