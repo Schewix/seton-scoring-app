@@ -1,4 +1,4 @@
-import { DRIVE_FIELDS, getDriveClient } from '../_lib/googleDrive';
+import { DRIVE_FIELDS, getDriveClient } from '../_lib/googleDrive.js';
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
