@@ -274,7 +274,7 @@ async function readOutbox(): Promise<OutboxEntry[]> {
     return [];
   }
   const entries = await Promise.all(keys.map((key: string) => outboxStore.getItem<OutboxEntry>(key)));
-  return entries.filter((entry): entry is OutboxEntry => Boolean(entry));
+  return entries.filter((entry: OutboxEntry | null): entry is OutboxEntry => Boolean(entry));
 }
 
 async function writeOutboxEntries(items: OutboxEntry[]) {
@@ -3116,143 +3116,143 @@ function StationApp({
                 ) : null}
                 {canReviewStationScores ? (
                   <div className="score-review">
-                      <div className="score-review-header">
-                        <div>
-                          <h3>Kontrola bodů stanovišť</h3>
-                          <p className="card-hint">Zkontroluj body ze všech stanovišť a případně je uprav.</p>
-                        </div>
-                        <button
-                          type="button"
-                          className="ghost score-review-refresh"
-                          onClick={handleRefreshScoreReview}
-                          disabled={scoreReviewLoading}
-                        >
-                          {scoreReviewLoading ? 'Načítám…' : 'Obnovit'}
-                        </button>
+                    <div className="score-review-header">
+                      <div>
+                        <h3>Kontrola bodů stanovišť</h3>
+                        <p className="card-hint">Zkontroluj body ze všech stanovišť a případně je uprav.</p>
                       </div>
-                      {scoreReviewError ? <p className="error-text">{scoreReviewError}</p> : null}
-                      {!scoreReviewRows.length && !scoreReviewLoading ? (
-                        <p className="card-hint">Pro tuto hlídku zatím nejsou žádné body k zobrazení.</p>
-                      ) : null}
-                      {scoreReviewRows.length ? (
-                        <div className="score-review-table">
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>Body</th>
-                                <th>Čekání (HH:MM)</th>
-                                <th>Stanoviště</th>
-                                <th>OK</th>
-                                <th>Akce</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {scoreReviewRows.map((row) => {
-                                const state =
-                                  scoreReviewState[row.stationId] ??
-                                  ({
-                                    ok: true,
-                                    pointsDraft: row.points !== null ? String(row.points) : '',
-                                    waitDraft: formatWaitDraft(row.waitMinutes),
-                                    saving: false,
-                                    error: null,
-                                  } satisfies StationScoreRowState);
-                                const pointsDraft = state.pointsDraft;
-                                const rawWaitDraft = state.waitDraft;
-                                const pointsTrimmed = pointsDraft.trim();
-                                const pointsNumber = pointsTrimmed === '' ? NaN : Number(pointsTrimmed);
-                                const waitNumber = parseWaitDraft(rawWaitDraft);
-                                const waitDraft = Number.isNaN(waitNumber)
-                                  ? rawWaitDraft || WAIT_TIME_ZERO
-                                  : formatWaitDraft(waitNumber);
-                                const pointsValid =
-                                  Number.isInteger(pointsNumber) && pointsNumber >= 0 && pointsNumber <= 12;
-                                const waitValid =
-                                  Number.isInteger(waitNumber) && waitNumber >= 0 && waitNumber <= WAIT_MINUTES_MAX;
-                                const dirtyPoints = Number.isNaN(pointsNumber)
-                                  ? row.points !== null
-                                  : row.points === null
-                                    ? true
-                                    : pointsNumber !== row.points;
-                                const baseWait = row.waitMinutes ?? 0;
-                                const dirtyWait = Number.isNaN(waitNumber)
-                                  ? row.waitMinutes !== null
-                                  : waitNumber !== baseWait;
-                                const isValid = pointsValid && waitValid;
-                                const dirty = !state.ok && (dirtyPoints || dirtyWait);
-                                return (
-                                  <tr key={row.stationId} className={state.ok ? '' : 'score-review-editing'}>
-                                    <td>
+                      <button
+                        type="button"
+                        className="ghost score-review-refresh"
+                        onClick={handleRefreshScoreReview}
+                        disabled={scoreReviewLoading}
+                      >
+                        {scoreReviewLoading ? 'Načítám…' : 'Obnovit'}
+                      </button>
+                    </div>
+                    {scoreReviewError ? <p className="error-text">{scoreReviewError}</p> : null}
+                    {!scoreReviewRows.length && !scoreReviewLoading ? (
+                      <p className="card-hint">Pro tuto hlídku zatím nejsou žádné body k zobrazení.</p>
+                    ) : null}
+                    {scoreReviewRows.length ? (
+                      <div className="score-review-table">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Body</th>
+                              <th>Čekání (HH:MM)</th>
+                              <th>Stanoviště</th>
+                              <th>OK</th>
+                              <th>Akce</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {scoreReviewRows.map((row) => {
+                              const state =
+                                scoreReviewState[row.stationId] ??
+                                ({
+                                  ok: true,
+                                  pointsDraft: row.points !== null ? String(row.points) : '',
+                                  waitDraft: formatWaitDraft(row.waitMinutes),
+                                  saving: false,
+                                  error: null,
+                                } satisfies StationScoreRowState);
+                              const pointsDraft = state.pointsDraft;
+                              const rawWaitDraft = state.waitDraft;
+                              const pointsTrimmed = pointsDraft.trim();
+                              const pointsNumber = pointsTrimmed === '' ? NaN : Number(pointsTrimmed);
+                              const waitNumber = parseWaitDraft(rawWaitDraft);
+                              const waitDraft = Number.isNaN(waitNumber)
+                                ? rawWaitDraft || WAIT_TIME_ZERO
+                                : formatWaitDraft(waitNumber);
+                              const pointsValid =
+                                Number.isInteger(pointsNumber) && pointsNumber >= 0 && pointsNumber <= 12;
+                              const waitValid =
+                                Number.isInteger(waitNumber) && waitNumber >= 0 && waitNumber <= WAIT_MINUTES_MAX;
+                              const dirtyPoints = Number.isNaN(pointsNumber)
+                                ? row.points !== null
+                                : row.points === null
+                                  ? true
+                                  : pointsNumber !== row.points;
+                              const baseWait = row.waitMinutes ?? 0;
+                              const dirtyWait = Number.isNaN(waitNumber)
+                                ? row.waitMinutes !== null
+                                : waitNumber !== baseWait;
+                              const isValid = pointsValid && waitValid;
+                              const dirty = !state.ok && (dirtyPoints || dirtyWait);
+                              return (
+                                <tr key={row.stationId} className={state.ok ? '' : 'score-review-editing'}>
+                                  <td>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={12}
+                                      inputMode="numeric"
+                                      value={pointsDraft}
+                                      onChange={(event) => handleScoreDraftChange(row.stationId, event.target.value)}
+                                      disabled={state.ok || state.saving}
+                                      placeholder="—"
+                                      className="score-review-input"
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      type="time"
+                                      step={60}
+                                      min={WAIT_TIME_ZERO}
+                                      max={WAIT_TIME_MAX}
+                                      value={waitDraft}
+                                      onChange={(event) => handleWaitDraftChange(row.stationId, event.target.value)}
+                                      disabled={state.ok || state.saving}
+                                      placeholder="hh:mm"
+                                      className="score-review-input score-review-input--wait"
+                                    />
+                                  </td>
+                                  <td>
+                                    <div className="score-review-station">
+                                      <span className="score-review-code">{row.stationCode || '—'}</span>
+                                      <span className="score-review-name">{row.stationName}</span>
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <label className="score-review-check">
                                       <input
-                                        type="number"
-                                        min={0}
-                                        max={12}
-                                        inputMode="numeric"
-                                        value={pointsDraft}
-                                        onChange={(event) => handleScoreDraftChange(row.stationId, event.target.value)}
-                                        disabled={state.ok || state.saving}
-                                        placeholder="—"
-                                        className="score-review-input"
+                                        type="checkbox"
+                                        checked={state.ok}
+                                        onChange={(event) => handleScoreOkToggle(row.stationId, event.target.checked)}
+                                        disabled={state.saving}
                                       />
-                                    </td>
-                                    <td>
-                                      <input
-                                        type="time"
-                                        step={60}
-                                        min={WAIT_TIME_ZERO}
-                                        max={WAIT_TIME_MAX}
-                                        value={waitDraft}
-                                        onChange={(event) => handleWaitDraftChange(row.stationId, event.target.value)}
-                                        disabled={state.ok || state.saving}
-                                        placeholder="hh:mm"
-                                        className="score-review-input score-review-input--wait"
-                                      />
-                                    </td>
-                                    <td>
-                                      <div className="score-review-station">
-                                        <span className="score-review-code">{row.stationCode || '—'}</span>
-                                        <span className="score-review-name">{row.stationName}</span>
+                                      <span>OK</span>
+                                    </label>
+                                  </td>
+                                  <td>
+                                    {state.ok ? (
+                                      <span className="score-review-status">
+                                        {row.hasScore ? 'Potvrzeno' : 'Bez bodů'}
+                                      </span>
+                                    ) : (
+                                      <div className="score-review-actions">
+                                        <button
+                                          type="button"
+                                          className="ghost score-review-save"
+                                          onClick={() => handleSaveStationScore(row.stationId)}
+                                          disabled={state.saving || !isValid || !dirty}
+                                        >
+                                          {state.saving ? 'Ukládám…' : 'Uložit'}
+                                        </button>
+                                        {state.error ? (
+                                          <span className="error-text score-review-row-error">{state.error}</span>
+                                        ) : null}
                                       </div>
-                                    </td>
-                                    <td>
-                                      <label className="score-review-check">
-                                        <input
-                                          type="checkbox"
-                                          checked={state.ok}
-                                          onChange={(event) => handleScoreOkToggle(row.stationId, event.target.checked)}
-                                          disabled={state.saving}
-                                        />
-                                        <span>OK</span>
-                                      </label>
-                                    </td>
-                                    <td>
-                                      {state.ok ? (
-                                        <span className="score-review-status">
-                                          {row.hasScore ? 'Potvrzeno' : 'Bez bodů'}
-                                        </span>
-                                      ) : (
-                                        <div className="score-review-actions">
-                                          <button
-                                            type="button"
-                                            className="ghost score-review-save"
-                                            onClick={() => handleSaveStationScore(row.stationId)}
-                                            disabled={state.saving || !isValid || !dirty}
-                                          >
-                                            {state.saving ? 'Ukládám…' : 'Uložit'}
-                                          </button>
-                                          {state.error ? (
-                                            <span className="error-text score-review-row-error">{state.error}</span>
-                                          ) : null}
-                                        </div>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : null}
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 {useTargetScoring ? (

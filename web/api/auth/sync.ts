@@ -282,14 +282,19 @@ export default async function handler(req: any, res: any) {
           throw judgeError;
         }
 
-        if (!judgeRow) {
-          results.push({ id: operation.id, status: 'failed', error: 'judge-not-found' });
-          continue;
-        }
-
-        judge = judgeRow;
-        judgeCache.set(judgeId, judgeRow);
+      if (!judgeRow) {
+        results.push({ id: operation.id, status: 'failed', error: 'judge-not-found' });
+        continue;
       }
+
+      judge = judgeRow;
+      judgeCache.set(judgeId, judgeRow);
+    }
+
+    if (!judge) {
+      results.push({ id: operation.id, status: 'failed', error: 'judge-not-found' });
+      continue;
+    }
 
       if (!session.public_key) {
         results.push({ id: operation.id, status: 'failed', error: 'missing-device-key' });
@@ -339,7 +344,7 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
-      const result = await processSubmission(operation, parsed, judge.display_name);
+    const result = await processSubmission(operation, parsed, judge.display_name);
       results.push(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown-error';
