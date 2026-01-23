@@ -1646,8 +1646,7 @@ function StationApp({
 
     try {
       const accessToken = sessionResult.accessToken;
-      const baseUrl = env.VITE_SUPABASE_URL?.replace(/\/$/, '') ?? '';
-      const endpoint = `${baseUrl}/functions/v1/submit-station-record`;
+      const endpoint = '/api/submit-station-record';
       const resultMap = new Map<string, OutboxEntry>();
       let flushed = 0;
 
