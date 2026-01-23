@@ -11,6 +11,7 @@ interface SyncEvent extends ExtendableEvent {
 }
 
 const SYNC_TAG = 'sync-pending-ops';
+const CACHE_VERSION = 'v2';
 
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
@@ -26,17 +27,17 @@ cleanupOutdatedCaches();
 
 registerRoute(
   ({ request }) => request.mode === 'navigate',
-  new NetworkFirst({ cacheName: 'pages', networkTimeoutSeconds: 3 })
+  new NetworkFirst({ cacheName: `${CACHE_VERSION}-pages`, networkTimeoutSeconds: 3 })
 );
 
 registerRoute(
   ({ request, url }) => request.destination === 'manifest' || url.pathname.endsWith('/manifest.json'),
-  new NetworkFirst({ cacheName: 'manifest', networkTimeoutSeconds: 3 })
+  new NetworkFirst({ cacheName: `${CACHE_VERSION}-manifest`, networkTimeoutSeconds: 3 })
 );
 
 registerRoute(
   ({ request }) => request.destination === 'style' || request.destination === 'script',
-  new StaleWhileRevalidate({ cacheName: 'assets' })
+  new StaleWhileRevalidate({ cacheName: `${CACHE_VERSION}-assets` })
 );
 
 registerRoute(
@@ -48,13 +49,13 @@ registerRoute(
       url.pathname.startsWith('/auth/') ||
       url.pathname.includes('/rest/v1/') ||
       url.pathname.includes('/auth/v1/')),
-  new NetworkFirst({ cacheName: 'api-data', networkTimeoutSeconds: 3 })
+  new NetworkFirst({ cacheName: `${CACHE_VERSION}-api-data`, networkTimeoutSeconds: 3 })
 );
 
 registerRoute(
   ({ request }) => request.destination === 'image',
   new CacheFirst({
-    cacheName: 'images',
+    cacheName: `${CACHE_VERSION}-images`,
     matchOptions: { ignoreVary: true },
     plugins: [
       {
