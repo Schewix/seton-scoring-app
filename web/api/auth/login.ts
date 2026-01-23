@@ -1,4 +1,4 @@
-import { forwardResponse, getSupabaseConfig, logDev } from '../_lib/supabaseProxy';
+import { forwardResponse, getSupabaseConfig, logDev } from '../_lib/supabaseProxy.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
