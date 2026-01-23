@@ -380,15 +380,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshManifest = useCallback(async () => {
     if (status.state !== 'authenticated') {
-      throw new Error('Cannot refresh manifest when unauthenticated');
+      return;
     }
 
     const accessToken = status.tokens.accessToken;
     if (!accessToken) {
-      throw new Error('Missing access token for manifest refresh');
+      return;
     }
 
-    const { manifest: nextManifest, device_salt: nextDeviceSalt } = await fetchManifest(accessToken);
+    const refreshResult = await fetchManifest(accessToken);
+    if (!refreshResult) {
+      return;
+    }
+    const { manifest: nextManifest, device_salt: nextDeviceSalt } = refreshResult;
 
     await setManifest(nextManifest);
 
