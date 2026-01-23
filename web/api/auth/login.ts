@@ -362,7 +362,6 @@ export default async function handler(req: any, res: any) {
       id: sessionId,
       judge_id: judge.id,
       station_id: station.id,
-      event_id: event.id,
       device_salt: deviceSalt,
       public_key: devicePublicKey ?? null,
       manifest_version: manifest.manifestVersion,
