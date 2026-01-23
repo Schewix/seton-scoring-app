@@ -1289,131 +1289,6 @@ function StationApp({
     });
   }, []);
 
-  const handleSaveStationScore = useCallback(
-    async (stationId: string) => {
-      if (!activePatrol) {
-        return;
-      }
-
-      const baseRow = scoreReviewRows.find((row) => row.stationId === stationId);
-      const state = scoreReviewState[stationId];
-
-      if (!baseRow || !state) {
-        return;
-      }
-
-      const trimmedPoints = state.pointsDraft.trim();
-      const pointsValue = trimmedPoints === '' ? NaN : Number(trimmedPoints);
-      const waitValue = parseWaitDraft(state.waitDraft);
-
-      if (!Number.isInteger(pointsValue) || pointsValue < 0 || pointsValue > 12) {
-        setScoreReviewState((prev) => {
-          const previous = prev[stationId] ?? state;
-          return {
-            ...prev,
-            [stationId]: {
-              ...previous,
-              ok: false,
-              saving: false,
-              error: 'Body musí být číslo 0–12.',
-            },
-          };
-        });
-        return;
-      }
-
-      if (!Number.isInteger(waitValue) || waitValue < 0 || waitValue > WAIT_MINUTES_MAX) {
-        setScoreReviewState((prev) => {
-          const previous = prev[stationId] ?? state;
-          return {
-            ...prev,
-            [stationId]: {
-              ...previous,
-              ok: false,
-              saving: false,
-              error: `Čekání musí být čas v rozsahu 00:00–${WAIT_TIME_MAX}.`,
-            },
-          };
-        });
-        return;
-      }
-
-      setScoreReviewState((prev) => {
-        const previous = prev[stationId] ?? state;
-        return {
-          ...prev,
-          [stationId]: { ...previous, saving: true, error: null },
-        };
-      });
-
-      try {
-        const queued = await enqueueStationScore({
-          event_id: eventId,
-          station_id: stationId,
-          patrol_id: activePatrol.id,
-          category: activePatrol.category,
-          arrived_at: new Date().toISOString(),
-          wait_minutes: waitValue,
-          points: pointsValue,
-          note: baseRow.note ?? '',
-          use_target_scoring: false,
-          normalized_answers: null,
-          finish_time: null,
-          patrol_code: resolvePatrolCode(activePatrol),
-          team_name: activePatrol.team_name,
-          sex: activePatrol.sex,
-        });
-        if (!queued) {
-          throw new Error('queue-failed');
-        }
-
-        pushAlert(`Záznam pro stanoviště ${baseRow.stationCode || stationId} aktualizován.`);
-        await loadScoreReview(activePatrol.id);
-        setScoreReviewState((prev) => {
-          const current = prev[stationId];
-          if (!current) {
-            return prev;
-          }
-          return {
-            ...prev,
-            [stationId]: {
-              ...current,
-              ok: true,
-              saving: false,
-              error: null,
-              pointsDraft: String(pointsValue),
-              waitDraft: formatWaitDraft(waitValue),
-            },
-          };
-        });
-      } catch (error) {
-        console.error('Failed to save station score', error);
-        setScoreReviewState((prev) => {
-          const previous = prev[stationId] ?? state;
-          return {
-            ...prev,
-            [stationId]: {
-              ...previous,
-              saving: false,
-              error: 'Uložení se nezdařilo. Zkus to znovu.',
-            },
-          };
-        });
-        pushAlert('Nepodařilo se uložit záznam pro vybrané stanoviště.');
-      }
-    },
-    [
-      enqueueStationScore,
-      eventId,
-      loadScoreReview,
-      activePatrol,
-      pushAlert,
-      resolvePatrolCode,
-      scoreReviewRows,
-      scoreReviewState,
-    ],
-  );
-
   const handleRefreshScoreReview = useCallback(() => {
     if (activePatrol) {
       void loadScoreReview(activePatrol.id);
@@ -2266,6 +2141,131 @@ function StationApp({
       }
     },
     [flushOutbox, pushAlert, refreshOutbox],
+  );
+
+  const handleSaveStationScore = useCallback(
+    async (stationId: string) => {
+      if (!activePatrol) {
+        return;
+      }
+
+      const baseRow = scoreReviewRows.find((row) => row.stationId === stationId);
+      const state = scoreReviewState[stationId];
+
+      if (!baseRow || !state) {
+        return;
+      }
+
+      const trimmedPoints = state.pointsDraft.trim();
+      const pointsValue = trimmedPoints === '' ? NaN : Number(trimmedPoints);
+      const waitValue = parseWaitDraft(state.waitDraft);
+
+      if (!Number.isInteger(pointsValue) || pointsValue < 0 || pointsValue > 12) {
+        setScoreReviewState((prev) => {
+          const previous = prev[stationId] ?? state;
+          return {
+            ...prev,
+            [stationId]: {
+              ...previous,
+              ok: false,
+              saving: false,
+              error: 'Body musí být číslo 0–12.',
+            },
+          };
+        });
+        return;
+      }
+
+      if (!Number.isInteger(waitValue) || waitValue < 0 || waitValue > WAIT_MINUTES_MAX) {
+        setScoreReviewState((prev) => {
+          const previous = prev[stationId] ?? state;
+          return {
+            ...prev,
+            [stationId]: {
+              ...previous,
+              ok: false,
+              saving: false,
+              error: `Čekání musí být čas v rozsahu 00:00–${WAIT_TIME_MAX}.`,
+            },
+          };
+        });
+        return;
+      }
+
+      setScoreReviewState((prev) => {
+        const previous = prev[stationId] ?? state;
+        return {
+          ...prev,
+          [stationId]: { ...previous, saving: true, error: null },
+        };
+      });
+
+      try {
+        const queued = await enqueueStationScore({
+          event_id: eventId,
+          station_id: stationId,
+          patrol_id: activePatrol.id,
+          category: activePatrol.category,
+          arrived_at: new Date().toISOString(),
+          wait_minutes: waitValue,
+          points: pointsValue,
+          note: baseRow.note ?? '',
+          use_target_scoring: false,
+          normalized_answers: null,
+          finish_time: null,
+          patrol_code: resolvePatrolCode(activePatrol),
+          team_name: activePatrol.team_name,
+          sex: activePatrol.sex,
+        });
+        if (!queued) {
+          throw new Error('queue-failed');
+        }
+
+        pushAlert(`Záznam pro stanoviště ${baseRow.stationCode || stationId} aktualizován.`);
+        await loadScoreReview(activePatrol.id);
+        setScoreReviewState((prev) => {
+          const current = prev[stationId];
+          if (!current) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [stationId]: {
+              ...current,
+              ok: true,
+              saving: false,
+              error: null,
+              pointsDraft: String(pointsValue),
+              waitDraft: formatWaitDraft(waitValue),
+            },
+          };
+        });
+      } catch (error) {
+        console.error('Failed to save station score', error);
+        setScoreReviewState((prev) => {
+          const previous = prev[stationId] ?? state;
+          return {
+            ...prev,
+            [stationId]: {
+              ...previous,
+              saving: false,
+              error: 'Uložení se nezdařilo. Zkus to znovu.',
+            },
+          };
+        });
+        pushAlert('Nepodařilo se uložit záznam pro vybrané stanoviště.');
+      }
+    },
+    [
+      activePatrol,
+      enqueueStationScore,
+      eventId,
+      loadScoreReview,
+      pushAlert,
+      resolvePatrolCode,
+      scoreReviewRows,
+      scoreReviewState,
+    ],
   );
 
   const handleSave = useCallback(async () => {
