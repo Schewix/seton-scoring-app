@@ -219,17 +219,40 @@ function formatSummaryPatrolLabel(patrol: StationSummaryPatrol) {
 
 function createManualPatrolFromCode(code: string): Patrol | null {
   const normalized = code.trim().toUpperCase();
-  const match = normalized.match(/^([NMSR])([HD])-(\d{2})$/);
+  const match = normalized.match(/^([NMSR])([HD])-(\d{1,2})$/);
   if (!match) {
     return null;
   }
+  const parsed = Number.parseInt(match[3], 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  const padded = `${match[1]}${match[2]}-${String(parsed).padStart(2, '0')}`;
   return {
-    id: `manual-${normalized}`,
+    id: `manual-${padded}`,
     team_name: 'Ruční hlídka',
     category: match[1],
     sex: match[2],
-    patrol_code: normalized,
+    patrol_code: padded,
   };
+}
+
+function getPatrolCodeVariants(raw: string) {
+  const normalized = normalisePatrolCode(raw);
+  if (!normalized) {
+    return [];
+  }
+  const match = normalized.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  if (!match) {
+    return [normalized];
+  }
+  const parsed = Number.parseInt(match[3], 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return [normalized];
+  }
+  const noPad = `${match[1]}${match[2]}-${parsed}`;
+  const pad = `${match[1]}${match[2]}-${String(parsed).padStart(2, '0')}`;
+  return noPad === pad ? [noPad] : [noPad, pad];
 }
 
 function getSummaryPatrolSortKey(patrol: StationSummaryPatrol) {
@@ -1899,12 +1922,15 @@ function StationApp({
         if (!isCategoryAllowed(activePatrol.category)) {
           return;
         }
-        map.set(activePatrol.patrol_code.trim().toUpperCase(), {
-          id: activePatrol.id,
-          team_name: activePatrol.team_name,
-          category: activePatrol.category,
-          sex: activePatrol.sex,
-          patrol_code: activePatrol.patrol_code,
+        const variants = getPatrolCodeVariants(activePatrol.patrol_code);
+        variants.forEach((variant) => {
+          map.set(variant.trim().toUpperCase(), {
+            id: activePatrol.id,
+            team_name: activePatrol.team_name,
+            category: activePatrol.category,
+            sex: activePatrol.sex,
+            patrol_code: activePatrol.patrol_code,
+          });
         });
       }
     });
@@ -1913,17 +1939,22 @@ function StationApp({
 
   const fetchPatrol = useCallback(
     async (patrolCode: string, options?: { allowFallback?: boolean }) => {
-      const normalized = patrolCode.trim().toUpperCase();
+      const normalized = normalisePatrolCode(patrolCode);
+      if (!normalized) {
+        pushAlert('Neplatný kód hlídky.');
+        return false;
+      }
       let data = cachedPatrolMap.get(normalized) || null;
       let usedFallback = false;
 
       if (!data) {
         if (isOnline) {
+          const variants = getPatrolCodeVariants(normalized);
           const { data: fetched, error, status } = await supabase
             .from('patrols')
             .select('id, team_name, category, sex, patrol_code')
             .eq('event_id', eventId)
-            .eq('patrol_code', normalized)
+            .in('patrol_code', variants.length ? variants : [normalized])
             .maybeSingle();
 
           if (error || !fetched) {

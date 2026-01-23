@@ -24,7 +24,7 @@ export function getAuthConfig(): AuthConfig {
     return cachedConfig;
   }
 
-  const jwtSecret = process.env.JWT_SECRET ?? process.env.SUPABASE_JWT_SECRET ?? '';
+  const jwtSecret = process.env.SUPABASE_JWT_SECRET ?? process.env.JWT_SECRET ?? '';
   const refreshSecret = process.env.REFRESH_TOKEN_SECRET ?? process.env.JWT_REFRESH_SECRET ?? '';
 
   if (jwtSecret.length < MIN_SECRET_LENGTH) {
