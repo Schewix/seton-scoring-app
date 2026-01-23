@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Session } from '@supabase/supabase-js';
 // import QRScanner from './components/QRScanner';
 import LastScoresList from './components/LastScoresList';
 import PatrolCodeInput, {
@@ -409,31 +408,6 @@ function formatStationCategoryDetailLabel(category: StationCategoryKey): string 
 }
 
 const NO_SESSION_ERROR = 'NO_SESSION';
-const SESSION_STALE_THRESHOLD_MS = 60_000;
-
-function isSessionStale(session: Session | null) {
-  if (!session) {
-    return true;
-  }
-  if (!session.expires_at) {
-    return false;
-  }
-  return session.expires_at * 1000 - Date.now() <= SESSION_STALE_THRESHOLD_MS;
-}
-
-async function refreshSupabaseSession(reason: string) {
-  const { data } = await supabase.auth.getSession();
-  const session = data?.session ?? null;
-  if (!session || isSessionStale(session)) {
-    try {
-      await supabase.auth.refreshSession();
-    } catch (error) {
-      if (import.meta.env.DEV) {
-        console.debug(`[auth] refreshSession failed (${reason})`, error);
-      }
-    }
-  }
-}
 
 function requireAccessToken(accessToken: string | null) {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -452,12 +426,10 @@ function StationApp({
   auth,
   refreshManifest,
   logout,
-  supabaseAuthReady,
 }: {
   auth: AuthenticatedState;
   refreshManifest: () => Promise<void>;
   logout: () => Promise<void>;
-  supabaseAuthReady: boolean;
 }) {
   const manifest = auth.manifest;
   const eventId = manifest.event.id;
@@ -1720,10 +1692,6 @@ function StationApp({
   }, [loadStationPassages]);
 
   const flushOutbox = useCallback(async () => {
-    if (!supabaseAuthReady) {
-      return;
-    }
-
     let items = await readOutbox();
     items = await normalizeOutboxForSession(items);
     updateOutboxState(items);
@@ -1899,7 +1867,6 @@ function StationApp({
     pushAlert,
     setAuthNeedsLogin,
     stationId,
-    supabaseAuthReady,
     syncing,
     updateOutboxState,
   ]);
@@ -1929,24 +1896,6 @@ function StationApp({
   useEffect(() => {
     void flushOutbox();
   }, [flushOutbox, tick]);
-
-  useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        setAuthNeedsLogin(false);
-        void flushOutbox();
-      }
-      if (event === 'SIGNED_OUT') {
-        if (typeof navigator !== 'undefined' && !navigator.onLine) {
-          return;
-        }
-        setAuthNeedsLogin(true);
-      }
-    });
-    return () => {
-      data.subscription.unsubscribe();
-    };
-  }, [flushOutbox, setAuthNeedsLogin]);
 
   const resetForm = useCallback(() => {
     setActivePatrol(null);
@@ -3600,54 +3549,10 @@ export function useStationRouting(status: AuthStatus) {
 
 function App() {
   const { status, refreshManifest, logout } = useAuth();
-  const [supabaseAuthReady, setSupabaseAuthReady] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    const initializeSupabaseAuth = async () => {
-      if (typeof window === 'undefined') {
-        if (active) {
-          setSupabaseAuthReady(true);
-        }
-        return;
-      }
-      try {
-        await supabase.auth.getSession();
-      } finally {
-        if (active) {
-          setSupabaseAuthReady(true);
-        }
-      }
-    };
-    void initializeSupabaseAuth();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!supabaseAuthReady || typeof window === 'undefined' || typeof document === 'undefined') {
-      return;
-    }
-    const handleOnline = () => {
-      void refreshSupabaseSession('online');
-    };
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        void refreshSupabaseSession('visibility');
-      }
-    };
-    window.addEventListener('online', handleOnline);
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, [supabaseAuthReady]);
 
   useStationRouting(status);
 
-  if (!supabaseAuthReady || status.state === 'loading') {
+  if (status.state === 'loading') {
     return (
       <div className="auth-shell auth-overlay">
         <div className="auth-shell-content">
@@ -3701,7 +3606,6 @@ function App() {
         auth={status}
         refreshManifest={refreshManifest}
         logout={logout}
-        supabaseAuthReady={supabaseAuthReady}
       />
     );
   }
