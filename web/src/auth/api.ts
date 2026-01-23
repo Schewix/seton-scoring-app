@@ -1,7 +1,6 @@
-import { env } from '../envVars';
 import type { LoginResponse, StationManifest } from './types';
 
-const BASE_URL = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
+const BASE_URL = '/api';
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
