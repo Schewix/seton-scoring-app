@@ -6,6 +6,7 @@ import { AuthProvider } from './auth/context';
 import ErrorBoundary from './components/ErrorBoundary';
 import { registerSW } from 'virtual:pwa-register';
 import { FORGOT_PASSWORD_ROUTE, ROUTE_PREFIX, isAdminPathname, isScoreboardPathname, isStationAppPath } from './routing';
+import { Analytics } from '@vercel/analytics/react';
 
 type IconLinkConfig = {
   rel: string;
@@ -106,7 +107,10 @@ function render(element: React.ReactNode) {
   root.render(
     <React.StrictMode>
       <ErrorBoundary>
-        <AuthProvider>{element}</AuthProvider>
+        <AuthProvider>
+          {element}
+          <Analytics />
+        </AuthProvider>
       </ErrorBoundary>
     </React.StrictMode>,
   );
