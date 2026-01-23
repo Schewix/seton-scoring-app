@@ -68,6 +68,23 @@ function applyCors(res: any) {
   }
 }
 
+function formatError(error: unknown): string {
+  if (!error) return 'unknown-error';
+  return error instanceof Error ? error.message : String(error);
+}
+
+function respond(
+  res: any,
+  status: number,
+  message: string,
+  detail?: string,
+): ReturnType<any['status']> {
+  if (status >= 500) {
+    console.error('[api/auth/login]', message, detail ? { detail } : {});
+  }
+  return res.status(status).json(detail ? { error: message, detail } : { error: message });
+}
+
 function resolveLoginPayload(rawBody: unknown) {
   let payload: Record<string, unknown> = {};
 
@@ -198,8 +215,7 @@ export default async function handler(req: any, res: any) {
       supabaseConfig = getSupabaseAdminConfig();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Missing Supabase configuration.';
-      console.error('[api/auth/login] config error', { message });
-      return res.status(500).json({ error: message });
+      return respond(res, 500, message, 'supabase-config');
     }
 
     let authConfig;
@@ -207,8 +223,7 @@ export default async function handler(req: any, res: any) {
       authConfig = getAuthConfig();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Missing auth configuration.';
-      console.error('[api/auth/login] auth config error', { message });
-      return res.status(500).json({ error: message });
+      return respond(res, 500, message, 'auth-config');
     }
 
     const supabase = createClient(supabaseConfig.supabaseUrl, supabaseConfig.serviceRoleKey, {
@@ -236,8 +251,7 @@ export default async function handler(req: any, res: any) {
     try {
       passwordOk = await verifyPassword(judge.password_hash, password);
     } catch (error) {
-      console.error('[api/auth/login] failed to verify password', error);
-      return res.status(500).json({ error: 'Failed to verify credentials' });
+      return respond(res, 500, 'Failed to verify credentials', formatError(error));
     }
 
     if (!passwordOk) {
@@ -261,6 +275,9 @@ export default async function handler(req: any, res: any) {
       .maybeSingle();
 
     if (assignmentError || !assignment) {
+      if (assignmentError) {
+        return respond(res, 500, 'Failed to load assignment', assignmentError.message);
+      }
       return res.status(403).json({ error: 'Judge has no assignment' });
     }
 
@@ -278,7 +295,7 @@ export default async function handler(req: any, res: any) {
     ]);
 
     if (!station || !event) {
-      return res.status(500).json({ error: 'Failed to resolve assignment details' });
+      return respond(res, 500, 'Failed to resolve assignment details', 'station-or-event-missing');
     }
 
     const allowedCategories = normalizeAllowedCategories(assignment.allowed_categories, station.code);
@@ -319,7 +336,7 @@ export default async function handler(req: any, res: any) {
     });
 
     if (patrolsError) {
-      return res.status(500).json({ error: 'Failed to load patrols' });
+      return respond(res, 500, 'Failed to load patrols', patrolsError.message);
     }
 
     const sessionId = randomToken(16);
@@ -356,7 +373,7 @@ export default async function handler(req: any, res: any) {
     const { error: sessionError } = await supabase.from('judge_sessions').insert(insertPayload);
 
     if (sessionError) {
-      return res.status(500).json({ error: 'Failed to initialise session' });
+      return respond(res, 500, 'Failed to initialise session', sessionError.message);
     }
 
     res.json({
@@ -369,7 +386,6 @@ export default async function handler(req: any, res: any) {
       patrols: (patrolsData ?? []) as PatrolRow[],
     });
   } catch (error) {
-    console.error('[api/auth/login] unhandled', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    return respond(res, 500, 'Internal server error', formatError(error));
   }
 }
