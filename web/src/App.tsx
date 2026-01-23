@@ -598,6 +598,21 @@ function StationApp({
     },
     [allowedCategorySet],
   );
+  const reportSupabaseError = useCallback(
+    (context: string, error: { message?: string } | null, status?: number) => {
+      if (import.meta.env.DEV) {
+        console.debug('[supabase] request failed', {
+          context,
+          status,
+          message: error?.message ?? null,
+        });
+      }
+      if (status === 403) {
+        setAccessDeniedMessage(ACCESS_DENIED_MESSAGE);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -703,22 +718,6 @@ function StationApp({
       setAlerts((prev) => prev.slice(1));
     }, 4500);
   }, []);
-
-  const reportSupabaseError = useCallback(
-    (context: string, error: { message?: string } | null, status?: number) => {
-      if (import.meta.env.DEV) {
-        console.debug('[supabase] request failed', {
-          context,
-          status,
-          message: error?.message ?? null,
-        });
-      }
-      if (status === 403) {
-        setAccessDeniedMessage(ACCESS_DENIED_MESSAGE);
-      }
-    },
-    [],
-  );
 
   const normalizeOutboxForSession = useCallback(
     async (items: OutboxEntry[]) => {
