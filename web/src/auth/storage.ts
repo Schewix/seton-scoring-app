@@ -1,4 +1,4 @@
-import localforage from 'localforage';
+import { getLocalforage } from '../storage/localforage';
 import type { StationManifest, PatrolSummary } from './types';
 
 const MANIFEST_KEY = 'auth_manifest_v1';
@@ -21,6 +21,7 @@ export interface StoredDeviceKey {
 }
 
 export function setManifest(manifest: StationManifest | null) {
+  const localforage = getLocalforage();
   if (manifest) {
     return localforage.setItem(MANIFEST_KEY, manifest);
   }
@@ -28,18 +29,22 @@ export function setManifest(manifest: StationManifest | null) {
 }
 
 export function getManifest() {
+  const localforage = getLocalforage();
   return localforage.getItem<StationManifest | null>(MANIFEST_KEY);
 }
 
 export function setPatrols(patrols: PatrolSummary[]) {
+  const localforage = getLocalforage();
   return localforage.setItem(PATROLS_KEY, patrols);
 }
 
 export function getPatrols() {
+  const localforage = getLocalforage();
   return localforage.getItem<PatrolSummary[]>(PATROLS_KEY);
 }
 
 export function setTokens(tokens: StoredTokens | null) {
+  const localforage = getLocalforage();
   if (tokens) {
     return localforage.setItem(TOKENS_KEY, tokens);
   }
@@ -47,10 +52,12 @@ export function setTokens(tokens: StoredTokens | null) {
 }
 
 export function getTokens() {
+  const localforage = getLocalforage();
   return localforage.getItem<StoredTokens | null>(TOKENS_KEY);
 }
 
 export function setDeviceKeyPayload(payload: StoredDeviceKey | null) {
+  const localforage = getLocalforage();
   if (payload) {
     return localforage.setItem(DEVICE_KEY_KEY, payload);
   }
@@ -58,10 +65,12 @@ export function setDeviceKeyPayload(payload: StoredDeviceKey | null) {
 }
 
 export function getDeviceKeyPayload() {
+  const localforage = getLocalforage();
   return localforage.getItem<StoredDeviceKey | null>(DEVICE_KEY_KEY);
 }
 
 export function setPinHash(hash: string | null) {
+  const localforage = getLocalforage();
   if (hash) {
     return localforage.setItem(PIN_KEY, hash);
   }
@@ -69,5 +78,6 @@ export function setPinHash(hash: string | null) {
 }
 
 export function getPinHash() {
+  const localforage = getLocalforage();
   return localforage.getItem<string | null>(PIN_KEY);
 }

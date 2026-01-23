@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import { AuthProvider } from './auth/context';
+import ErrorBoundary from './components/ErrorBoundary';
 import { registerSW } from 'virtual:pwa-register';
 import { FORGOT_PASSWORD_ROUTE, ROUTE_PREFIX, isAdminPathname, isScoreboardPathname, isStationAppPath } from './routing';
 
@@ -103,7 +104,9 @@ const forgotPasswordViews = new Set(['zapomenute-heslo', 'forgot-password']);
 function render(element: React.ReactNode) {
   root.render(
     <React.StrictMode>
-      <AuthProvider>{element}</AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>{element}</AuthProvider>
+      </ErrorBoundary>
     </React.StrictMode>,
   );
 }

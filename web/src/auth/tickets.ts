@@ -1,4 +1,4 @@
-import localforage from 'localforage';
+import { getLocalforage } from '../storage/localforage';
 import { canonicalStringify } from './canonical';
 
 export type TicketState = 'waiting' | 'serving' | 'done';
@@ -50,6 +50,7 @@ function sanitizeTicket(raw: StoredTicket): Ticket {
 }
 
 export async function loadTickets(stationId: string) {
+  const localforage = getLocalforage();
   const list = await localforage.getItem<StoredTicket[]>(getTicketsKey(stationId));
   if (!list) {
     return [];
@@ -58,6 +59,7 @@ export async function loadTickets(stationId: string) {
 }
 
 export async function saveTickets(stationId: string, tickets: Ticket[]) {
+  const localforage = getLocalforage();
   if (!tickets.length) {
     await localforage.removeItem(getTicketsKey(stationId));
   } else {
