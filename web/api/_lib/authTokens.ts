@@ -24,8 +24,8 @@ export function getAuthConfig(): AuthConfig {
     return cachedConfig;
   }
 
-  const jwtSecret = process.env.JWT_SECRET ?? '';
-  const refreshSecret = process.env.REFRESH_TOKEN_SECRET ?? '';
+  const jwtSecret = process.env.JWT_SECRET ?? process.env.SUPABASE_JWT_SECRET ?? '';
+  const refreshSecret = process.env.REFRESH_TOKEN_SECRET ?? process.env.JWT_REFRESH_SECRET ?? '';
 
   if (jwtSecret.length < MIN_SECRET_LENGTH) {
     throw new Error('Missing JWT_SECRET environment variable.');
@@ -36,11 +36,11 @@ export function getAuthConfig(): AuthConfig {
   }
 
   const accessTokenTtlSeconds = parsePositiveInt(
-    process.env.ACCESS_TOKEN_TTL_SECONDS,
+    process.env.ACCESS_TOKEN_TTL_SECONDS ?? process.env.JWT_EXPIRES_IN,
     DEFAULT_ACCESS_TTL_SECONDS,
   );
   const refreshTokenTtlSeconds = parsePositiveInt(
-    process.env.REFRESH_TOKEN_TTL_SECONDS,
+    process.env.REFRESH_TOKEN_TTL_SECONDS ?? process.env.JWT_REFRESH_EXPIRES_IN,
     DEFAULT_REFRESH_TTL_SECONDS,
   );
 
