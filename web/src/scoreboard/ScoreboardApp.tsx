@@ -61,7 +61,7 @@ interface RankedGroup {
   key: string;
   category: string;
   sex: string;
-  items: RankedGroupItem[];
+  items: RankedResult[];
   visibleItems: RankedGroupItem[];
 }
 
@@ -179,7 +179,10 @@ function normaliseText(value: string | null | undefined) {
   return null;
 }
 
-function parseNumber(value: number | string | null, fallback: number | null = null): number | null {
+function parseNumber(
+  value: number | string | null | undefined,
+  fallback: number | null = null,
+): number | null {
   if (value === null) return fallback;
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : fallback;

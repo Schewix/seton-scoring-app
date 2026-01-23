@@ -495,7 +495,7 @@ export default function PatrolCodeInput({
     }
   }, [onValidationChange, validationState]);
 
-  const wheelOptionsCategory = useMemo(
+  const wheelOptionsCategory = useMemo<WheelColumnOption[]>(
     () =>
       [
         { value: PLACEHOLDER_VALUE, label: '—', title: 'Vyber kategorii' },
@@ -503,7 +503,7 @@ export default function PatrolCodeInput({
       ],
     [],
   );
-  const wheelOptionsGender = useMemo(
+  const wheelOptionsGender = useMemo<WheelColumnOption[]>(
     () =>
       [
         { value: PLACEHOLDER_VALUE, label: '—', title: 'Vyber pohlaví' },
@@ -516,7 +516,7 @@ export default function PatrolCodeInput({
     [],
   );
 
-  const numberColumnOptions = useMemo(() => {
+  const numberColumnOptions = useMemo<WheelColumnOption[]>(() => {
     const baseOptions = availableNumberOptions.map((option) => ({ ...option }));
     const placeholderTitle =
       baseOptions.length > 0 ? 'Vyber číslo hlídky' : 'Žádná čísla nejsou k dispozici';

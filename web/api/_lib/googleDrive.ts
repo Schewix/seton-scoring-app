@@ -24,7 +24,8 @@ export function getDriveClient(): drive_v3.Drive {
     scopes: ['https://www.googleapis.com/auth/drive.readonly'],
   });
 
-  cachedDrive = google.drive({ version: 'v3', auth });
+  const driveOptions: drive_v3.Options = { version: 'v3', auth };
+  cachedDrive = google.drive(driveOptions);
   return cachedDrive;
 }
 

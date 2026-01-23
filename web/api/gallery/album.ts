@@ -1,3 +1,4 @@
+import type { drive_v3 } from 'googleapis';
 import { DRIVE_FIELDS, getDriveClient } from '../_lib/googleDrive.js';
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -41,9 +42,9 @@ async function fetchAlbumFiles({
   folderId: string;
   pageToken?: string;
   pageSize: number;
-}) {
+}): Promise<drive_v3.Schema$FileList> {
   const drive = getDriveClient();
-  const response = await drive.files.list({
+  const { data }: { data: drive_v3.Schema$FileList } = await drive.files.list({
     q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
     fields: DRIVE_FIELDS,
     pageSize,
@@ -51,7 +52,7 @@ async function fetchAlbumFiles({
     includeItemsFromAllDrives: true,
     supportsAllDrives: true,
   });
-  return response.data;
+  return data;
 }
 
 async function fetchAlbumCount(folderId: string) {
@@ -63,7 +64,7 @@ async function fetchAlbumCount(folderId: string) {
   let pageToken: string | undefined = undefined;
   let total = 0;
   do {
-    const response = await drive.files.list({
+    const { data }: { data: drive_v3.Schema$FileList } = await drive.files.list({
       q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
       fields: 'nextPageToken, files(id)',
       pageSize: 1000,
@@ -71,8 +72,8 @@ async function fetchAlbumCount(folderId: string) {
       includeItemsFromAllDrives: true,
       supportsAllDrives: true,
     });
-    total += response.data.files?.length ?? 0;
-    pageToken = response.data.nextPageToken ?? undefined;
+    total += data.files?.length ?? 0;
+    pageToken = data.nextPageToken ?? undefined;
   } while (pageToken);
   setCache(`count:${folderId}`, total);
   return total;
@@ -101,7 +102,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const data = await fetchAlbumFiles({ folderId, pageToken, pageSize });
-    const files = (data.files ?? []).map((file) => ({
+    const files = (data.files ?? []).map((file: drive_v3.Schema$File) => ({
       fileId: file.id ?? '',
       name: file.name ?? '',
       thumbnailLink: file.thumbnailLink ?? null,
