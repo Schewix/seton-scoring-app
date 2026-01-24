@@ -58,7 +58,18 @@ export function getTokens() {
 
 export async function getAccessToken() {
   const tokens = await getTokens();
-  return tokens?.accessToken ?? null;
+  const accessToken = tokens?.accessToken ?? null;
+  if (!accessToken) {
+    return null;
+  }
+  const expiresAt = tokens?.accessTokenExpiresAt ?? null;
+  if (typeof expiresAt === 'number' && Number.isFinite(expiresAt)) {
+    const now = Date.now();
+    if (now >= expiresAt - 10_000) {
+      return null;
+    }
+  }
+  return accessToken;
 }
 
 export function setDeviceKeyPayload(payload: StoredDeviceKey | null) {
