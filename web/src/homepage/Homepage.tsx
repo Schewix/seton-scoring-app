@@ -66,6 +66,23 @@ const CURRENT_LEAGUE_SCORES: Record<string, Partial<Record<LeagueEvent, number>>
 
 const HISTORICAL_LEAGUE_EMBED_URL = '';
 
+const CAROUSEL_IMAGE_SOURCES = Object.entries(
+  import.meta.glob('../assets/homepage-carousel/*.{jpg,jpeg,png,webp}', {
+    eager: true,
+    import: 'default',
+  }),
+)
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([, src]) => src as string);
+
+const HOMEPAGE_CAROUSEL = (CAROUSEL_IMAGE_SOURCES.length ? CAROUSEL_IMAGE_SOURCES : [logo, logo, logo]).map(
+  (src, index) => ({
+    id: `carousel-${index + 1}`,
+    src,
+    alt: 'Fotka z akcí SPTO',
+  }),
+);
+
 type Article = {
   title: string;
   dateLabel: string;
@@ -75,6 +92,12 @@ type Article = {
   body: string[] | any[];
   author?: string;
   coverImage?: { url: string; alt?: string | null } | null;
+};
+
+type CarouselImage = {
+  id: string;
+  src: string;
+  alt: string;
 };
 
 type GalleryPhoto = {
@@ -168,15 +191,6 @@ const ARTICLES: Article[] = [
 // - vypsat seznam akcí v konkrétním roce
 // - vypsat fotky v konkrétní akci (id, name, thumbnailLink)
 // Důležité: whitelist metadata + jednoduchý TTL cache.
-const GALLERY_PREVIEW = [
-  { id: '1', src: logo, alt: 'Ukázková fotka z tábora SPTO' },
-  { id: '2', src: logo, alt: 'Ukázková fotka ze závodu Zelené ligy' },
-  { id: '3', src: logo, alt: 'Ukázková fotka z výpravy SPTO' },
-  { id: '4', src: logo, alt: 'Ukázková fotka z oddílové schůzky' },
-  { id: '5', src: logo, alt: 'Ukázková fotka z táborového dne' },
-  { id: '6', src: logo, alt: 'Ukázková fotka z přírody s oddílem' },
-];
-
 type Troop = {
   number: string;
   name: string;
@@ -911,14 +925,6 @@ function SiteHeader({
             <h1>{title ?? 'SPTO a Zelená liga'}</h1>
             <p className="homepage-subtitle">{subtitle ?? HEADER_SUBTITLE}</p>
           </div>
-          <div className="homepage-cta-group" role="group" aria-label="Hlavní odkazy">
-            <a className="homepage-cta primary" href="/aktualni-poradi">
-              Aktuální pořadí Zelené ligy
-            </a>
-            <a className="homepage-cta primary" href="/souteze">
-              Soutěže a aplikace
-            </a>
-          </div>
         </div>
       </header>
 
@@ -986,25 +992,87 @@ function SiteShell({
   );
 }
 
+function HomepageCarousel({ images }: { images: CarouselImage[] }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+
+  useEffect(() => {
+    if (images.length <= 1 || isPaused) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setActiveIndex((prev) => (prev + 1) % images.length);
+    }, 7000);
+    return () => window.clearInterval(timer);
+  }, [images.length, isPaused]);
+
+  useEffect(() => {
+    if (activeIndex >= images.length) {
+      setActiveIndex(0);
+    }
+  }, [activeIndex, images.length]);
+
+  const handlePrev = () => {
+    setActiveIndex((prev) => (prev - 1 + images.length) % images.length);
+  };
+  const handleNext = () => {
+    setActiveIndex((prev) => (prev + 1) % images.length);
+  };
+
+  if (images.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="homepage-carousel" aria-label="Fotky z akcí SPTO">
+      <div
+        className="homepage-carousel-frame"
+        onMouseEnter={() => setIsPaused(true)}
+        onMouseLeave={() => setIsPaused(false)}
+      >
+        <div className="homepage-carousel-track" style={{ transform: `translateX(-${activeIndex * 100}%)` }}>
+          {images.map((image) => (
+            <figure key={image.id} className="homepage-carousel-slide">
+              <img src={image.src} alt={image.alt} loading="lazy" />
+            </figure>
+          ))}
+        </div>
+        {images.length > 1 ? (
+          <>
+            <button type="button" className="homepage-carousel-arrow prev" onClick={handlePrev} aria-label="Předchozí fotka">
+              ‹
+            </button>
+            <button type="button" className="homepage-carousel-arrow next" onClick={handleNext} aria-label="Další fotka">
+              ›
+            </button>
+          </>
+        ) : null}
+      </div>
+      {images.length > 1 ? (
+        <div className="homepage-carousel-dots" role="tablist" aria-label="Vybrat fotku">
+          {images.map((image, index) => (
+            <button
+              key={image.id}
+              type="button"
+              className={`homepage-carousel-dot${index === activeIndex ? ' is-active' : ''}`}
+              onClick={() => setActiveIndex(index)}
+              aria-label={`Fotka ${index + 1} z ${images.length}`}
+              aria-pressed={index === activeIndex}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function Homepage({
   homepageContent,
   articles,
-  featuredPreview,
 }: {
   homepageContent: SanityHomepage | null;
   articles: Article[];
-  featuredPreview: GalleryPreview | null;
 }) {
-  const previewPhotos = featuredPreview?.files?.length
-    ? featuredPreview.files
-        .filter((file) => Boolean(file.thumbnailLink))
-        .map((file) => ({
-          id: file.fileId,
-          src: file.thumbnailLink ?? '',
-          alt: file.name,
-        }))
-    : GALLERY_PREVIEW;
-  const [featuredPhoto, ...galleryThumbnails] = previewPhotos;
   const headerTitle = homepageContent?.heroTitle ?? undefined;
   const headerSubtitle = homepageContent?.heroSubtitle ?? undefined;
 
@@ -1014,6 +1082,7 @@ function Homepage({
       headerSubtitle={headerSubtitle ?? undefined}
     >
       <main className="homepage-main" aria-labelledby="homepage-intro-heading" style={{ maxWidth: '1120px', gap: '64px' }}>
+        <HomepageCarousel images={HOMEPAGE_CAROUSEL} />
         <section className="homepage-section" aria-labelledby="homepage-intro-heading">
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="homepage-intro-heading">O SPTO a Zelené lize</h2>
@@ -1035,6 +1104,62 @@ function Homepage({
                 </p>
               </>
             )}
+          </div>
+        </section>
+
+        <section className="homepage-section" id="clanky" aria-labelledby="clanky-heading">
+          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
+            <h2 id="clanky-heading">Články ze soutěží</h2>
+            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
+            <p>Krátké reportáže a novinky z posledních závodů a akcí.</p>
+          </div>
+          <div className="homepage-article-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+            {articles.map((article) => (
+              <article key={article.title} className="homepage-article-card" style={{ minHeight: '220px' }}>
+                <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <time
+                    dateTime={article.dateISO}
+                    style={{
+                      display: 'inline-flex',
+                      padding: '4px 10px',
+                      borderRadius: '999px',
+                      background: 'rgba(4, 55, 44, 0.08)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {article.dateLabel}
+                  </time>
+                </div>
+                <h3
+                  style={{
+                    display: '-webkit-box',
+                    WebkitBoxOrient: 'vertical',
+                    WebkitLineClamp: 2,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {article.title}
+                </h3>
+                <p
+                  style={{
+                    display: '-webkit-box',
+                    WebkitBoxOrient: 'vertical',
+                    WebkitLineClamp: 2,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {article.excerpt}
+                </p>
+                <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  Číst článek <span aria-hidden="true">→</span>
+                </a>
+              </article>
+            ))}
+          </div>
+          <div className="homepage-section-cta">
+            <a className="homepage-cta secondary" href="/clanky">
+              Všechny články
+            </a>
           </div>
         </section>
 
@@ -1116,128 +1241,6 @@ function Homepage({
                   </li>
                 ))}
               </ol>
-            </div>
-          </div>
-        </section>
-
-        <section className="homepage-section" id="clanky" aria-labelledby="clanky-heading">
-          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
-            <h2 id="clanky-heading">Články ze soutěží</h2>
-            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
-            <p>Krátké reportáže a novinky z posledních závodů a akcí.</p>
-          </div>
-          <div className="homepage-article-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-            {articles.map((article) => (
-              <article key={article.title} className="homepage-article-card" style={{ minHeight: '220px' }}>
-                <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <time
-                    dateTime={article.dateISO}
-                    style={{
-                      display: 'inline-flex',
-                      padding: '4px 10px',
-                      borderRadius: '999px',
-                      background: 'rgba(4, 55, 44, 0.08)',
-                      fontWeight: 600,
-                    }}
-                  >
-                    {article.dateLabel}
-                  </time>
-                </div>
-                <h3
-                  style={{
-                    display: '-webkit-box',
-                    WebkitBoxOrient: 'vertical',
-                    WebkitLineClamp: 2,
-                    overflow: 'hidden',
-                  }}
-                >
-                  {article.title}
-                </h3>
-                <p
-                  style={{
-                    display: '-webkit-box',
-                    WebkitBoxOrient: 'vertical',
-                    WebkitLineClamp: 2,
-                    overflow: 'hidden',
-                  }}
-                >
-                  {article.excerpt}
-                </p>
-                <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  Číst článek <span aria-hidden="true">→</span>
-                </a>
-              </article>
-            ))}
-          </div>
-          <div className="homepage-section-cta">
-            <a className="homepage-cta secondary" href="/clanky">
-              Všechny články
-            </a>
-          </div>
-        </section>
-
-        <section className="homepage-section" id="fotogalerie" aria-labelledby="fotogalerie-heading">
-          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
-            <h2 id="fotogalerie-heading">Fotogalerie</h2>
-            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
-            {homepageContent?.galleryIntro?.length ? (
-              <PortableText value={homepageContent.galleryIntro} components={portableTextComponents} />
-            ) : (
-              <p>Malý výběr z poslední akce – kompletní alba najdeš ve fotogalerii.</p>
-            )}
-          </div>
-          <div className="homepage-card homepage-gallery-card">
-            <div
-              className="homepage-gallery-grid"
-              style={{
-                gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-                gap: '16px',
-              }}
-            >
-              {featuredPhoto ? (
-                <div
-                  style={{
-                    borderRadius: '20px',
-                    overflow: 'hidden',
-                    border: '1px solid rgba(4, 55, 44, 0.12)',
-                    background: 'rgba(4, 55, 44, 0.06)',
-                  }}
-                >
-                  <img
-                    src={featuredPhoto.src}
-                    alt={featuredPhoto.alt}
-                    loading="lazy"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', aspectRatio: '16 / 9' }}
-                  />
-                </div>
-              ) : null}
-              <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-                {galleryThumbnails.slice(0, 3).map((photo) => (
-                  <img
-                    key={photo.id}
-                    src={photo.src}
-                    alt={photo.alt}
-                    loading="lazy"
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      borderRadius: '16px',
-                      border: '1px solid rgba(4, 55, 44, 0.1)',
-                      aspectRatio: '16 / 9',
-                      background: 'rgba(4, 55, 44, 0.05)',
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="homepage-gallery-actions">
-              <a className="homepage-cta secondary" href="/fotogalerie">
-                Otevřít fotogalerii
-              </a>
-              <p className="homepage-gallery-note">
-                Kompletní galerie: <a href="/fotogalerie">/fotogalerie</a>, detail alba: <a href="/fotogalerie/setonuv-zavod-2025">/fotogalerie/[slug]</a>
-              </p>
             </div>
           </div>
         </section>
@@ -1492,7 +1495,6 @@ export default function ZelenaligaSite() {
   const [articles, setArticles] = useState<Article[]>(ARTICLES);
   const [albums, setAlbums] = useState<SanityAlbum[]>([]);
   const [albumsLoading, setAlbumsLoading] = useState(false);
-  const [featuredPreview, setFeaturedPreview] = useState<GalleryPreview | null>(null);
   const path = window.location.pathname.replace(/\/$/, '') || '/';
   const segments = path.split('/').filter(Boolean);
 
@@ -1523,30 +1525,11 @@ export default function ZelenaligaSite() {
     };
   }, []);
 
-  useEffect(() => {
-    let active = true;
-    const folderId = homepageContent?.featuredAlbum?.driveFolderId;
-    if (!folderId) {
-      return undefined;
-    }
-    fetchAlbumPreview(folderId)
-      .then((data) => {
-        if (active) {
-          setFeaturedPreview(data);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [homepageContent?.featuredAlbum?.driveFolderId]);
-
   if (path === '/') {
     return (
       <Homepage
         homepageContent={homepageContent}
         articles={articles}
-        featuredPreview={featuredPreview}
       />
     );
   }
