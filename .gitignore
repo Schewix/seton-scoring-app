@@ -9,6 +9,7 @@ build/
 .expo-shared/
 *.tmp
 .DS_Store
+zelena-liga-sa.json
 
 # IDE
 .vscode/
