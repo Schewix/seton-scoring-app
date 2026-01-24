@@ -197,13 +197,17 @@
 }
 
 .homepage-carousel-dot {
+  display: inline-block;
   width: 10px;
   height: 10px;
+  padding: 0;
   border-radius: 999px;
   border: none;
   background: rgba(4, 55, 44, 0.2);
   cursor: pointer;
   transition: background 0.2s ease, transform 0.2s ease;
+  appearance: none;
+  box-sizing: border-box;
 }
 
 .homepage-carousel-dot.is-active {
