@@ -1381,46 +1381,6 @@ function Homepage({
           </div>
         </section>
 
-        <section className="homepage-section" id="souteze" aria-labelledby="souteze-heading">
-          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
-            <h2 id="souteze-heading">Soutěže</h2>
-            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
-            <p>Stručný rozcestník k hlavním soutěžím a jejich digitálním aplikacím.</p>
-          </div>
-          <div className="homepage-card" style={{ maxWidth: '920px', boxShadow: 'none' }}>
-            <div className="homepage-souteze-grid">
-              <div className="homepage-souteze-block">
-                <h3>Soutěže</h3>
-                <ul className="homepage-list">
-                  {EVENTS.map((event) => (
-                    <li key={event.slug}>
-                      <a className="homepage-inline-link" href={event.href}>
-                        {event.name}
-                      </a>
-                      <p>{event.description}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="homepage-souteze-block">
-                <h3>Aplikace</h3>
-                <ul className="homepage-list">
-                  {APPLICATION_LINKS.map((app) => (
-                    <li key={app.href}>
-                      <a className="homepage-inline-link" href={app.href}>
-                        {app.label}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-            <a className="homepage-inline-link" href="/souteze" style={{ marginTop: '12px', display: 'inline-flex' }}>
-              Přejít na soutěže a aplikace
-            </a>
-          </div>
-        </section>
-
         <section className="homepage-section" id="zelenaliga" aria-labelledby="zelenaliga-heading">
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="zelenaliga-heading">Zelená liga</h2>
