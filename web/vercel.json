@@ -126,6 +126,10 @@
       "destination": "/"
     },
     {
+      "source": "/aktualni-poradi",
+      "destination": "/"
+    },
+    {
       "source": "/aplikace",
       "destination": "/"
     },

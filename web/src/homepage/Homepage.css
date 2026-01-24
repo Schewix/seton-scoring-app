@@ -121,6 +121,72 @@
   background: rgba(255, 255, 255, 0.7);
 }
 
+.homepage-nav-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.homepage-nav-title {
+  font-size: 0.75rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(4, 55, 44, 0.55);
+  font-weight: 700;
+}
+
+.homepage-nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(4, 55, 44, 0.2);
+  background: #fff;
+  color: #04372c;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.homepage-nav-toggle:hover,
+.homepage-nav-toggle:focus-visible {
+  border-color: rgba(4, 55, 44, 0.4);
+  box-shadow: 0 12px 20px rgba(4, 55, 44, 0.12);
+  transform: translateY(-1px);
+}
+
+.homepage-nav-toggle-icon {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.homepage-nav-toggle-icon span {
+  width: 18px;
+  height: 2px;
+  background: #04372c;
+  border-radius: 2px;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.homepage-nav-toggle.is-open .homepage-nav-toggle-icon span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+
+.homepage-nav-toggle.is-open .homepage-nav-toggle-icon span:nth-child(2) {
+  opacity: 0;
+}
+
+.homepage-nav-toggle.is-open .homepage-nav-toggle-icon span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+.homepage-nav-panel {
+  width: 100%;
+}
+
 .homepage-nav-inner {
   display: flex;
   gap: 12px;
@@ -174,6 +240,38 @@
 
 .homepage-nav-link.is-active .homepage-nav-dot {
   background: #ffcc33;
+}
+
+@media (max-width: 900px) {
+  .homepage-nav {
+    border-radius: 24px;
+    padding: 14px 16px;
+  }
+
+  .homepage-nav-bar {
+    display: flex;
+  }
+
+  .homepage-nav-panel {
+    display: none;
+    margin-top: 12px;
+  }
+
+  .homepage-nav-panel.is-open {
+    display: block;
+  }
+
+  .homepage-nav-inner {
+    flex-direction: column;
+    align-items: stretch;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .homepage-nav-link {
+    justify-content: space-between;
+    width: 100%;
+  }
 }
 
 .homepage-lead {
@@ -672,7 +770,8 @@
 
 .homepage-list {
   margin: 0;
-  padding-left: 1.2rem;
+  padding-left: 0;
+  list-style: none;
   display: grid;
   gap: 12px;
   color: var(--text);
@@ -681,6 +780,103 @@
 
 .homepage-list li {
   margin: 0;
+}
+
+.homepage-list p {
+  margin-top: 6px;
+  color: var(--text-muted);
+}
+
+.homepage-souteze-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  text-align: left;
+}
+
+.homepage-souteze-block h2,
+.homepage-souteze-block h3 {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+  color: #04372c;
+}
+
+.homepage-league-table-card {
+  padding: 24px;
+  text-align: left;
+}
+
+.homepage-league-note {
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.homepage-league-table {
+  display: grid;
+  gap: 0;
+  overflow-x: auto;
+  text-align: left;
+}
+
+.homepage-league-row {
+  display: grid;
+  grid-template-columns: var(--league-grid);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(4, 55, 44, 0.12);
+  min-width: 720px;
+}
+
+.homepage-league-row:last-child {
+  border-bottom: none;
+}
+
+.homepage-league-header {
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: rgba(4, 55, 44, 0.6);
+  border-bottom: 1px solid rgba(4, 55, 44, 0.2);
+}
+
+.homepage-league-name {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 600;
+}
+
+.homepage-league-rank {
+  font-weight: 700;
+  color: #04372c;
+}
+
+.homepage-league-score {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.homepage-league-total {
+  font-weight: 700;
+  color: #04372c;
+}
+
+.homepage-league-embed {
+  margin-top: 12px;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(4, 55, 44, 0.12);
+  background: rgba(4, 55, 44, 0.04);
+}
+
+.homepage-league-embed iframe {
+  width: 100%;
+  min-height: 420px;
+  border: none;
+  display: block;
 }
 
 .homepage-back-link {
