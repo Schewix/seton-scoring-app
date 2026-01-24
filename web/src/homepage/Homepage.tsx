@@ -4,13 +4,10 @@ import { PortableText } from '@portabletext/react';
 import AppFooter from '../components/AppFooter';
 import logo from '../assets/znak_SPTO_transparent.png';
 import {
-  fetchAlbumBySlug,
-  fetchAlbums,
   fetchArticleBySlug,
   fetchArticles,
   fetchHomepage,
   hasSanityConfig,
-  type SanityAlbum,
   type SanityArticle,
   type SanityHomepage,
 } from '../data/sanity';
@@ -100,6 +97,14 @@ type CarouselImage = {
   alt: string;
 };
 
+type DriveAlbum = {
+  id: string;
+  title: string;
+  year: string;
+  slug: string;
+  folderId: string;
+};
+
 type GalleryPhoto = {
   fileId: string;
   name: string;
@@ -182,15 +187,11 @@ const ARTICLES: Article[] = [
 
 // TODO: Napojit na API / Supabase pro reálné pořadí Zelené ligy.
 
-// TODO: Napojení fotogalerie přes Google Drive API (Service Account).
+// Fotogalerie je napojená na Google Drive přes service account.
 // Root složka sdílená na e-mail service accountu, ENV:
-// - GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON_BASE64
+// - GOOGLE_SERVICE_ACCOUNT_EMAIL
+// - GOOGLE_PRIVATE_KEY
 // - GOOGLE_DRIVE_ROOT_FOLDER_ID
-// Server endpoint by měl umět:
-// - vypsat seznam školních roků (podsložky rootu)
-// - vypsat seznam akcí v konkrétním roce
-// - vypsat fotky v konkrétní akci (id, name, thumbnailLink)
-// Důležité: whitelist metadata + jednoduchý TTL cache.
 type Troop = {
   number: string;
   name: string;
@@ -527,17 +528,17 @@ function ArticlePage({ article }: { article: Article }) {
   );
 }
 
-function GalleryAlbumCard({ album }: { album: SanityAlbum }) {
+function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
   const [preview, setPreview] = useState<GalleryPreview | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
-    if (!album.driveFolderId) {
+    if (!album.folderId) {
       return undefined;
     }
     setLoading(true);
-    fetchAlbumPreview(album.driveFolderId)
+    fetchAlbumPreview(album.folderId)
       .then((data) => {
         if (active) {
           setPreview(data);
@@ -554,24 +555,23 @@ function GalleryAlbumCard({ album }: { album: SanityAlbum }) {
     };
   }, [album.driveFolderId]);
 
-  const coverUrl =
-    album.coverImage?.url ?? preview?.files?.find((file) => file.thumbnailLink)?.thumbnailLink ?? null;
+  const coverUrl = preview?.files?.find((file) => file.thumbnailLink)?.thumbnailLink ?? null;
   const previewPhotos = preview?.files ?? [];
 
   return (
     <a className="gallery-album-card" href={`/fotogalerie/${album.slug}`}>
       <div className="gallery-album-cover">
         {coverUrl ? (
-          <img src={coverUrl} alt={album.coverImage?.alt ?? album.title} loading="lazy" />
+          <img src={coverUrl} alt={album.title} loading="lazy" />
         ) : (
           <div className="gallery-album-cover-placeholder" />
         )}
-        <span className="gallery-album-date">{formatDateLabel(album.date)}</span>
+        <span className="gallery-album-date">{album.year}</span>
       </div>
       <div className="gallery-album-body">
         <div>
           <h3>{album.title}</h3>
-          <p>{album.schoolYear}</p>
+          <p>{album.year}</p>
         </div>
         <p className="gallery-album-count">
           {loading
@@ -594,17 +594,17 @@ function GalleryAlbumCard({ album }: { album: SanityAlbum }) {
   );
 }
 
-function GalleryOverviewPage({ albums, loading }: { albums: SanityAlbum[]; loading: boolean }) {
+function GalleryOverviewPage({ albums, loading }: { albums: DriveAlbum[]; loading: boolean }) {
   const grouped = useMemo(() => {
-    const groups = new Map<string, SanityAlbum[]>();
+    const groups = new Map<string, DriveAlbum[]>();
     albums.forEach((album) => {
-      const key = album.schoolYear || 'Ostatní';
+      const key = album.year || 'Ostatní';
       if (!groups.has(key)) {
         groups.set(key, []);
       }
       groups.get(key)!.push(album);
     });
-    groups.forEach((items) => items.sort((a, b) => b.date.localeCompare(a.date)));
+    groups.forEach((items) => items.sort((a, b) => a.title.localeCompare(b.title, 'cs')));
     return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]));
   }, [albums]);
 
@@ -637,8 +637,8 @@ function GalleryOverviewPage({ albums, loading }: { albums: SanityAlbum[]; loadi
   );
 }
 
-function GalleryAlbumPage({ slug, albums }: { slug: string; albums: SanityAlbum[] }) {
-  const [album, setAlbum] = useState<SanityAlbum | null>(() => albums.find((item) => item.slug === slug) ?? null);
+function GalleryAlbumPage({ slug, albums, loading }: { slug: string; albums: DriveAlbum[]; loading: boolean }) {
+  const [album, setAlbum] = useState<DriveAlbum | null>(() => albums.find((item) => item.slug === slug) ?? null);
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -653,26 +653,11 @@ function GalleryAlbumPage({ slug, albums }: { slug: string; albums: SanityAlbum[
 
   useEffect(() => {
     let active = true;
-    if (album || !slug) {
-      return undefined;
-    }
-    fetchAlbumBySlug(slug).then((data) => {
-      if (active) {
-        setAlbum(data);
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, [album, slug]);
-
-  useEffect(() => {
-    let active = true;
-    if (!album?.driveFolderId) {
+    if (!album?.folderId) {
       return undefined;
     }
     setLoading(true);
-    const params = new URLSearchParams({ folderId: album.driveFolderId, pageSize: '36' });
+    const params = new URLSearchParams({ folderId: album.folderId, pageSize: '36' });
     fetch(`/api/gallery/album?${params.toString()}`)
       .then(async (response) => {
         if (!response.ok) {
@@ -703,12 +688,12 @@ function GalleryAlbumPage({ slug, albums }: { slug: string; albums: SanityAlbum[
   }, [album?.driveFolderId]);
 
   const handleLoadMore = async () => {
-    if (!album?.driveFolderId || !nextPageToken || loading) {
+    if (!album?.folderId || !nextPageToken || loading) {
       return;
     }
     setLoading(true);
     const params = new URLSearchParams({
-      folderId: album.driveFolderId,
+      folderId: album.folderId,
       pageSize: '36',
       pageToken: nextPageToken,
     });
@@ -730,6 +715,15 @@ function GalleryAlbumPage({ slug, albums }: { slug: string; albums: SanityAlbum[
   const isLastPhoto = lightboxIndex !== null && lightboxIndex === photos.length - 1;
 
   if (!album) {
+    if (loading) {
+      return (
+        <SiteShell>
+          <main className="homepage-main homepage-single">
+            <div className="homepage-card">Načítám album…</div>
+          </main>
+        </SiteShell>
+      );
+    }
     return <NotFoundPage />;
   }
 
@@ -739,7 +733,7 @@ function GalleryAlbumPage({ slug, albums }: { slug: string; albums: SanityAlbum[
         <p className="homepage-eyebrow">SPTO · Fotogalerie</p>
         <h1 id="album-heading">{album.title}</h1>
         <p className="homepage-lead">
-          {formatDateLabel(album.date)} · {album.schoolYear}
+          {album.year}
         </p>
         <div className="gallery-photo-grid">
           {photos.map((photo, index) => (
@@ -1493,8 +1487,8 @@ function EventPage({ slug }: EventPageProps) {
 export default function ZelenaligaSite() {
   const [homepageContent, setHomepageContent] = useState<SanityHomepage | null>(null);
   const [articles, setArticles] = useState<Article[]>(ARTICLES);
-  const [albums, setAlbums] = useState<SanityAlbum[]>([]);
-  const [albumsLoading, setAlbumsLoading] = useState(false);
+  const [driveAlbums, setDriveAlbums] = useState<DriveAlbum[]>([]);
+  const [driveAlbumsLoading, setDriveAlbumsLoading] = useState(false);
   const path = window.location.pathname.replace(/\/$/, '') || '/';
   const segments = path.split('/').filter(Boolean);
 
@@ -1503,9 +1497,8 @@ export default function ZelenaligaSite() {
       return;
     }
     let active = true;
-    setAlbumsLoading(true);
-    Promise.all([fetchHomepage(), fetchArticles(), fetchAlbums()])
-      .then(([homepageData, articlesData, albumsData]) => {
+    Promise.all([fetchHomepage(), fetchArticles()])
+      .then(([homepageData, articlesData]) => {
         if (!active) {
           return;
         }
@@ -1513,11 +1506,35 @@ export default function ZelenaligaSite() {
         if (articlesData.length > 0) {
           setArticles(articlesData.map(mapSanityArticle));
         }
-        setAlbums(albumsData);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setDriveAlbumsLoading(true);
+    fetch('/api/gallery/albums')
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load albums.');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        if (active) {
+          setDriveAlbums(data.albums ?? []);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setDriveAlbums([]);
+        }
       })
       .finally(() => {
         if (active) {
-          setAlbumsLoading(false);
+          setDriveAlbumsLoading(false);
         }
       });
     return () => {
@@ -1616,9 +1633,9 @@ export default function ZelenaligaSite() {
     if (slug === 'fotogalerie') {
       if (segments.length > 1) {
         const albumSlug = segments[segments.length - 1];
-        return <GalleryAlbumPage slug={albumSlug} albums={albums} />;
+        return <GalleryAlbumPage slug={albumSlug} albums={driveAlbums} loading={driveAlbumsLoading} />;
       }
-      return <GalleryOverviewPage albums={albums} loading={albumsLoading} />;
+      return <GalleryOverviewPage albums={driveAlbums} loading={driveAlbumsLoading} />;
     }
 
     if (slug === 'historie') {
