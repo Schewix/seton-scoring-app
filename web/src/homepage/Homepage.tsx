@@ -553,7 +553,7 @@ function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
     return () => {
       active = false;
     };
-  }, [album.driveFolderId]);
+  }, [album.folderId]);
 
   const coverUrl = preview?.files?.find((file) => file.thumbnailLink)?.thumbnailLink ?? null;
   const previewPhotos = preview?.files ?? [];
@@ -637,11 +637,19 @@ function GalleryOverviewPage({ albums, loading }: { albums: DriveAlbum[]; loadin
   );
 }
 
-function GalleryAlbumPage({ slug, albums, loading }: { slug: string; albums: DriveAlbum[]; loading: boolean }) {
+function GalleryAlbumPage({
+  slug,
+  albums,
+  loading: albumsLoading,
+}: {
+  slug: string;
+  albums: DriveAlbum[];
+  loading: boolean;
+}) {
   const [album, setAlbum] = useState<DriveAlbum | null>(() => albums.find((item) => item.slug === slug) ?? null);
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -656,7 +664,7 @@ function GalleryAlbumPage({ slug, albums, loading }: { slug: string; albums: Dri
     if (!album?.folderId) {
       return undefined;
     }
-    setLoading(true);
+    setIsLoading(true);
     const params = new URLSearchParams({ folderId: album.folderId, pageSize: '36' });
     fetch(`/api/gallery/album?${params.toString()}`)
       .then(async (response) => {
@@ -679,19 +687,19 @@ function GalleryAlbumPage({ slug, albums, loading }: { slug: string; albums: Dri
       })
       .finally(() => {
         if (active) {
-          setLoading(false);
+          setIsLoading(false);
         }
       });
     return () => {
       active = false;
     };
-  }, [album?.driveFolderId]);
+  }, [album?.folderId]);
 
   const handleLoadMore = async () => {
-    if (!album?.folderId || !nextPageToken || loading) {
+    if (!album?.folderId || !nextPageToken || isLoading) {
       return;
     }
-    setLoading(true);
+    setIsLoading(true);
     const params = new URLSearchParams({
       folderId: album.folderId,
       pageSize: '36',
@@ -706,7 +714,7 @@ function GalleryAlbumPage({ slug, albums, loading }: { slug: string; albums: Dri
       setPhotos((prev) => [...prev, ...(data.files ?? [])]);
       setNextPageToken(data.nextPageToken ?? null);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -715,7 +723,7 @@ function GalleryAlbumPage({ slug, albums, loading }: { slug: string; albums: Dri
   const isLastPhoto = lightboxIndex !== null && lightboxIndex === photos.length - 1;
 
   if (!album) {
-    if (loading) {
+    if (albumsLoading) {
       return (
         <SiteShell>
           <main className="homepage-main homepage-single">
@@ -751,10 +759,10 @@ function GalleryAlbumPage({ slug, albums, loading }: { slug: string; albums: Dri
             </button>
           ))}
         </div>
-        {!loading && photos.length === 0 ? <div className="gallery-loading">Zatím zde nejsou žádné fotky.</div> : null}
-        {loading ? <div className="gallery-loading">Načítám fotky…</div> : null}
+        {!isLoading && photos.length === 0 ? <div className="gallery-loading">Zatím zde nejsou žádné fotky.</div> : null}
+        {isLoading ? <div className="gallery-loading">Načítám fotky…</div> : null}
         {nextPageToken ? (
-          <button type="button" className="homepage-cta secondary gallery-load-more" onClick={handleLoadMore} disabled={loading}>
+          <button type="button" className="homepage-cta secondary gallery-load-more" onClick={handleLoadMore} disabled={isLoading}>
             Načíst další fotky
           </button>
         ) : null}
