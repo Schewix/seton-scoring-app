@@ -1,6 +1,5 @@
 import './Homepage.css';
 import { useEffect, useMemo, useState } from 'react';
-import type { MouseEvent } from 'react';
 import { PortableText } from '@portabletext/react';
 import AppFooter from '../components/AppFooter';
 import logo from '../assets/znak_SPTO_transparent.png';
@@ -43,12 +42,12 @@ const EVENTS: EventLink[] = [
 ];
 
 const NAV_ITEMS = [
-  { id: 'souteze', label: 'Soutěže', icon: '⛺' },
-  { id: 'zelenaliga', label: 'Zelená liga', icon: '🌿' },
-  { id: 'oddily', label: 'Oddíly SPTO', icon: '🤝' },
-  { id: 'fotogalerie', label: 'Fotogalerie', icon: '📸' },
-  { id: 'clanky', label: 'Články a novinky', icon: '📰' },
-  { id: 'historie', label: 'Historie SPTO', icon: '📜' },
+  { id: 'souteze', label: 'Soutěže', href: '/souteze' },
+  { id: 'aktualni-poradi', label: 'Aktuální pořadí', href: '/aktualni-poradi' },
+  { id: 'oddily', label: 'Oddíly SPTO', href: '/oddily' },
+  { id: 'fotogalerie', label: 'Fotogalerie', href: '/fotogalerie' },
+  { id: 'clanky', label: 'Články a novinky', href: '/clanky' },
+  { id: 'historie', label: 'Historie SPTO', href: '/historie' },
 ];
 
 const LEAGUE_TOP = [
@@ -58,6 +57,14 @@ const LEAGUE_TOP = [
   { name: 'PTO Tis', city: 'Třebíč' },
   { name: 'PTO Rosa', city: 'Hodonín' },
 ];
+
+const LEAGUE_EVENTS = ['Setonův závod', 'Memoriál Bedřicha Stoličky', 'Sraz PTO', 'Dračí smyčka'] as const;
+
+type LeagueEvent = (typeof LEAGUE_EVENTS)[number];
+
+const CURRENT_LEAGUE_SCORES: Record<string, Partial<Record<LeagueEvent, number>>> = {};
+
+const HISTORICAL_LEAGUE_EMBED_URL = '';
 
 type Article = {
   title: string;
@@ -828,6 +835,9 @@ function ArticlePageLoader({ slug, articles }: { slug: string; articles: Article
 }
 
 function formatTroopName(troop: Troop) {
+  if (!troop.number || !/^\d+$/.test(troop.number)) {
+    return troop.name;
+  }
   return `${troop.number}. ${troop.name}`;
 }
 
@@ -842,22 +852,57 @@ function formatTroopDescription(troop: Troop) {
   return detailParts.join(' · ');
 }
 
+function resolveActiveNav(pathname: string) {
+  const normalized = pathname.replace(/\/$/, '') || '/';
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length === 0) {
+    return undefined;
+  }
+  const slug = segments[0];
+  if (slug === 'souteze' || slug === 'aplikace' || EVENTS.some((event) => event.slug === slug)) {
+    return 'souteze';
+  }
+  if (slug === 'aktualni-poradi' || slug === 'zelena-liga') {
+    return 'aktualni-poradi';
+  }
+  if (slug === 'oddily') {
+    return 'oddily';
+  }
+  if (slug === 'fotogalerie') {
+    return 'fotogalerie';
+  }
+  if (slug === 'clanky') {
+    return 'clanky';
+  }
+  if (slug === 'historie') {
+    return 'historie';
+  }
+  return undefined;
+}
+
 function SiteHeader({
   activeSection,
-  onNavClick,
   title,
   subtitle,
 }: {
   activeSection?: string;
-  onNavClick?: (id: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
   title?: string;
   subtitle?: string;
 }) {
+  const [navOpen, setNavOpen] = useState(false);
+  const navPanelId = 'homepage-nav-panel';
+  const handleNavToggle = () => {
+    setNavOpen((prev) => !prev);
+  };
+  const handleNavLinkClick = () => {
+    setNavOpen(false);
+  };
+
   return (
     <>
       <header className="homepage-header">
         <div className="homepage-header-inner">
-          <a className="homepage-hero-logo" href="https://zelenaliga.cz" target="_blank" rel="noreferrer">
+          <a className="homepage-hero-logo" href="https://zelenaliga.cz">
             <img src={logo} alt="Logo Zelená liga" />
             <span className="homepage-logo-caption">SPTO Brno</span>
           </a>
@@ -867,10 +912,10 @@ function SiteHeader({
             <p className="homepage-subtitle">{subtitle ?? HEADER_SUBTITLE}</p>
           </div>
           <div className="homepage-cta-group" role="group" aria-label="Hlavní odkazy">
-            <a className="homepage-cta primary" href="/zelena-liga">
+            <a className="homepage-cta primary" href="/aktualni-poradi">
               Aktuální pořadí Zelené ligy
             </a>
-            <a className="homepage-cta primary" href="/aplikace">
+            <a className="homepage-cta primary" href="/souteze">
               Soutěže a aplikace
             </a>
           </div>
@@ -878,23 +923,41 @@ function SiteHeader({
       </header>
 
       <nav className="homepage-nav" aria-label="Hlavní navigace">
-        <div className="homepage-nav-inner">
-          {NAV_ITEMS.map((item) => {
+        <div className="homepage-nav-bar">
+          <span className="homepage-nav-title">Navigace</span>
+          <button
+            className={`homepage-nav-toggle${navOpen ? ' is-open' : ''}`}
+            type="button"
+            aria-expanded={navOpen}
+            aria-controls={navPanelId}
+            onClick={handleNavToggle}
+          >
+            <span className="homepage-nav-toggle-text">Menu</span>
+            <span className="homepage-nav-toggle-icon" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+          </button>
+        </div>
+        <div className={`homepage-nav-panel${navOpen ? ' is-open' : ''}`} id={navPanelId}>
+          <div className="homepage-nav-inner">
+            {NAV_ITEMS.map((item) => {
             const isActive = activeSection === item.id;
-            const href = onNavClick ? `#${item.id}` : `/#${item.id}`;
             return (
               <a
                 key={item.id}
-                href={href}
-                onClick={onNavClick ? onNavClick(item.id) : undefined}
+                href={item.href}
+                onClick={handleNavLinkClick}
                 aria-current={isActive ? 'page' : undefined}
                 className={`homepage-nav-link${isActive ? ' is-active' : ''}`}
               >
                 <span className="homepage-nav-dot" aria-hidden="true" />
                 {item.label}
-              </a>
-            );
-          })}
+                </a>
+              );
+            })}
+          </div>
         </div>
       </nav>
     </>
@@ -904,24 +967,19 @@ function SiteHeader({
 function SiteShell({
   children,
   activeSection,
-  onNavClick,
   headerTitle,
   headerSubtitle,
 }: {
   children: React.ReactNode;
   activeSection?: string;
-  onNavClick?: (id: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
   headerTitle?: string;
   headerSubtitle?: string;
 }) {
+  const resolvedActiveSection =
+    activeSection ?? (typeof window !== 'undefined' ? resolveActiveNav(window.location.pathname) : undefined);
   return (
     <div className="homepage-shell" style={{ scrollBehavior: 'smooth' }}>
-      <SiteHeader
-        activeSection={activeSection}
-        onNavClick={onNavClick}
-        title={headerTitle}
-        subtitle={headerSubtitle}
-      />
+      <SiteHeader activeSection={resolvedActiveSection} title={headerTitle} subtitle={headerSubtitle} />
       {children}
       <AppFooter className="homepage-footer" />
     </div>
@@ -947,53 +1005,11 @@ function Homepage({
         }))
     : GALLERY_PREVIEW;
   const [featuredPhoto, ...galleryThumbnails] = previewPhotos;
-  const [activeSection, setActiveSection] = useState('');
   const headerTitle = homepageContent?.heroTitle ?? undefined;
   const headerSubtitle = homepageContent?.heroSubtitle ?? undefined;
 
-  useEffect(() => {
-    const sections = NAV_ITEMS.map((item) => document.getElementById(item.id)).filter(
-      (section): section is HTMLElement => Boolean(section),
-    );
-
-    if (sections.length === 0) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visibleEntry = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-
-        if (visibleEntry?.target instanceof HTMLElement) {
-          setActiveSection(visibleEntry.target.id);
-        }
-      },
-      { threshold: [0.25, 0.5, 0.75], rootMargin: '-10% 0px -55% 0px' },
-    );
-
-    sections.forEach((section) => observer.observe(section));
-
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
-
-  const handleNavClick = (id: string) => (event: MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault();
-    const target = document.getElementById(id);
-    if (!target) {
-      return;
-    }
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    window.history.replaceState(null, '', `#${id}`);
-  };
-
   return (
     <SiteShell
-      activeSection={activeSection}
-      onNavClick={handleNavClick}
       headerTitle={headerTitle ?? undefined}
       headerSubtitle={headerSubtitle ?? undefined}
     >
@@ -1029,18 +1045,35 @@ function Homepage({
             <p>Stručný rozcestník k hlavním soutěžím a jejich digitálním aplikacím.</p>
           </div>
           <div className="homepage-card" style={{ maxWidth: '920px', boxShadow: 'none' }}>
-            <ul className="homepage-list">
-              {EVENTS.map((event) => (
-                <li key={event.slug}>
-                  <a className="homepage-inline-link" href={event.href}>
-                    {event.name}
-                  </a>{' '}
-                  – {event.description}
-                </li>
-              ))}
-            </ul>
+            <div className="homepage-souteze-grid">
+              <div className="homepage-souteze-block">
+                <h3>Soutěže</h3>
+                <ul className="homepage-list">
+                  {EVENTS.map((event) => (
+                    <li key={event.slug}>
+                      <a className="homepage-inline-link" href={event.href}>
+                        {event.name}
+                      </a>
+                      <p>{event.description}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="homepage-souteze-block">
+                <h3>Aplikace</h3>
+                <ul className="homepage-list">
+                  {APPLICATION_LINKS.map((app) => (
+                    <li key={app.href}>
+                      <a className="homepage-inline-link" href={app.href}>
+                        {app.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
             <a className="homepage-inline-link" href="/souteze" style={{ marginTop: '12px', display: 'inline-flex' }}>
-              Zobrazit všechny soutěže
+              Přejít na soutěže a aplikace
             </a>
           </div>
         </section>
@@ -1061,15 +1094,7 @@ function Homepage({
                 k pravidelné činnosti, týmové práci a rozvoji dovedností v přírodě.
               </p>
               <div aria-hidden="true" style={{ height: '1px', background: 'rgba(4, 55, 44, 0.12)' }} />
-              <div className="homepage-toggle" role="group" aria-label="Přepnout zobrazení ligy">
-                <button type="button" className="homepage-toggle-button is-active" aria-pressed="true">
-                  Aktuální sezóna
-                </button>
-                <button type="button" className="homepage-toggle-button" aria-pressed="false">
-                  Historie
-                </button>
-              </div>
-              <a className="homepage-cta secondary" href="/zelena-liga">
+              <a className="homepage-cta secondary" href="/aktualni-poradi">
                 Zobrazit celé pořadí
               </a>
             </div>
@@ -1275,6 +1300,162 @@ function Homepage({
   );
 }
 
+function CompetitionsPage() {
+  return (
+    <SiteShell>
+      <main className="homepage-main homepage-single" aria-labelledby="competitions-heading">
+        <p className="homepage-eyebrow">SPTO · Soutěže</p>
+        <h1 id="competitions-heading">Soutěže SPTO</h1>
+        <p className="homepage-lead">Přehled závodů Zelené ligy a souvisejících aplikací.</p>
+        <div className="homepage-card">
+          <div className="homepage-souteze-grid">
+            <div className="homepage-souteze-block">
+              <h2>Soutěže</h2>
+              <ul className="homepage-list">
+                {EVENTS.map((event) => (
+                  <li key={event.slug}>
+                    <a className="homepage-inline-link" href={event.href}>
+                      {event.name}
+                    </a>
+                    <p>{event.description}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="homepage-souteze-block">
+              <h2>Aplikace</h2>
+              <ul className="homepage-list">
+                {APPLICATION_LINKS.map((app) => (
+                  <li key={app.href}>
+                    <a className="homepage-inline-link" href={app.href}>
+                      {app.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+        <a className="homepage-back-link" href="/">
+          Zpět na hlavní stránku
+        </a>
+      </main>
+    </SiteShell>
+  );
+}
+
+function ApplicationsPage() {
+  return (
+    <SiteShell>
+      <main className="homepage-main homepage-single" aria-labelledby="apps-heading">
+        <p className="homepage-eyebrow">SPTO · Aplikace</p>
+        <h1 id="apps-heading">Aplikace SPTO</h1>
+        <p className="homepage-lead">Digitální nástroje pro soutěže, bodování a výsledky.</p>
+        <div className="homepage-card">
+          <ul className="homepage-list">
+            {APPLICATION_LINKS.map((app) => (
+              <li key={app.href}>
+                <a className="homepage-inline-link" href={app.href}>
+                  {app.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <a className="homepage-back-link" href="/">
+          Zpět na hlavní stránku
+        </a>
+      </main>
+    </SiteShell>
+  );
+}
+
+function LeagueStandingsPage() {
+  const leagueGridTemplate = `minmax(220px, 1.3fr) repeat(${LEAGUE_EVENTS.length}, minmax(90px, 1fr)) minmax(90px, 0.8fr)`;
+  const rows = TROOPS.map((troop) => {
+    const scores = LEAGUE_EVENTS.map((event) => CURRENT_LEAGUE_SCORES[troop.href]?.[event] ?? null);
+    const hasScores = scores.some((value) => value !== null);
+    const total = hasScores ? scores.reduce<number>((sum, value) => sum + (value ?? 0), 0) : null;
+    return {
+      key: troop.href,
+      name: formatTroopName(troop),
+      scores,
+      total,
+    };
+  }).sort((a, b) => {
+    if (a.total === null && b.total === null) {
+      return a.name.localeCompare(b.name, 'cs');
+    }
+    if (a.total === null) {
+      return 1;
+    }
+    if (b.total === null) {
+      return -1;
+    }
+    return b.total - a.total;
+  });
+  const hasAnyScores = rows.some((row) => row.total !== null);
+
+  return (
+    <SiteShell>
+      <main className="homepage-main homepage-single" aria-labelledby="league-heading">
+        <p className="homepage-eyebrow">SPTO · Zelená liga</p>
+        <h1 id="league-heading">Aktuální pořadí</h1>
+        <p className="homepage-lead">Body oddílů v jednotlivých soutěžích a celkový součet.</p>
+        <div className="homepage-card homepage-league-table-card">
+          {!hasAnyScores ? (
+            <p className="homepage-league-note">Body doplníme po napojení na tabulku s aktuálním pořadím.</p>
+          ) : null}
+          <div className="homepage-league-table" style={{ '--league-grid': leagueGridTemplate } as React.CSSProperties}>
+            <div className="homepage-league-row homepage-league-header">
+              <span>Oddíl</span>
+              {LEAGUE_EVENTS.map((event) => (
+                <span key={event} className="homepage-league-score">
+                  {event}
+                </span>
+              ))}
+              <span className="homepage-league-score">Celkem</span>
+            </div>
+            {rows.map((row, index) => (
+              <div key={row.key} className="homepage-league-row">
+                <span className="homepage-league-name">
+                  <strong className="homepage-league-rank">{index + 1}.</strong> {row.name}
+                </span>
+                {row.scores.map((score, scoreIndex) => (
+                  <span key={`${row.key}-${scoreIndex}`} className="homepage-league-score">
+                    {score === null ? '—' : score}
+                  </span>
+                ))}
+                <span className="homepage-league-score homepage-league-total">
+                  {row.total === null ? '—' : row.total}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="homepage-card">
+          <h2>Historické pořadí</h2>
+          {HISTORICAL_LEAGUE_EMBED_URL ? (
+            <div className="homepage-league-embed">
+              <iframe
+                src={HISTORICAL_LEAGUE_EMBED_URL}
+                title="Historické pořadí Zelené ligy"
+                loading="lazy"
+                allowFullScreen
+              />
+            </div>
+          ) : (
+            <p>Sem vložíme Google tabulku s historickým pořadím. Pošli prosím embed link.</p>
+          )}
+        </div>
+        <a className="homepage-back-link" href="/">
+          Zpět na hlavní stránku
+        </a>
+      </main>
+    </SiteShell>
+  );
+}
+
 interface EventPageProps {
   slug: string;
 }
@@ -1378,51 +1559,15 @@ export default function ZelenaligaSite() {
     }
 
     if (slug === 'souteze') {
-      return (
-        <InfoPage
-          eyebrow="SPTO · Soutěže"
-          title="Soutěže SPTO"
-          lead="Přehled hlavních závodů, které tvoří Zelenou ligu."
-          links={EVENTS.map((item) => ({
-            label: item.name,
-            description: item.description,
-            href: item.href,
-          }))}
-        />
-      );
+      return <CompetitionsPage />;
     }
 
-    if (slug === 'zelena-liga') {
-      return (
-        <InfoPage
-          eyebrow="SPTO · Zelená liga"
-          title="Zelená liga"
-          lead="Celoroční soutěžní rámec oddílů SPTO, který sbírá body z jednotlivých závodů."
-          links={[
-            {
-              label: 'Aktuální pořadí',
-              description: 'Podívej se na průběžné výsledky a bodové součty.',
-              href: '/setonuv-zavod/vysledky',
-            },
-            {
-              label: 'Jak se zapojit',
-              description: 'Informace o přihláškách a pravidlech hlavních závodů.',
-              href: '/souteze',
-            },
-          ]}
-        />
-      );
+    if (slug === 'aktualni-poradi' || slug === 'zelena-liga') {
+      return <LeagueStandingsPage />;
     }
 
     if (slug === 'aplikace') {
-      return (
-        <InfoPage
-          eyebrow="SPTO · Aplikace"
-          title="Soutěže a aplikace"
-          lead="Digitální nástroje pro správu závodů, bodování i výsledků."
-          links={APPLICATION_LINKS}
-        />
-      );
+      return <ApplicationsPage />;
     }
 
     if (slug === 'oddily') {
