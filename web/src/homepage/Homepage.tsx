@@ -125,6 +125,8 @@ const HOMEPAGE_CAROUSEL = (CAROUSEL_IMAGE_SOURCES.length ? CAROUSEL_IMAGE_SOURCE
   }),
 );
 
+const GALLERY_PAGE_SIZE = 24;
+
 type Article = {
   title: string;
   dateLabel: string;
@@ -289,30 +291,11 @@ const TROOPS: Troop[] = [
     href: '/oddily/21-hady',
   },
   {
-    number: '24',
-    name: 'Života v přírodě',
+    number: '',
+    name: 'ZS PCV',
     year: '1972',
-    leader: 'Markéta Rokytová (Makýša)',
-    href: '/oddily/24-zivota-v-prirode',
-  },
-  {
-    number: '25',
-    name: 'Ochrany přírody',
-    leader: 'Vojtěch Hynšt',
-    href: '/oddily/25-ochrany-prirody',
-  },
-  {
-    number: '26',
-    name: 'Kulturní historie',
-    leader: 'Tobias Filouš (Lachtan)',
-    href: '/oddily/26-kulturni-historie',
-  },
-  {
-    number: '27',
-    name: 'Lesní moudrosti',
-    year: '1972',
-    leader: 'František Urban',
-    href: '/oddily/27-lesni-moudrosti',
+    leader: 'Matouš Procházka',
+    href: '/oddily/zs-pcv',
   },
   {
     number: '32',
@@ -398,8 +381,6 @@ const TROOPS: Troop[] = [
     href: '/oddily/x-zabky',
   },
 ];
-
-const TROOP_HIGHLIGHTS = TROOPS.slice(0, 4);
 
 const HEADER_SUBTITLE = 'Soutěže, oddíly a informace na jednom místě.';
 
@@ -498,12 +479,14 @@ function InfoPage({
   lead,
   links,
   backHref = '/',
+  listClassName,
 }: {
   eyebrow?: string;
   title: string;
   lead: string;
   links?: InfoLink[];
   backHref?: string;
+  listClassName?: string;
 }) {
   return (
     <SiteShell>
@@ -513,7 +496,7 @@ function InfoPage({
         <p className="homepage-lead">{lead}</p>
         <div className="homepage-card">
           {links && links.length > 0 ? (
-            <ul className="homepage-list">
+            <ul className={listClassName ? `homepage-list ${listClassName}` : 'homepage-list'}>
               {links.map((link) => (
                 <li key={link.href}>
                   <a className="homepage-inline-link" href={link.href}>
@@ -655,7 +638,7 @@ function GalleryOverviewPage({ albums, loading }: { albums: DriveAlbum[]; loadin
 
   return (
     <SiteShell>
-      <main className="homepage-main homepage-single" aria-labelledby="gallery-heading">
+      <main className="homepage-main homepage-single gallery-page" aria-labelledby="gallery-heading">
         <p className="homepage-eyebrow">SPTO · Fotogalerie</p>
         <h1 id="gallery-heading">Fotogalerie</h1>
         <p className="homepage-lead">Veřejná galerie akcí SPTO s fotkami uloženými na Google Drive.</p>
@@ -710,7 +693,7 @@ function GalleryAlbumPage({
       return undefined;
     }
     setIsLoading(true);
-    const params = new URLSearchParams({ folderId: album.folderId, pageSize: '36' });
+    const params = new URLSearchParams({ folderId: album.folderId, pageSize: String(GALLERY_PAGE_SIZE) });
     fetch(`/api/gallery/album?${params.toString()}`)
       .then(async (response) => {
         if (!response.ok) {
@@ -747,7 +730,7 @@ function GalleryAlbumPage({
     setIsLoading(true);
     const params = new URLSearchParams({
       folderId: album.folderId,
-      pageSize: '36',
+      pageSize: String(GALLERY_PAGE_SIZE),
       pageToken: nextPageToken,
     });
     try {
@@ -782,7 +765,7 @@ function GalleryAlbumPage({
 
   return (
     <SiteShell>
-      <main className="homepage-main homepage-single" aria-labelledby="album-heading">
+      <main className="homepage-main homepage-single gallery-page" aria-labelledby="album-heading">
         <p className="homepage-eyebrow">SPTO · Fotogalerie</p>
         <h1 id="album-heading">{album.title}</h1>
         <p className="homepage-lead">
@@ -797,7 +780,14 @@ function GalleryAlbumPage({
               onClick={() => setLightboxIndex(index)}
             >
               {photo.thumbnailLink ? (
-                <img src={photo.thumbnailLink} alt={photo.name} loading="lazy" />
+                <img
+                  src={photo.thumbnailLink}
+                  alt={photo.name}
+                  loading={index < 6 ? 'eager' : 'lazy'}
+                  decoding="async"
+                  sizes="(max-width: 600px) 45vw, (max-width: 900px) 30vw, 220px"
+                  fetchPriority={index < 4 ? 'high' : 'auto'}
+                />
               ) : (
                 <span>{photo.name}</span>
               )}
@@ -833,6 +823,8 @@ function GalleryAlbumPage({
             <img
               src={activePhoto.fullImageUrl ?? activePhoto.webContentLink ?? activePhoto.thumbnailLink ?? ''}
               alt={activePhoto.name}
+              loading="eager"
+              decoding="async"
             />
             <figcaption>{activePhoto.name}</figcaption>
           </figure>
@@ -899,7 +891,7 @@ function formatTroopName(troop: Troop) {
   if (!troop.number || !/^\d+$/.test(troop.number)) {
     return troop.name;
   }
-  return `${troop.number}. ${troop.name}`;
+  return `${troop.number}. PTO ${troop.name}`;
 }
 
 function formatTroopDescription(troop: Troop) {
@@ -928,6 +920,8 @@ type LeagueRow = {
   order: number;
 };
 
+type LeagueRowWithRank = LeagueRow & { rank: number };
+
 function buildLeagueRows(): LeagueRow[] {
   return LEAGUE_TROOPS.map((troop, index) => {
     const scores = LEAGUE_EVENTS.map((event) => CURRENT_LEAGUE_SCORES[troop.id]?.[event.key] ?? null);
@@ -954,6 +948,20 @@ function buildLeagueRows(): LeagueRow[] {
       return b.total - a.total;
     }
     return a.order - b.order;
+  });
+}
+
+function addCompetitionRanks(rows: LeagueRow[]): LeagueRowWithRank[] {
+  let lastTotal: number | null = null;
+  let lastRank = 0;
+  return rows.map((row, index) => {
+    if (lastTotal !== null && row.total !== null && row.total === lastTotal) {
+      return { ...row, rank: lastRank };
+    }
+    const rank = index + 1;
+    lastRank = rank;
+    lastTotal = row.total;
+    return { ...row, rank };
   });
 }
 
@@ -1317,7 +1325,7 @@ function Homepage({
             <div className="homepage-league-top" style={{ padding: '24px' }}>
               <h3>Top {LEAGUE_TOP_COUNT} oddílů</h3>
               <ol>
-                {buildLeagueRows()
+                {addCompetitionRanks(buildLeagueRows())
                   .slice(0, LEAGUE_TOP_COUNT)
                   .map((row, index) => (
                   <li
@@ -1325,7 +1333,7 @@ function Homepage({
                     style={{ display: 'grid', gridTemplateColumns: '32px 1fr', gap: '12px', alignItems: 'center' }}
                   >
                     <span className="homepage-league-rank" style={{ textAlign: 'right' }}>
-                      {index + 1}.
+                      {row.rank}.
                     </span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       <strong>{row.name}</strong>
@@ -1335,42 +1343,6 @@ function Homepage({
                 ))}
               </ol>
             </div>
-          </div>
-        </section>
-
-        <section className="homepage-section" id="oddily" aria-labelledby="oddily-heading">
-          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
-            <h2 id="oddily-heading">Oddíly SPTO</h2>
-            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
-            <p>Čtyři oddíly na ukázku – další najdeš v kompletním seznamu.</p>
-          </div>
-          <div className="homepage-troop-grid">
-            {TROOP_HIGHLIGHTS.map((troop) => (
-              <a key={troop.href} className="homepage-troop-card" href={troop.href}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <h3>{formatTroopName(troop)}</h3>
-                  <span className="homepage-troop-city">{troop.leader}</span>
-                </div>
-                <p
-                  style={{
-                    display: '-webkit-box',
-                    WebkitBoxOrient: 'vertical',
-                    WebkitLineClamp: 2,
-                    overflow: 'hidden',
-                  }}
-                >
-                  {formatTroopDescription(troop)}
-                </p>
-                <span className="homepage-inline-link" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  Detail oddílu <span aria-hidden="true">→</span>
-                </span>
-              </a>
-            ))}
-          </div>
-          <div className="homepage-section-cta">
-            <a className="homepage-cta secondary" href="/oddily">
-              Seznam oddílů
-            </a>
           </div>
         </section>
 
@@ -1468,7 +1440,7 @@ function ApplicationsPage() {
 
 function LeagueStandingsPage() {
   const leagueGridTemplate = `minmax(220px, 1.3fr) repeat(${LEAGUE_EVENTS.length}, minmax(90px, 1fr)) minmax(90px, 0.8fr)`;
-  const rows = buildLeagueRows();
+  const rows = addCompetitionRanks(buildLeagueRows());
   const hasAnyScores = rows.some((row) => row.total !== null);
 
   return (
@@ -1494,7 +1466,7 @@ function LeagueStandingsPage() {
             {rows.map((row, index) => (
               <div key={row.key} className="homepage-league-row">
                 <span className="homepage-league-name">
-                  <strong className="homepage-league-rank">{index + 1}.</strong> {row.name}
+                  <strong className="homepage-league-rank">{row.rank}.</strong> {row.name}
                 </span>
                 {row.scores.map((score, scoreIndex) => (
                   <span key={`${row.key}-${scoreIndex}`} className="homepage-league-score">
@@ -1680,6 +1652,7 @@ export default function ZelenaligaSite() {
           eyebrow="SPTO · Oddíly"
           title="Oddíly SPTO"
           lead="Seznam oddílů zapojených do pionýrského tábornictví."
+          listClassName="homepage-list-columns"
           links={TROOPS.map((item) => ({
             label: formatTroopName(item),
             description: formatTroopDescription(item),
