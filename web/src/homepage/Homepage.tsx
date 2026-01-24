@@ -47,21 +47,66 @@ const NAV_ITEMS = [
   { id: 'historie', label: 'Historie SPTO', href: '/historie' },
 ];
 
-const LEAGUE_TOP = [
-  { name: 'PTO Severka', city: 'Brno' },
-  { name: 'PTO Ševa', city: 'Brno' },
-  { name: 'PTO Orion', city: 'Blansko' },
-  { name: 'PTO Tis', city: 'Třebíč' },
-  { name: 'PTO Rosa', city: 'Hodonín' },
-];
+const LEAGUE_EVENTS = [
+  { key: 'pto-ob', label: 'PTO OB', name: 'Orientační běh' },
+  { key: 'ds', label: 'DS', name: 'Dračí smyčka' },
+  { key: 'kp', label: 'KP', name: 'Kosmův prostor' },
+  { key: 'seton', label: 'Seton', name: 'Setonův závod' },
+] as const;
+const LEAGUE_TOP_COUNT = 7;
 
-const LEAGUE_EVENTS = ['Setonův závod', 'Memoriál Bedřicha Stoličky', 'Sraz PTO', 'Dračí smyčka'] as const;
+type LeagueEvent = (typeof LEAGUE_EVENTS)[number]['key'];
 
-type LeagueEvent = (typeof LEAGUE_EVENTS)[number];
+const LEAGUE_TROOPS = [
+  { id: '63-phoenix', name: '63. PTO Phoenix' },
+  { id: '6-nibowaka', name: '6. PTO Nibowaka' },
+  { id: '66-brabrouci', name: '66. PTO Brabrouci' },
+  { id: 'zs-pcv', name: 'ZS PCV' },
+  { id: '10-severka', name: '10. PTO Severka' },
+  { id: '176-vlcata', name: '176. PTO Vlčata' },
+  { id: '34-tulak', name: '34. PTO Tulák' },
+  { id: '21-hady', name: '21. PTO Hády' },
+  { id: '32-severka', name: '32. PTO Severka' },
+  { id: '64-lorien', name: '64. PTO Lorien' },
+  { id: '48-stezka', name: '48. PTO Stezka' },
+  { id: '2-poutnici', name: '2. PTO Poutníci' },
+  { id: '111-vinohrady', name: '111. PTO Vinohrady' },
+  { id: '8-mustangove', name: '8. PTO Mustangové' },
+  { id: '11-iktomi', name: '11. PTO Iktomi' },
+  { id: '15-vatra', name: '15. PTO Vatra' },
+  { id: '41-dracata', name: '41. PTO Dráčata' },
+  { id: '61-tuhas', name: '61. PTO Tuhas' },
+  { id: '99-kamzici', name: '99. PTO Kamzíci' },
+  { id: '172-pegas', name: '172. PTO Pegas' },
+  { id: 'zabky-jedovnice', name: 'PTO Žabky Jedovnice' },
+] as const;
 
-const CURRENT_LEAGUE_SCORES: Record<string, Partial<Record<LeagueEvent, number>>> = {};
+const CURRENT_LEAGUE_SCORES: Record<string, Partial<Record<LeagueEvent, number>>> = {
+  '63-phoenix': { 'pto-ob': 106 },
+  '6-nibowaka': { 'pto-ob': 100 },
+  '66-brabrouci': { 'pto-ob': 100 },
+  'zs-pcv': { 'pto-ob': 100 },
+  '10-severka': { 'pto-ob': 94 },
+  '176-vlcata': { 'pto-ob': 94 },
+  '34-tulak': { 'pto-ob': 94 },
+  '21-hady': { 'pto-ob': 85 },
+  '32-severka': { 'pto-ob': 79 },
+  '64-lorien': { 'pto-ob': 71.5 },
+  '48-stezka': { 'pto-ob': 29.5 },
+  '2-poutnici': { 'pto-ob': 22 },
+  '111-vinohrady': { 'pto-ob': 11.5 },
+  '8-mustangove': { 'pto-ob': 0 },
+  '11-iktomi': { 'pto-ob': 0 },
+  '15-vatra': { 'pto-ob': 0 },
+  '41-dracata': { 'pto-ob': 0 },
+  '61-tuhas': { 'pto-ob': 0 },
+  '99-kamzici': { 'pto-ob': 0 },
+  '172-pegas': { 'pto-ob': 0 },
+  'zabky-jedovnice': { 'pto-ob': 0 },
+};
 
-const HISTORICAL_LEAGUE_EMBED_URL = '';
+const HISTORICAL_LEAGUE_EMBED_URL =
+  'https://docs.google.com/spreadsheets/d/14TLcdhZzW1jAgFk-eBWcOeh3uB8Ec2QewfNVjhefWJE/gviz/tq?tqx=out:html&gid=1022719772';
 
 const CAROUSEL_IMAGE_SOURCES = Object.entries(
   import.meta.glob('../assets/homepage-carousel/*.{jpg,jpeg,png,webp}', {
@@ -868,6 +913,50 @@ function formatTroopDescription(troop: Troop) {
   return detailParts.join(' · ');
 }
 
+function formatLeagueScore(value: number | null) {
+  if (value === null || Number.isNaN(value)) {
+    return '—';
+  }
+  return value.toLocaleString('cs-CZ', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+type LeagueRow = {
+  key: string;
+  name: string;
+  scores: Array<number | null>;
+  total: number | null;
+  order: number;
+};
+
+function buildLeagueRows(): LeagueRow[] {
+  return LEAGUE_TROOPS.map((troop, index) => {
+    const scores = LEAGUE_EVENTS.map((event) => CURRENT_LEAGUE_SCORES[troop.id]?.[event.key] ?? null);
+    const hasScores = scores.some((value) => value !== null);
+    const total = hasScores ? scores.reduce<number>((sum, value) => sum + (value ?? 0), 0) : null;
+    return {
+      key: troop.id,
+      name: troop.name,
+      scores,
+      total,
+      order: index,
+    };
+  }).sort((a, b) => {
+    if (a.total === null && b.total === null) {
+      return a.order - b.order;
+    }
+    if (a.total === null) {
+      return 1;
+    }
+    if (b.total === null) {
+      return -1;
+    }
+    if (b.total !== a.total) {
+      return b.total - a.total;
+    }
+    return a.order - b.order;
+  });
+}
+
 function resolveActiveNav(pathname: string) {
   const normalized = pathname.replace(/\/$/, '') || '/';
   const segments = normalized.split('/').filter(Boolean);
@@ -1226,19 +1315,21 @@ function Homepage({
               </a>
             </div>
             <div className="homepage-league-top" style={{ padding: '24px' }}>
-              <h3>Top 5 oddílů</h3>
+              <h3>Top {LEAGUE_TOP_COUNT} oddílů</h3>
               <ol>
-                {LEAGUE_TOP.map((troop, index) => (
+                {buildLeagueRows()
+                  .slice(0, LEAGUE_TOP_COUNT)
+                  .map((row, index) => (
                   <li
-                    key={troop.name}
+                    key={row.key}
                     style={{ display: 'grid', gridTemplateColumns: '32px 1fr', gap: '12px', alignItems: 'center' }}
                   >
                     <span className="homepage-league-rank" style={{ textAlign: 'right' }}>
                       {index + 1}.
                     </span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <strong>{troop.name}</strong>
-                      <span>{troop.city}</span>
+                      <strong>{row.name}</strong>
+                      <span>{row.total === null ? '— bodů' : `${formatLeagueScore(row.total)} bodů`}</span>
                     </div>
                   </li>
                 ))}
@@ -1377,28 +1468,7 @@ function ApplicationsPage() {
 
 function LeagueStandingsPage() {
   const leagueGridTemplate = `minmax(220px, 1.3fr) repeat(${LEAGUE_EVENTS.length}, minmax(90px, 1fr)) minmax(90px, 0.8fr)`;
-  const rows = TROOPS.map((troop) => {
-    const scores = LEAGUE_EVENTS.map((event) => CURRENT_LEAGUE_SCORES[troop.href]?.[event] ?? null);
-    const hasScores = scores.some((value) => value !== null);
-    const total = hasScores ? scores.reduce<number>((sum, value) => sum + (value ?? 0), 0) : null;
-    return {
-      key: troop.href,
-      name: formatTroopName(troop),
-      scores,
-      total,
-    };
-  }).sort((a, b) => {
-    if (a.total === null && b.total === null) {
-      return a.name.localeCompare(b.name, 'cs');
-    }
-    if (a.total === null) {
-      return 1;
-    }
-    if (b.total === null) {
-      return -1;
-    }
-    return b.total - a.total;
-  });
+  const rows = buildLeagueRows();
   const hasAnyScores = rows.some((row) => row.total !== null);
 
   return (
@@ -1415,8 +1485,8 @@ function LeagueStandingsPage() {
             <div className="homepage-league-row homepage-league-header">
               <span>Oddíl</span>
               {LEAGUE_EVENTS.map((event) => (
-                <span key={event} className="homepage-league-score">
-                  {event}
+                <span key={event.key} className="homepage-league-score">
+                  {event.label}
                 </span>
               ))}
               <span className="homepage-league-score">Celkem</span>
@@ -1428,11 +1498,11 @@ function LeagueStandingsPage() {
                 </span>
                 {row.scores.map((score, scoreIndex) => (
                   <span key={`${row.key}-${scoreIndex}`} className="homepage-league-score">
-                    {score === null ? '—' : score}
+                    {formatLeagueScore(score)}
                   </span>
                 ))}
                 <span className="homepage-league-score homepage-league-total">
-                  {row.total === null ? '—' : row.total}
+                  {formatLeagueScore(row.total)}
                 </span>
               </div>
             ))}
