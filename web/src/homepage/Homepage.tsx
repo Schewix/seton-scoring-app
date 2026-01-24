@@ -144,6 +144,23 @@ type CarouselImage = {
   alt: string;
 };
 
+const TROOP_LOGO_SOURCES = Object.entries(
+  import.meta.glob('../assets/oddily/*.{png,jpg,jpeg,webp,svg}', {
+    eager: true,
+    import: 'default',
+  }),
+).reduce<Record<string, string>>((acc, [path, src]) => {
+  const fileName = path.split('/').pop();
+  if (!fileName) {
+    return acc;
+  }
+  const key = fileName.split('.')[0]?.toLowerCase();
+  if (key) {
+    acc[key] = src as string;
+  }
+  return acc;
+}, {});
+
 type DriveAlbum = {
   id: string;
   title: string;
@@ -245,6 +262,8 @@ type Troop = {
   year?: string;
   leader: string;
   href: string;
+  website?: string;
+  logoKey?: string;
 };
 
 const TROOPS: Troop[] = [
@@ -254,6 +273,7 @@ const TROOPS: Troop[] = [
     year: '1987',
     leader: 'Anna Dalecká',
     href: '/oddily/2-poutnici',
+    website: 'https://poutnici.org/',
   },
   {
     number: '6',
@@ -261,6 +281,7 @@ const TROOPS: Troop[] = [
     year: '1982',
     leader: 'Tomáš Hála',
     href: '/oddily/6-nibowaka',
+    website: 'https://www.nibowaka.cz/',
   },
   {
     number: '10',
@@ -268,6 +289,7 @@ const TROOPS: Troop[] = [
     year: '1984',
     leader: 'Ondřej Uldrijan',
     href: '/oddily/10-severka',
+    website: 'https://www.severka.cz/',
   },
   {
     number: '11',
@@ -275,6 +297,7 @@ const TROOPS: Troop[] = [
     year: '2013',
     leader: 'Linda Rahelová (Ovce)',
     href: '/oddily/11-iktomi',
+    website: 'https://www.vlcibrno.cz/',
   },
   {
     number: '15',
@@ -282,6 +305,7 @@ const TROOPS: Troop[] = [
     year: '1975',
     leader: 'Luděk Maar',
     href: '/oddily/15-vatra',
+    website: 'https://www.vatra.pionyr.cz/',
   },
   {
     number: '21',
@@ -289,6 +313,7 @@ const TROOPS: Troop[] = [
     year: '1983',
     leader: 'Alena Nekvapilova',
     href: '/oddily/21-hady',
+    website: 'https://www.pshady.cz/',
   },
   {
     number: '',
@@ -296,6 +321,8 @@ const TROOPS: Troop[] = [
     year: '1972',
     leader: 'Matouš Procházka',
     href: '/oddily/zs-pcv',
+    website: 'https://www.zeeska.cz/',
+    logoKey: 'zspcv',
   },
   {
     number: '32',
@@ -303,6 +330,7 @@ const TROOPS: Troop[] = [
     year: '1985',
     leader: 'Eliška Masaříková (Elis)',
     href: '/oddily/32-severka',
+    website: 'https://severka.org/',
   },
   {
     number: '34',
@@ -310,6 +338,7 @@ const TROOPS: Troop[] = [
     year: '1981',
     leader: 'František Reitter',
     href: '/oddily/34-tulak',
+    website: 'https://www.tulak.org/',
   },
   {
     number: '41',
@@ -317,6 +346,7 @@ const TROOPS: Troop[] = [
     year: '1992',
     leader: 'Ing. Jaroslav Pipota',
     href: '/oddily/41-dracata',
+    website: 'https://dracata-brno.cz/',
   },
   {
     number: '48',
@@ -324,6 +354,7 @@ const TROOPS: Troop[] = [
     year: '1983',
     leader: 'Ivana Krumlova',
     href: '/oddily/48-stezka',
+    website: 'https://stezka.org/',
   },
   {
     number: '63',
@@ -331,6 +362,7 @@ const TROOPS: Troop[] = [
     year: '1992',
     leader: 'Roman Valenta (Rogi)',
     href: '/oddily/63-phoenix',
+    website: 'https://63ptophoenix.cz/',
   },
   {
     number: '64',
@@ -338,6 +370,7 @@ const TROOPS: Troop[] = [
     year: '1996',
     leader: 'René Hrabovský (Renda)',
     href: '/oddily/64-lorien',
+    website: 'https://www.pto-lorien.cz/home/',
   },
   {
     number: '66',
@@ -345,12 +378,14 @@ const TROOPS: Troop[] = [
     year: '1998',
     leader: 'Veronika Obdržálková (Špion)',
     href: '/oddily/66-brabrouci-modrice',
+    website: 'https://brabrouci.cz/',
   },
   {
     number: '99',
     name: 'Kamzíci',
     leader: 'Radek Slavík (Bambus)',
     href: '/oddily/99-kamzici',
+    website: 'https://www.facebook.com/Kamzici/?locale=cs_CZ',
   },
   {
     number: '111',
@@ -358,6 +393,7 @@ const TROOPS: Troop[] = [
     year: '1990',
     leader: 'Radek Zeman',
     href: '/oddily/111-vinohrady',
+    website: 'https://www.psvinohrady.cz/',
   },
   {
     number: '172',
@@ -372,6 +408,7 @@ const TROOPS: Troop[] = [
     year: '1971',
     leader: 'Adam Vyklický (Áda)',
     href: '/oddily/176-vlcata',
+    website: 'https://www.vlcata.cz/',
   },
   {
     number: 'x',
@@ -379,6 +416,8 @@ const TROOPS: Troop[] = [
     year: '1993',
     leader: 'Pavlína Héčová (Spajdik)',
     href: '/oddily/x-zabky',
+    website: 'https://pionyr.jedovnice.cz/',
+    logoKey: 'zabky',
   },
 ];
 
@@ -512,6 +551,77 @@ function InfoPage({
         </div>
         <a className="homepage-back-link" href={backHref}>
           Zpět na hlavní stránku
+        </a>
+      </main>
+    </SiteShell>
+  );
+}
+
+function TroopsPage() {
+  return (
+    <SiteShell>
+      <main className="homepage-main homepage-single troops-page" aria-labelledby="troops-heading">
+        <p className="homepage-eyebrow">SPTO · Oddíly</p>
+        <h1 id="troops-heading">Oddíly SPTO</h1>
+        <p className="homepage-lead">Seznam oddílů zapojených do pionýrského tábornictví.</p>
+        <div className="homepage-card">
+          <div className="troops-grid">
+            {TROOPS.map((troop) => {
+              const logo = resolveTroopLogo(troop);
+              return (
+                <div key={troop.href} className="troop-card">
+                  <a className="troop-card-main" href={troop.href}>
+                    <div className="troop-logo">
+                      {logo ? <img src={logo} alt={`Logo ${formatTroopName(troop)}`} loading="lazy" /> : null}
+                    </div>
+                    <div className="troop-card-content">
+                      <strong>{formatTroopName(troop)}</strong>
+                      <span>{formatTroopDescription(troop)}</span>
+                    </div>
+                  </a>
+                  {troop.website ? (
+                    <a className="troop-website-link" href={troop.website} target="_blank" rel="noreferrer">
+                      Web oddílu
+                    </a>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <a className="homepage-back-link" href="/">
+          Zpět na hlavní stránku
+        </a>
+      </main>
+    </SiteShell>
+  );
+}
+
+function TroopDetailPage({ troop }: { troop: Troop }) {
+  const detailParts = [];
+  if (troop.year) {
+    detailParts.push(`založeno ${troop.year}`);
+  }
+  if (troop.leader) {
+    detailParts.push(`vedoucí ${troop.leader}`);
+  }
+  const logo = resolveTroopLogo(troop);
+  return (
+    <SiteShell>
+      <main className="homepage-main homepage-single troop-detail" aria-labelledby="troop-heading">
+        <p className="homepage-eyebrow">SPTO · Oddíly</p>
+        <h1 id="troop-heading">{formatTroopName(troop)}</h1>
+        <p className="homepage-lead">{detailParts.join(' · ')}</p>
+        <div className="homepage-card troop-detail-card">
+          {logo ? <img className="troop-detail-logo" src={logo} alt={`Logo ${formatTroopName(troop)}`} /> : null}
+          {troop.website ? (
+            <a className="homepage-cta secondary" href={troop.website} target="_blank" rel="noreferrer">
+              Web oddílu
+            </a>
+          ) : null}
+        </div>
+        <a className="homepage-back-link" href="/oddily">
+          Zpět na seznam oddílů
         </a>
       </main>
     </SiteShell>
@@ -903,6 +1013,15 @@ function formatTroopDescription(troop: Troop) {
     detailParts.push(`vedoucí ${troop.leader}`);
   }
   return detailParts.join(' · ');
+}
+
+function resolveTroopLogo(troop: Troop) {
+  const keyFromNumber = troop.number && /^\d+$/.test(troop.number) ? troop.number : null;
+  const key = (troop.logoKey ?? keyFromNumber ?? '').toLowerCase();
+  if (!key) {
+    return null;
+  }
+  return TROOP_LOGO_SOURCES[key] ?? null;
 }
 
 function formatLeagueScore(value: number | null) {
@@ -1627,39 +1746,9 @@ export default function ZelenaligaSite() {
         if (!troop) {
           return <NotFoundPage />;
         }
-        const detailParts = [];
-        if (troop.year) {
-          detailParts.push(`založeno ${troop.year}`);
-        }
-        detailParts.push(`vedoucí ${troop.leader}`);
-        return (
-          <InfoPage
-            eyebrow="SPTO · Oddíly"
-            title={formatTroopName(troop)}
-            lead={detailParts.join(' · ')}
-            links={[
-              {
-                label: 'Zpět na seznam oddílů',
-                href: '/oddily',
-              },
-            ]}
-            backHref="/oddily"
-          />
-        );
+        return <TroopDetailPage troop={troop} />;
       }
-      return (
-        <InfoPage
-          eyebrow="SPTO · Oddíly"
-          title="Oddíly SPTO"
-          lead="Seznam oddílů zapojených do pionýrského tábornictví."
-          listClassName="homepage-list-columns"
-          links={TROOPS.map((item) => ({
-            label: formatTroopName(item),
-            description: formatTroopDescription(item),
-            href: item.href,
-          }))}
-        />
-      );
+      return <TroopsPage />;
     }
 
     if (slug === 'clanky') {
