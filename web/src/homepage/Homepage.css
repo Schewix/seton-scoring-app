@@ -859,6 +859,14 @@
   margin-top: 48px;
 }
 
+.homepage-single.troops-page,
+.homepage-single.troop-detail {
+  max-width: min(1100px, 100%);
+  align-items: stretch;
+  text-align: left;
+  padding: 0 16px;
+}
+
 .homepage-single.gallery-page {
   max-width: min(1200px, 100%);
   align-items: stretch;
@@ -901,6 +909,87 @@
 
 .homepage-list li {
   margin: 0;
+}
+
+.troops-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.troop-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(4, 55, 44, 0.12);
+  background: #fff;
+}
+
+.troop-card-main {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+}
+
+.troop-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.troop-card-content span {
+  color: rgba(4, 55, 44, 0.68);
+  font-size: 0.92rem;
+}
+
+.troop-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: rgba(4, 55, 44, 0.08);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.troop-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.troop-website-link {
+  align-self: flex-start;
+  text-decoration: none;
+  font-weight: 600;
+  color: #1a5c94;
+  font-size: 0.9rem;
+}
+
+.troop-website-link:hover,
+.troop-website-link:focus-visible {
+  text-decoration: underline;
+}
+
+.troop-detail-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.troop-detail-logo {
+  width: min(200px, 60vw);
+  height: auto;
+  border-radius: 18px;
+  border: 1px solid rgba(4, 55, 44, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  padding: 16px;
 }
 
 .homepage-list p {
@@ -1049,7 +1138,7 @@
 .gallery-album-grid {
   display: grid;
   gap: 20px;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
 }
 
 .gallery-album-card {
@@ -1152,7 +1241,7 @@
 .gallery-photo-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   margin-top: 24px;
 }
 
@@ -1291,25 +1380,30 @@
   .homepage-single.gallery-page {
     padding: 0 24px;
   }
+
+  .homepage-single.troops-page,
+  .homepage-single.troop-detail {
+    padding: 0 24px;
+  }
 }
 
 @media (max-width: 900px) {
-  .gallery-album-grid {
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  }
-
-  .gallery-photo-grid {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  }
-}
-
-@media (max-width: 600px) {
   .gallery-album-grid {
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   }
 
   .gallery-photo-grid {
     grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .gallery-album-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .gallery-photo-grid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   }
 
   .gallery-lightbox {
