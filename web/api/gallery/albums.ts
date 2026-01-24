@@ -35,6 +35,16 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+function normalizeForMatch(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 async function listAllFolders(parentId: string): Promise<drive_v3.Schema$File[]> {
   const drive = getDriveClient();
   const items: drive_v3.Schema$File[] = [];
@@ -79,6 +89,12 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const allowlistRaw = process.env.GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST ?? '';
+    const allowlist = allowlistRaw
+      .split(/[\n,]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map(normalizeForMatch);
     const yearFolders = await listAllFolders(rootFolderId);
     const albums: Array<{
       id: string;
@@ -97,6 +113,13 @@ export default async function handler(req: any, res: any) {
       for (const folder of albumFolders) {
         if (!folder.id || !folder.name) {
           continue;
+        }
+        if (allowlist.length > 0) {
+          const normalizedName = normalizeForMatch(folder.name);
+          const isAllowed = allowlist.some((term) => normalizedName.includes(term));
+          if (!isAllowed) {
+            continue;
+          }
         }
         const yearSlug = slugify(yearName);
         const nameSlug = slugify(folder.name);
