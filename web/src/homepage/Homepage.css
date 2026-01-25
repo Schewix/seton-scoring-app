@@ -867,6 +867,13 @@
   padding: 0 16px;
 }
 
+.homepage-single.contacts-page {
+  max-width: min(960px, 100%);
+  align-items: stretch;
+  text-align: left;
+  padding: 0 16px;
+}
+
 .homepage-single.gallery-page {
   max-width: min(1200px, 100%);
   align-items: stretch;
@@ -990,6 +997,40 @@
   border: 1px solid rgba(4, 55, 44, 0.12);
   background: rgba(255, 255, 255, 0.96);
   padding: 16px;
+}
+
+.contacts-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.contact-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(4, 55, 44, 0.12);
+  background: #fff;
+}
+
+.contact-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.contact-card-header span {
+  color: rgba(4, 55, 44, 0.7);
+}
+
+.contact-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 600;
+  color: rgba(4, 55, 44, 0.9);
 }
 
 .homepage-list p {
@@ -1382,7 +1423,8 @@
   }
 
   .homepage-single.troops-page,
-  .homepage-single.troop-detail {
+  .homepage-single.troop-detail,
+  .homepage-single.contacts-page {
     padding: 0 24px;
   }
 }
@@ -1394,6 +1436,54 @@
 
   .gallery-photo-grid {
     grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .homepage-league-table {
+    overflow-x: visible;
+    gap: 12px;
+  }
+
+  .homepage-league-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid rgba(4, 55, 44, 0.12);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.95);
+  }
+
+  .homepage-league-row + .homepage-league-row {
+    margin-top: 12px;
+  }
+
+  .homepage-league-row.homepage-league-header {
+    display: none;
+  }
+
+  .homepage-league-row > span {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+
+  .homepage-league-row > span::before {
+    content: attr(data-label);
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(4, 55, 44, 0.55);
+  }
+
+  .homepage-league-name {
+    font-weight: 700;
+  }
+
+  .homepage-league-score {
+    text-align: right;
   }
 }
 
