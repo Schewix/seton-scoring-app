@@ -741,31 +741,10 @@ function PdfEmbedCard({ title, url }: { title: string; url: string }) {
   const zoom = isMobile ? 140 : 120;
   const pdfUrl = `${url}#view=FitH&zoom=${zoom}&toolbar=1&navpanes=0&scrollbar=1`;
 
-  const handleOpenPdf = () => {
-    if (typeof window === 'undefined') return;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleKeyOpen: React.KeyboardEventHandler<HTMLDivElement> = (event) => {
-    if (!isMobile) return;
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      handleOpenPdf();
-    }
-  };
-
   return (
     <div className="homepage-pdf-card">
-      <div
-        className={`homepage-pdf-frame${isMobile ? ' is-mobile' : ''}`}
-        onClick={isMobile ? handleOpenPdf : undefined}
-        onKeyDown={handleKeyOpen}
-        role={isMobile ? 'button' : undefined}
-        tabIndex={isMobile ? 0 : undefined}
-        aria-label={isMobile ? `Otevřít PDF ${title}` : undefined}
-      >
+      <div className="homepage-pdf-frame">
         <iframe src={pdfUrl} title={title} loading="lazy" allowFullScreen scrolling="yes" />
-        {isMobile ? <div className="homepage-pdf-overlay">Otevřít PDF</div> : null}
       </div>
       <div className="homepage-pdf-footer">
         <span className="homepage-pdf-title">{title}</span>
