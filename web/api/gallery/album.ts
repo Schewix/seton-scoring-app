@@ -89,14 +89,26 @@ async function listChildFolderIds(parentId: string): Promise<string[]> {
   let pageToken: string | undefined = undefined;
   do {
     const { data }: { data: drive_v3.Schema$FileList } = await drive.files.list({
-      q: `'${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`,
-      fields: 'nextPageToken, files(id)',
+      q: `'${parentId}' in parents and (mimeType = '${FOLDER_MIME}' or mimeType = 'application/vnd.google-apps.shortcut') and trashed = false`,
+      fields: 'nextPageToken, files(id, mimeType, shortcutDetails)',
       pageSize: 1000,
       pageToken,
       includeItemsFromAllDrives: true,
       supportsAllDrives: true,
     });
-    ids.push(...(data.files ?? []).map((file) => file.id).filter((id): id is string => Boolean(id)));
+    for (const file of data.files ?? []) {
+      if (file.mimeType === FOLDER_MIME && file.id) {
+        ids.push(file.id);
+        continue;
+      }
+      if (
+        file.mimeType === 'application/vnd.google-apps.shortcut' &&
+        file.shortcutDetails?.targetMimeType === FOLDER_MIME &&
+        file.shortcutDetails.targetId
+      ) {
+        ids.push(file.shortcutDetails.targetId);
+      }
+    }
     pageToken = data.nextPageToken ?? undefined;
   } while (pageToken);
   return ids;
