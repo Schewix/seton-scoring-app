@@ -29,4 +29,5 @@ export function getDriveClient(): drive_v3.Drive {
   return cachedDrive;
 }
 
-export const DRIVE_FIELDS = 'nextPageToken, files(id, name, mimeType, thumbnailLink, webContentLink, webViewLink)';
+export const DRIVE_FIELDS =
+  'nextPageToken, files(id, name, mimeType, thumbnailLink, webContentLink, webViewLink, shortcutDetails)';
