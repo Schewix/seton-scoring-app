@@ -605,6 +605,16 @@
   gap: 24px;
 }
 
+.homepage-league-card.is-compact {
+  gap: 16px;
+}
+
+.homepage-league-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
 .homepage-league-copy {
   display: flex;
   flex-direction: column;
@@ -1328,7 +1338,7 @@
 }
 
 .gallery-lightbox figure {
-  width: min(92vw, 1200px);
+  width: min(86vw, 1000px);
   max-width: 100%;
   margin: 0;
   display: flex;
@@ -1340,7 +1350,7 @@
 
 .gallery-lightbox img {
   width: 100%;
-  max-height: 82vh;
+  max-height: 70vh;
   border-radius: 18px;
   object-fit: contain;
 }
@@ -1415,6 +1425,10 @@
   .homepage-league-card {
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
     align-items: start;
+  }
+
+  .homepage-league-card.is-compact {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .homepage-gallery-actions {
