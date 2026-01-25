@@ -556,6 +556,14 @@ function AdminDashboard({
             </p>
           </div>
           <div className="admin-header-actions">
+            <a
+              className="admin-button admin-button--secondary admin-button--pill"
+              href="https://www.zelenaliga.cz/aplikace/setonuv-zavod/vysledky"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Otevřít výsledky
+            </a>
             <button
               type="button"
               className="admin-button admin-button--secondary admin-button--pill"

@@ -908,6 +908,13 @@
   padding: 0 16px;
 }
 
+.homepage-single.homepage-league-page {
+  max-width: min(1280px, 100%);
+  align-items: stretch;
+  text-align: left;
+  padding: 0 16px;
+}
+
 .homepage-card {
   margin: 20px 0;
   padding: 26px 30px;
@@ -1021,12 +1028,34 @@
 
 .homepage-pdf-frame iframe {
   width: 100%;
-  min-height: 520px;
-  height: 75vh;
-  max-height: 900px;
+  min-height: 680px;
+  height: min(88vh, 1040px);
+  max-height: 1040px;
   border: none;
   display: block;
   background: #1f1f1f;
+}
+
+.homepage-pdf-frame.is-mobile {
+  position: relative;
+  cursor: pointer;
+}
+
+.homepage-pdf-frame.is-mobile iframe {
+  pointer-events: none;
+}
+
+.homepage-pdf-overlay {
+  position: absolute;
+  inset: auto 12px 12px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1a5c94;
+  font-weight: 700;
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  text-align: center;
+  box-shadow: 0 6px 16px rgba(4, 55, 44, 0.18);
 }
 
 .homepage-pdf-footer {
@@ -1037,19 +1066,21 @@
   gap: 16px;
 }
 
-.homepage-pdf-link {
+.homepage-pdf-title {
   color: #1a5c94;
   font-weight: 600;
-  text-decoration: none;
 }
 
-.homepage-pdf-link:hover,
-.homepage-pdf-link:focus-visible {
-  text-decoration: underline;
-}
-
+.homepage-pdf-open,
 .homepage-pdf-download {
   text-decoration: none;
+}
+
+.homepage-pdf-note {
+  margin: 0;
+  text-align: center;
+  color: rgba(4, 55, 44, 0.72);
+  font-size: 0.95rem;
 }
 
 .troops-grid {
@@ -1168,6 +1199,12 @@
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.contacts-extra {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
 }
 
 .contact-card {
@@ -1293,6 +1330,10 @@
   overflow: hidden;
   border: 1px solid rgba(4, 55, 44, 0.12);
   background: rgba(4, 55, 44, 0.04);
+}
+
+.homepage-league-history-card {
+  width: 100%;
 }
 
 .homepage-league-embed iframe {
@@ -1604,6 +1645,10 @@
     padding: 0 24px;
   }
 
+  .homepage-single.homepage-league-page {
+    padding: 0 24px;
+  }
+
   .homepage-single.troops-page,
   .homepage-single.troop-detail,
   .homepage-single.contacts-page {
@@ -1674,12 +1719,29 @@
   }
 
   .homepage-pdf-frame iframe {
-    min-height: 420px;
-    height: 70vh;
+    min-height: 600px;
+    height: 78vh;
   }
 }
 
 @media (max-width: 600px) {
+  .homepage-pdf-frame iframe {
+    min-height: 78vh;
+    height: 82vh;
+    max-height: 92vh;
+  }
+
+  .homepage-pdf-footer {
+    flex-direction: column;
+  }
+
+  .homepage-pdf-title {
+    text-align: center;
+  }
+
+  .homepage-pdf-overlay {
+    inset: auto 10px 10px;
+  }
   .gallery-album-grid {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   }

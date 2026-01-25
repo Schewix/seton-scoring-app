@@ -38,7 +38,7 @@ const COMPETITIONS: Competition[] = [
   {
     slug: 'kosmuv-prostor',
     name: 'Kosmův prostor',
-    description: 'Závod oddílů s tábornickými a týmovými úkoly.',
+    description: 'Doplňková soutěž, kde děti a vedoucí hodnotí web, kroniku a fashion oddílů.',
     href: '/souteze/kosmuv-prostor',
     ruleMatchers: ['kosmuv-prostor'],
   },
@@ -52,28 +52,28 @@ const COMPETITIONS: Competition[] = [
   {
     slug: 'deskove-hry',
     name: 'Deskové hry',
-    description: 'Turnaj v deskových hrách pro oddíly SPTO.',
+    description: 'Soutěž jednotlivců v deskových hrách.',
     href: '/souteze/deskove-hry',
     ruleMatchers: ['deskove-hry'],
   },
   {
     slug: 'brnenske-bloudeni',
     name: 'Brněnské bloudění',
-    description: 'Městská orientační hra v Brně pro oddílové týmy.',
+    description: 'Městská orientační hra v Brně pro týmy.',
     href: '/souteze/brnenske-bloudeni',
     ruleMatchers: ['bloudeni'],
   },
   {
     slug: 'piotrio',
     name: 'Pio Trio',
-    description: 'Soutěž tříčlenných hlídek v táborových dovednostech.',
+    description: 'Soutěž tříčlenných hlídek ve třech netradičních dovednostech.',
     href: '/souteze/piotrio',
     ruleMatchers: ['piotrio'],
   },
   {
     slug: 'karakoram',
     name: 'Karakoram',
-    description: 'Výprava do přírody se soutěžními disciplínami a spoluprací v týmu.',
+    description: 'Soutěž šestičlených týmů v překonávání lanových překážek.',
     href: '/souteze/karakoram',
     ruleMatchers: ['karakoram'],
   },
@@ -94,7 +94,7 @@ const COMPETITIONS: Competition[] = [
   {
     slug: 'memorial-bedricha-stolicky',
     name: 'Memoriál Bedřicha Stolíčky',
-    description: 'Vzpomínková soutěž pro oddíly SPTO.',
+    description: 'Soutěž pro jednotlivce v atletických, silových a mrštnostních disciplínách.',
     href: '/souteze/memorial-bedricha-stolicky',
     ruleMatchers: ['mbs'],
   },
@@ -737,20 +737,50 @@ function InfoPage({
 }
 
 function PdfEmbedCard({ title, url }: { title: string; url: string }) {
-  const pdfUrl = `${url}#view=FitH`;
+  const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches;
+  const zoom = isMobile ? 140 : 120;
+  const pdfUrl = `${url}#view=FitH&zoom=${zoom}&toolbar=1&navpanes=0&scrollbar=1`;
+
+  const handleOpenPdf = () => {
+    if (typeof window === 'undefined') return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleKeyOpen: React.KeyboardEventHandler<HTMLDivElement> = (event) => {
+    if (!isMobile) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleOpenPdf();
+    }
+  };
+
   return (
     <div className="homepage-pdf-card">
-      <div className="homepage-pdf-frame">
-        <iframe src={pdfUrl} title={title} loading="lazy" allowFullScreen />
+      <div
+        className={`homepage-pdf-frame${isMobile ? ' is-mobile' : ''}`}
+        onClick={isMobile ? handleOpenPdf : undefined}
+        onKeyDown={handleKeyOpen}
+        role={isMobile ? 'button' : undefined}
+        tabIndex={isMobile ? 0 : undefined}
+        aria-label={isMobile ? `Otevřít PDF ${title}` : undefined}
+      >
+        <iframe src={pdfUrl} title={title} loading="lazy" allowFullScreen scrolling="yes" />
+        {isMobile ? <div className="homepage-pdf-overlay">Otevřít PDF</div> : null}
       </div>
       <div className="homepage-pdf-footer">
-        <a className="homepage-pdf-link" href={url} target="_blank" rel="noreferrer">
-          {title}
+        <span className="homepage-pdf-title">{title}</span>
+        <a className="homepage-cta secondary homepage-pdf-open" href={url} target="_blank" rel="noreferrer">
+          Otevřít PDF
         </a>
         <a className="homepage-cta secondary homepage-pdf-download" href={url} download>
           Stáhnout
         </a>
       </div>
+      {isMobile ? (
+        <p className="homepage-pdf-note">
+          Na telefonu doporučujeme PDF otevřít na celou obrazovku – bude se lépe listovat.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -869,6 +899,16 @@ function ContactsPage() {
                 </div>
               </div>
             ))}
+          </div>
+          <div className="contacts-extra">
+            <a
+              className="homepage-cta secondary"
+              href="https://drive.google.com/drive/u/2/folders/1i10O0d2Z5fW-bI1U6ZzW6KjuhcdwIk3N"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Google Drive SPTO
+            </a>
           </div>
         </div>
         <a className="homepage-back-link" href="/">
@@ -1458,17 +1498,17 @@ function SiteHeader({
         <div className={`homepage-nav-panel${navOpen ? ' is-open' : ''}`} id={navPanelId}>
           <div className="homepage-nav-inner">
             {NAV_ITEMS.map((item) => {
-            const isActive = activeSection === item.id;
-            return (
-              <a
-                key={item.id}
-                href={item.href}
-                onClick={handleNavLinkClick}
-                aria-current={isActive ? 'page' : undefined}
-                className={`homepage-nav-link${isActive ? ' is-active' : ''}`}
-              >
-                <span className="homepage-nav-dot" aria-hidden="true" />
-                {item.label}
+              const isActive = activeSection === item.id;
+              return (
+                <a
+                  key={item.id}
+                  href={item.href}
+                  onClick={handleNavLinkClick}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`homepage-nav-link${isActive ? ' is-active' : ''}`}
+                >
+                  <span className="homepage-nav-dot" aria-hidden="true" />
+                  {item.label}
                 </a>
               );
             })}
@@ -1683,19 +1723,19 @@ function Homepage({
                 {addCompetitionRanks(buildLeagueRows())
                   .slice(0, LEAGUE_TOP_COUNT)
                   .map((row, index) => (
-                  <li
-                    key={row.key}
-                    style={{ display: 'grid', gridTemplateColumns: '32px 1fr', gap: '12px', alignItems: 'center' }}
-                  >
-                    <span className="homepage-league-rank" style={{ textAlign: 'right' }}>
-                      {row.rank}.
-                    </span>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <strong>{row.name}</strong>
-                      <span>{row.total === null ? '— bodů' : `${formatLeagueScore(row.total)} bodů`}</span>
-                    </div>
-                  </li>
-                ))}
+                    <li
+                      key={row.key}
+                      style={{ display: 'grid', gridTemplateColumns: '32px 1fr', gap: '12px', alignItems: 'center' }}
+                    >
+                      <span className="homepage-league-rank" style={{ textAlign: 'right' }}>
+                        {row.rank}.
+                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <strong>{row.name}</strong>
+                        <span>{row.total === null ? '— bodů' : `${formatLeagueScore(row.total)} bodů`}</span>
+                      </div>
+                    </li>
+                  ))}
               </ol>
             </div>
             <div className="homepage-league-actions">
@@ -1804,7 +1844,7 @@ function LeagueStandingsPage() {
 
   return (
     <SiteShell>
-      <main className="homepage-main homepage-single" aria-labelledby="league-heading">
+      <main className="homepage-main homepage-single homepage-league-page" aria-labelledby="league-heading">
         <p className="homepage-eyebrow">SPTO · Zelená liga</p>
         <h1 id="league-heading">Aktuální pořadí</h1>
         <p className="homepage-lead">Body oddílů v jednotlivých soutěžích a celkový součet.</p>
@@ -1842,7 +1882,7 @@ function LeagueStandingsPage() {
             ))}
           </div>
         </div>
-        <div className="homepage-card">
+        <div className="homepage-card homepage-league-history-card">
           <h2>Historické pořadí</h2>
           {HISTORICAL_LEAGUE_EMBED_URL ? (
             <div className="homepage-league-embed">
