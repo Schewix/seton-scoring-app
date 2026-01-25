@@ -24,10 +24,9 @@ const COMPETITIONS: Competition[] = [
   {
     slug: 'setonuv-zavod',
     name: 'Setonův závod',
-    description:
-      'Tábornická soutěž pro všechny oddíly SPTO. Hlídky prověřují dovednosti z oddílové praxe – mapa, buzola, uzly, první pomoc, spolupráce.',
+    description: 'Týmový tábornický závod hlídek na stanovištích v přírodě.',
     href: '/souteze/setonuv-zavod',
-    ruleMatchers: ['pravidla-souteze', 'pravidla-stanovist', 'setonuv'],
+    ruleMatchers: ['pravidla-souteze', 'pravidla-stanovist', 'setonuv', 'stavba-stanu'],
   },
   {
     slug: 'draci-smycka',
@@ -39,54 +38,63 @@ const COMPETITIONS: Competition[] = [
   {
     slug: 'kosmuv-prostor',
     name: 'Kosmův prostor',
+    description: 'Závod oddílů s tábornickými a týmovými úkoly.',
     href: '/souteze/kosmuv-prostor',
     ruleMatchers: ['kosmuv-prostor'],
   },
   {
     slug: 'ringobal',
     name: 'Ringobal',
+    description: 'Sportovní turnaj v ringobalu pro oddíly.',
     href: '/souteze/ringobal',
     ruleMatchers: ['ringobal'],
   },
   {
     slug: 'deskove-hry',
     name: 'Deskové hry',
+    description: 'Turnaj v deskových hrách pro oddíly SPTO.',
     href: '/souteze/deskove-hry',
     ruleMatchers: ['deskove-hry'],
   },
   {
     slug: 'brnenske-bloudeni',
     name: 'Brněnské bloudění',
+    description: 'Městská orientační hra v Brně pro oddílové týmy.',
     href: '/souteze/brnenske-bloudeni',
     ruleMatchers: ['bloudeni'],
   },
   {
     slug: 'piotrio',
     name: 'Pio Trio',
+    description: 'Soutěž tříčlenných hlídek v táborových dovednostech.',
     href: '/souteze/piotrio',
     ruleMatchers: ['piotrio'],
   },
   {
     slug: 'karakoram',
     name: 'Karakoram',
+    description: 'Výprava do přírody se soutěžními disciplínami a spoluprací v týmu.',
     href: '/souteze/karakoram',
     ruleMatchers: ['karakoram'],
   },
   {
     slug: 'lakros',
     name: 'Lakros',
+    description: 'Turnaj v pionýrském lakrosu podle soutěžních pravidel.',
     href: '/souteze/lakros',
     ruleMatchers: ['lakros'],
   },
   {
     slug: 'vybijena',
     name: 'Vybíjená',
+    description: 'Sportovní turnaj ve vybíjené.',
     href: '/souteze/vybijena',
     ruleMatchers: ['vybijena'],
   },
   {
     slug: 'memorial-bedricha-stolicky',
     name: 'Memoriál Bedřicha Stolíčky',
+    description: 'Vzpomínková soutěž pro oddíly SPTO.',
     href: '/souteze/memorial-bedricha-stolicky',
     ruleMatchers: ['mbs'],
   },
@@ -98,7 +106,7 @@ const NAV_ITEMS = [
   { id: 'oddily', label: 'Oddíly SPTO', href: '/oddily' },
   { id: 'fotogalerie', label: 'Fotogalerie', href: '/fotogalerie' },
   { id: 'clanky', label: 'Články a novinky', href: '/clanky' },
-  { id: 'historie', label: 'Historie SPTO', href: '/historie' },
+  { id: 'o-spto', label: 'O SPTO', href: '/o-spto' },
   { id: 'kontakty', label: 'Kontakty', href: '/kontakty' },
 ];
 
@@ -163,6 +171,49 @@ const CURRENT_LEAGUE_SCORES: Record<string, Partial<Record<LeagueEvent, number>>
 const HISTORICAL_LEAGUE_EMBED_URL =
   'https://docs.google.com/spreadsheets/d/14TLcdhZzW1jAgFk-eBWcOeh3uB8Ec2QewfNVjhefWJE/gviz/tq?tqx=out:html&gid=1022719772';
 
+const SPTO_HISTORY_HIGHLIGHTS = [
+  'Tábornické oddíly se v Brně začaly sdružovat v roce 1964.',
+  'Inspiraci si vedoucí vzali v junáckých oddílech.',
+  'Největší rozkvět nastal v letech 1967–1970.',
+  'První náčelník Miloš Kyncl.',
+];
+
+const SPTO_FOUNDING_HIGHLIGHTS = [
+  'SPTO bylo založeno v roce 1990.',
+  'Nultý sněm SPTO se konal 13. 6. 1990.',
+  'První ustanovující sněm SPTO se sešel 18. 9. 1990 na MěR Pionýra.',
+  'Zakládajících oddílů bylo 38.',
+  'V průběhu roku 1990 se do SPTO přihlásilo dalších 34 oddílů.',
+];
+
+const SPTO_FOUNDING_TROOPS = [
+  '2. PTO Poutníci',
+  '6. PTO Nibowaka',
+  '10. PTO Severka',
+  '32. PTO Severka',
+  '48. PTO Stezka',
+  '176. PTO Vlčata',
+];
+
+const SPTO_HONORARY_MEMBERS = [
+  'Petr Bureš – dlouholetý vedoucí 48. PTO Stezka',
+  'Jiří Mlaskač – George – hospodář sdružení',
+];
+
+const SPTO_CHIEFS = [
+  { name: 'Miloš Kyncl', troop: '—', term: '1. náčelník SPTO (1969)' },
+  { name: 'Luboš Pavlík', troop: '13. PTO Psohlavci', term: '1990–1993' },
+  { name: 'Milan Appel', troop: '176. PTO Vlčata Bystrc', term: '1993–2003' },
+  { name: 'Zdeněk Humpolík', troop: '21. PTO Cassiopea', term: '2003–2006' },
+  { name: 'Michal Janík', troop: '27. PTO Lesní moudrost', term: '2006–2008' },
+  { name: 'Bez náčelníka', troop: '—', term: '2008' },
+  { name: 'Luboš Horký', troop: 'bez oddílové příslušnosti', term: '2008–2012' },
+  { name: 'Petra Stolařová', troop: '32. PTO Severka', term: '2012–2016' },
+  { name: 'Martin Hlavoň', troop: '26. PTO Kulturní historie', term: '2016–2018' },
+  { name: 'Vítězslav Ondráček', troop: '10. PTO Severka', term: '2018–2022' },
+  { name: 'René Hrabovský', troop: '64. PTO Lorien', term: '2022–dosud' },
+];
+
 const CAROUSEL_IMAGE_SOURCES = Object.entries(
   import.meta.glob('../assets/homepage-carousel/*.{jpg,jpeg,png,webp}', {
     eager: true,
@@ -188,6 +239,19 @@ const RULE_FILES: RuleFile[] = Object.entries(
   const key = slugify(filename.replace(/\.pdf$/i, ''));
   return { filename, key, url: url as string };
 });
+
+const ABOUT_PDF_FILES: RuleFile[] = Object.entries(
+  import.meta.glob('../assets/*.pdf', {
+    eager: true,
+    import: 'default',
+  }),
+).map(([path, url]) => {
+  const filename = path.split('/').pop() ?? '';
+  const key = slugify(filename.replace(/\.pdf$/i, ''));
+  return { filename, key, url: url as string };
+});
+
+const SPTO_POLICY_PDF = ABOUT_PDF_FILES.find((file) => file.key.includes('zasady-cinnosti-spto')) ?? null;
 
 const HOMEPAGE_CAROUSEL = (CAROUSEL_IMAGE_SOURCES.length ? CAROUSEL_IMAGE_SOURCES : [logo, logo, logo]).map(
   (src, index) => ({
@@ -604,6 +668,7 @@ async function fetchAlbumPreview(folderId: string): Promise<GalleryPreview> {
     folderId,
     pageSize: '4',
     includeCount: '1',
+    includeSubfolders: '1',
   });
   const response = await fetch(`/api/gallery/album?${params.toString()}`);
   if (!response.ok) {
@@ -668,6 +733,25 @@ function InfoPage({
         </a>
       </main>
     </SiteShell>
+  );
+}
+
+function PdfEmbedCard({ title, url }: { title: string; url: string }) {
+  const pdfUrl = `${url}#view=FitH`;
+  return (
+    <div className="homepage-pdf-card">
+      <div className="homepage-pdf-frame">
+        <iframe src={pdfUrl} title={title} loading="lazy" allowFullScreen />
+      </div>
+      <div className="homepage-pdf-footer">
+        <a className="homepage-pdf-link" href={url} target="_blank" rel="noreferrer">
+          {title}
+        </a>
+        <a className="homepage-cta secondary homepage-pdf-download" href={url} download>
+          Stáhnout
+        </a>
+      </div>
+    </div>
   );
 }
 
@@ -860,7 +944,8 @@ function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
     };
   }, [album.folderId]);
 
-  const coverUrl = preview?.files?.find((file) => file.thumbnailLink)?.thumbnailLink ?? null;
+  const coverThumb = preview?.files?.find((file) => file.thumbnailLink)?.thumbnailLink ?? null;
+  const coverUrl = coverThumb ? toDriveSizedUrl(coverThumb, 1200) : null;
   const previewPhotos = preview?.files ?? [];
 
   return (
@@ -888,9 +973,10 @@ function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
       </div>
       <div className="gallery-album-thumbs">
         {previewPhotos.length > 0 ? (
-          previewPhotos.slice(0, 4).map((photo) => (
-            <img key={photo.fileId} src={photo.thumbnailLink ?? ''} alt={photo.name} loading="lazy" />
-          ))
+          previewPhotos.slice(0, 4).map((photo) => {
+            const thumbUrl = photo.thumbnailLink ? toDriveSizedUrl(photo.thumbnailLink, 360) : '';
+            return <img key={photo.fileId} src={thumbUrl} alt={photo.name} loading="lazy" />;
+          })
         ) : (
           <div className="gallery-album-thumbs-placeholder">Náhledy se připravují</div>
         )}
@@ -970,7 +1056,11 @@ function GalleryAlbumPage({
       return undefined;
     }
     setIsLoading(true);
-    const params = new URLSearchParams({ folderId: album.folderId, pageSize: String(GALLERY_PAGE_SIZE) });
+    const params = new URLSearchParams({
+      folderId: album.folderId,
+      pageSize: String(GALLERY_PAGE_SIZE),
+      includeSubfolders: '1',
+    });
     fetch(`/api/gallery/album?${params.toString()}`)
       .then(async (response) => {
         if (!response.ok) {
@@ -1009,6 +1099,7 @@ function GalleryAlbumPage({
       folderId: album.folderId,
       pageSize: String(GALLERY_PAGE_SIZE),
       pageToken: nextPageToken,
+      includeSubfolders: '1',
     });
     try {
       const response = await fetch(`/api/gallery/album?${params.toString()}`);
@@ -1088,7 +1179,7 @@ function GalleryAlbumPage({
             >
               {photo.thumbnailLink ? (
                 <img
-                  src={photo.thumbnailLink}
+                  src={toDriveSizedUrl(photo.thumbnailLink, 640)}
                   alt={photo.name}
                   loading={index < 6 ? 'eager' : 'lazy'}
                   decoding="async"
@@ -1303,8 +1394,8 @@ function resolveActiveNav(pathname: string) {
   if (slug === 'clanky') {
     return 'clanky';
   }
-  if (slug === 'historie') {
-    return 'historie';
+  if (slug === 'o-spto' || slug === 'historie') {
+    return 'o-spto';
   }
   if (slug === 'kontakty') {
     return 'kontakty';
@@ -1615,19 +1706,19 @@ function Homepage({
           </div>
         </section>
 
-        <section className="homepage-section" id="historie" aria-labelledby="historie-heading">
+        <section className="homepage-section" id="o-spto" aria-labelledby="o-spto-heading">
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
-            <h2 id="historie-heading">Historie SPTO stručně</h2>
+            <h2 id="o-spto-heading">O SPTO</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
           </div>
           <div className="homepage-card" style={{ maxWidth: '880px' }}>
-            <p>
-              SPTO vzniklo jako dobrovolné sdružení oddílů, které chtěly rozvíjet pobyt v přírodě,
-              týmovou spolupráci a zodpovědnost u dětí i vedoucích. Postupně se rozrostlo o nové soutěže,
-              setkání a celoroční ligu, která propojuje oddíly v Jihomoravském kraji.
-            </p>
-            <a className="homepage-inline-link" href="/historie">
-              Přečíst historii
+            <ul className="homepage-about-list">
+              {SPTO_HISTORY_HIGHLIGHTS.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <a className="homepage-inline-link" href="/o-spto">
+              Více o SPTO
             </a>
           </div>
         </section>
@@ -1793,23 +1884,100 @@ function CompetitionRulesPage({ slug }: CompetitionRulesPageProps) {
         <p className="homepage-eyebrow">SPTO · Soutěže</p>
         <h1 id="rules-heading">{competition.name}</h1>
         <p className="homepage-lead">{competition.description ?? 'Pravidla a dokumenty k soutěži.'}</p>
-        <div className="homepage-card">
-          {rules.length > 0 ? (
-            <ul className="homepage-list">
-              {rules.map((rule) => (
-                <li key={rule.filename}>
-                  <a className="homepage-inline-link" href={rule.url} target="_blank" rel="noreferrer">
-                    {formatRuleLabel(rule.filename)}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          ) : (
+        {rules.length > 0 ? (
+          <div className="homepage-pdf-stack">
+            {rules.map((rule) => {
+              const label = formatRuleLabel(rule.filename);
+              return (
+                <div key={rule.filename} className="homepage-card">
+                  <h2>{label}</h2>
+                  <PdfEmbedCard title={label} url={rule.url} />
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="homepage-card">
             <p>Pravidla pro tuto soutěž připravujeme.</p>
-          )}
-        </div>
+          </div>
+        )}
         <a className="homepage-back-link" href="/souteze">
           Zpět na soutěže
+        </a>
+      </main>
+    </SiteShell>
+  );
+}
+
+function AboutSptoPage() {
+  return (
+    <SiteShell>
+      <main className="homepage-main homepage-single" aria-labelledby="about-spto-heading">
+        <p className="homepage-eyebrow">SPTO · O SPTO</p>
+        <h1 id="about-spto-heading">O SPTO</h1>
+        <p className="homepage-lead">Historie, založení a zásady fungování Sdružení pionýrských tábornických oddílů.</p>
+
+        <div className="homepage-card">
+          <div className="homepage-about-grid">
+            <div className="homepage-about-card">
+              <h2>Z historie SPTO</h2>
+              <ul className="homepage-about-list">
+                {SPTO_HISTORY_HIGHLIGHTS.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="homepage-about-card">
+              <h2>Založení SPTO – novodobé</h2>
+              <ul className="homepage-about-list">
+                {SPTO_FOUNDING_HIGHLIGHTS.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="homepage-about-card">
+              <h2>Zakládající oddíly roku 1990</h2>
+              <ul className="homepage-about-list homepage-about-list--columns">
+                {SPTO_FOUNDING_TROOPS.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="homepage-about-card">
+              <h2>Čestné členství v SPTO</h2>
+              <ul className="homepage-about-list">
+                {SPTO_HONORARY_MEMBERS.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div className="homepage-card">
+          <h2>Náčelníci SPTO Brno</h2>
+          <ul className="homepage-about-list homepage-about-list--chiefs">
+            {SPTO_CHIEFS.map((chief) => (
+              <li key={`${chief.name}-${chief.term}`}>
+                <strong>{chief.name}</strong>
+                <span>{chief.troop}</span>
+                <span>{chief.term}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="homepage-card">
+          <h2>Zásady činnosti SPTO (únor 2016)</h2>
+          {SPTO_POLICY_PDF ? (
+            <PdfEmbedCard title="Zásady činnosti SPTO (únor 2016)" url={SPTO_POLICY_PDF.url} />
+          ) : (
+            <p>Soubor zásad se nepodařilo načíst. Zkus prosím obnovit stránku.</p>
+          )}
+        </div>
+
+        <a className="homepage-back-link" href="/">
+          Zpět na hlavní stránku
         </a>
       </main>
     </SiteShell>
@@ -1939,14 +2107,8 @@ export default function ZelenaligaSite() {
       return <GalleryOverviewPage albums={driveAlbums} loading={driveAlbumsLoading} />;
     }
 
-    if (slug === 'historie') {
-      return (
-        <InfoPage
-          eyebrow="SPTO · Historie"
-          title="Historie SPTO"
-          lead="SPTO působí v Jihomoravském kraji a navazuje na dlouhou tradici pionýrského tábornictví. Podrobnější přehled historie připravujeme."
-        />
-      );
+    if (slug === 'o-spto' || slug === 'historie') {
+      return <AboutSptoPage />;
     }
 
     if (slug === 'kontakty') {
