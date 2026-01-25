@@ -126,7 +126,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
               ))}
             </ul>
             <a className="login-hero-button" href={ADMIN_ROUTE_PREFIX} target="_blank" rel="noreferrer">
-              <span>Přihlášení pro kancelář závodu</span>
+            <span>Přihlášení pro admina závodu</span>
               <span className="login-hero-button-icon" aria-hidden="true">
                 →
               </span>
