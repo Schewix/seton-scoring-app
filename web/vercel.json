@@ -180,6 +180,10 @@
       "destination": "/"
     },
     {
+      "source": "/o-spto",
+      "destination": "/"
+    },
+    {
       "source": "/kontakty",
       "destination": "/"
     },
