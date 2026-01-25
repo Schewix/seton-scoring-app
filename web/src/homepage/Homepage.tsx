@@ -1489,16 +1489,7 @@ function Homepage({
             <h2 id="zelenaliga-heading">Zelená liga</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
           </div>
-          <div
-            className="homepage-card homepage-league-card"
-            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '32px' }}
-          >
-            <div className="homepage-league-copy" style={{ maxWidth: '520px' }}>
-              <div aria-hidden="true" style={{ height: '1px', background: 'rgba(4, 55, 44, 0.12)' }} />
-              <a className="homepage-cta secondary" href="/aktualni-poradi">
-                Zobrazit celé pořadí
-              </a>
-            </div>
+          <div className="homepage-card homepage-league-card is-compact">
             <div className="homepage-league-top" style={{ padding: '24px' }}>
               <h3>Top {LEAGUE_TOP_COUNT} oddílů</h3>
               <ol>
@@ -1519,6 +1510,11 @@ function Homepage({
                   </li>
                 ))}
               </ol>
+            </div>
+            <div className="homepage-league-actions">
+              <a className="homepage-cta secondary" href="/aktualni-poradi">
+                Zobrazit celé pořadí
+              </a>
             </div>
           </div>
         </section>
