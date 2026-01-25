@@ -482,6 +482,68 @@
   letter-spacing: 0.02em;
 }
 
+.scoreboard-row-toggle {
+  margin-top: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1a5c94;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.scoreboard-row-toggle:hover,
+.scoreboard-row-toggle:focus-visible {
+  text-decoration: underline;
+}
+
+.scoreboard-row-details {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(4, 55, 44, 0.12);
+  display: grid;
+  gap: 10px;
+}
+
+.scoreboard-row-details-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scoreboard-row-details-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
+.scoreboard-row-details-value {
+  font-weight: 600;
+}
+
+.scoreboard-row-members {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.scoreboard-row-members li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scoreboard-row-nickname {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 .scoreboard-team-meta {
   font-size: 0.75rem;
   letter-spacing: 0.12em;
