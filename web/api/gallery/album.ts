@@ -2,6 +2,7 @@ import type { drive_v3 } from 'googleapis';
 import { DRIVE_FIELDS, getDriveClient } from '../_lib/googleDrive.js';
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 const cache = new Map<string, { expiresAt: number; value: any }>();
 
@@ -35,17 +36,18 @@ function toPageSize(raw: string | string[] | undefined) {
 }
 
 async function fetchAlbumFiles({
-  folderId,
+  folderIds,
   pageToken,
   pageSize,
 }: {
-  folderId: string;
+  folderIds: string[];
   pageToken?: string;
   pageSize: number;
 }): Promise<drive_v3.Schema$FileList> {
   const drive = getDriveClient();
+  const parentsQuery = folderIds.map((id) => `'${id}' in parents`).join(' or ');
   const { data }: { data: drive_v3.Schema$FileList } = await drive.files.list({
-    q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
+    q: `(${parentsQuery}) and mimeType contains 'image/' and trashed = false`,
     fields: DRIVE_FIELDS,
     pageSize,
     pageToken,
@@ -55,17 +57,19 @@ async function fetchAlbumFiles({
   return data;
 }
 
-async function fetchAlbumCount(folderId: string) {
-  const cached = getCache<number>(`count:${folderId}`);
+async function fetchAlbumCount(folderIds: string[]) {
+  const cacheKey = `count:${folderIds.join(',')}`;
+  const cached = getCache<number>(cacheKey);
   if (cached !== null) {
     return cached;
   }
   const drive = getDriveClient();
   let pageToken: string | undefined = undefined;
   let total = 0;
+  const parentsQuery = folderIds.map((id) => `'${id}' in parents`).join(' or ');
   do {
     const { data }: { data: drive_v3.Schema$FileList } = await drive.files.list({
-      q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
+      q: `(${parentsQuery}) and mimeType contains 'image/' and trashed = false`,
       fields: 'nextPageToken, files(id)',
       pageSize: 1000,
       pageToken,
@@ -75,8 +79,27 @@ async function fetchAlbumCount(folderId: string) {
     total += data.files?.length ?? 0;
     pageToken = data.nextPageToken ?? undefined;
   } while (pageToken);
-  setCache(`count:${folderId}`, total);
+  setCache(cacheKey, total);
   return total;
+}
+
+async function listChildFolderIds(parentId: string): Promise<string[]> {
+  const drive = getDriveClient();
+  const ids: string[] = [];
+  let pageToken: string | undefined = undefined;
+  do {
+    const { data }: { data: drive_v3.Schema$FileList } = await drive.files.list({
+      q: `'${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`,
+      fields: 'nextPageToken, files(id)',
+      pageSize: 1000,
+      pageToken,
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true,
+    });
+    ids.push(...(data.files ?? []).map((file) => file.id).filter((id): id is string => Boolean(id)));
+    pageToken = data.nextPageToken ?? undefined;
+  } while (pageToken);
+  return ids;
 }
 
 export default async function handler(req: any, res: any) {
@@ -91,9 +114,13 @@ export default async function handler(req: any, res: any) {
 
   const pageToken = typeof req.query.pageToken === 'string' ? req.query.pageToken : undefined;
   const includeCount = req.query.includeCount === '1' || req.query.includeCount === 'true';
+  const includeSubfolders = req.query.includeSubfolders === '1' || req.query.includeSubfolders === 'true';
   const pageSize = toPageSize(req.query.pageSize);
 
-  const cacheKey = `files:${folderId}:${pageToken ?? 'first'}:${pageSize}`;
+  const folderIds = includeSubfolders
+    ? [folderId, ...(await listChildFolderIds(folderId))]
+    : [folderId];
+  const cacheKey = `files:${folderId}:${includeSubfolders ? 'sub' : 'root'}:${pageToken ?? 'first'}:${pageSize}`;
   const cached = getCache<any>(cacheKey);
   if (cached !== null) {
     res.status(200).json(cached);
@@ -101,7 +128,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const data = await fetchAlbumFiles({ folderId, pageToken, pageSize });
+    const data = await fetchAlbumFiles({ folderIds, pageToken, pageSize });
     const files = (data.files ?? []).map((file: drive_v3.Schema$File) => ({
       fileId: file.id ?? '',
       name: file.name ?? '',
@@ -110,7 +137,7 @@ export default async function handler(req: any, res: any) {
       webContentLink: file.webContentLink ?? null,
     }));
 
-    const totalCount = includeCount ? await fetchAlbumCount(folderId) : undefined;
+    const totalCount = includeCount ? await fetchAlbumCount(folderIds) : undefined;
 
     const payload = {
       folderId,
