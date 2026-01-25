@@ -481,6 +481,12 @@ function formatDateLabel(dateISO: string) {
   return date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function toDriveSizedUrl(url: string, size: number) {
+  let output = url.replace(/=s\d+(-c)?/g, `=w${size}`);
+  output = output.replace(/=w\d+-h\d+(-c)?/g, `=w${size}`);
+  return output;
+}
+
 const portableTextComponents = {
   types: {
     image: ({ value }: { value: { asset?: { url?: string }; alt?: string } }) => {
@@ -924,6 +930,36 @@ function GalleryAlbumPage({
   const activePhoto = lightboxIndex !== null ? photos[lightboxIndex] : null;
   const isFirstPhoto = lightboxIndex === 0;
   const isLastPhoto = lightboxIndex !== null && lightboxIndex === photos.length - 1;
+  const getLightboxUrl = (photo?: GalleryPhoto | null) => {
+    if (!photo) {
+      return '';
+    }
+    if (photo.thumbnailLink) {
+      return toDriveSizedUrl(photo.thumbnailLink, 1800);
+    }
+    return photo.fullImageUrl ?? photo.webContentLink ?? '';
+  };
+  const activePhotoUrl = getLightboxUrl(activePhoto);
+
+  useEffect(() => {
+    if (lightboxIndex === null) {
+      return;
+    }
+    const preload = (index: number) => {
+      const photo = photos[index];
+      if (!photo) {
+        return;
+      }
+      const url = getLightboxUrl(photo);
+      if (!url) {
+        return;
+      }
+      const image = new Image();
+      image.src = url;
+    };
+    preload(lightboxIndex + 1);
+    preload(lightboxIndex - 1);
+  }, [lightboxIndex, photos]);
 
   if (!album) {
     if (albumsLoading) {
@@ -996,7 +1032,7 @@ function GalleryAlbumPage({
           </button>
           <figure>
             <img
-              src={activePhoto.fullImageUrl ?? activePhoto.webContentLink ?? activePhoto.thumbnailLink ?? ''}
+              src={activePhotoUrl}
               alt={activePhoto.name}
               loading="eager"
               decoding="async"
@@ -1397,7 +1433,6 @@ function Homepage({
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="clanky-heading">Články ze soutěží</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
-            <p>Krátké reportáže a novinky z posledních závodů a akcí.</p>
           </div>
           <div className="homepage-article-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
             {articles.map((article) => (
@@ -1453,17 +1488,12 @@ function Homepage({
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="zelenaliga-heading">Zelená liga</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
-            <p>Celoroční soutěžní rámec SPTO spojující oddíly napříč republikou.</p>
           </div>
           <div
             className="homepage-card homepage-league-card"
             style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '32px' }}
           >
             <div className="homepage-league-copy" style={{ maxWidth: '520px' }}>
-              <p>
-                Zelená liga sbírá body z několika soutěží během školního roku a motivuje oddíly
-                k pravidelné činnosti, týmové práci a rozvoji dovedností v přírodě.
-              </p>
               <div aria-hidden="true" style={{ height: '1px', background: 'rgba(4, 55, 44, 0.12)' }} />
               <a className="homepage-cta secondary" href="/aktualni-poradi">
                 Zobrazit celé pořadí
@@ -1497,7 +1527,6 @@ function Homepage({
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="historie-heading">Historie SPTO stručně</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
-            <p>SPTO sdružuje pionýrské tábornické oddíly v Jihomoravském kraji.</p>
           </div>
           <div className="homepage-card" style={{ maxWidth: '880px' }}>
             <p>
