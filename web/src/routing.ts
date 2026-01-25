@@ -1,16 +1,25 @@
-export const ROUTE_PREFIX = '/setonuv-zavod';
+export const ROUTE_PREFIX = '/aplikace/setonuv-zavod';
+export const LEGACY_ROUTE_PREFIX = '/setonuv-zavod';
 export const STATION_ROUTE_PREFIX = `${ROUTE_PREFIX}/stanoviste`;
+export const LEGACY_STATION_ROUTE_PREFIX = `${LEGACY_ROUTE_PREFIX}/stanoviste`;
 export const SCOREBOARD_ROUTE_PREFIX = `${ROUTE_PREFIX}/vysledky`;
+export const LEGACY_SCOREBOARD_ROUTE_PREFIX = `${LEGACY_ROUTE_PREFIX}/vysledky`;
 export const ADMIN_ROUTE_PREFIX = `${ROUTE_PREFIX}/admin`;
+export const LEGACY_ADMIN_ROUTE_PREFIX = `${LEGACY_ROUTE_PREFIX}/admin`;
 export const FORGOT_PASSWORD_ROUTE = `${ROUTE_PREFIX}/zapomenute-heslo`;
+export const LEGACY_FORGOT_PASSWORD_ROUTE = `${LEGACY_ROUTE_PREFIX}/zapomenute-heslo`;
 
 const ADDITIONAL_STATION_PREFIXES = [
   `${ROUTE_PREFIX}/station`,
+  `${LEGACY_ROUTE_PREFIX}/station`,
+  LEGACY_STATION_ROUTE_PREFIX,
   '/stations',
   '/stanoviste',
 ];
 const ADDITIONAL_SCOREBOARD_PREFIXES = [
   `${ROUTE_PREFIX}/scoreboard`,
+  `${LEGACY_ROUTE_PREFIX}/scoreboard`,
+  LEGACY_SCOREBOARD_ROUTE_PREFIX,
   '/scoreboard',
   '/vysledky',
 ];
@@ -30,7 +39,12 @@ export function getStationPath(stationName: string): string {
 }
 
 export function isStationAppPath(pathname: string): boolean {
-  if (pathname === STATION_ROUTE_PREFIX || pathname.startsWith(`${STATION_ROUTE_PREFIX}/`)) {
+  if (
+    pathname === STATION_ROUTE_PREFIX ||
+    pathname.startsWith(`${STATION_ROUTE_PREFIX}/`) ||
+    pathname === LEGACY_STATION_ROUTE_PREFIX ||
+    pathname.startsWith(`${LEGACY_STATION_ROUTE_PREFIX}/`)
+  ) {
     return true;
   }
 
@@ -40,7 +54,12 @@ export function isStationAppPath(pathname: string): boolean {
 }
 
 export function isScoreboardPathname(pathname: string): boolean {
-  if (pathname === SCOREBOARD_ROUTE_PREFIX || pathname.startsWith(`${SCOREBOARD_ROUTE_PREFIX}/`)) {
+  if (
+    pathname === SCOREBOARD_ROUTE_PREFIX ||
+    pathname.startsWith(`${SCOREBOARD_ROUTE_PREFIX}/`) ||
+    pathname === LEGACY_SCOREBOARD_ROUTE_PREFIX ||
+    pathname.startsWith(`${LEGACY_SCOREBOARD_ROUTE_PREFIX}/`)
+  ) {
     return true;
   }
 
@@ -50,5 +69,10 @@ export function isScoreboardPathname(pathname: string): boolean {
 }
 
 export function isAdminPathname(pathname: string): boolean {
-  return pathname === ADMIN_ROUTE_PREFIX || pathname.startsWith(`${ADMIN_ROUTE_PREFIX}/`);
+  return (
+    pathname === ADMIN_ROUTE_PREFIX ||
+    pathname.startsWith(`${ADMIN_ROUTE_PREFIX}/`) ||
+    pathname === LEGACY_ADMIN_ROUTE_PREFIX ||
+    pathname.startsWith(`${LEGACY_ADMIN_ROUTE_PREFIX}/`)
+  );
 }

@@ -5,7 +5,15 @@ import './auth/fetch';
 import { AuthProvider } from './auth/context';
 import ErrorBoundary from './components/ErrorBoundary';
 import { registerSW } from 'virtual:pwa-register';
-import { FORGOT_PASSWORD_ROUTE, ROUTE_PREFIX, isAdminPathname, isScoreboardPathname, isStationAppPath } from './routing';
+import {
+  FORGOT_PASSWORD_ROUTE,
+  LEGACY_FORGOT_PASSWORD_ROUTE,
+  LEGACY_ROUTE_PREFIX,
+  ROUTE_PREFIX,
+  isAdminPathname,
+  isScoreboardPathname,
+  isStationAppPath,
+} from './routing';
 
 type IconLinkConfig = {
   rel: string;
@@ -94,10 +102,12 @@ const pathname = window.location.pathname;
 const normalizedPath = pathname.replace(/\/$/, '') || '/';
 const isScoreboardPath = isScoreboardPathname(pathname);
 const isAdminPath = isAdminPathname(pathname);
-const isHomepagePath = normalizedPath === '/' || normalizedPath === '/draci-smycka';
+const isHomepagePath = normalizedPath === '/';
 const isSetonNamespace =
   normalizedPath === ROUTE_PREFIX ||
   normalizedPath.startsWith(`${ROUTE_PREFIX}/`) ||
+  normalizedPath === LEGACY_ROUTE_PREFIX ||
+  normalizedPath.startsWith(`${LEGACY_ROUTE_PREFIX}/`) ||
   isStationAppPath(normalizedPath);
 const scoreboardViews = new Set(['scoreboard', 'vysledky']);
 const forgotPasswordViews = new Set(['zapomenute-heslo', 'forgot-password']);
@@ -120,7 +130,11 @@ if (isAdminPath) {
     .catch((error) => {
       console.error('Failed to load admin view', error);
     });
-} else if ((view && forgotPasswordViews.has(view)) || normalizedPath === FORGOT_PASSWORD_ROUTE) {
+} else if (
+  (view && forgotPasswordViews.has(view)) ||
+  normalizedPath === FORGOT_PASSWORD_ROUTE ||
+  normalizedPath === LEGACY_FORGOT_PASSWORD_ROUTE
+) {
   import('./auth/ForgotPasswordScreen')
     .then(({ default: ForgotPasswordScreen }) => {
       render(<ForgotPasswordScreen />);

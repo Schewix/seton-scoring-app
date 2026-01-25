@@ -39,8 +39,8 @@ import {
   savePatrolRegistryCache,
 } from './data/patrolRegistry';
 import { ACCESS_DENIED_MESSAGE } from './auth/messages';
-import competitionRulesPdf from './assets/pravidla-souteze.pdf';
-import stationRulesPdf from './assets/pravidla-stanovist.pdf';
+import competitionRulesPdf from './assets/pravidla/pravidla-souteze.pdf';
+import stationRulesPdf from './assets/pravidla/pravidla-stanovist.pdf';
 
 const SUPABASE_BASE_URL = (env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
 

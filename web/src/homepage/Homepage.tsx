@@ -12,29 +12,83 @@ import {
   type SanityHomepage,
 } from '../data/sanity';
 
-interface EventLink {
+interface Competition {
   slug: string;
   name: string;
-  description: string;
+  description?: string;
   href: string;
-  status: 'available' | 'coming-soon';
+  ruleMatchers: string[];
 }
 
-const EVENTS: EventLink[] = [
+const COMPETITIONS: Competition[] = [
   {
     slug: 'setonuv-zavod',
     name: 'Setonův závod',
     description:
       'Tábornická soutěž pro všechny oddíly SPTO. Hlídky prověřují dovednosti z oddílové praxe – mapa, buzola, uzly, první pomoc, spolupráce.',
-    href: '/setonuv-zavod',
-    status: 'available',
+    href: '/souteze/setonuv-zavod',
+    ruleMatchers: ['pravidla-souteze', 'pravidla-stanovist', 'setonuv'],
   },
   {
     slug: 'draci-smycka',
     name: 'Dračí smyčka',
-    description: 'Soutěž jednotlivců ve vázání uzlů. Nové ročníky připravujeme na stejném digitálním zázemí.',
-    href: '/draci-smycka',
-    status: 'coming-soon',
+    description: 'Soutěž jednotlivců ve vázání uzlů.',
+    href: '/souteze/draci-smycka',
+    ruleMatchers: ['draci-smycka'],
+  },
+  {
+    slug: 'kosmuv-prostor',
+    name: 'Kosmův prostor',
+    href: '/souteze/kosmuv-prostor',
+    ruleMatchers: ['kosmuv-prostor'],
+  },
+  {
+    slug: 'ringobal',
+    name: 'Ringobal',
+    href: '/souteze/ringobal',
+    ruleMatchers: ['ringobal'],
+  },
+  {
+    slug: 'deskove-hry',
+    name: 'Deskové hry',
+    href: '/souteze/deskove-hry',
+    ruleMatchers: ['deskove-hry'],
+  },
+  {
+    slug: 'brnenske-bloudeni',
+    name: 'Brněnské bloudění',
+    href: '/souteze/brnenske-bloudeni',
+    ruleMatchers: ['bloudeni'],
+  },
+  {
+    slug: 'piotrio',
+    name: 'Pio Trio',
+    href: '/souteze/piotrio',
+    ruleMatchers: ['piotrio'],
+  },
+  {
+    slug: 'karakoram',
+    name: 'Karakoram',
+    href: '/souteze/karakoram',
+    ruleMatchers: ['karakoram'],
+  },
+  {
+    slug: 'lakros',
+    name: 'Lakros',
+    href: '/souteze/lakros',
+    ruleMatchers: ['lakros'],
+  },
+  {
+    slug: 'vybijena',
+    name: 'Vybíjená',
+    href: '/souteze/vybijena',
+    ruleMatchers: ['vybijena'],
+  },
+  {
+    slug: 'memorial-bedricha-stolicky',
+    name: 'Memoriál Bedřicha Stolíčky',
+    href: '/souteze/memorial-bedricha-stolicky',
+    ruleMatchers: ['mbs'],
   },
 ];
 
@@ -117,6 +171,23 @@ const CAROUSEL_IMAGE_SOURCES = Object.entries(
 )
   .sort(([a], [b]) => a.localeCompare(b))
   .map(([, src]) => src as string);
+
+type RuleFile = {
+  filename: string;
+  key: string;
+  url: string;
+};
+
+const RULE_FILES: RuleFile[] = Object.entries(
+  import.meta.glob('../assets/pravidla/*.pdf', {
+    eager: true,
+    import: 'default',
+  }),
+).map(([path, url]) => {
+  const filename = path.split('/').pop() ?? '';
+  const key = slugify(filename.replace(/\.pdf$/i, ''));
+  return { filename, key, url: url as string };
+});
 
 const HOMEPAGE_CAROUSEL = (CAROUSEL_IMAGE_SOURCES.length ? CAROUSEL_IMAGE_SOURCES : [logo, logo, logo]).map(
   (src, index) => ({
@@ -435,12 +506,7 @@ const APPLICATION_LINKS = [
   {
     label: 'Setonův závod – aplikace',
     description: 'Hlavní rozhraní pro sběr bodů a správu stanovišť.',
-    href: '/setonuv-zavod',
-  },
-  {
-    label: 'Výsledková tabule',
-    description: 'Aktuální pořadí hlídek a přehled bodů.',
-    href: '/setonuv-zavod/vysledky',
+    href: '/aplikace/setonuv-zavod',
   },
 ];
 
@@ -478,6 +544,19 @@ function slugify(value: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+function formatRuleLabel(filename: string): string {
+  return filename.replace(/\.pdf$/i, '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function getCompetitionRules(competition: Competition): RuleFile[] {
+  if (!competition.ruleMatchers.length) {
+    return [];
+  }
+  return RULE_FILES.filter((rule) =>
+    competition.ruleMatchers.some((matcher) => rule.key.includes(matcher)),
+  ).sort((a, b) => a.filename.localeCompare(b.filename, 'cs'));
 }
 
 function formatDateLabel(dateISO: string) {
@@ -1209,7 +1288,7 @@ function resolveActiveNav(pathname: string) {
     return undefined;
   }
   const slug = segments[0];
-  if (slug === 'souteze' || slug === 'aplikace' || EVENTS.some((event) => event.slug === slug)) {
+  if (slug === 'souteze' || slug === 'aplikace' || COMPETITIONS.some((event) => event.slug === slug)) {
     return 'souteze';
   }
   if (slug === 'aktualni-poradi' || slug === 'zelena-liga') {
@@ -1569,12 +1648,12 @@ function CompetitionsPage() {
             <div className="homepage-souteze-block">
               <h2>Soutěže</h2>
               <ul className="homepage-list">
-                {EVENTS.map((event) => (
-                  <li key={event.slug}>
-                    <a className="homepage-inline-link" href={event.href}>
-                      {event.name}
+                {COMPETITIONS.map((competition) => (
+                  <li key={competition.slug}>
+                    <a className="homepage-inline-link" href={competition.href}>
+                      {competition.name}
                     </a>
-                    <p>{event.description}</p>
+                    <p>{competition.description ?? 'Pravidla a dokumenty k soutěži.'}</p>
                   </li>
                 ))}
               </ul>
@@ -1695,31 +1774,42 @@ function LeagueStandingsPage() {
   );
 }
 
-interface EventPageProps {
+interface CompetitionRulesPageProps {
   slug: string;
 }
 
-function EventPage({ slug }: EventPageProps) {
-  const event = EVENTS.find((item) => item.slug === slug);
+function CompetitionRulesPage({ slug }: CompetitionRulesPageProps) {
+  const competition = COMPETITIONS.find((item) => item.slug === slug);
 
-  if (!event) {
+  if (!competition) {
     return <NotFoundPage />;
   }
 
+  const rules = getCompetitionRules(competition);
+
   return (
     <SiteShell>
-      <main className="homepage-main homepage-single" aria-labelledby="event-heading">
-        <p className="homepage-eyebrow">Zelená liga</p>
-        <h1 id="event-heading">{event.name}</h1>
-        <p className="homepage-lead">{event.description}</p>
+      <main className="homepage-main homepage-single" aria-labelledby="rules-heading">
+        <p className="homepage-eyebrow">SPTO · Soutěže</p>
+        <h1 id="rules-heading">{competition.name}</h1>
+        <p className="homepage-lead">{competition.description ?? 'Pravidla a dokumenty k soutěži.'}</p>
         <div className="homepage-card">
-          <p>
-            Elektronické rozhraní pro tuto soutěž právě připravujeme. Než spustíme plnou verzi,
-            sleduj novinky na našem Facebooku nebo se ozvi na <a href="mailto:zavody@zelenaliga.cz">zavody@zelenaliga.cz</a>.
-          </p>
+          {rules.length > 0 ? (
+            <ul className="homepage-list">
+              {rules.map((rule) => (
+                <li key={rule.filename}>
+                  <a className="homepage-inline-link" href={rule.url} target="_blank" rel="noreferrer">
+                    {formatRuleLabel(rule.filename)}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>Pravidla pro tuto soutěž připravujeme.</p>
+          )}
         </div>
-        <a className="homepage-back-link" href="/">
-          Zpět na hlavní stránku
+        <a className="homepage-back-link" href="/souteze">
+          Zpět na soutěže
         </a>
       </main>
     </SiteShell>
@@ -1795,12 +1885,10 @@ export default function ZelenaligaSite() {
 
   if (segments.length > 0) {
     const slug = segments[0];
-    const event = EVENTS.find((item) => item.slug === slug);
-    if (event) {
-      return <EventPage slug={slug} />;
-    }
-
     if (slug === 'souteze') {
+      if (segments.length > 1) {
+        return <CompetitionRulesPage slug={segments[1]} />;
+      }
       return <CompetitionsPage />;
     }
 
