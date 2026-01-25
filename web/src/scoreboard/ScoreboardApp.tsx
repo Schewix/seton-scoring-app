@@ -342,6 +342,36 @@ function parsePatrolMembersList(members: string | null) {
   return trimmed ? [trimmed] : [];
 }
 
+type PatrolMember = {
+  name: string;
+  nickname?: string;
+};
+
+function parsePatrolMembers(members: string | null): PatrolMember[] {
+  return parsePatrolMembersList(members).map((raw) => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return { name: raw };
+    }
+
+    const parenMatch = trimmed.match(/^(.*?)\s*\((.+)\)\s*$/);
+    if (parenMatch) {
+      const name = parenMatch[1].trim();
+      const nickname = parenMatch[2].trim();
+      return { name: name || trimmed, nickname: nickname || undefined };
+    }
+
+    const dashMatch = trimmed.match(/^(.*?)\s*[–-]\s*(.+)\s*$/);
+    if (dashMatch) {
+      const name = dashMatch[1].trim();
+      const nickname = dashMatch[2].trim();
+      return { name: name || trimmed, nickname: nickname || undefined };
+    }
+
+    return { name: trimmed };
+  });
+}
+
 function formatPatrolMembers(members: string | null) {
   const parts = parsePatrolMembersList(members);
   if (!parts.length) {
@@ -449,6 +479,7 @@ function ScoreboardApp() {
   });
   const [exporting, setExporting] = useState(false);
   const [stationCodes, setStationCodes] = useState<string[]>([]);
+  const [expandedPatrolId, setExpandedPatrolId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const isMountedRef = useRef(true);
 
@@ -503,6 +534,10 @@ function ScoreboardApp() {
       cancelled = true;
     };
   }, [eventName, rawEventId]);
+
+  const togglePatrolDetails = useCallback((patrolId: string) => {
+    setExpandedPatrolId((prev) => (prev === patrolId ? null : patrolId));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -965,11 +1000,46 @@ function ScoreboardApp() {
                                 group.sex,
                                 displayRank,
                               );
+                              const members = parsePatrolMembers(row.patrolMembers);
+                              const isExpanded = expandedPatrolId === row.patrolId;
                               return (
-                                <tr key={row.patrolId}>
+                                <tr key={row.patrolId} className={isExpanded ? 'scoreboard-row-expanded' : undefined}>
                                   <td>{displayRank}</td>
                                   <td className="scoreboard-team">
                                     <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
+                                    <button
+                                      type="button"
+                                      className="scoreboard-row-toggle"
+                                      aria-expanded={isExpanded}
+                                      onClick={() => togglePatrolDetails(row.patrolId)}
+                                    >
+                                      {isExpanded ? 'Skrýt hlídku' : 'Zobrazit hlídku'}
+                                    </button>
+                                    {isExpanded ? (
+                                      <div className="scoreboard-row-details">
+                                        <div className="scoreboard-row-details-item">
+                                          <span className="scoreboard-row-details-label">Oddíl</span>
+                                          <span className="scoreboard-row-details-value">{row.teamName}</span>
+                                        </div>
+                                        <div className="scoreboard-row-details-item">
+                                          <span className="scoreboard-row-details-label">Členové</span>
+                                          {members.length ? (
+                                            <ul className="scoreboard-row-members">
+                                              {members.map((member, index) => (
+                                                <li key={`${row.patrolId}-member-${index}`}>
+                                                  <span>{member.name}</span>
+                                                  {member.nickname ? (
+                                                    <span className="scoreboard-row-nickname">{member.nickname}</span>
+                                                  ) : null}
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          ) : (
+                                            <span className="scoreboard-row-details-value">Bez záznamu členů.</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ) : null}
                                   </td>
                                   <td>{formatPoints(row.totalPoints)}</td>
                                   <td>{formatPoints(row.pointsNoT)}</td>
