@@ -615,6 +615,13 @@
   margin-top: 8px;
 }
 
+.homepage-league-card.is-compact .homepage-league-top,
+.homepage-league-card.is-compact .homepage-league-actions {
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
 .homepage-league-copy {
   display: flex;
   flex-direction: column;
@@ -1435,6 +1442,12 @@
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
+  }
+}
+
+@media (min-width: 900px) {
+  .homepage-carousel-slide {
+    aspect-ratio: 20 / 9;
   }
 }
 
