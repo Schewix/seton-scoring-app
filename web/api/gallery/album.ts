@@ -102,6 +102,26 @@ async function listChildFolderIds(parentId: string): Promise<string[]> {
   return ids;
 }
 
+async function listDescendantFolderIds(parentId: string): Promise<string[]> {
+  const seen = new Set<string>();
+  const queue: string[] = [parentId];
+  const descendants: string[] = [];
+
+  while (queue.length > 0) {
+    const currentId = queue.shift();
+    if (!currentId) continue;
+    const childIds = await listChildFolderIds(currentId);
+    for (const id of childIds) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      descendants.push(id);
+      queue.push(id);
+    }
+  }
+
+  return descendants;
+}
+
 export default async function handler(req: any, res: any) {
   applyCacheHeaders(res);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -118,7 +138,7 @@ export default async function handler(req: any, res: any) {
   const pageSize = toPageSize(req.query.pageSize);
 
   const folderIds = includeSubfolders
-    ? [folderId, ...(await listChildFolderIds(folderId))]
+    ? [folderId, ...(await listDescendantFolderIds(folderId))]
     : [folderId];
   const cacheKey = `files:${folderId}:${includeSubfolders ? 'sub' : 'root'}:${pageToken ?? 'first'}:${pageSize}`;
   const cached = getCache<any>(cacheKey);

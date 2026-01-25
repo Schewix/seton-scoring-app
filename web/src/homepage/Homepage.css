@@ -1036,28 +1036,6 @@
   background: #1f1f1f;
 }
 
-.homepage-pdf-frame.is-mobile {
-  position: relative;
-  cursor: pointer;
-}
-
-.homepage-pdf-frame.is-mobile iframe {
-  pointer-events: none;
-}
-
-.homepage-pdf-overlay {
-  position: absolute;
-  inset: auto 12px 12px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #1a5c94;
-  font-weight: 700;
-  padding: 10px 14px;
-  border-radius: 999px;
-  font-size: 0.95rem;
-  text-align: center;
-  box-shadow: 0 6px 16px rgba(4, 55, 44, 0.18);
-}
-
 .homepage-pdf-footer {
   display: flex;
   flex-wrap: wrap;
@@ -1737,10 +1715,6 @@
 
   .homepage-pdf-title {
     text-align: center;
-  }
-
-  .homepage-pdf-overlay {
-    inset: auto 10px 10px;
   }
   .gallery-album-grid {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
