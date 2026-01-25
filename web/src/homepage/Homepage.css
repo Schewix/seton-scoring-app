@@ -625,6 +625,13 @@
   margin: 0;
 }
 
+.homepage-league-card.is-compact .homepage-league-top {
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+}
+
 .homepage-league-copy {
   display: flex;
   flex-direction: column;
