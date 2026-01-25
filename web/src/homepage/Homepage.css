@@ -607,6 +607,9 @@
 
 .homepage-league-card.is-compact {
   gap: 16px;
+  max-width: 720px;
+  margin-left: 0;
+  margin-right: auto;
 }
 
 .homepage-league-actions {
@@ -618,8 +621,8 @@
 .homepage-league-card.is-compact .homepage-league-top,
 .homepage-league-card.is-compact .homepage-league-actions {
   width: 100%;
-  max-width: 680px;
-  margin: 0 auto;
+  max-width: 100%;
+  margin: 0;
 }
 
 .homepage-league-copy {
