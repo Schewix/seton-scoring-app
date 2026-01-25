@@ -648,11 +648,14 @@ function TroopDetailPage({ troop }: { troop: Troop }) {
         <h1 id="troop-heading">{formatTroopName(troop)}</h1>
         <p className="homepage-lead">{detailParts.join(' · ')}</p>
         <div className="homepage-card troop-detail-card">
-          {logo ? <img className="troop-detail-logo" src={logo} alt={`Logo ${formatTroopName(troop)}`} /> : null}
-          {troop.website ? (
-            <a className="homepage-cta secondary" href={troop.website} target="_blank" rel="noreferrer">
-              Web oddílu
-            </a>
+          {logo ? (
+            troop.website ? (
+              <a className="troop-detail-logo-link" href={troop.website} target="_blank" rel="noreferrer">
+                <img className="troop-detail-logo" src={logo} alt={`Logo ${formatTroopName(troop)}`} />
+              </a>
+            ) : (
+              <img className="troop-detail-logo" src={logo} alt={`Logo ${formatTroopName(troop)}`} />
+            )
           ) : null}
           {troop.description && troop.description.length > 0 ? (
             <div className="troop-detail-copy">
