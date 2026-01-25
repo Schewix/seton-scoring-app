@@ -10,6 +10,16 @@
       ],
       "destination": "https://www.zelenaliga.cz/:path*",
       "permanent": true
+    },
+    {
+      "source": "/setonuv-zavod/:path*",
+      "destination": "/aplikace/setonuv-zavod/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/draci-smycka/:path*",
+      "destination": "/souteze/draci-smycka",
+      "permanent": true
     }
   ],
   "rewrites": [
@@ -34,55 +44,59 @@
       "destination": "https://vdkbdnxkpeeqxnruwiah.supabase.co/functions/v1/$1"
     },
     {
-      "source": "/setonuv-zavod",
+      "source": "/aplikace/setonuv-zavod",
       "destination": "/"
     },
     {
-      "source": "/setonuv-zavod/stanoviste",
+      "source": "/aplikace/setonuv-zavod/stanoviste",
       "destination": "/"
     },
     {
-      "source": "/setonuv-zavod/stanoviste/(.*)",
+      "source": "/aplikace/setonuv-zavod/stanoviste/(.*)",
       "destination": "/"
     },
     {
-      "source": "/setonuv-zavod/station",
+      "source": "/aplikace/setonuv-zavod/station",
       "destination": "/"
     },
     {
-      "source": "/setonuv-zavod/station/(.*)",
+      "source": "/aplikace/setonuv-zavod/station/(.*)",
       "destination": "/"
     },
     {
-      "source": "/setonuv-zavod/vysledky",
+      "source": "/aplikace/setonuv-zavod/vysledky",
       "destination": "/"
     },
     {
-      "source": "/setonuv-zavod/vysledky/(.*)",
+      "source": "/aplikace/setonuv-zavod/vysledky/(.*)",
       "destination": "/"
     },
     {
-      "source": "/setonuv-zavod/scoreboard",
+      "source": "/aplikace/setonuv-zavod/scoreboard",
       "destination": "/"
     },
     {
-      "source": "/setonuv-zavod/scoreboard/(.*)",
+      "source": "/aplikace/setonuv-zavod/scoreboard/(.*)",
       "destination": "/"
     },
     {
-      "source": "/setonuv-zavod/admin",
+      "source": "/aplikace/setonuv-zavod/admin",
       "destination": "/"
     },
     {
-      "source": "/setonuv-zavod/admin/(.*)",
+      "source": "/aplikace/setonuv-zavod/admin/(.*)",
       "destination": "/"
     },
     {
-      "source": "/setonuv-zavod/zapomenute-heslo",
+      "source": "/aplikace/setonuv-zavod/zapomenute-heslo",
       "destination": "/"
     },
     {
-      "source": "/setonuv-zavod/zapomenute-heslo/(.*)",
+      "source": "/aplikace/setonuv-zavod/zapomenute-heslo/(.*)",
+      "destination": "/"
+    },
+    {
+      "source": "/aplikace/(.*)",
       "destination": "/"
     },
     {
@@ -119,6 +133,10 @@
     },
     {
       "source": "/souteze",
+      "destination": "/"
+    },
+    {
+      "source": "/souteze/(.*)",
       "destination": "/"
     },
     {

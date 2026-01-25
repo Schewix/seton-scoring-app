@@ -53,7 +53,7 @@ describe('useStationRouting', () => {
 
   it('creates slug from station name with diacritics', () => {
     expect(getStationPath('Střelba z foukačky')).toBe(
-      '/setonuv-zavod/stanoviste/strelba-z-foukacky',
+      `${ROUTE_PREFIX}/stanoviste/strelba-z-foukacky`,
     );
   });
 
