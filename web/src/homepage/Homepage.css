@@ -1007,6 +1007,13 @@
   align-items: flex-start;
 }
 
+.troop-detail-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 780px;
+}
+
 .troop-detail-logo {
   width: min(200px, 60vw);
   height: auto;
