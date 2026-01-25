@@ -45,6 +45,7 @@ const NAV_ITEMS = [
   { id: 'fotogalerie', label: 'Fotogalerie', href: '/fotogalerie' },
   { id: 'clanky', label: 'Články a novinky', href: '/clanky' },
   { id: 'historie', label: 'Historie SPTO', href: '/historie' },
+  { id: 'kontakty', label: 'Kontakty', href: '/kontakty' },
 ];
 
 const LEAGUE_EVENTS = [
@@ -436,6 +437,21 @@ const APPLICATION_LINKS = [
   },
 ];
 
+const CONTACTS = [
+  {
+    role: 'Načelník SPTO',
+    name: 'René Hrabovský (Renda)',
+  },
+  {
+    role: 'Sekretářka SPTO',
+    name: 'Roman Valenta (Rogi)',
+  },
+  {
+    role: 'Správce webu',
+    name: 'Ondřej Ševčík (Ševa)',
+  },
+];
+
 type InfoLink = {
   label: string;
   description?: string;
@@ -622,6 +638,37 @@ function TroopDetailPage({ troop }: { troop: Troop }) {
         </div>
         <a className="homepage-back-link" href="/oddily">
           Zpět na seznam oddílů
+        </a>
+      </main>
+    </SiteShell>
+  );
+}
+
+function ContactsPage() {
+  return (
+    <SiteShell>
+      <main className="homepage-main homepage-single contacts-page" aria-labelledby="contacts-heading">
+        <p className="homepage-eyebrow">SPTO · Kontakty</p>
+        <h1 id="contacts-heading">Kontakty</h1>
+        <p className="homepage-lead">Rádi poradíme s činností oddílů i s organizací soutěží.</p>
+        <div className="homepage-card">
+          <div className="contacts-grid">
+            {CONTACTS.map((contact) => (
+              <div key={contact.role} className="contact-card">
+                <div className="contact-card-header">
+                  <strong>{contact.role}</strong>
+                  <span>{contact.name}</span>
+                </div>
+                <div className="contact-card-meta">
+                  <span>Telefon: doplníme</span>
+                  <span>E-mail: doplníme</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <a className="homepage-back-link" href="/">
+          Zpět na hlavní stránku
         </a>
       </main>
     </SiteShell>
@@ -1109,6 +1156,9 @@ function resolveActiveNav(pathname: string) {
   if (slug === 'historie') {
     return 'historie';
   }
+  if (slug === 'kontakty') {
+    return 'kontakty';
+  }
   return undefined;
 }
 
@@ -1429,13 +1479,13 @@ function Homepage({
           <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
             <h2 id="historie-heading">Historie SPTO stručně</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
-            <p>Tradice pionýrského tábornictví sahá desítky let zpět.</p>
+            <p>SPTO sdružuje pionýrské tábornické oddíly v Jihomoravském kraji.</p>
           </div>
           <div className="homepage-card" style={{ maxWidth: '880px' }}>
             <p>
               SPTO vzniklo jako dobrovolné sdružení oddílů, které chtěly rozvíjet pobyt v přírodě,
               týmovou spolupráci a zodpovědnost u dětí i vedoucích. Postupně se rozrostlo o nové soutěže,
-              setkání a celoroční ligu, která propojuje oddíly napříč kraji.
+              setkání a celoroční ligu, která propojuje oddíly v Jihomoravském kraji.
             </p>
             <a className="homepage-inline-link" href="/historie">
               Přečíst historii
@@ -1544,15 +1594,18 @@ function LeagueStandingsPage() {
             </div>
             {rows.map((row, index) => (
               <div key={row.key} className="homepage-league-row">
-                <span className="homepage-league-name">
+                <span className="homepage-league-name" data-label="Oddíl">
                   <strong className="homepage-league-rank">{row.rank}.</strong> {row.name}
                 </span>
-                {row.scores.map((score, scoreIndex) => (
-                  <span key={`${row.key}-${scoreIndex}`} className="homepage-league-score">
-                    {formatLeagueScore(score)}
-                  </span>
-                ))}
-                <span className="homepage-league-score homepage-league-total">
+                {row.scores.map((score, scoreIndex) => {
+                  const event = LEAGUE_EVENTS[scoreIndex];
+                  return (
+                    <span key={`${row.key}-${scoreIndex}`} className="homepage-league-score" data-label={event.label}>
+                      {formatLeagueScore(score)}
+                    </span>
+                  );
+                })}
+                <span className="homepage-league-score homepage-league-total" data-label="Celkem">
                   {formatLeagueScore(row.total)}
                 </span>
               </div>
@@ -1743,9 +1796,13 @@ export default function ZelenaligaSite() {
         <InfoPage
           eyebrow="SPTO · Historie"
           title="Historie SPTO"
-          lead="Pionýrské tábornictví má desítky let tradice. Připravujeme podrobnější přehled historie."
+          lead="SPTO působí v Jihomoravském kraji a navazuje na dlouhou tradici pionýrského tábornictví. Podrobnější přehled historie připravujeme."
         />
       );
+    }
+
+    if (slug === 'kontakty') {
+      return <ContactsPage />;
     }
 
     if (segments.length === 1) {
