@@ -47,7 +47,7 @@ async function fetchAlbumFiles({
   const drive = getDriveClient();
   const parentsQuery = folderIds.map((id) => `'${id}' in parents`).join(' or ');
   const { data }: { data: drive_v3.Schema$FileList } = await drive.files.list({
-    q: `(${parentsQuery}) and mimeType contains 'image/' and trashed = false`,
+    q: `(${parentsQuery}) and (mimeType contains 'image/' or (mimeType = 'application/vnd.google-apps.shortcut' and shortcutDetails.targetMimeType contains 'image/')) and trashed = false`,
     fields: DRIVE_FIELDS,
     pageSize,
     pageToken,
@@ -69,7 +69,7 @@ async function fetchAlbumCount(folderIds: string[]) {
   const parentsQuery = folderIds.map((id) => `'${id}' in parents`).join(' or ');
   do {
     const { data }: { data: drive_v3.Schema$FileList } = await drive.files.list({
-      q: `(${parentsQuery}) and mimeType contains 'image/' and trashed = false`,
+      q: `(${parentsQuery}) and (mimeType contains 'image/' or (mimeType = 'application/vnd.google-apps.shortcut' and shortcutDetails.targetMimeType contains 'image/')) and trashed = false`,
       fields: 'nextPageToken, files(id)',
       pageSize: 1000,
       pageToken,
@@ -161,13 +161,25 @@ export default async function handler(req: any, res: any) {
 
   try {
     const data = await fetchAlbumFiles({ folderIds, pageToken, pageSize });
-    const files = (data.files ?? []).map((file: drive_v3.Schema$File) => ({
-      fileId: file.id ?? '',
-      name: file.name ?? '',
-      thumbnailLink: file.thumbnailLink ?? null,
-      fullImageUrl: file.id ? `/api/gallery/image?fileId=${file.id}` : null,
-      webContentLink: file.webContentLink ?? null,
-    }));
+    const files = (data.files ?? [])
+      .map((file: drive_v3.Schema$File) => {
+        const isShortcut = file.mimeType === 'application/vnd.google-apps.shortcut';
+        const targetId = file.shortcutDetails?.targetId;
+        const targetMime = file.shortcutDetails?.targetMimeType ?? '';
+        const isImageShortcut = isShortcut && targetMime.startsWith('image/');
+        const fileId = isImageShortcut ? targetId ?? '' : file.id ?? '';
+        if (!fileId) {
+          return null;
+        }
+        return {
+          fileId,
+          name: file.name ?? '',
+          thumbnailLink: file.thumbnailLink ?? null,
+          fullImageUrl: `/api/gallery/image?fileId=${fileId}`,
+          webContentLink: file.webContentLink ?? null,
+        };
+      })
+      .filter((file): file is { fileId: string; name: string; thumbnailLink: string | null; fullImageUrl: string | null; webContentLink: string | null } => Boolean(file));
 
     const totalCount = includeCount ? await fetchAlbumCount(folderIds) : undefined;
 

@@ -637,6 +637,16 @@ function toDriveSizedUrl(url: string, size: number) {
   return output;
 }
 
+function getPhotoThumbUrl(photo: GalleryPhoto | undefined | null, size: number) {
+  if (!photo) {
+    return '';
+  }
+  if (photo.thumbnailLink) {
+    return toDriveSizedUrl(photo.thumbnailLink, size);
+  }
+  return photo.fullImageUrl ?? photo.webContentLink ?? '';
+}
+
 const portableTextComponents = {
   types: {
     image: ({ value }: { value: { asset?: { url?: string }; alt?: string } }) => {
@@ -963,8 +973,8 @@ function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
     };
   }, [album.folderId]);
 
-  const coverThumb = preview?.files?.find((file) => file.thumbnailLink)?.thumbnailLink ?? null;
-  const coverUrl = coverThumb ? toDriveSizedUrl(coverThumb, 1200) : null;
+  const coverPhoto = preview?.files?.find((file) => file.thumbnailLink || file.fullImageUrl || file.webContentLink) ?? null;
+  const coverUrl = getPhotoThumbUrl(coverPhoto ?? undefined, 1200) || null;
   const previewPhotos = preview?.files ?? [];
 
   return (
@@ -993,8 +1003,8 @@ function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
       <div className="gallery-album-thumbs">
         {previewPhotos.length > 0 ? (
           previewPhotos.slice(0, 4).map((photo) => {
-            const thumbUrl = photo.thumbnailLink ? toDriveSizedUrl(photo.thumbnailLink, 360) : '';
-            return <img key={photo.fileId} src={thumbUrl} alt={photo.name} loading="lazy" />;
+            const thumbUrl = getPhotoThumbUrl(photo, 360);
+            return thumbUrl ? <img key={photo.fileId} src={thumbUrl} alt={photo.name} loading="lazy" /> : null;
           })
         ) : (
           <div className="gallery-album-thumbs-placeholder">Náhledy se připravují</div>
@@ -1196,9 +1206,9 @@ function GalleryAlbumPage({
               className="gallery-photo-thumb"
               onClick={() => setLightboxIndex(index)}
             >
-              {photo.thumbnailLink ? (
+              {getPhotoThumbUrl(photo, 640) ? (
                 <img
-                  src={toDriveSizedUrl(photo.thumbnailLink, 640)}
+                  src={getPhotoThumbUrl(photo, 640)}
                   alt={photo.name}
                   loading={index < 6 ? 'eager' : 'lazy'}
                   decoding="async"
