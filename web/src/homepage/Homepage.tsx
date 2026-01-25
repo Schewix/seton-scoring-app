@@ -441,14 +441,20 @@ const CONTACTS = [
   {
     role: 'Načelník SPTO',
     name: 'René Hrabovský (Renda)',
+    phone: '+420 604 208 908',
+    email: 'ReneHrabovsky@seznam.cz',
   },
   {
     role: 'Sekretářka SPTO',
     name: 'Roman Valenta (Rogi)',
+    phone: '+420 720 114 501',
+    email: 'rogis@seznam.cz',
   },
   {
     role: 'Správce webu',
     name: 'Ondřej Ševčík (Ševa)',
+    phone: '+420 731 019 469',
+    email: 'osevcik@severka.org',
   },
 ];
 
@@ -645,6 +651,8 @@ function TroopDetailPage({ troop }: { troop: Troop }) {
 }
 
 function ContactsPage() {
+  const toTelHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, '')}`;
+
   return (
     <SiteShell>
       <main className="homepage-main homepage-single contacts-page" aria-labelledby="contacts-heading">
@@ -660,8 +668,18 @@ function ContactsPage() {
                   <span>{contact.name}</span>
                 </div>
                 <div className="contact-card-meta">
-                  <span>Telefon: doplníme</span>
-                  <span>E-mail: doplníme</span>
+                  <span>
+                    Telefon:{' '}
+                    <a href={toTelHref(contact.phone)} className="contact-card-link">
+                      {contact.phone}
+                    </a>
+                  </span>
+                  <span>
+                    E-mail:{' '}
+                    <a href={`mailto:${contact.email}`} className="contact-card-link">
+                      {contact.email}
+                    </a>
+                  </span>
                 </div>
               </div>
             ))}
