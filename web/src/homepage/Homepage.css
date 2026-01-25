@@ -1033,6 +1033,13 @@
   color: rgba(4, 55, 44, 0.9);
 }
 
+.contact-card-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgba(4, 55, 44, 0.3);
+  text-underline-offset: 2px;
+}
+
 .homepage-list p {
   margin-top: 6px;
   color: var(--text-muted);
