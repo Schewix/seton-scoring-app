@@ -17,6 +17,9 @@ type PionyrListResponse = {
   pageCount: number | null;
 };
 
+let cachedListPath: string | null = null;
+let cachedDetailPath: string | null = null;
+
 function normalizeBaseUrl(value: string) {
   return value.endsWith('/') ? value : `${value}/`;
 }
@@ -147,7 +150,8 @@ function getAuthHeaders() {
 
 function buildUrl(path: string, params?: Record<string, string>) {
   const base = normalizeBaseUrl(process.env.PIONYR_API_BASE_URL ?? 'https://pionyr.cz/api/');
-  const url = new URL(path, base);
+  const normalizedPath = path.replace(/^\/+/, '');
+  const url = new URL(normalizedPath, base);
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value) {
@@ -167,6 +171,99 @@ function getFilterTerms(): string[] {
     .map(normalizeText);
 }
 
+function normalizePath(value: string): string {
+  return value.replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+function uniq(paths: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const path of paths) {
+    const normalized = normalizePath(path);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function buildListPathCandidates(): string[] {
+  const base = normalizePath(process.env.PIONYR_API_ARTICLES_PATH ?? 'articles');
+  const alternates = [base];
+
+  if (base.includes('articles')) {
+    alternates.push(base.replace('articles', 'clanky'));
+  } else if (base.includes('clanky')) {
+    alternates.push(base.replace('clanky', 'articles'));
+  } else {
+    alternates.push('articles', 'clanky');
+  }
+
+  const prefixed = alternates
+    .filter((path) => !path.startsWith('v1/'))
+    .map((path) => `v1/${path}`);
+
+  return uniq([...alternates, ...prefixed]);
+}
+
+function buildDetailPathCandidates(): string[] {
+  const base = normalizePath(process.env.PIONYR_API_ARTICLE_PATH ?? 'article');
+  const alternates = [base];
+
+  if (base.includes('article')) {
+    alternates.push(base.replace('article', 'clanek'));
+  } else if (base.includes('clanek')) {
+    alternates.push(base.replace('clanek', 'article'));
+  } else {
+    alternates.push('article', 'clanek', 'articles', 'clanky');
+  }
+
+  const prefixed = alternates
+    .filter((path) => !path.startsWith('v1/'))
+    .map((path) => `v1/${path}`);
+
+  return uniq([...alternates, ...prefixed]);
+}
+
+async function fetchListPage(
+  pathCandidates: string[],
+  params: Record<string, string>,
+  headers: Record<string, string>,
+): Promise<{ payload: Record<string, any>; resolvedPath: string }> {
+  for (const candidate of pathCandidates) {
+    const url = buildUrl(candidate, params);
+    const response = await fetch(url.toString(), { headers });
+    if (response.ok) {
+      const payload = (await response.json()) as Record<string, any>;
+      return { payload, resolvedPath: candidate };
+    }
+    if (response.status !== 404) {
+      throw new Error(`Pionyr API error (${response.status})`);
+    }
+  }
+  throw new Error('Pionyr API error (404)');
+}
+
+async function fetchDetail(
+  pathCandidates: string[],
+  slug: string,
+  headers: Record<string, string>,
+): Promise<{ payload: Record<string, any> | null; resolvedPath: string | null }> {
+  for (const candidate of pathCandidates) {
+    const path = candidate.includes('{id}') ? candidate.replace('{id}', slug) : `${candidate}/${slug}`;
+    const url = buildUrl(path);
+    const response = await fetch(url.toString(), { headers });
+    if (response.ok) {
+      const payload = (await response.json()) as Record<string, any>;
+      return { payload, resolvedPath: candidate };
+    }
+    if (response.status !== 404) {
+      throw new Error(`Pionyr API error (${response.status})`);
+    }
+  }
+  return { payload: null, resolvedPath: null };
+}
+
 function isAllowed(article: PionyrArticle, terms: string[]): boolean {
   if (terms.length === 0) {
     return true;
@@ -176,7 +273,6 @@ function isAllowed(article: PionyrArticle, terms: string[]): boolean {
 }
 
 export async function fetchPionyrArticles(): Promise<PionyrArticle[]> {
-  const listPath = process.env.PIONYR_API_ARTICLES_PATH ?? 'articles';
   const pageParam = process.env.PIONYR_API_PAGE_PARAM ?? 'page';
   const headers = getAuthHeaders();
   const terms = getFilterTerms();
@@ -185,14 +281,11 @@ export async function fetchPionyrArticles(): Promise<PionyrArticle[]> {
   let page = 1;
   let pageCount: number | null = null;
   let safety = 0;
+  const candidates = cachedListPath ? [cachedListPath] : buildListPathCandidates();
 
   do {
-    const url = buildUrl(listPath, { [pageParam]: String(page) });
-    const response = await fetch(url.toString(), { headers });
-    if (!response.ok) {
-      throw new Error(`Pionyr API error (${response.status})`);
-    }
-    const payload = (await response.json()) as Record<string, any>;
+    const { payload, resolvedPath } = await fetchListPage(candidates, { [pageParam]: String(page) }, headers);
+    cachedListPath = resolvedPath;
     const parsed = parseListResponse(payload);
     pageCount = parsed.pageCount ?? pageCount;
     const items = parsed.items
@@ -211,16 +304,13 @@ export async function fetchPionyrArticles(): Promise<PionyrArticle[]> {
 }
 
 export async function fetchPionyrArticleBySlug(slug: string): Promise<PionyrArticle | null> {
-  const detailPath = process.env.PIONYR_API_ARTICLE_PATH ?? 'article';
   const headers = getAuthHeaders();
-  const url = detailPath.includes('{id}')
-    ? buildUrl(detailPath.replace('{id}', slug))
-    : buildUrl(`${detailPath}/${slug}`);
-  const response = await fetch(url.toString(), { headers });
-  if (!response.ok) {
+  const candidates = cachedDetailPath ? [cachedDetailPath] : buildDetailPathCandidates();
+  const { payload, resolvedPath } = await fetchDetail(candidates, slug, headers);
+  if (!payload) {
     return null;
   }
-  const payload = (await response.json()) as Record<string, any>;
+  cachedDetailPath = resolvedPath ?? cachedDetailPath;
   const data = payload.data ?? payload.item ?? payload.article ?? payload;
   const article = mapArticle(data);
   if (!article) {
