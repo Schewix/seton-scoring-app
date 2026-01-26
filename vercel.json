@@ -1,1 +1,8 @@
-{}
+{
+  "rewrites": [
+    {
+      "source": "/((?!api|assets|favicon.ico|manifest.webmanifest|sw.js|sw.mjs|icon-192.png|icon-512.png).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
