@@ -1,5 +1,11 @@
 import { fetchPionyrArticleBySlug, fetchPionyrArticles, type PionyrArticle } from './_lib/pionyr.js';
-import { clearEditorSession, requireEditor, setEditorSession, validatePassword, verifyEditorSession } from './_lib/editorAuth.js';
+import {
+  clearEditorSession,
+  requireEditor,
+  setEditorSession,
+  validatePassword,
+  verifyEditorSession,
+} from './_lib/editorAuth.js';
 import { getSupabaseAdminClient } from './_lib/supabaseAdmin.js';
 
 type LocalArticleRow = {
@@ -242,7 +248,8 @@ async function handleAdminArticles(req: any, res: any) {
       typeof payload.status === 'string' && ['draft', 'published'].includes(payload.status)
         ? payload.status
         : 'draft';
-    const slug = typeof payload.slug === 'string' && payload.slug.trim().length > 0 ? payload.slug.trim() : slugify(title);
+    const slug =
+      typeof payload.slug === 'string' && payload.slug.trim().length > 0 ? payload.slug.trim() : slugify(title);
     const now = new Date().toISOString();
     const publishedAt = status === 'published' ? (payload.published_at as string | undefined) ?? now : null;
 
@@ -333,11 +340,25 @@ async function handleAdminArticle(req: any, res: any, id: string) {
 
 export default async function handler(req: any, res: any) {
   const rawPath = req.query?.path;
-  const segments = Array.isArray(rawPath)
+  let segments = Array.isArray(rawPath)
     ? rawPath
     : typeof rawPath === 'string'
       ? [rawPath]
       : [];
+
+  if (segments.length === 0 && typeof req.url === 'string') {
+    try {
+      const url = new URL(req.url, 'http://localhost');
+      const prefix = '/api/content/';
+      const index = url.pathname.indexOf(prefix);
+      if (index >= 0) {
+        const rest = url.pathname.slice(index + prefix.length);
+        segments = rest.split('/').filter(Boolean);
+      }
+    } catch {
+      // ignore malformed URL and fall back to empty segments
+    }
+  }
 
   if (segments.length === 0) {
     res.status(404).json({ error: 'Not found' });
