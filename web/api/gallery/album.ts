@@ -179,7 +179,15 @@ export default async function handler(req: any, res: any) {
           webContentLink: file.webContentLink ?? null,
         };
       })
-      .filter((file): file is { fileId: string; name: string; thumbnailLink: string | null; fullImageUrl: string | null; webContentLink: string | null } => Boolean(file));
+      .filter(
+        (file): file is {
+          fileId: string;
+          name: string;
+          thumbnailLink: string | null;
+          fullImageUrl: string;
+          webContentLink: string | null;
+        } => Boolean(file),
+      );
 
     const totalCount = includeCount ? await fetchAlbumCount(folderIds) : undefined;
 

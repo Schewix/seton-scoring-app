@@ -232,13 +232,14 @@ export default async function handler(req: any, res: any) {
 
     const normalizedEmail = email.trim();
 
-    const { data: judge, error: judgeError } = await supabase
-      .from<JudgeRow>('judges')
+    const { data: judgeData, error: judgeError } = await supabase
+      .from('judges')
       .select('id, email, display_name, password_hash, must_change_password')
       .ilike('email', normalizedEmail)
       .limit(1)
       .maybeSingle();
 
+    const judge = (judgeData ?? null) as JudgeRow | null;
     if (judgeError || !judge) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -266,14 +267,15 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const { data: assignment, error: assignmentError } = await supabase
-      .from<AssignmentRow>('judge_assignments')
+    const { data: assignmentData, error: assignmentError } = await supabase
+      .from('judge_assignments')
       .select('*')
       .eq('judge_id', judge.id)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
+    const assignment = (assignmentData ?? null) as AssignmentRow | null;
     if (assignmentError || !assignment) {
       if (assignmentError) {
         return respond(res, 500, 'Failed to load assignment', assignmentError.message);
@@ -281,19 +283,21 @@ export default async function handler(req: any, res: any) {
       return res.status(403).json({ error: 'Judge has no assignment' });
     }
 
-    const [{ data: station }, { data: event }] = await Promise.all([
+    const [{ data: stationData }, { data: eventData }] = await Promise.all([
       supabase
-        .from<StationRow>('stations')
+        .from('stations')
         .select('id, code, name')
         .eq('id', assignment.station_id)
         .maybeSingle(),
       supabase
-        .from<EventRow>('events')
+        .from('events')
         .select('id, name, scoring_locked')
         .eq('id', assignment.event_id)
         .maybeSingle(),
     ]);
 
+    const station = (stationData ?? null) as StationRow | null;
+    const event = (eventData ?? null) as EventRow | null;
     if (!station || !event) {
       return respond(res, 500, 'Failed to resolve assignment details', 'station-or-event-missing');
     }
@@ -322,7 +326,7 @@ export default async function handler(req: any, res: any) {
     };
 
     let patrolQuery = supabase
-      .from<PatrolRow>('patrols')
+      .from('patrols')
       .select('id, team_name, category, sex, patrol_code')
       .eq('event_id', assignment.event_id)
       .eq('active', true);
@@ -338,6 +342,7 @@ export default async function handler(req: any, res: any) {
     if (patrolsError) {
       return respond(res, 500, 'Failed to load patrols', patrolsError.message);
     }
+    const patrols = (patrolsData ?? []) as PatrolRow[];
 
     const sessionId = randomToken(16);
     const deviceSalt = randomToken(24);
@@ -382,7 +387,7 @@ export default async function handler(req: any, res: any) {
       refresh_token_expires_in: authConfig.refreshTokenTtlSeconds,
       device_salt: deviceSalt,
       manifest,
-      patrols: (patrolsData ?? []) as PatrolRow[],
+      patrols,
     });
   } catch (error) {
     return respond(res, 500, 'Internal server error', formatError(error));
