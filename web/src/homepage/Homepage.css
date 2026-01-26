@@ -1355,6 +1355,134 @@
   aspect-ratio: 16 / 9;
 }
 
+.homepage-article-html {
+  display: grid;
+  gap: 16px;
+  line-height: 1.6;
+}
+
+.homepage-article-html p {
+  margin: 0;
+}
+
+.homepage-article-html img,
+.homepage-article-html video,
+.homepage-article-html iframe {
+  max-width: 100%;
+  border-radius: 14px;
+}
+
+.homepage-alert {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(4, 55, 44, 0.08);
+  color: #04372c;
+  font-weight: 600;
+}
+
+.editor-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+}
+
+.editor-login form {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.editor-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-list-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.editor-list {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+  display: grid;
+  gap: 10px;
+}
+
+.editor-list-item {
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(4, 55, 44, 0.12);
+  background: #f7fbf7;
+  color: #04372c;
+  display: grid;
+  gap: 4px;
+  font-weight: 600;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.editor-list-item small {
+  font-weight: 500;
+  color: rgba(4, 55, 44, 0.6);
+}
+
+.editor-list-item.is-active {
+  background: rgba(4, 55, 44, 0.1);
+  border-color: rgba(4, 55, 44, 0.3);
+}
+
+.editor-form {
+  display: grid;
+  gap: 16px;
+}
+
+.editor-form-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.editor-form textarea,
+.editor-form input,
+.editor-form select,
+.editor-login input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(4, 55, 44, 0.16);
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.editor-form textarea {
+  resize: vertical;
+}
+
+.editor-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 960px) {
+  .editor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .gallery-year-section {
   display: flex;
   flex-direction: column;
