@@ -3,14 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { PortableText } from '@portabletext/react';
 import AppFooter from '../components/AppFooter';
 import logo from '../assets/znak_SPTO_transparent.png';
-import {
-  fetchArticleBySlug,
-  fetchArticles,
-  fetchHomepage,
-  hasSanityConfig,
-  type SanityArticle,
-  type SanityHomepage,
-} from '../data/sanity';
+import { fetchContentArticle, fetchContentArticles, type ContentArticle } from '../data/content';
+import { fetchHomepage, hasSanityConfig, type SanityHomepage } from '../data/sanity';
 
 interface Competition {
   slug: string;
@@ -269,7 +263,8 @@ type Article = {
   dateISO: string;
   excerpt: string;
   href: string;
-  body: string[] | any[];
+  body: string[] | any[] | string | null;
+  bodyFormat?: 'html' | 'text' | null;
   author?: string;
   coverImage?: { url: string; alt?: string | null } | null;
 };
@@ -659,17 +654,20 @@ const portableTextComponents = {
   },
 };
 
-function mapSanityArticle(article: SanityArticle): Article {
-  const dateISO = article.publishedAt;
+function mapContentArticle(article: ContentArticle): Article {
+  const dateISO = article.dateISO;
+  const coverImage =
+    article.coverImage?.url ? { url: article.coverImage.url, alt: article.coverImage.alt ?? null } : undefined;
   return {
     title: article.title,
     dateISO,
     dateLabel: formatDateLabel(dateISO),
     excerpt: article.excerpt ?? '',
     href: `/clanky/${article.slug}`,
-    body: article.body ?? [],
+    body: article.body ?? null,
+    bodyFormat: article.bodyFormat ?? null,
     author: article.author ?? undefined,
-    coverImage: article.coverImage ?? undefined,
+    coverImage,
   };
 }
 
@@ -910,6 +908,16 @@ function ContactsPage() {
 
 function ArticlePage({ article }: { article: Article }) {
   const isPortableText = Array.isArray(article.body) && typeof article.body[0] === 'object';
+  const isHtmlBody =
+    article.bodyFormat === 'html' ||
+    (typeof article.body === 'string' && article.body.trim().startsWith('<'));
+  const textParagraphs =
+    typeof article.body === 'string' && !isHtmlBody
+      ? article.body
+          .split(/\n{2,}/)
+          .map((paragraph) => paragraph.trim())
+          .filter(Boolean)
+      : [];
   return (
     <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="article-heading">
@@ -928,12 +936,16 @@ function ArticlePage({ article }: { article: Article }) {
             />
           ) : null}
           {isPortableText ? (
-            <PortableText value={article.body} components={portableTextComponents} />
-          ) : (
+            <PortableText value={article.body as any[]} components={portableTextComponents} />
+          ) : isHtmlBody && typeof article.body === 'string' ? (
+            <div className="homepage-article-html" dangerouslySetInnerHTML={{ __html: article.body }} />
+          ) : textParagraphs.length > 0 ? (
+            textParagraphs.map((paragraph, index) => <p key={`${article.href}-${index}`}>{paragraph}</p>)
+          ) : Array.isArray(article.body) ? (
             (article.body as string[]).map((paragraph, index) => (
               <p key={`${article.href}-${index}`}>{paragraph}</p>
             ))
-          )}
+          ) : null}
           {article.author ? (
             <p style={{ marginTop: '24px', fontWeight: 600 }}>{article.author}</p>
           ) : null}
@@ -941,6 +953,353 @@ function ArticlePage({ article }: { article: Article }) {
         <a className="homepage-back-link" href="/clanky">
           Zpět na seznam článků
         </a>
+      </main>
+    </SiteShell>
+  );
+}
+
+type EditorArticle = {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt?: string | null;
+  body?: string | null;
+  author?: string | null;
+  cover_image_url?: string | null;
+  cover_image_alt?: string | null;
+  status: 'draft' | 'published';
+  published_at?: string | null;
+  created_at?: string | null;
+};
+
+type EditorFormState = {
+  title: string;
+  slug: string;
+  excerpt: string;
+  body: string;
+  author: string;
+  cover_image_url: string;
+  cover_image_alt: string;
+  status: 'draft' | 'published';
+};
+
+const EMPTY_EDITOR_FORM: EditorFormState = {
+  title: '',
+  slug: '',
+  excerpt: '',
+  body: '',
+  author: '',
+  cover_image_url: '',
+  cover_image_alt: '',
+  status: 'draft',
+};
+
+function RedakcePage() {
+  const [session, setSession] = useState<'checking' | 'unauth' | 'auth'>('checking');
+  const [password, setPassword] = useState('');
+  const [articles, setArticles] = useState<EditorArticle[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [form, setForm] = useState<EditorFormState>(EMPTY_EDITOR_FORM);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const loadArticles = () =>
+    fetch('/api/content/admin/articles', { credentials: 'include' })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data) => {
+        setArticles(data.articles ?? []);
+      })
+      .catch(() => {
+        setArticles([]);
+      });
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/content/admin/session', { credentials: 'include' })
+      .then((response) => {
+        if (!active) return;
+        setSession(response.ok ? 'auth' : 'unauth');
+        if (response.ok) {
+          loadArticles();
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSession('unauth');
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleLogin = (event: React.FormEvent) => {
+    event.preventDefault();
+    setMessage(null);
+    fetch('/api/content/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ password }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Neplatné heslo.');
+        }
+        setSession('auth');
+        setPassword('');
+        return loadArticles();
+      })
+      .catch((error) => {
+        setMessage(error instanceof Error ? error.message : 'Přihlášení se nezdařilo.');
+      });
+  };
+
+  const handleLogout = () => {
+    fetch('/api/content/admin/logout', {
+      method: 'POST',
+      credentials: 'include',
+    }).finally(() => {
+      setSession('unauth');
+      setArticles([]);
+      setActiveId(null);
+      setForm(EMPTY_EDITOR_FORM);
+    });
+  };
+
+  const selectArticle = (article: EditorArticle) => {
+    setActiveId(article.id);
+    setForm({
+      title: article.title ?? '',
+      slug: article.slug ?? '',
+      excerpt: article.excerpt ?? '',
+      body: article.body ?? '',
+      author: article.author ?? '',
+      cover_image_url: article.cover_image_url ?? '',
+      cover_image_alt: article.cover_image_alt ?? '',
+      status: article.status ?? 'draft',
+    });
+    setMessage(null);
+  };
+
+  const handleNew = () => {
+    setActiveId(null);
+    setForm(EMPTY_EDITOR_FORM);
+    setMessage(null);
+  };
+
+  const handleSave = () => {
+    setMessage(null);
+    const payload = {
+      title: form.title.trim(),
+      slug: form.slug.trim() || slugify(form.title),
+      excerpt: form.excerpt,
+      body: form.body,
+      author: form.author,
+      cover_image_url: form.cover_image_url,
+      cover_image_alt: form.cover_image_alt,
+      status: form.status,
+    };
+    const method = activeId ? 'PUT' : 'POST';
+    const url = activeId ? `/api/content/admin/articles/${activeId}` : '/api/content/admin/articles';
+    fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data) => {
+        setMessage('Uloženo.');
+        if (data.article?.id) {
+          setActiveId(data.article.id);
+        }
+        loadArticles();
+      })
+      .catch(() => {
+        setMessage('Uložení se nezdařilo.');
+      });
+  };
+
+  const handleDelete = () => {
+    if (!activeId) return;
+    if (!confirm('Opravdu smazat článek?')) {
+      return;
+    }
+    fetch(`/api/content/admin/articles/${activeId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    })
+      .then(() => {
+        setMessage('Článek smazán.');
+        handleNew();
+        loadArticles();
+      })
+      .catch(() => {
+        setMessage('Smazání se nezdařilo.');
+      });
+  };
+
+  const updateField = (key: keyof EditorFormState, value: string) => {
+    setForm((prev) => {
+      const next = { ...prev, [key]: value } as EditorFormState;
+      if (key === 'title') {
+        const nextSlug = slugify(value);
+        if (!prev.slug || prev.slug === slugify(prev.title)) {
+          next.slug = nextSlug;
+        }
+      }
+      return next;
+    });
+  };
+
+  return (
+    <SiteShell>
+      <main className="homepage-main">
+        <p className="homepage-eyebrow">SPTO · Redakce</p>
+        <h1>Redakce článků</h1>
+        <p className="homepage-lead">Správa článků pro zelenaliga.cz.</p>
+
+        {session === 'checking' ? (
+          <div className="homepage-card">Načítám…</div>
+        ) : session === 'unauth' ? (
+          <div className="homepage-card editor-login">
+            <h2>Přihlášení</h2>
+            <form onSubmit={handleLogin}>
+              <label htmlFor="editor-password">Heslo</label>
+              <input
+                id="editor-password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Zadej heslo"
+                required
+              />
+              <button type="submit" className="homepage-button">
+                Přihlásit
+              </button>
+            </form>
+            {message ? <p className="homepage-alert">{message}</p> : null}
+          </div>
+        ) : (
+          <div className="editor-grid">
+            <div className="homepage-card">
+              <div className="editor-list-header">
+                <h2>Články</h2>
+                <div className="editor-list-actions">
+                  <button type="button" className="homepage-button homepage-button--ghost" onClick={handleNew}>
+                    Nový
+                  </button>
+                  <button type="button" className="homepage-button homepage-button--ghost" onClick={handleLogout}>
+                    Odhlásit
+                  </button>
+                </div>
+              </div>
+              <ul className="editor-list">
+                {articles.map((article) => (
+                  <li key={article.id}>
+                    <button
+                      type="button"
+                      className={`editor-list-item${article.id === activeId ? ' is-active' : ''}`}
+                      onClick={() => selectArticle(article)}
+                    >
+                      <span>{article.title}</span>
+                      <small>{article.status === 'published' ? 'Publikováno' : 'Rozpracováno'}</small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="homepage-card editor-form">
+              <h2>{activeId ? 'Upravit článek' : 'Nový článek'}</h2>
+              <div className="editor-form-grid">
+                <label>
+                  Titulek
+                  <input
+                    value={form.title}
+                    onChange={(event) => updateField('title', event.target.value)}
+                    placeholder="Název článku"
+                  />
+                </label>
+                <label>
+                  Slug
+                  <input
+                    value={form.slug}
+                    onChange={(event) => updateField('slug', event.target.value)}
+                    placeholder="napr. setonuv-zavod-2025"
+                  />
+                </label>
+                <label>
+                  Autor
+                  <input
+                    value={form.author}
+                    onChange={(event) => updateField('author', event.target.value)}
+                    placeholder="Jméno autora"
+                  />
+                </label>
+                <label>
+                  Stav
+                  <select
+                    value={form.status}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, status: event.target.value as EditorFormState['status'] }))
+                    }
+                  >
+                    <option value="draft">Rozpracováno</option>
+                    <option value="published">Publikováno</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                Perex
+                <textarea
+                  value={form.excerpt}
+                  onChange={(event) => updateField('excerpt', event.target.value)}
+                  rows={3}
+                />
+              </label>
+              <label>
+                Text článku
+                <textarea
+                  value={form.body}
+                  onChange={(event) => updateField('body', event.target.value)}
+                  rows={12}
+                />
+              </label>
+              <div className="editor-form-grid">
+                <label>
+                  URL obrázku
+                  <input
+                    value={form.cover_image_url}
+                    onChange={(event) => updateField('cover_image_url', event.target.value)}
+                    placeholder="https://..."
+                  />
+                </label>
+                <label>
+                  Popisek obrázku
+                  <input
+                    value={form.cover_image_alt}
+                    onChange={(event) => updateField('cover_image_alt', event.target.value)}
+                    placeholder="Popisek pro obrázek"
+                  />
+                </label>
+              </div>
+              <div className="editor-form-actions">
+                {message ? <p className="homepage-alert">{message}</p> : null}
+                <div className="editor-buttons">
+                  {activeId ? (
+                    <button type="button" className="homepage-button homepage-button--ghost" onClick={handleDelete}>
+                      Smazat
+                    </button>
+                  ) : null}
+                  <button type="button" className="homepage-button" onClick={handleSave}>
+                    Uložit
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </SiteShell>
   );
@@ -1286,14 +1645,14 @@ function ArticlePageLoader({ slug, articles }: { slug: string; articles: Article
 
   useEffect(() => {
     let active = true;
-    if (article || !hasSanityConfig()) {
+    if (article) {
       return undefined;
     }
-    fetchArticleBySlug(slug).then((data) => {
+    fetchContentArticle(slug).then((data) => {
       if (!active || !data) {
         return;
       }
-      setArticle(mapSanityArticle(data));
+      setArticle(mapContentArticle(data));
     });
     return () => {
       active = false;
@@ -2026,16 +2385,30 @@ export default function ZelenaligaSite() {
       return;
     }
     let active = true;
-    Promise.all([fetchHomepage(), fetchArticles()])
-      .then(([homepageData, articlesData]) => {
+    fetchHomepage()
+      .then((homepageData) => {
         if (!active) {
           return;
         }
         setHomepageContent(homepageData);
-        if (articlesData.length > 0) {
-          setArticles(articlesData.map(mapSanityArticle));
-        }
       });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchContentArticles()
+      .then((articlesData) => {
+        if (!active) {
+          return;
+        }
+        if (articlesData.length > 0) {
+          setArticles(articlesData.map(mapContentArticle));
+        }
+      })
+      .catch(() => undefined);
     return () => {
       active = false;
     };
@@ -2082,6 +2455,9 @@ export default function ZelenaligaSite() {
 
   if (segments.length > 0) {
     const slug = segments[0];
+    if (slug === 'redakce') {
+      return <RedakcePage />;
+    }
     if (slug === 'souteze') {
       if (segments.length > 1) {
         return <CompetitionRulesPage slug={segments[1]} />;
