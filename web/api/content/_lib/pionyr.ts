@@ -148,10 +148,32 @@ function getAuthHeaders() {
   };
 }
 
+function resolveBaseForPath(base: string, path: string) {
+  if (/^https?:\/\//i.test(path)) {
+    return undefined;
+  }
+  if (/^\/?API\.php/i.test(path)) {
+    return base.replace(/\/api\/?$/i, '/');
+  }
+  return base;
+}
+
 function buildUrl(path: string, params?: Record<string, string>) {
   const base = normalizeBaseUrl(process.env.PIONYR_API_BASE_URL ?? 'https://pionyr.cz/api/');
+  if (/^https?:\/\//i.test(path)) {
+    const url = new URL(path);
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        if (value) {
+          url.searchParams.set(key, value);
+        }
+      }
+    }
+    return url;
+  }
   const normalizedPath = path.replace(/^\/+/, '');
-  const url = new URL(normalizedPath, base);
+  const resolvedBase = resolveBaseForPath(base, normalizedPath);
+  const url = new URL(normalizedPath, resolvedBase);
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value) {
@@ -203,7 +225,9 @@ function buildListPathCandidates(): string[] {
     .filter((path) => !path.startsWith('v1/'))
     .map((path) => `v1/${path}`);
 
-  return uniq([...alternates, ...prefixed]);
+  const phpCandidates = ['API.php?action=content', 'API.php?action=web'];
+
+  return uniq([...alternates, ...prefixed, ...phpCandidates]);
 }
 
 function buildDetailPathCandidates(): string[] {
@@ -222,7 +246,16 @@ function buildDetailPathCandidates(): string[] {
     .filter((path) => !path.startsWith('v1/'))
     .map((path) => `v1/${path}`);
 
-  return uniq([...alternates, ...prefixed]);
+  const phpCandidates = [
+    'API.php?action=content&id={id}',
+    'API.php?action=content&uuid={id}',
+    'API.php?action=content&slug={id}',
+    'API.php?action=web&id={id}',
+    'API.php?action=web&uuid={id}',
+    'API.php?action=web&slug={id}',
+  ];
+
+  return uniq([...alternates, ...prefixed, ...phpCandidates]);
 }
 
 async function fetchListPage(
@@ -272,10 +305,10 @@ function isAllowed(article: PionyrArticle, terms: string[]): boolean {
   return terms.some((term) => haystack.includes(term));
 }
 
-export async function fetchPionyrArticles(): Promise<PionyrArticle[]> {
+export async function fetchPionyrArticles(filterOverride?: string[] | null): Promise<PionyrArticle[]> {
   const pageParam = process.env.PIONYR_API_PAGE_PARAM ?? 'page';
   const headers = getAuthHeaders();
-  const terms = getFilterTerms();
+  const terms = filterOverride ?? getFilterTerms();
   const results: PionyrArticle[] = [];
 
   let page = 1;
@@ -308,7 +341,12 @@ export async function fetchPionyrArticleBySlug(slug: string): Promise<PionyrArti
   const candidates = cachedDetailPath ? [cachedDetailPath] : buildDetailPathCandidates();
   const { payload, resolvedPath } = await fetchDetail(candidates, slug, headers);
   if (!payload) {
-    return null;
+    try {
+      const list = await fetchPionyrArticles([]);
+      return list.find((item) => item.slug === slug) ?? null;
+    } catch {
+      return null;
+    }
   }
   cachedDetailPath = resolvedPath ?? cachedDetailPath;
   const data = payload.data ?? payload.item ?? payload.article ?? payload;
