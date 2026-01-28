@@ -190,6 +190,14 @@
     {
       "source": "/kontakty/(.*)",
       "destination": "/"
+    },
+    {
+      "source": "/redakce",
+      "destination": "/"
+    },
+    {
+      "source": "/redakce/(.*)",
+      "destination": "/"
     }
   ]
 }
