@@ -201,6 +201,7 @@ export default async function handler(req: any, res: any) {
     setCache(cacheKey, payload);
     res.status(200).json(payload);
   } catch (error) {
+    console.error('[api/gallery/album] failed', error);
     res.status(500).json({ error: 'Failed to load album from Google Drive.' });
   }
 }
