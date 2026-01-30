@@ -1,5 +1,5 @@
 import type { drive_v3 } from 'googleapis';
-import { DRIVE_FIELDS, getDriveClient } from '../../api-lib/googleDrive.js';
+import { DRIVE_FIELDS, getDriveClient, getDriveListOptions } from '../../api-lib/googleDrive.js';
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -53,6 +53,7 @@ async function fetchAlbumFiles({
     pageToken,
     includeItemsFromAllDrives: true,
     supportsAllDrives: true,
+    ...getDriveListOptions(),
   });
   return data;
 }
@@ -75,6 +76,7 @@ async function fetchAlbumCount(folderIds: string[]) {
       pageToken,
       includeItemsFromAllDrives: true,
       supportsAllDrives: true,
+      ...getDriveListOptions(),
     });
     total += data.files?.length ?? 0;
     pageToken = data.nextPageToken ?? undefined;
@@ -95,6 +97,7 @@ async function listChildFolderIds(parentId: string): Promise<string[]> {
       pageToken,
       includeItemsFromAllDrives: true,
       supportsAllDrives: true,
+      ...getDriveListOptions(),
     });
     for (const file of data.files ?? []) {
       if (file.mimeType === FOLDER_MIME && file.id) {
@@ -197,6 +200,14 @@ export default async function handler(req: any, res: any) {
       nextPageToken: data.nextPageToken ?? null,
       totalCount: totalCount ?? null,
     };
+
+    if (req.query.debug === '1') {
+      res.status(200).json({
+        ...payload,
+        folderIds,
+      });
+      return;
+    }
 
     setCache(cacheKey, payload);
     res.status(200).json(payload);

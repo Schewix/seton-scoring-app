@@ -1,5 +1,5 @@
 import type { drive_v3 } from 'googleapis';
-import { getDriveClient } from '../../api-lib/googleDrive.js';
+import { getDriveClient, getDriveListOptions } from '../../api-lib/googleDrive.js';
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -51,14 +51,33 @@ async function listAllFolders(parentId: string): Promise<drive_v3.Schema$File[]>
   let pageToken: string | undefined = undefined;
   do {
     const { data }: { data: drive_v3.Schema$FileList } = await drive.files.list({
-      q: `'${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`,
-      fields: 'nextPageToken, files(id, name, createdTime, modifiedTime)',
+      q: `'${parentId}' in parents and (mimeType = '${FOLDER_MIME}' or mimeType = 'application/vnd.google-apps.shortcut') and trashed = false`,
+      fields: 'nextPageToken, files(id, name, createdTime, modifiedTime, mimeType, shortcutDetails)',
       pageSize: 1000,
       pageToken,
       includeItemsFromAllDrives: true,
       supportsAllDrives: true,
+      ...getDriveListOptions(),
     });
-    items.push(...(data.files ?? []));
+    for (const file of data.files ?? []) {
+      if (file.mimeType === FOLDER_MIME && file.id) {
+        items.push(file);
+        continue;
+      }
+      if (
+        file.mimeType === 'application/vnd.google-apps.shortcut' &&
+        file.shortcutDetails?.targetMimeType === FOLDER_MIME &&
+        file.shortcutDetails.targetId
+      ) {
+        items.push({
+          id: file.shortcutDetails.targetId,
+          name: file.name,
+          createdTime: file.createdTime,
+          modifiedTime: file.modifiedTime,
+          mimeType: FOLDER_MIME,
+        });
+      }
+    }
     pageToken = data.nextPageToken ?? undefined;
   } while (pageToken);
   return items;
