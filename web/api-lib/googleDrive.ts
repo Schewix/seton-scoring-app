@@ -51,6 +51,7 @@ if (!SERVICE_ACCOUNT_EMAIL || !PRIVATE_KEY) {
 PRIVATE_KEY = PRIVATE_KEY.replace(/\\n/g, '\n');
 
 let cachedDrive: drive_v3.Drive | null = null;
+const SHARED_DRIVE_ID = process.env.GOOGLE_DRIVE_SHARED_DRIVE_ID ?? '';
 
 export function getDriveClient(): drive_v3.Drive {
   if (cachedDrive) {
@@ -66,6 +67,13 @@ export function getDriveClient(): drive_v3.Drive {
   const driveOptions: drive_v3.Options = { version: 'v3', auth };
   cachedDrive = google.drive(driveOptions);
   return cachedDrive;
+}
+
+export function getDriveListOptions(): { corpora: string; driveId?: string } {
+  if (SHARED_DRIVE_ID) {
+    return { corpora: 'drive', driveId: SHARED_DRIVE_ID };
+  }
+  return { corpora: 'allDrives' };
 }
 
 export const DRIVE_FIELDS =
