@@ -2,15 +2,15 @@ import {
   fetchPionyrArticleBySlug,
   fetchPionyrArticles,
   type PionyrArticle,
-} from '../../api-lib/content/pionyr.js';
+} from '../api-lib/content/pionyr.js';
 import {
   clearEditorSession,
   requireEditor,
   setEditorSession,
   validatePassword,
   verifyEditorSession,
-} from '../../api-lib/content/editorAuth.js';
-import { getSupabaseAdminClient } from '../../api-lib/content/supabaseAdmin.js';
+} from '../api-lib/content/editorAuth.js';
+import { getSupabaseAdminClient } from '../api-lib/content/supabaseAdmin.js';
 
 type LocalArticleRow = {
   id: string;
@@ -347,16 +347,16 @@ export default async function handler(req: any, res: any) {
   let segments = Array.isArray(rawPath)
     ? rawPath
     : typeof rawPath === 'string'
-      ? [rawPath]
+      ? rawPath.split('/').filter(Boolean)
       : [];
 
   if (segments.length === 0 && typeof req.url === 'string') {
     try {
       const url = new URL(req.url, 'http://localhost');
-      const prefix = '/api/content/';
+      const prefix = '/api/content';
       const index = url.pathname.indexOf(prefix);
       if (index >= 0) {
-        const rest = url.pathname.slice(index + prefix.length);
+        const rest = url.pathname.slice(index + prefix.length).replace(/^\/+/, '');
         segments = rest.split('/').filter(Boolean);
       }
     } catch {

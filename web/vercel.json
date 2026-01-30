@@ -24,6 +24,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/content/:path*",
+      "destination": "/api/content?path=:path*"
+    },
+    {
       "source": "/auth/login",
       "destination": "/api/auth/login"
     },
