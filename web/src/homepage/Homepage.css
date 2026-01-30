@@ -1385,12 +1385,25 @@
   display: grid;
   gap: 24px;
   grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+  align-items: start;
 }
 
 .editor-login form {
   display: grid;
   gap: 12px;
   margin-top: 12px;
+  max-width: 420px;
+}
+
+.editor-login .homepage-button {
+  width: fit-content;
+  padding: 8px 18px;
+  border-radius: 999px;
+}
+
+.editor-login label {
+  font-weight: 600;
+  color: #1c2b26;
 }
 
 .editor-list-header {
@@ -1405,12 +1418,29 @@
   gap: 10px;
 }
 
+.editor-list-actions .homepage-button {
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  border-radius: 999px;
+}
+
 .editor-list {
   list-style: none;
   padding: 0;
   margin: 18px 0 0;
   display: grid;
   gap: 10px;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.editor-empty {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(4, 55, 44, 0.06);
+  color: rgba(4, 55, 44, 0.7);
+  font-weight: 500;
 }
 
 .editor-list-item {
@@ -1440,6 +1470,11 @@
 .editor-form {
   display: grid;
   gap: 16px;
+}
+
+.editor-form h2,
+.editor-list-header h2 {
+  margin: 0;
 }
 
 .editor-form-grid {
