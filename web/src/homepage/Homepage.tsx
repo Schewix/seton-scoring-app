@@ -313,73 +313,6 @@ type GalleryPreview = {
   totalCount: number | null;
 };
 
-const ARTICLES: Article[] = [
-  {
-    title: 'Setonův závod',
-    dateLabel: '06. 05. 2025',
-    dateISO: '2025-05-06',
-    excerpt: '33. ročník tradiční závěrečné soutěže Zelené ligy se konal v Řečkovicích.',
-    href: '/clanky/setonuv-zavod-2025',
-    body: [
-      'V sobotu 26. 4. 2025 se uskutečnil 33. ročník Setonova závodu, tradiční závěrečné soutěže Zelené ligy (celoroční soutěž mezi brněnskými pionýrskými tábornickými oddíly sdruženými v SPTO). Tentokrát se závod konal v Zamilovaném hájku v Řečkovicích a jeho okolí.',
-      'Jde o tábornicko-branný závod tříčlenných týmů (hlídek). Hlídky soutěží ve čtyřech věkových kategoriích, které se dělí na hochy a dívky. Tento rok Setonův závod pořádal 10. PTO Severka.',
-      'Hlídky běžely trasu o délce mezi 6 a 12 kilometry v závislosti na věkové kategorii. Trať vedla lesními cestami mezi Řečkovicemi, Soběšicemi a Mokrou Horou. Během závodu hlídky postupně plnily úkoly na stanovištích, například poznávání rostlin a zvířat, stavbu stanu, střelbu z foukaček, práci s mapou a buzolou či první pomoc a zdravovědu. Úkolem hlídek bylo získat na každém stanovišti co nejvíce z 12 možných bodů a současně dokončit závod v co nejkratším čase.',
-      'Závod začal ráno od 8 hodin, kdy na trať vyrazily první hlídky. Na trať vyběhlo celkem 98 hlídek ze 17 pionýrských oddílů. Mezi jedenáctou a dvanáctou hodinou na startovní louce zavládl klid, když na ní zůstali jen vedoucí doprovázející hlídky a organizátoři akce. To se však po dvanácté hodině začalo měnit, když dobíhaly první hlídky. Na ty v cíli čekal oběd (hotdog) a také napínavé čekání, na jak dobré umístění bude jejich výkon v závodě stačit.',
-      'Po páté odpolední hodině se všem hlídkám podařilo úspěšně najít cestu zpátky do cíle a mohlo tak začít vyhlášování výsledků a udílení cen a diplomů. Nejlépe si vedl 63. PTO Phoenix, jehož hlídky vyhrály hned ve čtyřech kategoriích a získaly tak i putovní ceny pro jednotlivé kategorie. Jedno vítězství si pak na své konto připsaly 10. PTO Severka, 64. PTO Lorien, 176. PTO Vlčata a smíšená hlídka 24. PTO Života v přírodě a 27. PTO Lesní moudrosti. Po vyhlášení se zúčastněné oddíly vydaly zpátky domů.',
-      'Celkem se závodu zúčastnilo 293 dětí. 90 vedoucích poté zajišťovalo provoz 16 soutěžních stanovišť a o hladký průběh akce se staralo přes 25 organizátorů. Další vedoucí poté přišli fandit svým dětem na startovní louku. Za organizátory doufám, že si všichni zúčastnění akci užili a děkuji všem za jejich účast.',
-    ],
-    author: 'Martin, 10. PTO Severka',
-  },
-  {
-    title: 'Memoriál Bedřicha Stoličky',
-    dateLabel: '05. 10. 2024',
-    dateISO: '2024-10-05',
-    excerpt: 'První akce Zelené ligy školního roku přinesla sportovní okruhy i slavnostní ceremoniál.',
-    href: '/clanky/memorial-bedricha-stolicky-2024',
-    body: [
-      'V sobotu 5. 10. 2024 jsme se společně sešli na základní škole v Líšni, abychom se zúčastnili první akce Zelené ligy tohoto školního roku, a to Memoriálu Bedřicha Stoličky. Jednalo se sportovní soutěž, kde se děti mohly vyzkoušet různé sportovní a olympijské disciplíny. Celý závod byl rozdělen na tři okruhy - okruh atletických, silových a mrštnostních disciplín. Každý závodník se musel přihlásit na dva okruhy, z nichž jeden musel být atletika. Letos soutěž pořádal oddíl 21. PTO Hády. Celkově se zaregistrovalo a závodilo 230 dětí.',
-      'Celá akce začala slavnostním zahajovacím ceremoniálem, kde za každý oddíl byli vysláni dva zástupci s transparentem, aby v kostýmu reprezentovali svůj oddíl. Při ceremoniálu byl i slavnostně zapálen oheň, a tím mohl celý den odstartovat. Děti byly rozděleny do 12 různých kategorií dle věku a pohlaví a podle těchto kategorií obcházely celý den jednotlivé disciplíny – některé probíhaly venku, některé vevnitř v tělocvičnách. Dopoledne probíhal okruh atletických disciplín, kde závodníci soupeřili v běhu, skoku do dálky, hodu krikeťákem či koulí, šplhu na tyči a ve střelbě z flusačky. Po absolvování atletického okruhu následovala krátká obědová pauza, a poté si závodníci dle výběru obešli disciplíny silové (zdvih medicimbalu, výskok na bednu a sedy lehy) nebo disciplíny mrštnostní (přeskok přes lavičku, leh-stoj a švihadlo). Na závěr probíhala ještě nesoutěžní štafeta ve třech různých kategoriích dle věku, které se mohli účastnit i závodníci kategorie Old. Celý den byl zakončen vyhlášením, kde si nejlepší závodníci mohli stoupnout na stupně vítězů a obdrželi medaile za krásné sportovní výkony. Všichni účastníci i přes nepříznivé počasí a občasný déšť zvládli absolvovat všechny disciplíny a my doufáme, že si všichni tuto akci užili.',
-    ],
-  },
-  {
-    title: 'Sraz PTO',
-    dateLabel: '04. 06. 2024',
-    dateISO: '2024-06-04',
-    excerpt: 'Pravěká víkendová akce na tábořišti Krkatá bába nabídla soutěže, guláše i slavnostní oheň.',
-    href: '/clanky/sraz-pto-2024',
-    body: [
-      'Jako již tradičně každý rok v květnu se velká část pionýrských tábornických oddílů sjela na víkendovou akci zvanou Sraz PTO. Akci, která má za hlavní cíl potkat se s ostatními oddíly SPTO, užít si společně strávený čas a zahrát si hry s ostatními dětmi z dalších oddílů. Je krásné vědět, že je nás opravdu hodně a kolik nadšených dětí Pionýr sdružuje. Letos se sjelo necelých 230 účastníků, z toho 140 dětí do 15 let, což je krásná účast na to, jaká předpověď počasí na tento víkend vyšla.',
-      'Sraz se konal na tábořišti Krkatá bába nedaleko vesnice Lubě. Tábořiště je naprosto kouzelné, uprostřed lesů a krásného potoka, takže jsme se všichni naplno ponořili do klidu přírody. Letošní celovíkendovou motivací byl pravěk, tudíž se všechno neslo v tomto duchu.',
-      'V pátek odpoledne a v podvečer se sjížděly všechny oddíly, kterých nakonec bylo celkem 13 a i přes těžce sjízdnou příjezdovou cestu nikdo ani nezapadl ani se neutopil v brodu, což považujeme za první úspěch. Všechny oddíly postavily svá obydlí, rozdělaly ohně a začaly vařit večeři. Celý večer se nesl v poklidu, seznamování, povídání si a kamarádství.',
-      'Sobota byla hlavním dnem veškerých připravených aktivit. Ráno všichni vstali, některé odvážnější oddíly provedly ranní rozcvičku, pak už všichni po oddílech snídali a připravovali se na dopolední program. Kdo měl, převlékl se do svého pravěkého kostýmu a je třeba podotknout, že jich bylo skutečně hodně a byly velice zdařilé! Následoval nástup, kde se všichni dozvěděli, jaké dopolední aktivity nás čekají a následně se všichni rozeběhli po stanovištích a plnili všelijaké úkoly. Každý oddíl si připravil nějaký úkol, soutěž, hlavolam a pokud jej děti splnily, dostaly od vedoucího přívěsek dřevěné kosti s vygravírovaným znakem daného oddílu. Mezi soutěžemi byl například lov mamuta foukačkou, lov mamuta oštěpem, souboj s lukem a šípy, malování jeskynních maleb nebo silový zápas. Úlohy byly pestré a všichni si je náramně užívali.',
-      'Paralelně s těmito aktivitami probíhala soutěž o nejlepší kotlíkový guláš. Zapojilo se 10 oddílů a styly gulášů byly různé. Od tradičního hovězího, přes segedínský či guláš s domácím karlovarským knedlíkem až po pořádné buřtguláše. Cenu za nejlepší guláš si po těsném souboji odnesly oddíly Mustangové a Vlčata. Zároveň po tábořišti procházeli čtyři staří šamani, kteří hledali nové členy do své tlupy na odpolední souboj. Každého vybraného člena označili specifickými malbami na obličej určité barvy.',
-      'Při ochutnávání guláše začala první silná průtrž mračen s kroupami, která prověřila odolnost naši i našich stanů. Naštěstí všechno vydrželo a polední klid jsme si užili i s trochou sluníčka.',
-      'Odpoledne následoval velký souboj, kdy se proti sobě postavily čtyři kmeny, které obsazovaly území pomocí barevných kamínků. Zároveň probíhal boj mezi členy pomocí kyjů, jak se na pořádnou pravěkou pranici patří.',
-      'Těsně ke konci hry začalo opět pršet, tak až se všichni vrátili, dali jsme mokré boty sušit ke kamnům, aby bylo všem dobře.',
-      'Po večeři už nás čekal pouze slavnostní oheň, který celou sobotu krásně zakončil. I když byly ze začátku problémy se zapálením pro vlhkost dříví, nakonec se pomocí suchých třísek podařilo a mohli jsme si užít společný večer s kytarami. Těch se letos sešlo skutečně hodně, dále také cajon a ukulele, takže to vypadalo jako na malém koncertu. Zpívání písniček bylo prokládáno drobnými soutěžemi mezi oddíly jako bylo balancování kyje nebo pinkání balonu. Kolem 10. hodiny večer jsme zahráli několik ukolébavek a byl čas jít spát.',
-      'Neděle patřila zakončení celého víkendu. Proběhl slavnostní krojovaný nástup, na kterém byli představeni noví instruktoři z loňského podzimního a letošního jarního instruktoráku, byla jim předána osvědčení a sklidili zasloužený potlesk. Následovalo tradiční vyhodnocení Zelené ligy, kterou v letošním roce ovládly oddíly 10. PTO Severka a 63. PTO Phoenix se stejným počtem bodů, což se zatím nikdy nestalo, a my jim gratulujeme. Stezka předala PTO prapor oddílu Hády, kteří pro nás připravují podzimní soutěž Memoriál Bedřicha Stoličky a už nyní se na to můžeme těšit.',
-      'Po nástupu a obědě proběhlo balení všech věcí, úklid tábořiště a postupný odjezd domů. Moc děkujeme všem zúčastněným oddílům za to, že vydržely až do konce i přes nepřízeň počasí, že se hrdě pustily do gulášové soutěže a že pro děti připravily úžasné dopolední aktivity. Věříme, že jste si celý víkend užili stejně jako my a těšíme se, až se potkáme na další povedené akci co nejdříve.',
-    ],
-    author: 'Martin (Chemik) Zapletal',
-  },
-  {
-    title: 'Setonův závod 27. 4. 2024',
-    dateLabel: '07. 05. 2024',
-    dateISO: '2024-05-07',
-    excerpt: '32. ročník závodu v lesích mezi Soběšicemi a Útěchovem přinesl 322 závodníků.',
-    href: '/clanky/setonuv-zavod-2024',
-    body: [
-      'V sobotu 27. 4. 2024 se uskutečnil 32. ročník Setonova závodu. Tentokrát v lesích U Jezírka mezi Soběšicemi a Útěchovem. Jedná se o tábornicko-branný závod tříčlenných dětských skupin, takzvaných hlídek, jenž každoročně pořádají oddíly ze Sdružení Pionýrských Tábornických Oddílů (SPTO). Letos jej pořádal oddíl 63. PTO Phoenix. Každý rok se závodu účastní 15-20 pionýrských oddílů z Brna a okolí.',
-      'Hlídky běžely trasu o délce mezi 6 a 12 kilometry, v závislosti na tom, do které ze 4 věkových kategorií spadaly. Trať vedla lesními cestami mezi Soběšicemi, Útěchovem a Ořechovem. Během závodu hlídky postupně plnily úkoly na stanovištích, například poznávání rostlin a zvířat, stavbu stanu, střelbu z foukaček, práci s mapou a buzolou či první pomoc a zdravovědu. Úkolem hlídek bylo získat na každém stanovišti co nejvíce z 12 možných bodů a současně dokončit závod v co nejkratším čase.',
-      'Závod začal po osmé hodině ranní, kdy na louku U Jezírka dorazily první oddíly. Ty si zaregistrovaly svoje děti do závodu, postavily na louce stany jako své zázemí a odstartovaly své děti do závodu. Toto postupně absolvovaly i další příchozí oddíly, až do jedenácté hodiny, kdy na trať vyběhly poslední hlídky. Na startovní louce poté nastala chvíle podivného klidu, kdy na této dětské akci najednou nebyly k vidění žádné děti. Což se ovšem záhy změnilo, když se první děti začaly vracet z trati, už kolem dvanácté hodiny. Tím už pro ně závod skončil a mohly si v klidu odpočinout a pochutnat si na výtečném obědě, který pro ně připravil náš kuchařský tým Gastrochef.',
-      'Letos jsme měli zajímavou novinku, pro zkrácení dlouhé chvíle čekajícím dětem. Vedoucí ze Zeměpisné společnosti si pro děti připravili ukázku archeologické práce. Děti si tak mohly vyzkoušel práci s detektorem kovů, vykopávání a očišťování předmětů a také si pohrát s historickými zbrojemi a meči.',
-      'Poslední hlídky dorazily do cíle ve 4 hodiny odpoledne. V ten okamžik již byly kostky vrženy a nezbývalo než čekat, jak to letos dopadne. Vyhlášení začalo ani ne hodinu poté. Zde se všechny oddíly shromáždily ke slavnostnímu nástupu a vyslechly si vyhlášení nejlepších hlídek v celkem 8 kategoriích – 4 věkových, dále rozdělených na hochy a dívky. Několik nejlepších hlídek z každé kategorie si, za hlasitého potlesku, přebralo diplomy a věcné ceny. Vítězné hlídky každé kategorie navíc ještě získaly do svého oddílu putovní ceny. Takto si na 5 putovních cen přišel 63. PTO Phoenix a po jedné putovní ceně 10. PTO Severka, 32. PTO Severka a 64. PTO Lorien.',
-      'Ukončením slavnostního nástupu skončil i závod. Celkem se jej letos zúčastnilo 322 závodníků a dalších 88 vedoucích z různých oddílů pro ně připravilo celkem 18 soutěžních stanovišť. Celý den nám naštěstí přálo počasí. Bylo jasno, na nebi se jen zřídkakdy objevil mráček a ač bylo teplo, nebylo to úmorné vedro, které by zavánělo úpalem. Ve spojení s občasným vánkem to bylo to nejlepší počasí, co jsme si mohli přát.',
-      'My organizátoři to vnímáme jako povedený závod a doufáme, že jej stejně vnímali i všichni zúčastnění.',
-    ],
-  },
-];
-
 // TODO: Napojit na API / Supabase pro reálné pořadí Zelené ligy.
 
 // Fotogalerie je napojená na Google Drive přes service account.
@@ -1195,18 +1128,22 @@ function RedakcePage() {
                 </div>
               </div>
               <ul className="editor-list">
-                {articles.map((article) => (
-                  <li key={article.id}>
-                    <button
-                      type="button"
-                      className={`editor-list-item${article.id === activeId ? ' is-active' : ''}`}
-                      onClick={() => selectArticle(article)}
-                    >
-                      <span>{article.title}</span>
-                      <small>{article.status === 'published' ? 'Publikováno' : 'Rozpracováno'}</small>
-                    </button>
-                  </li>
-                ))}
+                {articles.length === 0 ? (
+                  <li className="editor-empty">Zatím tu nejsou žádné články. Klikni na „Nový“ a založ první.</li>
+                ) : (
+                  articles.map((article) => (
+                    <li key={article.id}>
+                      <button
+                        type="button"
+                        className={`editor-list-item${article.id === activeId ? ' is-active' : ''}`}
+                        onClick={() => selectArticle(article)}
+                      >
+                        <span>{article.title}</span>
+                        <small>{article.status === 'published' ? 'Publikováno' : 'Rozpracováno'}</small>
+                      </button>
+                    </li>
+                  ))
+                )}
               </ul>
             </div>
 
@@ -1975,9 +1912,11 @@ function HomepageCarousel({ images }: { images: CarouselImage[] }) {
 function Homepage({
   homepageContent,
   articles,
+  articlesLoading,
 }: {
   homepageContent: SanityHomepage | null;
   articles: Article[];
+  articlesLoading: boolean;
 }) {
   const headerTitle = homepageContent?.heroTitle ?? undefined;
   const headerSubtitle = homepageContent?.heroSubtitle ?? undefined;
@@ -2018,49 +1957,59 @@ function Homepage({
             <h2 id="clanky-heading">Články ze soutěží</h2>
             <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
           </div>
-          <div className="homepage-article-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-            {articles.map((article) => (
-              <article key={article.title} className="homepage-article-card" style={{ minHeight: '220px' }}>
-                <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <time
-                    dateTime={article.dateISO}
+          {articlesLoading ? (
+            <div className="homepage-card" style={{ maxWidth: '720px' }}>
+              <p style={{ margin: 0 }}>Načítám články z redakce…</p>
+            </div>
+          ) : articles.length > 0 ? (
+            <div className="homepage-article-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+              {articles.map((article) => (
+                <article key={article.title} className="homepage-article-card" style={{ minHeight: '220px' }}>
+                  <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <time
+                      dateTime={article.dateISO}
+                      style={{
+                        display: 'inline-flex',
+                        padding: '4px 10px',
+                        borderRadius: '999px',
+                        background: 'rgba(4, 55, 44, 0.08)',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {article.dateLabel}
+                    </time>
+                  </div>
+                  <h3
                     style={{
-                      display: 'inline-flex',
-                      padding: '4px 10px',
-                      borderRadius: '999px',
-                      background: 'rgba(4, 55, 44, 0.08)',
-                      fontWeight: 600,
+                      display: '-webkit-box',
+                      WebkitBoxOrient: 'vertical',
+                      WebkitLineClamp: 2,
+                      overflow: 'hidden',
                     }}
                   >
-                    {article.dateLabel}
-                  </time>
-                </div>
-                <h3
-                  style={{
-                    display: '-webkit-box',
-                    WebkitBoxOrient: 'vertical',
-                    WebkitLineClamp: 2,
-                    overflow: 'hidden',
-                  }}
-                >
-                  {article.title}
-                </h3>
-                <p
-                  style={{
-                    display: '-webkit-box',
-                    WebkitBoxOrient: 'vertical',
-                    WebkitLineClamp: 2,
-                    overflow: 'hidden',
-                  }}
-                >
-                  {article.excerpt}
-                </p>
-                <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  Číst článek <span aria-hidden="true">→</span>
-                </a>
-              </article>
-            ))}
-          </div>
+                    {article.title}
+                  </h3>
+                  <p
+                    style={{
+                      display: '-webkit-box',
+                      WebkitBoxOrient: 'vertical',
+                      WebkitLineClamp: 2,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {article.excerpt}
+                  </p>
+                  <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    Číst článek <span aria-hidden="true">→</span>
+                  </a>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="homepage-card" style={{ maxWidth: '720px' }}>
+              <p style={{ margin: 0 }}>Zatím tu není žádný článek z redakce.</p>
+            </div>
+          )}
           <div className="homepage-section-cta">
             <a className="homepage-cta secondary" href="/clanky">
               Všechny články
@@ -2383,7 +2332,8 @@ function AboutSptoPage() {
 
 export default function ZelenaligaSite() {
   const [homepageContent, setHomepageContent] = useState<SanityHomepage | null>(null);
-  const [articles, setArticles] = useState<Article[]>(ARTICLES);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [articlesLoading, setArticlesLoading] = useState(false);
   const [driveAlbums, setDriveAlbums] = useState<DriveAlbum[]>([]);
   const [driveAlbumsLoading, setDriveAlbumsLoading] = useState(false);
   const path = window.location.pathname.replace(/\/$/, '') || '/';
@@ -2408,16 +2358,24 @@ export default function ZelenaligaSite() {
 
   useEffect(() => {
     let active = true;
+    setArticlesLoading(true);
     fetchContentArticles()
       .then((articlesData) => {
         if (!active) {
           return;
         }
-        if (articlesData.length > 0) {
-          setArticles(articlesData.map(mapContentArticle));
+        setArticles(articlesData.map(mapContentArticle));
+      })
+      .catch(() => {
+        if (active) {
+          setArticles([]);
         }
       })
-      .catch(() => undefined);
+      .finally(() => {
+        if (active) {
+          setArticlesLoading(false);
+        }
+      });
     return () => {
       active = false;
     };
@@ -2458,6 +2416,7 @@ export default function ZelenaligaSite() {
       <Homepage
         homepageContent={homepageContent}
         articles={articles}
+        articlesLoading={articlesLoading}
       />
     );
   }
@@ -2503,7 +2462,7 @@ export default function ZelenaligaSite() {
         <InfoPage
           eyebrow="SPTO · Články"
           title="Články ze soutěží"
-          lead="Reportáže a novinky z posledních akcí."
+          lead={articlesLoading ? 'Načítám články z redakce…' : 'Reportáže a novinky z posledních akcí.'}
           links={articles.map((item) => ({
             label: item.title,
             description: `${item.dateLabel} · ${item.excerpt}`,
