@@ -1,4 +1,5 @@
 import type { drive_v3 } from 'googleapis';
+import { fetchScriptItems, hasGalleryScript } from '../../api-lib/galleryScript.js';
 import { DRIVE_FIELDS, getDriveClient, getDriveListOptions } from '../../api-lib/googleDrive.js';
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -39,11 +40,28 @@ async function fetchAlbumFiles({
   folderIds,
   pageToken,
   pageSize,
+  includeSubfolders,
 }: {
   folderIds: string[];
   pageToken?: string;
   pageSize: number;
+  includeSubfolders: boolean;
 }): Promise<drive_v3.Schema$FileList> {
+  if (hasGalleryScript()) {
+    const images = await fetchScriptImages(folderIds, includeSubfolders);
+    const offset = pageToken ? Math.max(Number(pageToken) || 0, 0) : 0;
+    const slice = images.slice(offset, offset + pageSize);
+    return {
+      nextPageToken: offset + pageSize < images.length ? String(offset + pageSize) : undefined,
+      files: slice.map((item) => ({
+        id: item.fileId,
+        name: item.name,
+        mimeType: 'image/*',
+        thumbnailLink: item.thumbnailLink ?? undefined,
+        webContentLink: item.webContentLink ?? undefined,
+      })),
+    };
+  }
   const drive = getDriveClient();
   const parentsQuery = folderIds.map((id) => `'${id}' in parents`).join(' or ');
   const { data }: { data: drive_v3.Schema$FileList } = await drive.files.list({
@@ -58,7 +76,11 @@ async function fetchAlbumFiles({
   return data;
 }
 
-async function fetchAlbumCount(folderIds: string[]) {
+async function fetchAlbumCount(folderIds: string[], includeSubfolders: boolean) {
+  if (hasGalleryScript()) {
+    const images = await fetchScriptImages(folderIds, includeSubfolders);
+    return images.length;
+  }
   const cacheKey = `count:${folderIds.join(',')}`;
   const cached = getCache<number>(cacheKey);
   if (cached !== null) {
@@ -86,6 +108,10 @@ async function fetchAlbumCount(folderIds: string[]) {
 }
 
 async function listChildFolderIds(parentId: string): Promise<string[]> {
+  if (hasGalleryScript()) {
+    const items = await fetchScriptItems(parentId);
+    return items.filter((item) => item.type === 'folder').map((item) => item.id);
+  }
   const drive = getDriveClient();
   const ids: string[] = [];
   let pageToken: string | undefined = undefined;
@@ -137,6 +163,47 @@ async function listDescendantFolderIds(parentId: string): Promise<string[]> {
   return descendants;
 }
 
+async function fetchScriptImages(folderIds: string[], includeSubfolders: boolean) {
+  const images: Array<{
+    fileId: string;
+    name: string;
+    thumbnailLink: string | null;
+    fullImageUrl: string | null;
+    webContentLink: string | null;
+  }> = [];
+  const visited = new Set<string>();
+  const queue = [...folderIds];
+
+  while (queue.length > 0) {
+    const currentId = queue.shift();
+    if (!currentId || visited.has(currentId)) {
+      continue;
+    }
+    visited.add(currentId);
+    const items = await fetchScriptItems(currentId);
+    for (const item of items) {
+      if (item.type === 'folder') {
+        if (includeSubfolders) {
+          queue.push(item.id);
+        }
+        continue;
+      }
+      if (item.type === 'image') {
+        images.push({
+          fileId: item.id,
+          name: item.name ?? '',
+          thumbnailLink: item.thumb ?? null,
+          fullImageUrl: item.src ?? null,
+          webContentLink: item.src ?? null,
+        });
+      }
+    }
+  }
+
+  images.sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+  return images;
+}
+
 export default async function handler(req: any, res: any) {
   applyCacheHeaders(res);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -152,9 +219,10 @@ export default async function handler(req: any, res: any) {
   const includeSubfolders = req.query.includeSubfolders === '1' || req.query.includeSubfolders === 'true';
   const pageSize = toPageSize(req.query.pageSize);
 
-  const folderIds = includeSubfolders
-    ? [folderId, ...(await listDescendantFolderIds(folderId))]
-    : [folderId];
+  const folderIds =
+    includeSubfolders && !hasGalleryScript()
+      ? [folderId, ...(await listDescendantFolderIds(folderId))]
+      : [folderId];
   const cacheKey = `files:${folderId}:${includeSubfolders ? 'sub' : 'root'}:${pageToken ?? 'first'}:${pageSize}`;
   const cached = getCache<any>(cacheKey);
   if (cached !== null) {
@@ -163,7 +231,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const data = await fetchAlbumFiles({ folderIds, pageToken, pageSize });
+    const data = await fetchAlbumFiles({ folderIds, pageToken, pageSize, includeSubfolders });
     const files = (data.files ?? [])
       .map((file: drive_v3.Schema$File) => {
         const isShortcut = file.mimeType === 'application/vnd.google-apps.shortcut';
@@ -192,7 +260,7 @@ export default async function handler(req: any, res: any) {
         } => Boolean(file),
       );
 
-    const totalCount = includeCount ? await fetchAlbumCount(folderIds) : undefined;
+    const totalCount = includeCount ? await fetchAlbumCount(folderIds, includeSubfolders) : undefined;
 
     const payload = {
       folderId,

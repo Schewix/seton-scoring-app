@@ -1,4 +1,5 @@
 import type { drive_v3 } from 'googleapis';
+import { fetchScriptItems, hasGalleryScript } from '../../api-lib/galleryScript.js';
 import { getDriveClient, getDriveListOptions } from '../../api-lib/googleDrive.js';
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -46,6 +47,16 @@ function normalizeForMatch(value: string): string {
 }
 
 async function listAllFolders(parentId: string): Promise<drive_v3.Schema$File[]> {
+  if (hasGalleryScript()) {
+    const items = await fetchScriptItems(parentId);
+    return items
+      .filter((item) => item.type === 'folder')
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        mimeType: FOLDER_MIME,
+      }));
+  }
   const drive = getDriveClient();
   const items: drive_v3.Schema$File[] = [];
   let pageToken: string | undefined = undefined;
