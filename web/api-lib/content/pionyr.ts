@@ -1,3 +1,5 @@
+import { JSDOM } from 'jsdom';
+
 type RawArticle = Record<string, any>;
 
 export type PionyrArticle = {
@@ -19,6 +21,17 @@ type PionyrListResponse = {
 
 let cachedListPath: string | null = null;
 let cachedDetailPath: string | null = null;
+let cachedWebList: { items: WebArticleListItem[]; fetchedAt: number } | null = null;
+
+type WebArticleListItem = {
+  slug: string;
+  title: string;
+  excerpt: string;
+  dateISO: string;
+  coverImageUrl?: string | null;
+  coverImageAlt?: string | null;
+  detailUrl: string;
+};
 
 function normalizeBaseUrl(value: string) {
   return value.endsWith('/') ? value : `${value}/`;
@@ -35,6 +48,17 @@ function normalizeText(value: string) {
 
 function stripHtml(value: string) {
   return value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function parseCzechDate(value: string): string | null {
+  const match = value.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (!day || !month || !year) return null;
+  const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function getString(value: unknown): string | null {
@@ -184,6 +208,29 @@ function buildUrl(path: string, params?: Record<string, string>) {
   return url;
 }
 
+function getWebBaseUrl() {
+  return normalizeBaseUrl(process.env.PIONYR_WEB_BASE_URL ?? 'https://jihomoravsky.pionyr.cz');
+}
+
+function buildWebUrl(path: string) {
+  const base = getWebBaseUrl();
+  if (/^https?:\/\//i.test(path)) {
+    return new URL(path);
+  }
+  const normalizedPath = path.replace(/^\/+/, '');
+  return new URL(normalizedPath, base);
+}
+
+function absolutizeUrl(value: string | null, base: string): string | null {
+  if (!value) return null;
+  if (/^https?:\/\//i.test(value)) return value;
+  try {
+    return new URL(value, base).toString();
+  } catch {
+    return value;
+  }
+}
+
 function getFilterTerms(): string[] {
   const raw = process.env.PIONYR_ARTICLE_FILTER ?? '';
   return raw
@@ -258,6 +305,144 @@ function buildDetailPathCandidates(): string[] {
   return uniq([...alternates, ...prefixed, ...phpCandidates]);
 }
 
+function splitDateAndTitle(value: string | null): { dateISO: string | null; title: string | null } {
+  if (!value) return { dateISO: null, title: null };
+  const parts = value.split('|').map((part) => part.trim());
+  if (parts.length >= 2) {
+    return {
+      dateISO: parseCzechDate(parts[0]) ?? null,
+      title: parts.slice(1).join(' | ').trim() || null,
+    };
+  }
+  return { dateISO: parseCzechDate(value) ?? null, title: value.trim() || null };
+}
+
+function normalizeDocumentUrls(doc: Document, base: string) {
+  doc.querySelectorAll('img').forEach((img) => {
+    const src = img.getAttribute('src');
+    const resolved = absolutizeUrl(src, base);
+    if (resolved) img.setAttribute('src', resolved);
+  });
+  doc.querySelectorAll('a').forEach((link) => {
+    const href = link.getAttribute('href');
+    const resolved = absolutizeUrl(href, base);
+    if (resolved) link.setAttribute('href', resolved);
+  });
+}
+
+async function fetchWebListItems(): Promise<WebArticleListItem[]> {
+  const ttlMs = Number(process.env.PIONYR_WEB_LIST_TTL_MS ?? '3600000');
+  const now = Date.now();
+  if (cachedWebList && now - cachedWebList.fetchedAt < ttlMs) {
+    return cachedWebList.items;
+  }
+
+  const listPath = process.env.PIONYR_WEB_ARTICLES_PATH ?? 'clanky';
+  const listUrl = buildWebUrl(listPath);
+  const response = await fetch(listUrl.toString());
+  if (!response.ok) {
+    throw new Error(`Pionyr web error (${response.status})`);
+  }
+  const html = await response.text();
+  const dom = new JSDOM(html);
+  const doc = dom.window.document;
+  normalizeDocumentUrls(doc, listUrl.toString());
+
+  const items: WebArticleListItem[] = [];
+  doc.querySelectorAll('.reference-item').forEach((item) => {
+    const link = item.querySelector('a');
+    const href = link?.getAttribute('href');
+    if (!href) return;
+    const detailUrl = buildWebUrl(href).toString();
+    const headingText = item.querySelector('h5')?.textContent ?? null;
+    const { dateISO, title } = splitDateAndTitle(headingText);
+    const perexNode = item.querySelector('p');
+    const excerpt = perexNode ? stripHtml(perexNode.innerHTML ?? perexNode.textContent ?? '') : '';
+    const image = item.querySelector('img');
+    const coverImageUrl = image?.getAttribute('src') ?? null;
+    const coverImageAlt = image?.getAttribute('alt') ?? null;
+
+    const detail = new URL(detailUrl);
+    const slug = detail.pathname.split('/').filter(Boolean)[1] ?? detail.pathname.split('/').filter(Boolean).pop();
+    if (!slug || !title) return;
+    items.push({
+      slug,
+      title,
+      excerpt,
+      dateISO: dateISO ?? new Date().toISOString(),
+      coverImageUrl,
+      coverImageAlt,
+      detailUrl,
+    });
+  });
+
+  cachedWebList = { items, fetchedAt: now };
+  return items;
+}
+
+async function fetchWebDetailBySlug(slug: string): Promise<PionyrArticle | null> {
+  const baseUrl = getWebBaseUrl();
+  const list = await fetchWebListItems();
+  const listItem = list.find((item) => item.slug === slug);
+  const detailUrl = listItem?.detailUrl ?? buildWebUrl(`clanky/${slug}`).toString();
+  const response = await fetch(detailUrl);
+  if (!response.ok) {
+    return listItem
+      ? {
+          source: 'pionyr',
+          slug: listItem.slug,
+          title: listItem.title,
+          excerpt: listItem.excerpt,
+          dateISO: listItem.dateISO,
+          coverImageUrl: listItem.coverImageUrl ?? null,
+          coverImageAlt: listItem.coverImageAlt ?? null,
+          bodyHtml: null,
+        }
+      : null;
+  }
+  const html = await response.text();
+  const dom = new JSDOM(html);
+  const doc = dom.window.document;
+  normalizeDocumentUrls(doc, baseUrl);
+
+  const headingText = doc.querySelector('h3')?.textContent ?? listItem?.title ?? null;
+  const { dateISO, title } = splitDateAndTitle(headingText);
+  const perexNode = doc.querySelector('h3 + p');
+  const excerpt = perexNode ? stripHtml(perexNode.innerHTML ?? perexNode.textContent ?? '') : listItem?.excerpt ?? '';
+
+  const imageNodes = Array.from(doc.querySelectorAll('.column-reference-img img'));
+  const imageUrls = imageNodes.map((img) => img.getAttribute('src')).filter(Boolean) as string[];
+  const imageAlts = imageNodes.map((img) => img.getAttribute('alt'));
+
+  const bodyNodes: string[] = [];
+  let node = perexNode ? perexNode.nextElementSibling : null;
+  while (node) {
+    if (node.classList.contains('more-info')) break;
+    bodyNodes.push(node.outerHTML);
+    node = node.nextElementSibling;
+  }
+  const bodyContent = bodyNodes.join('').trim();
+  const galleryHtml = imageUrls
+    .slice(1)
+    .map((url, index) => {
+      const alt = imageAlts[index + 1] ?? '';
+      return `<figure class="homepage-article-photo"><img src="${url}" alt="${alt ?? ''}" loading="lazy" /></figure>`;
+    })
+    .join('');
+
+  return {
+    source: 'pionyr',
+    slug: listItem?.slug ?? slug,
+    title: title ?? listItem?.title ?? slug,
+    excerpt,
+    dateISO: dateISO ?? listItem?.dateISO ?? new Date().toISOString(),
+    author: null,
+    coverImageUrl: imageUrls[0] ?? listItem?.coverImageUrl ?? null,
+    coverImageAlt: imageAlts[0] ?? listItem?.coverImageAlt ?? null,
+    bodyHtml: `${galleryHtml}${bodyContent}` || null,
+  };
+}
+
 async function fetchListPage(
   pathCandidates: string[],
   params: Record<string, string>,
@@ -305,11 +490,43 @@ function isAllowed(article: PionyrArticle, terms: string[]): boolean {
   return terms.some((term) => haystack.includes(term));
 }
 
+function shouldUseWebOnly() {
+  return process.env.PIONYR_WEB_ONLY === 'true';
+}
+
+async function fetchPionyrArticlesFromWeb(terms: string[]): Promise<PionyrArticle[]> {
+  const items = await fetchWebListItems();
+  return items
+    .map((item) => ({
+      source: 'pionyr' as const,
+      slug: item.slug,
+      title: item.title,
+      excerpt: item.excerpt,
+      dateISO: item.dateISO,
+      author: null,
+      coverImageUrl: item.coverImageUrl ?? null,
+      coverImageAlt: item.coverImageAlt ?? null,
+      bodyHtml: null,
+    }))
+    .filter((item) => isAllowed(item, terms));
+}
+
 export async function fetchPionyrArticles(filterOverride?: string[] | null): Promise<PionyrArticle[]> {
   const pageParam = process.env.PIONYR_API_PAGE_PARAM ?? 'page';
-  const headers = getAuthHeaders();
   const terms = filterOverride ?? getFilterTerms();
   const results: PionyrArticle[] = [];
+
+  if (shouldUseWebOnly()) {
+    return fetchPionyrArticlesFromWeb(terms);
+  }
+
+  let headers: Record<string, string>;
+  try {
+    headers = getAuthHeaders();
+  } catch (error) {
+    console.warn('[pionyr] API token missing, falling back to web scraping.', error);
+    return fetchPionyrArticlesFromWeb(terms);
+  }
 
   let page = 1;
   let pageCount: number | null = null;
@@ -317,19 +534,28 @@ export async function fetchPionyrArticles(filterOverride?: string[] | null): Pro
   const candidates = cachedListPath ? [cachedListPath] : buildListPathCandidates();
 
   do {
-    const { payload, resolvedPath } = await fetchListPage(candidates, { [pageParam]: String(page) }, headers);
-    cachedListPath = resolvedPath;
-    const parsed = parseListResponse(payload);
-    pageCount = parsed.pageCount ?? pageCount;
-    const items = parsed.items
-      .map(mapArticle)
-      .filter((item): item is PionyrArticle => Boolean(item))
-      .filter((item) => isAllowed(item, terms));
-    results.push(...items);
-    page += 1;
-    safety += 1;
-    if (safety > 20) {
-      break;
+    try {
+      const { payload, resolvedPath } = await fetchListPage(
+        candidates,
+        { [pageParam]: String(page) },
+        headers,
+      );
+      cachedListPath = resolvedPath;
+      const parsed = parseListResponse(payload);
+      pageCount = parsed.pageCount ?? pageCount;
+      const items = parsed.items
+        .map(mapArticle)
+        .filter((item): item is PionyrArticle => Boolean(item))
+        .filter((item) => isAllowed(item, terms));
+      results.push(...items);
+      page += 1;
+      safety += 1;
+      if (safety > 20) {
+        break;
+      }
+    } catch (error) {
+      console.warn('[pionyr] API failed, falling back to web scraping.', error);
+      return fetchPionyrArticlesFromWeb(terms);
     }
   } while (pageCount && page <= pageCount);
 
@@ -337,22 +563,34 @@ export async function fetchPionyrArticles(filterOverride?: string[] | null): Pro
 }
 
 export async function fetchPionyrArticleBySlug(slug: string): Promise<PionyrArticle | null> {
-  const headers = getAuthHeaders();
-  const candidates = cachedDetailPath ? [cachedDetailPath] : buildDetailPathCandidates();
-  const { payload, resolvedPath } = await fetchDetail(candidates, slug, headers);
-  if (!payload) {
-    try {
+  if (shouldUseWebOnly()) {
+    return fetchWebDetailBySlug(slug);
+  }
+
+  let headers: Record<string, string>;
+  try {
+    headers = getAuthHeaders();
+  } catch (error) {
+    console.warn('[pionyr] API token missing, falling back to web scraping.', error);
+    return fetchWebDetailBySlug(slug);
+  }
+
+  try {
+    const candidates = cachedDetailPath ? [cachedDetailPath] : buildDetailPathCandidates();
+    const { payload, resolvedPath } = await fetchDetail(candidates, slug, headers);
+    if (!payload) {
       const list = await fetchPionyrArticles([]);
       return list.find((item) => item.slug === slug) ?? null;
-    } catch {
+    }
+    cachedDetailPath = resolvedPath ?? cachedDetailPath;
+    const data = payload.data ?? payload.item ?? payload.article ?? payload;
+    const article = mapArticle(data);
+    if (!article) {
       return null;
     }
+    return article;
+  } catch (error) {
+    console.warn('[pionyr] API failed, falling back to web scraping.', error);
+    return fetchWebDetailBySlug(slug);
   }
-  cachedDetailPath = resolvedPath ?? cachedDetailPath;
-  const data = payload.data ?? payload.item ?? payload.article ?? payload;
-  const article = mapArticle(data);
-  if (!article) {
-    return null;
-  }
-  return article;
 }
