@@ -1,5 +1,5 @@
 import type { drive_v3 } from 'googleapis';
-import { DRIVE_FIELDS, getDriveClient } from '../_lib/googleDrive.js';
+import { DRIVE_FIELDS, getDriveClient } from '../../api-lib/googleDrive.js';
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FOLDER_MIME = 'application/vnd.google-apps.folder';

@@ -1,14 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 import { pbkdf2 as pbkdf2Callback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { normalizeAllowedCategories } from '../_lib/categories.js';
+import { normalizeAllowedCategories } from '../../api-lib/categories.js';
 import {
   createAccessToken,
   createRefreshToken,
   getAuthConfig,
   hashRefreshToken,
   randomToken,
-} from '../_lib/authTokens.js';
+} from '../../api-lib/authTokens.js';
 
 const pbkdf2 = promisify(pbkdf2Callback);
 
