@@ -1361,6 +1361,10 @@
   line-height: 1.6;
 }
 
+.homepage-article-html figure {
+  margin: 0;
+}
+
 .homepage-article-html p {
   margin: 0;
 }

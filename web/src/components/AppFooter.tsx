@@ -23,7 +23,7 @@ export default function AppFooter({ className, variant = 'minimal' }: AppFooterP
           <a href="https://severka.org" target="_blank" rel="noreferrer">
             32. PTO Severka
           </a>{' '}
-          a <a href="/redakce">Ševa</a>
+          a Ševa
         </p>
       </div>
       <div className="app-footer-logos" aria-label="Logo SPTO Brno a Pionýr">

@@ -117,6 +117,7 @@ async function handlePublicList(req: any, res: any) {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
+  res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=600');
   const [pionyrResult, localResult] = await Promise.allSettled([
     fetchPionyrArticles(),
     fetchLocalArticles(),
@@ -150,6 +151,7 @@ async function handlePublicDetail(req: any, res: any, slug: string) {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
+  res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=600');
   try {
     const supabase = getSupabaseAdminClient();
     const { data, error } = await supabase
