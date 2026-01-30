@@ -30,6 +30,7 @@ const JSON_RAW =
   process.env.GOOGLE_SERVICE_ACCOUNT_JSON ??
   '';
 
+const DRIVE_API_KEY = process.env.GOOGLE_DRIVE_API_KEY ?? '';
 let SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? '';
 let PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY ?? '';
 
@@ -44,11 +45,13 @@ if ((!SERVICE_ACCOUNT_EMAIL || !PRIVATE_KEY) && (JSON_BASE64 || JSON_RAW)) {
   }
 }
 
-if (!SERVICE_ACCOUNT_EMAIL || !PRIVATE_KEY) {
-  throw new Error('Missing Google Drive service account credentials.');
+if (!DRIVE_API_KEY && (!SERVICE_ACCOUNT_EMAIL || !PRIVATE_KEY)) {
+  throw new Error('Missing Google Drive credentials.');
 }
 
-PRIVATE_KEY = PRIVATE_KEY.replace(/\\n/g, '\n');
+if (PRIVATE_KEY) {
+  PRIVATE_KEY = PRIVATE_KEY.replace(/\\n/g, '\n');
+}
 
 let cachedDrive: drive_v3.Drive | null = null;
 const SHARED_DRIVE_ID = process.env.GOOGLE_DRIVE_SHARED_DRIVE_ID ?? '';
@@ -58,13 +61,17 @@ export function getDriveClient(): drive_v3.Drive {
     return cachedDrive;
   }
 
-  const auth = new google.auth.JWT({
-    email: SERVICE_ACCOUNT_EMAIL,
-    key: PRIVATE_KEY,
-    scopes: ['https://www.googleapis.com/auth/drive.readonly'],
-  });
-
-  const driveOptions: drive_v3.Options = { version: 'v3', auth };
+  const driveOptions: drive_v3.Options = { version: 'v3' };
+  if (DRIVE_API_KEY) {
+    driveOptions.auth = DRIVE_API_KEY;
+  } else {
+    const auth = new google.auth.JWT({
+      email: SERVICE_ACCOUNT_EMAIL,
+      key: PRIVATE_KEY,
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+    });
+    driveOptions.auth = auth;
+  }
   cachedDrive = google.drive(driveOptions);
   return cachedDrive;
 }
