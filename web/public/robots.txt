@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /redakce
+
+Sitemap: https://www.zelenaliga.cz/sitemap.xml
