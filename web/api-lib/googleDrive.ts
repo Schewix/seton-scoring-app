@@ -69,11 +69,11 @@ export function getDriveClient(): drive_v3.Drive {
   return cachedDrive;
 }
 
-export function getDriveListOptions(): { corpora: string; driveId?: string } {
+export function getDriveListOptions(): { corpora?: string; driveId?: string } {
   if (SHARED_DRIVE_ID) {
     return { corpora: 'drive', driveId: SHARED_DRIVE_ID };
   }
-  return { corpora: 'allDrives' };
+  return {};
 }
 
 export const DRIVE_FIELDS =

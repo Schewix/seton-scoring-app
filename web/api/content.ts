@@ -117,14 +117,32 @@ async function handlePublicList(req: any, res: any) {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
-  try {
-    const [pionyr, local] = await Promise.all([fetchPionyrArticles(), fetchLocalArticles()]);
-    const combined = [...local, ...pionyr.map(mapPionyr)].sort(sortByDateDesc);
-    res.status(200).json({ articles: combined });
-  } catch (error) {
-    console.error('[api/content/articles] failed to load', error);
+  const [pionyrResult, localResult] = await Promise.allSettled([
+    fetchPionyrArticles(),
+    fetchLocalArticles(),
+  ]);
+  const pionyr =
+    pionyrResult.status === 'fulfilled'
+      ? pionyrResult.value
+      : (() => {
+          console.error('[api/content/articles] pionyr failed', pionyrResult.reason);
+          return [];
+        })();
+  const local =
+    localResult.status === 'fulfilled'
+      ? localResult.value
+      : (() => {
+          console.error('[api/content/articles] local failed', localResult.reason);
+          return [];
+        })();
+
+  if (pionyrResult.status === 'rejected' && localResult.status === 'rejected') {
     res.status(500).json({ error: 'Failed to load articles.' });
+    return;
   }
+
+  const combined = [...local, ...pionyr.map(mapPionyr)].sort(sortByDateDesc);
+  res.status(200).json({ articles: combined });
 }
 
 async function handlePublicDetail(req: any, res: any, slug: string) {
