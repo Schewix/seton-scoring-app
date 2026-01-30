@@ -1,12 +1,16 @@
-import { fetchPionyrArticleBySlug, fetchPionyrArticles, type PionyrArticle } from './_lib/pionyr.js';
+import {
+  fetchPionyrArticleBySlug,
+  fetchPionyrArticles,
+  type PionyrArticle,
+} from '../../api-lib/content/pionyr.js';
 import {
   clearEditorSession,
   requireEditor,
   setEditorSession,
   validatePassword,
   verifyEditorSession,
-} from './_lib/editorAuth.js';
-import { getSupabaseAdminClient } from './_lib/supabaseAdmin.js';
+} from '../../api-lib/content/editorAuth.js';
+import { getSupabaseAdminClient } from '../../api-lib/content/supabaseAdmin.js';
 
 type LocalArticleRow = {
   id: string;
