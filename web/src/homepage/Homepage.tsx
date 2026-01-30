@@ -1340,7 +1340,7 @@ function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
     <a className="gallery-album-card" href={`/fotogalerie/${album.slug}`}>
       <div className="gallery-album-cover">
         {coverUrl ? (
-          <img src={coverUrl} alt={album.title} loading="lazy" />
+          <img src={coverUrl} alt={album.title} loading="lazy" decoding="async" />
         ) : (
           <div className="gallery-album-cover-placeholder" />
         )}
@@ -1363,7 +1363,16 @@ function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
         {previewPhotos.length > 0 ? (
           previewPhotos.slice(0, 4).map((photo) => {
             const thumbUrl = getPhotoThumbUrl(photo, 360);
-            return thumbUrl ? <img key={photo.fileId} src={thumbUrl} alt={photo.name} loading="lazy" /> : null;
+            return thumbUrl ? (
+              <img
+                key={photo.fileId}
+                src={thumbUrl}
+                alt={photo.name}
+                loading="lazy"
+                decoding="async"
+                fetchPriority="low"
+              />
+            ) : null;
           })
         ) : (
           <div className="gallery-album-thumbs-placeholder">Náhledy se připravují</div>
