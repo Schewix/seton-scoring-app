@@ -2,7 +2,7 @@ import type { drive_v3 } from 'googleapis';
 import { fetchScriptItems, hasGalleryScript } from '../../api-lib/galleryScript.js';
 import { DRIVE_FIELDS, getDriveClient, getDriveListOptions } from '../../api-lib/googleDrive.js';
 
-const CACHE_TTL_MS = 10 * 60 * 1000;
+const CACHE_TTL_MS = 60 * 60 * 1000;
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 const cache = new Map<string, { expiresAt: number; value: any }>();
@@ -24,7 +24,7 @@ function setCache<T>(key: string, value: T, ttlMs = CACHE_TTL_MS) {
 }
 
 function applyCacheHeaders(res: any) {
-  res.setHeader('Cache-Control', 'public, s-maxage=600, stale-while-revalidate=60');
+  res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=300');
 }
 
 function toPageSize(raw: string | string[] | undefined) {
