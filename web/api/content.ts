@@ -26,6 +26,12 @@ type LocalArticleRow = {
   created_at: string;
 };
 
+type LeagueScoreRow = {
+  troop_id: string;
+  event_key: string;
+  points: number | null;
+};
+
 type PublicArticle = {
   source: 'pionyr' | 'local';
   slug: string;
@@ -36,6 +42,12 @@ type PublicArticle = {
   coverImage?: { url: string | null; alt?: string | null } | null;
   body?: string | null;
   bodyFormat?: 'html' | 'text' | null;
+};
+
+type LeagueScoreInput = {
+  troop_id: string;
+  event_key: string;
+  points: number | null;
 };
 
 function slugify(value: string): string {
@@ -59,6 +71,39 @@ function resolveBody(req: any): Record<string, unknown> {
     return req.body as Record<string, unknown>;
   }
   return {};
+}
+
+function parseLeagueScores(payload: Record<string, unknown>): LeagueScoreInput[] | null {
+  const raw = payload.scores;
+  if (!Array.isArray(raw)) {
+    return null;
+  }
+  const parsed: LeagueScoreInput[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+    const troopId = typeof (entry as any).troop_id === 'string' ? (entry as any).troop_id.trim() : '';
+    const eventKey = typeof (entry as any).event_key === 'string' ? (entry as any).event_key.trim() : '';
+    if (!troopId || !eventKey) {
+      continue;
+    }
+    const pointsRaw = (entry as any).points;
+    let points: number | null = null;
+    if (pointsRaw === null || pointsRaw === undefined || pointsRaw === '') {
+      points = null;
+    } else if (typeof pointsRaw === 'number') {
+      points = Number.isFinite(pointsRaw) ? pointsRaw : null;
+    } else if (typeof pointsRaw === 'string') {
+      const normalized = pointsRaw.replace(',', '.').trim();
+      const parsedNumber = Number(normalized);
+      points = Number.isFinite(parsedNumber) ? parsedNumber : null;
+    } else {
+      continue;
+    }
+    parsed.push({ troop_id: troopId, event_key: eventKey, points });
+  }
+  return parsed.length > 0 ? parsed : null;
 }
 
 function mapPionyr(article: PionyrArticle): PublicArticle {
@@ -362,6 +407,67 @@ async function handleAdminArticle(req: any, res: any, id: string) {
   res.status(405).json({ error: 'Method not allowed' });
 }
 
+async function handlePublicLeague(req: any, res: any) {
+  if (req.method !== 'GET') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+  res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=600');
+  try {
+    const supabase = getSupabaseAdminClient();
+    const { data, error } = await supabase
+      .from('content_league_scores')
+      .select('troop_id,event_key,points');
+    if (error) {
+      res.status(500).json({ error: 'Failed to load league scores.' });
+      return;
+    }
+    res.status(200).json({ scores: (data ?? []) as LeagueScoreRow[] });
+  } catch (error) {
+    console.error('[api/content/league] failed', error);
+    res.status(500).json({ error: 'Failed to load league scores.' });
+  }
+}
+
+async function handleAdminLeague(req: any, res: any) {
+  if (!requireEditor(req, res)) {
+    return;
+  }
+  const supabase = getSupabaseAdminClient();
+
+  if (req.method === 'GET') {
+    const { data, error } = await supabase
+      .from('content_league_scores')
+      .select('troop_id,event_key,points');
+    if (error) {
+      res.status(500).json({ error: 'Failed to load league scores.' });
+      return;
+    }
+    res.status(200).json({ scores: (data ?? []) as LeagueScoreRow[] });
+    return;
+  }
+
+  if (req.method === 'PUT') {
+    const payload = resolveBody(req);
+    const scores = parseLeagueScores(payload);
+    if (!scores) {
+      res.status(400).json({ error: 'Invalid payload.' });
+      return;
+    }
+    const { error } = await supabase
+      .from('content_league_scores')
+      .upsert(scores, { onConflict: 'troop_id,event_key' });
+    if (error) {
+      res.status(500).json({ error: 'Failed to save league scores.' });
+      return;
+    }
+    res.status(200).json({ ok: true });
+    return;
+  }
+
+  res.status(405).json({ error: 'Method not allowed' });
+}
+
 export default async function handler(req: any, res: any) {
   const rawPath = req.query?.path;
   let segments = Array.isArray(rawPath)
@@ -400,6 +506,11 @@ export default async function handler(req: any, res: any) {
     }
   }
 
+  if (segments[0] === 'league') {
+    await handlePublicLeague(req, res);
+    return;
+  }
+
   if (segments[0] === 'admin') {
     const action = segments[1] ?? '';
     if (action === 'session') {
@@ -423,6 +534,10 @@ export default async function handler(req: any, res: any) {
         await handleAdminArticle(req, res, segments[2]);
         return;
       }
+    }
+    if (action === 'league') {
+      await handleAdminLeague(req, res);
+      return;
     }
   }
 
