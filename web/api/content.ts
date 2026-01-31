@@ -24,6 +24,10 @@ type LocalArticleRow = {
   status: string;
   published_at: string | null;
   created_at: string;
+  source?: string | null;
+  external_id?: string | null;
+  external_url?: string | null;
+  synced_at?: string | null;
 };
 
 type LeagueScoreRow = {
@@ -129,12 +133,27 @@ function sortByDateDesc(a: PublicArticle, b: PublicArticle) {
   return dateB - dateA;
 }
 
+function mapLocalRow(row: LocalArticleRow): PublicArticle {
+  const source = row.source === 'pionyr' ? 'pionyr' : 'local';
+  return {
+    source,
+    slug: row.slug,
+    title: row.title,
+    excerpt: row.excerpt ?? '',
+    dateISO: row.published_at ?? row.created_at,
+    author: row.author,
+    coverImage: row.cover_image_url ? { url: row.cover_image_url, alt: row.cover_image_alt } : null,
+    body: row.body,
+    bodyFormat: source === 'pionyr' ? 'html' : 'text',
+  };
+}
+
 async function fetchLocalArticles(): Promise<PublicArticle[]> {
   const supabase = getSupabaseAdminClient();
   const { data, error } = await supabase
     .from('content_articles')
     .select(
-      'id,slug,title,excerpt,body,author,cover_image_url,cover_image_alt,status,published_at,created_at',
+      'id,slug,title,excerpt,body,author,cover_image_url,cover_image_alt,status,published_at,created_at,source,external_id,external_url,synced_at',
     )
     .eq('status', 'published')
     .order('published_at', { ascending: false });
@@ -144,17 +163,7 @@ async function fetchLocalArticles(): Promise<PublicArticle[]> {
     return [];
   }
 
-  return (data ?? []).map((row: LocalArticleRow) => ({
-    source: 'local',
-    slug: row.slug,
-    title: row.title,
-    excerpt: row.excerpt ?? '',
-    dateISO: row.published_at ?? row.created_at,
-    author: row.author,
-    coverImage: row.cover_image_url ? { url: row.cover_image_url, alt: row.cover_image_alt } : null,
-    body: row.body,
-    bodyFormat: 'text',
-  }));
+  return (data ?? []).map((row: LocalArticleRow) => mapLocalRow(row));
 }
 
 async function handlePublicList(req: any, res: any) {
@@ -163,32 +172,13 @@ async function handlePublicList(req: any, res: any) {
     return;
   }
   res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=600');
-  const [pionyrResult, localResult] = await Promise.allSettled([
-    fetchPionyrArticles(),
-    fetchLocalArticles(),
-  ]);
-  const pionyr =
-    pionyrResult.status === 'fulfilled'
-      ? pionyrResult.value
-      : (() => {
-          console.error('[api/content/articles] pionyr failed', pionyrResult.reason);
-          return [];
-        })();
-  const local =
-    localResult.status === 'fulfilled'
-      ? localResult.value
-      : (() => {
-          console.error('[api/content/articles] local failed', localResult.reason);
-          return [];
-        })();
-
-  if (pionyrResult.status === 'rejected' && localResult.status === 'rejected') {
+  try {
+    const local = await fetchLocalArticles();
+    res.status(200).json({ articles: local.sort(sortByDateDesc) });
+  } catch (error) {
+    console.error('[api/content/articles] failed', error);
     res.status(500).json({ error: 'Failed to load articles.' });
-    return;
   }
-
-  const combined = [...local, ...pionyr.map(mapPionyr)].sort(sortByDateDesc);
-  res.status(200).json({ articles: combined });
 }
 
 async function handlePublicDetail(req: any, res: any, slug: string) {
@@ -202,7 +192,7 @@ async function handlePublicDetail(req: any, res: any, slug: string) {
     const { data, error } = await supabase
       .from('content_articles')
       .select(
-        'id,slug,title,excerpt,body,author,cover_image_url,cover_image_alt,status,published_at,created_at',
+        'id,slug,title,excerpt,body,author,cover_image_url,cover_image_alt,status,published_at,created_at,source',
       )
       .eq('slug', slug)
       .eq('status', 'published')
@@ -210,9 +200,10 @@ async function handlePublicDetail(req: any, res: any, slug: string) {
 
     if (!error && data) {
       const row = data as LocalArticleRow;
+      const source = row.source === 'pionyr' ? 'pionyr' : 'local';
       res.status(200).json({
         article: {
-          source: 'local',
+          source,
           slug: row.slug,
           title: row.title,
           excerpt: row.excerpt ?? '',
@@ -220,7 +211,7 @@ async function handlePublicDetail(req: any, res: any, slug: string) {
           author: row.author,
           coverImage: row.cover_image_url ? { url: row.cover_image_url, alt: row.cover_image_alt } : null,
           body: row.body,
-          bodyFormat: 'text',
+          bodyFormat: source === 'pionyr' ? 'html' : 'text',
         },
       });
       return;
@@ -235,6 +226,80 @@ async function handlePublicDetail(req: any, res: any, slug: string) {
   } catch (error) {
     console.error('[api/content/articles/[slug]] failed', error);
     res.status(500).json({ error: 'Failed to load article.' });
+  }
+}
+
+function isImportAuthorized(req: any, res: any): boolean {
+  const secret = process.env.CONTENT_IMPORT_SECRET ?? '';
+  if (secret) {
+    const querySecret = typeof req.query?.secret === 'string' ? req.query.secret : '';
+    const headerSecret = typeof req.headers?.['x-import-secret'] === 'string' ? req.headers['x-import-secret'] : '';
+    if (querySecret === secret || headerSecret === secret) {
+      return true;
+    }
+  }
+  return requireEditor(req, res);
+}
+
+async function handleAdminImport(req: any, res: any) {
+  if (!isImportAuthorized(req, res)) {
+    return;
+  }
+  if (req.method !== 'POST' && req.method !== 'GET') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
+  try {
+    const list = await fetchPionyrArticles();
+    const enriched = await Promise.all(
+      list.map(async (article) => {
+        if (article.bodyHtml) {
+          return article;
+        }
+        const detail = await fetchPionyrArticleBySlug(article.slug);
+        return detail ?? article;
+      }),
+    );
+
+    const now = new Date().toISOString();
+    const rows = enriched.map((article) => ({
+      slug: article.slug,
+      title: article.title,
+      excerpt: article.excerpt ?? '',
+      body: article.bodyHtml ?? null,
+      author: article.author ?? null,
+      cover_image_url: article.coverImageUrl ?? null,
+      cover_image_alt: article.coverImageAlt ?? null,
+      status: 'published',
+      published_at: article.dateISO ?? now,
+      source: 'pionyr',
+      external_id: article.slug,
+      synced_at: now,
+    }));
+
+    const supabase = getSupabaseAdminClient();
+    const { error: deleteError } = await supabase
+      .from('content_articles')
+      .delete()
+      .eq('source', 'pionyr');
+    if (deleteError) {
+      res.status(500).json({ error: 'Failed to clear imported articles.' });
+      return;
+    }
+
+    if (rows.length > 0) {
+      const { error: insertError } = await supabase.from('content_articles').insert(rows);
+      if (insertError) {
+        res.status(500).json({ error: 'Failed to import articles.' });
+        return;
+      }
+    }
+
+    res.status(200).json({ ok: true, imported: rows.length });
+  } catch (error) {
+    console.error('[api/content/import] failed', error);
+    res.status(500).json({ error: 'Failed to import articles.' });
   }
 }
 
@@ -534,6 +599,10 @@ export default async function handler(req: any, res: any) {
         await handleAdminArticle(req, res, segments[2]);
         return;
       }
+    }
+    if (action === 'import') {
+      await handleAdminImport(req, res);
+      return;
     }
     if (action === 'league') {
       await handleAdminLeague(req, res);

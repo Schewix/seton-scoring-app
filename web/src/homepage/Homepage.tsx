@@ -113,6 +113,12 @@ const LEAGUE_EVENTS = [
 const LEAGUE_TOP_COUNT = 7;
 
 type LeagueEvent = (typeof LEAGUE_EVENTS)[number]['key'];
+type LeagueScoresRecord = Record<string, Partial<Record<LeagueEvent, number>>>;
+type LeagueScoreEntry = {
+  troop_id: string;
+  event_key: string;
+  points: number | string | null;
+};
 
 const LEAGUE_TROOPS = [
   { id: '63-phoenix', name: '63. PTO Phoenix' },
@@ -258,6 +264,7 @@ const HOMEPAGE_CAROUSEL = (CAROUSEL_IMAGE_SOURCES.length ? CAROUSEL_IMAGE_SOURCE
 const GALLERY_PAGE_SIZE = 24;
 
 type Article = {
+  source: 'pionyr' | 'local';
   title: string;
   dateLabel: string;
   dateISO: string;
@@ -592,6 +599,7 @@ function mapContentArticle(article: ContentArticle): Article {
   const coverImage =
     article.coverImage?.url ? { url: article.coverImage.url, alt: article.coverImage.alt ?? null } : undefined;
   return {
+    source: article.source,
     title: article.title,
     dateISO,
     dateLabel: formatDateLabel(dateISO),
@@ -934,6 +942,9 @@ function RedakcePage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [form, setForm] = useState<EditorFormState>(EMPTY_EDITOR_FORM);
   const [message, setMessage] = useState<string | null>(null);
+  const [leagueScores, setLeagueScores] = useState<LeagueScoresRecord>(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
+  const [leagueMessage, setLeagueMessage] = useState<string | null>(null);
+  const [leagueSaving, setLeagueSaving] = useState(false);
 
   const loadArticles = () =>
     fetch('/api/content/admin/articles', { credentials: 'include' })
@@ -945,6 +956,17 @@ function RedakcePage() {
         setArticles([]);
       });
 
+  const loadLeagueScores = () =>
+    fetch('/api/content/admin/league', { credentials: 'include' })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data) => {
+        const entries = Array.isArray(data.scores) ? (data.scores as LeagueScoreEntry[]) : [];
+        setLeagueScores(buildLeagueScoreRecord(entries, CURRENT_LEAGUE_SCORES));
+      })
+      .catch(() => {
+        setLeagueScores(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
+      });
+
   useEffect(() => {
     let active = true;
     fetch('/api/content/admin/session', { credentials: 'include' })
@@ -953,6 +975,7 @@ function RedakcePage() {
         setSession(response.ok ? 'auth' : 'unauth');
         if (response.ok) {
           loadArticles();
+          loadLeagueScores();
         }
       })
       .catch(() => {
@@ -980,6 +1003,7 @@ function RedakcePage() {
         }
         setSession('auth');
         setPassword('');
+        loadLeagueScores();
         return loadArticles();
       })
       .catch((error) => {
@@ -996,6 +1020,8 @@ function RedakcePage() {
       setArticles([]);
       setActiveId(null);
       setForm(EMPTY_EDITOR_FORM);
+      setLeagueScores(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
+      setLeagueMessage(null);
     });
   };
 
@@ -1085,6 +1111,54 @@ function RedakcePage() {
     });
   };
 
+  const updateLeagueScore = (troopId: string, eventKey: LeagueEvent, rawValue: string) => {
+    const normalized = rawValue.replace(',', '.').trim();
+    const parsed = normalized.length > 0 ? Number(normalized) : null;
+    const nextValue = parsed !== null && Number.isFinite(parsed) ? parsed : null;
+    setLeagueScores((prev) => ({
+      ...prev,
+      [troopId]: {
+        ...(prev[troopId] ?? {}),
+        [eventKey]: nextValue,
+      },
+    }));
+    setLeagueMessage(null);
+  };
+
+  const handleLeagueSave = () => {
+    setLeagueMessage(null);
+    setLeagueSaving(true);
+    const payloadScores = LEAGUE_TROOPS.flatMap((troop) =>
+      LEAGUE_EVENTS.map((event) => ({
+        troop_id: troop.id,
+        event_key: event.key,
+        points: leagueScores[troop.id]?.[event.key] ?? null,
+      })),
+    );
+    fetch('/api/content/admin/league', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ scores: payloadScores }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Uložení se nezdařilo.');
+        }
+        setLeagueMessage('Tabulka byla uložena.');
+        return loadLeagueScores();
+      })
+      .catch((error) => {
+        setLeagueMessage(error instanceof Error ? error.message : 'Uložení se nezdařilo.');
+      })
+      .finally(() => {
+        setLeagueSaving(false);
+      });
+  };
+
+  const leagueGridTemplate = `minmax(220px, 1.4fr) repeat(${LEAGUE_EVENTS.length}, minmax(90px, 0.8fr)) minmax(90px, 0.8fr)`;
+  const leagueRows = addCompetitionRanks(buildLeagueRows(leagueScores));
+
   return (
     <SiteShell>
       <main className="homepage-main">
@@ -1114,128 +1188,180 @@ function RedakcePage() {
             {message ? <p className="homepage-alert">{message}</p> : null}
           </div>
         ) : (
-          <div className="editor-grid">
-            <div className="homepage-card">
-              <div className="editor-list-header">
-                <h2>Články</h2>
-                <div className="editor-list-actions">
-                  <button type="button" className="homepage-button homepage-button--ghost" onClick={handleNew}>
-                    Nový
-                  </button>
-                  <button type="button" className="homepage-button homepage-button--ghost" onClick={handleLogout}>
-                    Odhlásit
-                  </button>
+          <>
+            <div className="editor-grid">
+              <div className="homepage-card">
+                <div className="editor-list-header">
+                  <h2>Články</h2>
+                  <div className="editor-list-actions">
+                    <button type="button" className="homepage-button homepage-button--ghost" onClick={handleNew}>
+                      Nový
+                    </button>
+                    <button type="button" className="homepage-button homepage-button--ghost" onClick={handleLogout}>
+                      Odhlásit
+                    </button>
+                  </div>
+                </div>
+                <ul className="editor-list">
+                  {articles.length === 0 ? (
+                    <li className="editor-empty">Zatím tu nejsou žádné články. Klikni na „Nový“ a založ první.</li>
+                  ) : (
+                    articles.map((article) => (
+                      <li key={article.id}>
+                        <button
+                          type="button"
+                          className={`editor-list-item${article.id === activeId ? ' is-active' : ''}`}
+                          onClick={() => selectArticle(article)}
+                        >
+                          <span>{article.title}</span>
+                          <small>{article.status === 'published' ? 'Publikováno' : 'Rozpracováno'}</small>
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+
+              <div className="homepage-card editor-form">
+                <h2>{activeId ? 'Upravit článek' : 'Nový článek'}</h2>
+                <div className="editor-form-grid">
+                  <label>
+                    Titulek
+                    <input
+                      value={form.title}
+                      onChange={(event) => updateField('title', event.target.value)}
+                      placeholder="Název článku"
+                    />
+                  </label>
+                  <label>
+                    Slug
+                    <input
+                      value={form.slug}
+                      onChange={(event) => updateField('slug', event.target.value)}
+                      placeholder="napr. setonuv-zavod-2025"
+                    />
+                  </label>
+                  <label>
+                    Autor
+                    <input
+                      value={form.author}
+                      onChange={(event) => updateField('author', event.target.value)}
+                      placeholder="Jméno autora"
+                    />
+                  </label>
+                  <label>
+                    Stav
+                    <select
+                      value={form.status}
+                      onChange={(event) =>
+                        setForm((prev) => ({ ...prev, status: event.target.value as EditorFormState['status'] }))
+                      }
+                    >
+                      <option value="draft">Rozpracováno</option>
+                      <option value="published">Publikováno</option>
+                    </select>
+                  </label>
+                </div>
+                <label>
+                  Perex
+                  <textarea
+                    value={form.excerpt}
+                    onChange={(event) => updateField('excerpt', event.target.value)}
+                    rows={3}
+                  />
+                </label>
+                <label>
+                  Text článku
+                  <textarea
+                    value={form.body}
+                    onChange={(event) => updateField('body', event.target.value)}
+                    rows={12}
+                  />
+                </label>
+                <div className="editor-form-grid">
+                  <label>
+                    URL obrázku
+                    <input
+                      value={form.cover_image_url}
+                      onChange={(event) => updateField('cover_image_url', event.target.value)}
+                      placeholder="https://..."
+                    />
+                  </label>
+                  <label>
+                    Popisek obrázku
+                    <input
+                      value={form.cover_image_alt}
+                      onChange={(event) => updateField('cover_image_alt', event.target.value)}
+                      placeholder="Popisek pro obrázek"
+                    />
+                  </label>
+                </div>
+                <div className="editor-form-actions">
+                  {message ? <p className="homepage-alert">{message}</p> : null}
+                  <div className="editor-buttons">
+                    {activeId ? (
+                      <button type="button" className="homepage-button homepage-button--ghost" onClick={handleDelete}>
+                        Smazat
+                      </button>
+                    ) : null}
+                    <button type="button" className="homepage-button" onClick={handleSave}>
+                      Uložit
+                    </button>
+                  </div>
                 </div>
               </div>
-              <ul className="editor-list">
-                {articles.length === 0 ? (
-                  <li className="editor-empty">Zatím tu nejsou žádné články. Klikni na „Nový“ a založ první.</li>
-                ) : (
-                  articles.map((article) => (
-                    <li key={article.id}>
-                      <button
-                        type="button"
-                        className={`editor-list-item${article.id === activeId ? ' is-active' : ''}`}
-                        onClick={() => selectArticle(article)}
-                      >
-                        <span>{article.title}</span>
-                        <small>{article.status === 'published' ? 'Publikováno' : 'Rozpracováno'}</small>
-                      </button>
-                    </li>
-                  ))
-                )}
-              </ul>
             </div>
 
-            <div className="homepage-card editor-form">
-              <h2>{activeId ? 'Upravit článek' : 'Nový článek'}</h2>
-              <div className="editor-form-grid">
-                <label>
-                  Titulek
-                  <input
-                    value={form.title}
-                    onChange={(event) => updateField('title', event.target.value)}
-                    placeholder="Název článku"
-                  />
-                </label>
-                <label>
-                  Slug
-                  <input
-                    value={form.slug}
-                    onChange={(event) => updateField('slug', event.target.value)}
-                    placeholder="napr. setonuv-zavod-2025"
-                  />
-                </label>
-                <label>
-                  Autor
-                  <input
-                    value={form.author}
-                    onChange={(event) => updateField('author', event.target.value)}
-                    placeholder="Jméno autora"
-                  />
-                </label>
-                <label>
-                  Stav
-                  <select
-                    value={form.status}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, status: event.target.value as EditorFormState['status'] }))
-                    }
-                  >
-                    <option value="draft">Rozpracováno</option>
-                    <option value="published">Publikováno</option>
-                  </select>
-                </label>
-              </div>
-              <label>
-                Perex
-                <textarea
-                  value={form.excerpt}
-                  onChange={(event) => updateField('excerpt', event.target.value)}
-                  rows={3}
-                />
-              </label>
-              <label>
-                Text článku
-                <textarea
-                  value={form.body}
-                  onChange={(event) => updateField('body', event.target.value)}
-                  rows={12}
-                />
-              </label>
-              <div className="editor-form-grid">
-                <label>
-                  URL obrázku
-                  <input
-                    value={form.cover_image_url}
-                    onChange={(event) => updateField('cover_image_url', event.target.value)}
-                    placeholder="https://..."
-                  />
-                </label>
-                <label>
-                  Popisek obrázku
-                  <input
-                    value={form.cover_image_alt}
-                    onChange={(event) => updateField('cover_image_alt', event.target.value)}
-                    placeholder="Popisek pro obrázek"
-                  />
-                </label>
-              </div>
-              <div className="editor-form-actions">
-                {message ? <p className="homepage-alert">{message}</p> : null}
-                <div className="editor-buttons">
-                  {activeId ? (
-                    <button type="button" className="homepage-button homepage-button--ghost" onClick={handleDelete}>
-                      Smazat
-                    </button>
-                  ) : null}
-                  <button type="button" className="homepage-button" onClick={handleSave}>
-                    Uložit
+            <div className="homepage-card editor-league">
+              <div className="editor-league-toolbar">
+                <div>
+                  <h2>Aktuální pořadí Zelené ligy</h2>
+                  <p>Uprav body oddílů v jednotlivých soutěžích. Celkové pořadí se přepočítá automaticky.</p>
+                </div>
+                <div className="editor-league-actions">
+                  <button type="button" className="homepage-button" onClick={handleLeagueSave} disabled={leagueSaving}>
+                    {leagueSaving ? 'Ukládám…' : 'Uložit tabulku'}
                   </button>
                 </div>
               </div>
+              {leagueMessage ? <p className="homepage-alert">{leagueMessage}</p> : null}
+              <div className="editor-league-table" style={{ '--league-editor-grid': leagueGridTemplate } as React.CSSProperties}>
+                <div className="editor-league-row editor-league-row--header">
+                  <span>Oddíl</span>
+                  {LEAGUE_EVENTS.map((event) => (
+                    <span key={event.key} className="editor-league-score">
+                      {event.label}
+                    </span>
+                  ))}
+                  <span className="editor-league-score">Celkem</span>
+                </div>
+                {leagueRows.map((row) => (
+                  <div key={row.key} className="editor-league-row">
+                    <span className="editor-league-name">{row.name}</span>
+                    {LEAGUE_EVENTS.map((event) => {
+                      const value = leagueScores[row.key]?.[event.key];
+                      return (
+                        <label key={`${row.key}-${event.key}`} className="editor-league-input">
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.1"
+                            min="0"
+                            value={value ?? ''}
+                            onChange={(eventChange) =>
+                              updateLeagueScore(row.key, event.key, eventChange.target.value)
+                            }
+                            aria-label={`${row.name} – ${event.label}`}
+                          />
+                        </label>
+                      );
+                    })}
+                    <span className="editor-league-total">{formatLeagueScore(row.total)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          </>
         )}
       </main>
     </SiteShell>
@@ -1482,6 +1608,32 @@ function GalleryAlbumPage({
     preload(lightboxIndex - 1);
   }, [lightboxIndex, photos]);
 
+  useEffect(() => {
+    if (lightboxIndex === null) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setLightboxIndex(null);
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setLightboxIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        setLightboxIndex((prev) => (prev !== null && prev < photos.length - 1 ? prev + 1 : prev));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [lightboxIndex, photos.length]);
+
   if (!album) {
     if (albumsLoading) {
       return (
@@ -1591,7 +1743,7 @@ function ArticlePageLoader({ slug, articles }: { slug: string; articles: Article
 
   useEffect(() => {
     let active = true;
-    if (article) {
+    if (article && (article.source === 'local' || (article.body && article.body.length > 0))) {
       return undefined;
     }
     fetchContentArticle(slug).then((data) => {
@@ -1663,15 +1815,59 @@ type LeagueRow = {
 
 type LeagueRowWithRank = LeagueRow & { rank: number };
 
-function buildLeagueRows(): LeagueRow[] {
+function cloneLeagueScores(source: LeagueScoresRecord): LeagueScoresRecord {
+  const next: LeagueScoresRecord = {};
+  Object.entries(source).forEach(([troopId, scores]) => {
+    next[troopId] = { ...(scores ?? {}) };
+  });
+  return next;
+}
+
+function buildLeagueScoreRecord(
+  entries: LeagueScoreEntry[] | null | undefined,
+  fallback: LeagueScoresRecord,
+): LeagueScoresRecord {
+  if (!entries || entries.length === 0) {
+    return cloneLeagueScores(fallback);
+  }
+  const record: LeagueScoresRecord = {};
+  LEAGUE_TROOPS.forEach((troop) => {
+    record[troop.id] = {};
+  });
+  entries.forEach((entry) => {
+    const troopId = entry?.troop_id;
+    const eventKey = entry?.event_key;
+    if (!troopId || !eventKey) {
+      return;
+    }
+    const valueRaw = entry.points;
+    let value: number | null = null;
+    if (typeof valueRaw === 'number') {
+      value = Number.isFinite(valueRaw) ? valueRaw : null;
+    } else if (typeof valueRaw === 'string') {
+      const parsed = Number(valueRaw.replace(',', '.'));
+      value = Number.isFinite(parsed) ? parsed : null;
+    } else if (valueRaw === null || valueRaw === undefined) {
+      value = null;
+    }
+    if (!record[troopId]) {
+      record[troopId] = {};
+    }
+    record[troopId][eventKey as LeagueEvent] = value;
+  });
+  return record;
+}
+
+function buildLeagueRows(scores: LeagueScoresRecord = CURRENT_LEAGUE_SCORES): LeagueRow[] {
   return LEAGUE_TROOPS.map((troop, index) => {
-    const scores = LEAGUE_EVENTS.map((event) => CURRENT_LEAGUE_SCORES[troop.id]?.[event.key] ?? null);
-    const hasScores = scores.some((value) => value !== null);
-    const total = hasScores ? scores.reduce<number>((sum, value) => sum + (value ?? 0), 0) : null;
+    const troopScores = scores[troop.id] ?? {};
+    const scoreValues = LEAGUE_EVENTS.map((event) => troopScores[event.key] ?? null);
+    const hasScores = scoreValues.some((value) => value !== null);
+    const total = hasScores ? scoreValues.reduce<number>((sum, value) => sum + (value ?? 0), 0) : null;
     return {
       key: troop.id,
       name: troop.name,
-      scores,
+      scores: scoreValues,
       total,
       order: index,
     };
@@ -1913,10 +2109,12 @@ function Homepage({
   homepageContent,
   articles,
   articlesLoading,
+  leagueScores,
 }: {
   homepageContent: SanityHomepage | null;
   articles: Article[];
   articlesLoading: boolean;
+  leagueScores: LeagueScoresRecord;
 }) {
   const headerTitle = homepageContent?.heroTitle ?? undefined;
   const headerSubtitle = homepageContent?.heroSubtitle ?? undefined;
@@ -1965,43 +2163,54 @@ function Homepage({
             <div className="homepage-article-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
               {articles.map((article) => (
                 <article key={article.title} className="homepage-article-card" style={{ minHeight: '220px' }}>
-                  <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <time
-                      dateTime={article.dateISO}
-                      style={{
-                        display: 'inline-flex',
-                        padding: '4px 10px',
-                        borderRadius: '999px',
-                        background: 'rgba(4, 55, 44, 0.08)',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {article.dateLabel}
-                    </time>
+                  <div className="homepage-article-row">
+                    <div className={`homepage-article-thumb${article.coverImage?.url ? '' : ' is-empty'}`}>
+                      {article.coverImage?.url ? (
+                        <img src={article.coverImage.url} alt={article.coverImage.alt ?? article.title} loading="lazy" />
+                      ) : (
+                        <span aria-hidden="true">SPTO</span>
+                      )}
+                    </div>
+                    <div className="homepage-article-body">
+                      <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <time
+                          dateTime={article.dateISO}
+                          style={{
+                            display: 'inline-flex',
+                            padding: '4px 10px',
+                            borderRadius: '999px',
+                            background: 'rgba(4, 55, 44, 0.08)',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {article.dateLabel}
+                        </time>
+                      </div>
+                      <h3
+                        style={{
+                          display: '-webkit-box',
+                          WebkitBoxOrient: 'vertical',
+                          WebkitLineClamp: 2,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {article.title}
+                      </h3>
+                      <p
+                        style={{
+                          display: '-webkit-box',
+                          WebkitBoxOrient: 'vertical',
+                          WebkitLineClamp: 2,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {article.excerpt}
+                      </p>
+                      <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        Číst článek <span aria-hidden="true">→</span>
+                      </a>
+                    </div>
                   </div>
-                  <h3
-                    style={{
-                      display: '-webkit-box',
-                      WebkitBoxOrient: 'vertical',
-                      WebkitLineClamp: 2,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {article.title}
-                  </h3>
-                  <p
-                    style={{
-                      display: '-webkit-box',
-                      WebkitBoxOrient: 'vertical',
-                      WebkitLineClamp: 2,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {article.excerpt}
-                  </p>
-                  <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                    Číst článek <span aria-hidden="true">→</span>
-                  </a>
                 </article>
               ))}
             </div>
@@ -2026,7 +2235,7 @@ function Homepage({
             <div className="homepage-league-top" style={{ padding: '24px' }}>
               <h3>Top {LEAGUE_TOP_COUNT} oddílů</h3>
               <ol>
-                {addCompetitionRanks(buildLeagueRows())
+                {addCompetitionRanks(buildLeagueRows(leagueScores))
                   .slice(0, LEAGUE_TOP_COUNT)
                   .map((row, index) => (
                     <li
@@ -2143,9 +2352,9 @@ function ApplicationsPage() {
   );
 }
 
-function LeagueStandingsPage() {
+function LeagueStandingsPage({ leagueScores }: { leagueScores: LeagueScoresRecord }) {
   const leagueGridTemplate = `minmax(220px, 1.3fr) repeat(${LEAGUE_EVENTS.length}, minmax(90px, 1fr)) minmax(90px, 0.8fr)`;
-  const rows = addCompetitionRanks(buildLeagueRows());
+  const rows = addCompetitionRanks(buildLeagueRows(leagueScores));
   const hasAnyScores = rows.some((row) => row.total !== null);
 
   return (
@@ -2334,6 +2543,7 @@ export default function ZelenaligaSite() {
   const [homepageContent, setHomepageContent] = useState<SanityHomepage | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [articlesLoading, setArticlesLoading] = useState(false);
+  const [leagueScores, setLeagueScores] = useState<LeagueScoresRecord>(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
   const [driveAlbums, setDriveAlbums] = useState<DriveAlbum[]>([]);
   const [driveAlbumsLoading, setDriveAlbumsLoading] = useState(false);
   const path = window.location.pathname.replace(/\/$/, '') || '/';
@@ -2383,6 +2593,27 @@ export default function ZelenaligaSite() {
 
   useEffect(() => {
     let active = true;
+    fetch('/api/content/league')
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data) => {
+        if (!active) {
+          return;
+        }
+        const entries = Array.isArray(data.scores) ? (data.scores as LeagueScoreEntry[]) : [];
+        setLeagueScores(buildLeagueScoreRecord(entries, CURRENT_LEAGUE_SCORES));
+      })
+      .catch(() => {
+        if (active) {
+          setLeagueScores(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     setDriveAlbumsLoading(true);
     fetch('/api/gallery/albums')
       .then(async (response) => {
@@ -2417,6 +2648,7 @@ export default function ZelenaligaSite() {
         homepageContent={homepageContent}
         articles={articles}
         articlesLoading={articlesLoading}
+        leagueScores={leagueScores}
       />
     );
   }
@@ -2434,7 +2666,7 @@ export default function ZelenaligaSite() {
     }
 
     if (slug === 'aktualni-poradi' || slug === 'zelena-liga') {
-      return <LeagueStandingsPage />;
+      return <LeagueStandingsPage leagueScores={leagueScores} />;
     }
 
     if (slug === 'aplikace') {
