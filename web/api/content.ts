@@ -231,6 +231,12 @@ async function handlePublicDetail(req: any, res: any, slug: string) {
 
 function isImportAuthorized(req: any, res: any): boolean {
   const secret = process.env.CONTENT_IMPORT_SECRET ?? '';
+  const cronSecret = process.env.CRON_SECRET ?? '';
+  const authHeader = typeof req.headers?.authorization === 'string' ? req.headers.authorization : '';
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (cronSecret && bearerToken === cronSecret) {
+    return true;
+  }
   if (secret) {
     const querySecret = typeof req.query?.secret === 'string' ? req.query.secret : '';
     const headerSecret = typeof req.headers?.['x-import-secret'] === 'string' ? req.headers['x-import-secret'] : '';
