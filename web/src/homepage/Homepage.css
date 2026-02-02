@@ -1407,6 +1407,36 @@
   aspect-ratio: 16 / 9;
 }
 
+.homepage-article-layout {
+  display: grid;
+  gap: 32px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  align-items: start;
+}
+
+.homepage-article-text {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.homepage-article-photos {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.homepage-article-photos img {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(4, 55, 44, 0.12);
+  object-fit: cover;
+}
+
+.homepage-article-photos .homepage-article-cover {
+  margin-bottom: 0;
+}
+
 .homepage-article-html {
   display: grid;
   gap: 16px;
@@ -1426,6 +1456,12 @@
 .homepage-article-html iframe {
   max-width: 100%;
   border-radius: 14px;
+}
+
+@media (max-width: 900px) {
+  .homepage-article-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 .homepage-alert {
@@ -1665,6 +1701,95 @@
   max-width: 90px;
   text-align: center;
   margin-top: 0;
+}
+
+.editor-albums {
+  display: grid;
+  gap: 16px;
+}
+
+.editor-albums-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+
+.editor-albums-header h2 {
+  margin: 0;
+}
+
+.editor-albums-header p {
+  margin: 6px 0 0;
+  max-width: 640px;
+  color: rgba(4, 55, 44, 0.72);
+}
+
+.editor-albums-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.editor-albums-actions .homepage-button {
+  padding: 8px 18px;
+  border-radius: 999px;
+}
+
+.editor-albums-loading {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(4, 55, 44, 0.06);
+  color: rgba(4, 55, 44, 0.7);
+}
+
+.editor-albums-groups {
+  display: grid;
+  gap: 20px;
+}
+
+.editor-albums-year h3 {
+  margin: 0 0 10px;
+}
+
+.editor-albums-list {
+  display: grid;
+  gap: 12px;
+}
+
+.editor-album-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(4, 55, 44, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.editor-album-info strong {
+  display: block;
+  font-weight: 700;
+  color: #04372c;
+}
+
+.editor-album-meta {
+  display: block;
+  font-size: 0.85rem;
+  color: rgba(4, 55, 44, 0.6);
+}
+
+.editor-album-row input {
+  margin-top: 0;
+}
+
+@media (max-width: 720px) {
+  .editor-album-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 960px) {
