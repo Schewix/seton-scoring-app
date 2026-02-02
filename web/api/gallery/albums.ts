@@ -1,5 +1,6 @@
 import type { drive_v3 } from 'googleapis';
 import { fetchScriptItems, hasGalleryScript } from '../../api-lib/galleryScript.js';
+import { getSupabaseAdminClient } from '../../api-lib/content/supabaseAdmin.js';
 import { getDriveClient, getDriveListOptions } from '../../api-lib/googleDrive.js';
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -23,7 +24,11 @@ function setCache<T>(key: string, value: T, ttlMs = CACHE_TTL_MS) {
   cache.set(key, { expiresAt: Date.now() + ttlMs, value });
 }
 
-function applyCacheHeaders(res: any) {
+function applyCacheHeaders(res: any, bypassCache: boolean) {
+  if (bypassCache) {
+    res.setHeader('Cache-Control', 'no-store');
+    return;
+  }
   res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=300');
 }
 
@@ -44,6 +49,21 @@ function normalizeForMatch(value: string): string {
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+async function fetchAlbumOverrides(): Promise<Map<string, string>> {
+  try {
+    const supabase = getSupabaseAdminClient();
+    const { data, error } = await supabase.from('content_gallery_albums').select('folder_id,title');
+    if (error) {
+      console.error('[api/gallery/albums] failed to load overrides', error);
+      return new Map();
+    }
+    return new Map((data ?? []).map((row: { folder_id: string; title: string }) => [row.folder_id, row.title]));
+  } catch (error) {
+    console.warn('[api/gallery/albums] overrides unavailable', error);
+    return new Map();
+  }
 }
 
 async function listAllFolders(parentId: string): Promise<drive_v3.Schema$File[]> {
@@ -103,7 +123,11 @@ function sortYearLabel(value: string) {
 }
 
 export default async function handler(req: any, res: any) {
-  applyCacheHeaders(res);
+  const bypassCache =
+    req.query?.nocache === '1' ||
+    req.query?.nocache === 'true' ||
+    req.query?.nocache === 'yes';
+  applyCacheHeaders(res, bypassCache);
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
@@ -112,13 +136,29 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const cached = getCache<any>('drive-albums');
-  if (cached !== null) {
-    res.status(200).json(cached);
-    return;
+  if (bypassCache) {
+    cache.delete('drive-albums');
+    cache.delete('drive-album-overrides');
+  } else {
+    const cached = getCache<any>('drive-albums');
+    if (cached !== null) {
+      res.status(200).json(cached);
+      return;
+    }
   }
 
   try {
+    let overrides: Map<string, string>;
+    if (!bypassCache) {
+      const cachedOverrides = getCache<Map<string, string>>('drive-album-overrides');
+      overrides = cachedOverrides ?? (await fetchAlbumOverrides());
+      if (!cachedOverrides) {
+        setCache('drive-album-overrides', overrides);
+      }
+    } else {
+      overrides = await fetchAlbumOverrides();
+    }
+
     const allowlistRaw = process.env.GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST ?? '';
     const allowlist = allowlistRaw
       .split(/[\n,]/)
@@ -132,6 +172,7 @@ export default async function handler(req: any, res: any) {
       year: string;
       slug: string;
       folderId: string;
+      baseTitle?: string;
     }> = [];
 
     for (const yearFolder of yearFolders) {
@@ -151,15 +192,19 @@ export default async function handler(req: any, res: any) {
             continue;
           }
         }
+        const baseTitle = folder.name;
+        const overrideTitle = folder.id ? overrides.get(folder.id) : undefined;
+        const title = overrideTitle && overrideTitle.trim().length > 0 ? overrideTitle.trim() : baseTitle;
         const yearSlug = slugify(yearName);
-        const nameSlug = slugify(folder.name);
+        const nameSlug = slugify(baseTitle);
         const slug = yearSlug ? `${yearSlug}-${nameSlug}` : nameSlug;
         albums.push({
           id: folder.id,
-          title: folder.name,
+          title,
           year: yearName,
           slug,
           folderId: folder.id,
+          baseTitle,
         });
       }
     }
@@ -177,7 +222,9 @@ export default async function handler(req: any, res: any) {
     });
 
     const payload = { albums };
-    setCache('drive-albums', payload);
+    if (!bypassCache) {
+      setCache('drive-albums', payload);
+    }
     res.status(200).json(payload);
   } catch (error) {
     console.error('[api/gallery/albums] failed', error);

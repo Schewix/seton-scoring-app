@@ -302,6 +302,7 @@ const TROOP_LOGO_SOURCES = Object.entries(
 type DriveAlbum = {
   id: string;
   title: string;
+  baseTitle?: string;
   year: string;
   slug: string;
   folderId: string;
@@ -566,6 +567,81 @@ function formatDateLabel(dateISO: string) {
   return date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function stripHtmlToText(html: string) {
+  if (!html) {
+    return '';
+  }
+  if (typeof DOMParser === 'undefined') {
+    return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return (doc.body?.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function buildExcerptFromBody(
+  body: Article['body'],
+  bodyFormat?: Article['bodyFormat'] | null,
+  maxLength = 180,
+) {
+  if (!body) {
+    return '';
+  }
+  let text = '';
+  if (typeof body === 'string') {
+    if (bodyFormat === 'html' || body.trim().startsWith('<')) {
+      text = stripHtmlToText(body);
+    } else {
+      text = body;
+    }
+  } else if (Array.isArray(body)) {
+    text = body.filter((chunk): chunk is string => typeof chunk === 'string').join(' ');
+  }
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return '';
+  }
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  const sliced = normalized.slice(0, maxLength + 1);
+  const safeCut = sliced.lastIndexOf(' ');
+  return `${sliced.slice(0, safeCut > 0 ? safeCut : maxLength).trim()}…`;
+}
+
+type ExtractedArticlePhoto = {
+  src: string;
+  alt: string;
+};
+
+function extractArticlePhotos(html: string) {
+  if (!html || typeof DOMParser === 'undefined') {
+    return { html, photos: [] as ExtractedArticlePhoto[] };
+  }
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const images = Array.from(doc.querySelectorAll('img'));
+  const photos = images
+    .map((img) => {
+      const src = img.getAttribute('src') ?? '';
+      if (!src) {
+        return null;
+      }
+      return {
+        src,
+        alt: img.getAttribute('alt') ?? '',
+      };
+    })
+    .filter((photo): photo is ExtractedArticlePhoto => Boolean(photo));
+  images.forEach((img) => {
+    const figure = img.closest('figure');
+    if (figure) {
+      figure.remove();
+    } else {
+      img.remove();
+    }
+  });
+  return { html: doc.body.innerHTML, photos };
+}
+
 function toDriveSizedUrl(url: string, size: number) {
   let output = url.replace(/=s\d+(-c)?/g, `=w${size}`);
   output = output.replace(/=w\d+-h\d+(-c)?/g, `=w${size}`);
@@ -598,12 +674,13 @@ function mapContentArticle(article: ContentArticle): Article {
   const dateISO = article.dateISO;
   const coverImage =
     article.coverImage?.url ? { url: article.coverImage.url, alt: article.coverImage.alt ?? null } : undefined;
+  const excerptValue = (article.excerpt ?? '').trim();
   return {
     source: article.source,
     title: article.title,
     dateISO,
     dateLabel: formatDateLabel(dateISO),
-    excerpt: article.excerpt ?? '',
+    excerpt: excerptValue || buildExcerptFromBody(article.body ?? null, article.bodyFormat ?? null),
     href: `/clanky/${article.slug}`,
     body: article.body ?? null,
     bodyFormat: article.bodyFormat ?? null,
@@ -852,6 +929,18 @@ function ArticlePage({ article }: { article: Article }) {
   const isHtmlBody =
     article.bodyFormat === 'html' ||
     (typeof article.body === 'string' && article.body.trim().startsWith('<'));
+  const htmlBody = isHtmlBody && typeof article.body === 'string' ? article.body : null;
+  const extracted = htmlBody ? extractArticlePhotos(htmlBody) : null;
+  const articleHtml = extracted?.html ?? htmlBody;
+  const sidePhotos = extracted?.photos ?? [];
+  const coverImage = article.coverImage?.url
+    ? { src: article.coverImage.url, alt: article.coverImage.alt ?? article.title }
+    : null;
+  const mediaItems = [
+    ...(coverImage ? [coverImage] : []),
+    ...sidePhotos.filter((photo) => photo.src !== coverImage?.src),
+  ];
+  const hasMedia = mediaItems.length > 0;
   const textParagraphs =
     typeof article.body === 'string' && !isHtmlBody
       ? article.body
@@ -865,30 +954,37 @@ function ArticlePage({ article }: { article: Article }) {
         <p className="homepage-eyebrow">SPTO · Článek</p>
         <h1 id="article-heading">{article.title}</h1>
         <p className="homepage-lead">
-          {article.dateLabel} · {article.excerpt}
+          {article.dateLabel}
+          {article.excerpt ? ` · ${article.excerpt}` : ''}
         </p>
-        <div className="homepage-card">
-          {article.coverImage?.url ? (
-            <img
-              className="homepage-article-cover"
-              src={article.coverImage.url}
-              alt={article.coverImage.alt ?? ''}
-              loading="lazy"
-            />
-          ) : null}
-          {isPortableText ? (
-            <PortableText value={article.body as any[]} components={portableTextComponents} />
-          ) : isHtmlBody && typeof article.body === 'string' ? (
-            <div className="homepage-article-html" dangerouslySetInnerHTML={{ __html: article.body }} />
-          ) : textParagraphs.length > 0 ? (
-            textParagraphs.map((paragraph, index) => <p key={`${article.href}-${index}`}>{paragraph}</p>)
-          ) : Array.isArray(article.body) ? (
-            (article.body as string[]).map((paragraph, index) => (
-              <p key={`${article.href}-${index}`}>{paragraph}</p>
-            ))
-          ) : null}
-          {article.author ? (
-            <p style={{ marginTop: '24px', fontWeight: 600 }}>{article.author}</p>
+        <div className={`homepage-card${hasMedia ? ' homepage-article-layout' : ''}`}>
+          <div className="homepage-article-text">
+            {isPortableText ? (
+              <PortableText value={article.body as any[]} components={portableTextComponents} />
+            ) : articleHtml ? (
+              <div className="homepage-article-html" dangerouslySetInnerHTML={{ __html: articleHtml }} />
+            ) : textParagraphs.length > 0 ? (
+              textParagraphs.map((paragraph, index) => <p key={`${article.href}-${index}`}>{paragraph}</p>)
+            ) : Array.isArray(article.body) ? (
+              (article.body as string[]).map((paragraph, index) => (
+                <p key={`${article.href}-${index}`}>{paragraph}</p>
+              ))
+            ) : null}
+            {article.author ? <p style={{ marginTop: '24px', fontWeight: 600 }}>{article.author}</p> : null}
+          </div>
+          {hasMedia ? (
+            <aside className="homepage-article-photos" aria-label="Fotografie k článku">
+              {mediaItems.map((photo, index) => (
+                <img
+                  key={`${article.href}-photo-${index}`}
+                  className={index === 0 && coverImage ? 'homepage-article-cover' : undefined}
+                  src={photo.src}
+                  alt={photo.alt}
+                  loading="lazy"
+                  decoding="async"
+                />
+              ))}
+            </aside>
           ) : null}
         </div>
         <a className="homepage-back-link" href="/clanky">
@@ -945,6 +1041,12 @@ function RedakcePage() {
   const [leagueScores, setLeagueScores] = useState<LeagueScoresRecord>(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
   const [leagueMessage, setLeagueMessage] = useState<string | null>(null);
   const [leagueSaving, setLeagueSaving] = useState(false);
+  const [albumTitleAlbums, setAlbumTitleAlbums] = useState<DriveAlbum[]>([]);
+  const [albumTitleEdits, setAlbumTitleEdits] = useState<Record<string, string>>({});
+  const [albumTitleOriginals, setAlbumTitleOriginals] = useState<Record<string, string>>({});
+  const [albumTitleMessage, setAlbumTitleMessage] = useState<string | null>(null);
+  const [albumTitleLoading, setAlbumTitleLoading] = useState(false);
+  const [albumTitleSaving, setAlbumTitleSaving] = useState(false);
 
   const loadArticles = () =>
     fetch('/api/content/admin/articles', { credentials: 'include' })
@@ -967,6 +1069,46 @@ function RedakcePage() {
         setLeagueScores(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
       });
 
+  const loadAlbumTitles = () => {
+    setAlbumTitleLoading(true);
+    setAlbumTitleMessage(null);
+    return Promise.all([
+      fetch('/api/gallery/albums?nocache=1')
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((data) => (data.albums ?? []) as DriveAlbum[]),
+      fetch('/api/content/admin/albums', { credentials: 'include' })
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((data) => (data.items ?? []) as Array<{ folder_id: string; title: string }>),
+    ])
+      .then(([albumsData, overrides]) => {
+        const overrideMap: Record<string, string> = {};
+        overrides.forEach((row) => {
+          if (row.folder_id && typeof row.title === 'string') {
+            overrideMap[row.folder_id] = row.title;
+          }
+        });
+        const nextEdits: Record<string, string> = {};
+        albumsData.forEach((album) => {
+          const override = overrideMap[album.folderId];
+          if (override) {
+            nextEdits[album.folderId] = override;
+          }
+        });
+        setAlbumTitleAlbums(albumsData);
+        setAlbumTitleOriginals(overrideMap);
+        setAlbumTitleEdits(nextEdits);
+      })
+      .catch(() => {
+        setAlbumTitleAlbums([]);
+        setAlbumTitleOriginals({});
+        setAlbumTitleEdits({});
+        setAlbumTitleMessage('Nepodařilo se načíst názvy alb.');
+      })
+      .finally(() => {
+        setAlbumTitleLoading(false);
+      });
+  };
+
   useEffect(() => {
     let active = true;
     fetch('/api/content/admin/session', { credentials: 'include' })
@@ -976,6 +1118,7 @@ function RedakcePage() {
         if (response.ok) {
           loadArticles();
           loadLeagueScores();
+          loadAlbumTitles();
         }
       })
       .catch(() => {
@@ -1004,6 +1147,7 @@ function RedakcePage() {
         setSession('auth');
         setPassword('');
         loadLeagueScores();
+        loadAlbumTitles();
         return loadArticles();
       })
       .catch((error) => {
@@ -1022,6 +1166,10 @@ function RedakcePage() {
       setForm(EMPTY_EDITOR_FORM);
       setLeagueScores(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
       setLeagueMessage(null);
+      setAlbumTitleAlbums([]);
+      setAlbumTitleEdits({});
+      setAlbumTitleOriginals({});
+      setAlbumTitleMessage(null);
     });
   };
 
@@ -1125,6 +1273,11 @@ function RedakcePage() {
     setLeagueMessage(null);
   };
 
+  const updateAlbumTitle = (folderId: string, value: string) => {
+    setAlbumTitleEdits((prev) => ({ ...prev, [folderId]: value }));
+    setAlbumTitleMessage(null);
+  };
+
   const handleLeagueSave = () => {
     setLeagueMessage(null);
     setLeagueSaving(true);
@@ -1156,8 +1309,72 @@ function RedakcePage() {
       });
   };
 
+  const handleAlbumTitleSave = () => {
+    setAlbumTitleMessage(null);
+    setAlbumTitleSaving(true);
+    const baseTitles = new Map(
+      albumTitleAlbums.map((album) => [album.folderId, album.baseTitle ?? album.title]),
+    );
+    const upserts: Array<{ folder_id: string; title: string }> = [];
+    const deletes: string[] = [];
+
+    for (const [folderId, baseTitle] of baseTitles.entries()) {
+      const rawEdit = albumTitleEdits[folderId] ?? '';
+      const normalized = rawEdit.trim();
+      const originalOverride = albumTitleOriginals[folderId];
+      if (!normalized || normalized === baseTitle) {
+        if (originalOverride) {
+          deletes.push(folderId);
+        }
+        continue;
+      }
+      if (originalOverride && originalOverride === normalized) {
+        continue;
+      }
+      upserts.push({ folder_id: folderId, title: normalized });
+    }
+
+    if (upserts.length === 0 && deletes.length === 0) {
+      setAlbumTitleSaving(false);
+      setAlbumTitleMessage('Žádné změny k uložení.');
+      return;
+    }
+
+    fetch('/api/content/admin/albums', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ items: upserts, remove: deletes }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Uložení se nezdařilo.');
+        }
+        setAlbumTitleMessage('Názvy alb byly uloženy.');
+        return loadAlbumTitles();
+      })
+      .catch((error) => {
+        setAlbumTitleMessage(error instanceof Error ? error.message : 'Uložení se nezdařilo.');
+      })
+      .finally(() => {
+        setAlbumTitleSaving(false);
+      });
+  };
+
   const leagueGridTemplate = `minmax(220px, 1.4fr) repeat(${LEAGUE_EVENTS.length}, minmax(90px, 0.8fr)) minmax(90px, 0.8fr)`;
   const leagueRows = addCompetitionRanks(buildLeagueRows(leagueScores));
+  const albumTitleGroups = useMemo(() => {
+    const groups = new Map<string, DriveAlbum[]>();
+    albumTitleAlbums.forEach((album) => {
+      const yearKey = album.year || 'Ostatní';
+      if (!groups.has(yearKey)) {
+        groups.set(yearKey, []);
+      }
+      groups.get(yearKey)!.push(album);
+    });
+    groups.forEach((items) => items.sort((a, b) => a.title.localeCompare(b.title, 'cs')));
+    return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0], 'cs'));
+  }, [albumTitleAlbums]);
 
   return (
     <SiteShell>
@@ -1360,6 +1577,73 @@ function RedakcePage() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            <div className="homepage-card editor-albums">
+              <div className="editor-albums-header">
+                <div>
+                  <h2>Názvy alb</h2>
+                  <p>Uprav zobrazované názvy alb ve fotogalerii. Původní názvy na Drive zůstanou zachované.</p>
+                </div>
+                <div className="editor-albums-actions">
+                  <button
+                    type="button"
+                    className="homepage-button homepage-button--ghost"
+                    onClick={loadAlbumTitles}
+                    disabled={albumTitleLoading || albumTitleSaving}
+                  >
+                    Obnovit
+                  </button>
+                  <button
+                    type="button"
+                    className="homepage-button"
+                    onClick={handleAlbumTitleSave}
+                    disabled={albumTitleLoading || albumTitleSaving}
+                  >
+                    {albumTitleSaving ? 'Ukládám…' : 'Uložit názvy'}
+                  </button>
+                </div>
+              </div>
+              {albumTitleMessage ? <p className="homepage-alert">{albumTitleMessage}</p> : null}
+              {albumTitleLoading ? <div className="editor-albums-loading">Načítám alba…</div> : null}
+              {!albumTitleLoading && albumTitleAlbums.length === 0 ? (
+                <div className="editor-albums-loading">Žádná alba k úpravě.</div>
+              ) : null}
+              {!albumTitleLoading && albumTitleAlbums.length > 0 ? (
+                <div className="editor-albums-groups">
+                  {albumTitleGroups.map(([year, items]) => (
+                    <section key={year} className="editor-albums-year">
+                      <h3>{year}</h3>
+                      <div className="editor-albums-list">
+                        {items.map((album) => {
+                          const baseTitle = album.baseTitle ?? album.title;
+                          const editValue = albumTitleEdits[album.folderId] ?? '';
+                          const normalizedEdit = editValue.trim();
+                          const displayTitle = normalizedEdit || baseTitle;
+                          const isOverride = normalizedEdit.length > 0 && normalizedEdit !== baseTitle;
+                          return (
+                            <div key={album.folderId} className="editor-album-row">
+                              <div className="editor-album-info">
+                                <strong>{displayTitle}</strong>
+                                <span className="editor-album-meta">
+                                  {isOverride ? `Původní název: ${baseTitle}` : `Původní název: ${baseTitle}`}
+                                </span>
+                              </div>
+                              <input
+                                type="text"
+                                value={editValue}
+                                onChange={(event) => updateAlbumTitle(album.folderId, event.target.value)}
+                                placeholder="Nechat původní"
+                                aria-label={`Zobrazovaný název alba ${baseTitle}`}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </>
         )}
