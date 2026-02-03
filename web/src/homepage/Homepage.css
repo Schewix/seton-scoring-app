@@ -1410,17 +1410,22 @@
 .homepage-article-layout {
   display: grid;
   gap: 32px;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  grid-template-areas: "text photos";
   align-items: start;
 }
 
 .homepage-article-text {
+  grid-area: text;
+  order: 1;
   display: grid;
   gap: 16px;
   min-width: 0;
 }
 
 .homepage-article-photos {
+  grid-area: photos;
+  order: 2;
   display: grid;
   gap: 16px;
   align-content: start;
@@ -1461,6 +1466,9 @@
 @media (max-width: 900px) {
   .homepage-article-layout {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "text"
+      "photos";
   }
 }
 
