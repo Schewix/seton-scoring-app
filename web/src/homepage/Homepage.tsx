@@ -2402,6 +2402,7 @@ function Homepage({
 }) {
   const headerTitle = homepageContent?.heroTitle ?? undefined;
   const headerSubtitle = homepageContent?.heroSubtitle ?? undefined;
+  const homepageArticles = articles.slice(0, 4);
 
   return (
     <SiteShell
@@ -2443,9 +2444,9 @@ function Homepage({
             <div className="homepage-card" style={{ maxWidth: '720px' }}>
               <p style={{ margin: 0 }}>Načítám články z redakce…</p>
             </div>
-          ) : articles.length > 0 ? (
+          ) : homepageArticles.length > 0 ? (
             <div className="homepage-article-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-              {articles.map((article) => (
+              {homepageArticles.map((article) => (
                 <article key={article.title} className="homepage-article-card" style={{ minHeight: '220px' }}>
                   <div className="homepage-article-row">
                     <div className={`homepage-article-thumb${article.coverImage?.url ? '' : ' is-empty'}`}>
