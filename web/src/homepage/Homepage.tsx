@@ -762,6 +762,94 @@ function InfoPage({
   );
 }
 
+function ArticlesIndexPage({
+  articles,
+  articlesLoading,
+}: {
+  articles: Article[];
+  articlesLoading: boolean;
+}) {
+  return (
+    <SiteShell>
+      <main className="homepage-main homepage-single" aria-labelledby="articles-heading">
+        <section className="homepage-section" aria-labelledby="articles-heading">
+          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
+            <h1 id="articles-heading">Články ze soutěží</h1>
+            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
+          </div>
+          <p className="homepage-lead" style={{ maxWidth: '720px' }}>
+            {articlesLoading ? 'Načítám články z redakce…' : 'Reportáže a novinky z posledních akcí.'}
+          </p>
+          {articlesLoading ? (
+            <div className="homepage-card" style={{ maxWidth: '720px' }}>
+              <p style={{ margin: 0 }}>Načítám články z redakce…</p>
+            </div>
+          ) : articles.length > 0 ? (
+            <div className="homepage-article-grid">
+              {articles.map((article) => (
+                <article key={article.href} className="homepage-article-card">
+                  <div className="homepage-article-row">
+                    <div className={`homepage-article-thumb${article.coverImage?.url ? '' : ' is-empty'}`}>
+                      {article.coverImage?.url ? (
+                        <img src={article.coverImage.url} alt={article.coverImage.alt ?? article.title} loading="lazy" />
+                      ) : (
+                        <span aria-hidden="true">SPTO</span>
+                      )}
+                    </div>
+                    <div className="homepage-article-body">
+                      <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <time
+                          dateTime={article.dateISO}
+                          style={{
+                            display: 'inline-flex',
+                            padding: '4px 10px',
+                            borderRadius: '999px',
+                            background: 'rgba(4, 55, 44, 0.08)',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {article.dateLabel}
+                        </time>
+                      </div>
+                      <h3
+                        style={{
+                          display: '-webkit-box',
+                          WebkitBoxOrient: 'vertical',
+                          WebkitLineClamp: 2,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {article.title}
+                      </h3>
+                      <p
+                        style={{
+                          display: '-webkit-box',
+                          WebkitBoxOrient: 'vertical',
+                          WebkitLineClamp: 3,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {article.excerpt}
+                      </p>
+                      <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        Číst článek <span aria-hidden="true">→</span>
+                      </a>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="homepage-card" style={{ maxWidth: '720px' }}>
+              <p style={{ margin: 0 }}>Zatím tu není žádný článek z redakce.</p>
+            </div>
+          )}
+        </section>
+      </main>
+    </SiteShell>
+  );
+}
+
 function PdfEmbedCard({ title, url }: { title: string; url: string }) {
   const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches;
   const zoom = isMobile ? 140 : 120;
@@ -2975,18 +3063,7 @@ export default function ZelenaligaSite() {
         const articleSlug = segments[1];
         return <ArticlePageLoader slug={articleSlug} articles={articles} />;
       }
-      return (
-        <InfoPage
-          eyebrow="SPTO · Články"
-          title="Články ze soutěží"
-          lead={articlesLoading ? 'Načítám články z redakce…' : 'Reportáže a novinky z posledních akcí.'}
-          links={articles.map((item) => ({
-            label: item.title,
-            description: `${item.dateLabel} · ${item.excerpt}`,
-            href: item.href,
-          }))}
-        />
-      );
+      return <ArticlesIndexPage articles={articles} articlesLoading={articlesLoading} />;
     }
 
     if (slug === 'fotogalerie') {
