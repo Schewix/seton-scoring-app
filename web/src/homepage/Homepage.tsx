@@ -95,11 +95,11 @@ const COMPETITIONS: Competition[] = [
 ];
 
 const NAV_ITEMS = [
-  { id: 'souteze', label: 'Soutěže', href: '/souteze' },
   { id: 'aktualni-poradi', label: 'Aktuální pořadí', href: '/aktualni-poradi' },
-  { id: 'oddily', label: 'Oddíly SPTO', href: '/oddily' },
-  { id: 'fotogalerie', label: 'Fotogalerie', href: '/fotogalerie' },
   { id: 'clanky', label: 'Články a novinky', href: '/clanky' },
+  { id: 'fotogalerie', label: 'Fotogalerie', href: '/fotogalerie' },
+  { id: 'souteze', label: 'Soutěže', href: '/souteze' },
+  { id: 'oddily', label: 'Oddíly SPTO', href: '/oddily' },
   { id: 'o-spto', label: 'O SPTO', href: '/o-spto' },
   { id: 'kontakty', label: 'Kontakty', href: '/kontakty' },
 ];
@@ -663,6 +663,9 @@ function getArticleThumbUrl(url: string, size: number) {
   if (!url) {
     return '';
   }
+  if (url.includes('pionyr.cz/')) {
+    return url;
+  }
   if (url.includes('drive.google.com/thumbnail')) {
     return toDriveSizedUrl(url, size);
   }
@@ -1065,9 +1068,9 @@ function ArticlePage({ article }: { article: Article }) {
   const textParagraphs =
     typeof article.body === 'string' && !isHtmlBody
       ? article.body
-          .split(/\n{2,}/)
-          .map((paragraph) => paragraph.trim())
-          .filter(Boolean)
+        .split(/\n{2,}/)
+        .map((paragraph) => paragraph.trim())
+        .filter(Boolean)
       : [];
   return (
     <SiteShell>
