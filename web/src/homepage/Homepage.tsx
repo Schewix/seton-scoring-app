@@ -648,6 +648,33 @@ function toDriveSizedUrl(url: string, size: number) {
   return output;
 }
 
+function toProxyImageUrl(url: string, size: number) {
+  const cleaned = url.replace(/^https?:\/\//, '');
+  const encoded = encodeURIComponent(cleaned);
+  return `https://images.weserv.nl/?url=${encoded}&w=${size}&h=${size}&fit=cover&output=webp&q=80`;
+}
+
+function extractDriveFileId(url: string) {
+  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+  return match?.[1] ?? null;
+}
+
+function getArticleThumbUrl(url: string, size: number) {
+  if (!url) {
+    return '';
+  }
+  if (url.includes('drive.google.com/thumbnail')) {
+    return toDriveSizedUrl(url, size);
+  }
+  if (url.includes('drive.google.com') || url.includes('googleusercontent.com')) {
+    const id = extractDriveFileId(url);
+    if (id) {
+      return `https://drive.google.com/thumbnail?sz=w${size}&id=${id}`;
+    }
+  }
+  return toProxyImageUrl(url, size);
+}
+
 function getPhotoThumbUrl(photo: GalleryPhoto | undefined | null, size: number) {
   if (!photo) {
     return '';
@@ -791,7 +818,13 @@ function ArticlesIndexPage({
                   <div className="homepage-article-row">
                     <div className={`homepage-article-thumb${article.coverImage?.url ? '' : ' is-empty'}`}>
                       {article.coverImage?.url ? (
-                        <img src={article.coverImage.url} alt={article.coverImage.alt ?? article.title} loading="lazy" />
+                        <img
+                          src={getArticleThumbUrl(article.coverImage.url, 360)}
+                          alt={article.coverImage.alt ?? article.title}
+                          loading="lazy"
+                          decoding="async"
+                          fetchPriority="low"
+                        />
                       ) : (
                         <span aria-hidden="true">SPTO</span>
                       )}
@@ -2539,7 +2572,13 @@ function Homepage({
                   <div className="homepage-article-row">
                     <div className={`homepage-article-thumb${article.coverImage?.url ? '' : ' is-empty'}`}>
                       {article.coverImage?.url ? (
-                        <img src={article.coverImage.url} alt={article.coverImage.alt ?? article.title} loading="lazy" />
+                        <img
+                          src={getArticleThumbUrl(article.coverImage.url, 360)}
+                          alt={article.coverImage.alt ?? article.title}
+                          loading="lazy"
+                          decoding="async"
+                          fetchPriority="low"
+                        />
                       ) : (
                         <span aria-hidden="true">SPTO</span>
                       )}
