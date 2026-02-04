@@ -1077,10 +1077,6 @@ function ArticlePage({ article }: { article: Article }) {
       <main className="homepage-main homepage-single" aria-labelledby="article-heading">
         <p className="homepage-eyebrow">SPTO · Článek</p>
         <h1 id="article-heading">{article.title}</h1>
-        <p className="homepage-lead">
-          {article.dateLabel}
-          {article.excerpt ? ` · ${article.excerpt}` : ''}
-        </p>
         <div className={`homepage-card${hasMedia ? ' homepage-article-layout' : ''}`}>
           <div className="homepage-article-text">
             {isPortableText ? (
