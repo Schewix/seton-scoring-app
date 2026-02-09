@@ -132,7 +132,9 @@ type TokenClaims = {
   sub?: string;
   sessionId?: string;
   event_id?: string;
+  eventId?: string;
   station_id?: string;
+  stationId?: string;
   type?: string;
 };
 
@@ -172,10 +174,11 @@ export default async function handler(req: any, res: any) {
     return res.status(401).json({ error: 'Invalid session' });
   }
 
-  const sessionId = typeof claims.sessionId === 'string' ? claims.sessionId : '';
-  const judgeId = typeof claims.sub === 'string' ? claims.sub : '';
-  const tokenEventId = typeof claims.event_id === 'string' ? claims.event_id : '';
-  const tokenStationId = typeof claims.station_id === 'string' ? claims.station_id : '';
+  const resolveClaimString = (value: unknown) => (typeof value === 'string' && value.length > 0 ? value : '');
+  const sessionId = resolveClaimString(claims.sessionId);
+  const judgeId = resolveClaimString(claims.sub);
+  const tokenEventId = resolveClaimString(claims.event_id) || resolveClaimString(claims.eventId);
+  const tokenStationId = resolveClaimString(claims.station_id) || resolveClaimString(claims.stationId);
 
   if (!sessionId || !judgeId || !tokenEventId || !tokenStationId) {
     return res.status(401).json({ error: 'Invalid session' });
