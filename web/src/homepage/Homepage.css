@@ -1820,8 +1820,7 @@
 
 .gallery-album-grid {
   display: grid;
-  row-gap: 20px;
-  column-gap: 16px;
+  gap: 24px;
   grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
   justify-content: start;
 }
