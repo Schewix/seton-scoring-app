@@ -52,9 +52,12 @@ type SupabaseJwtClaims = {
   role?: string;
   email?: string;
   event_id?: string;
+  eventId?: string;
   station_id?: string;
+  stationId?: string;
   exp?: number;
   sessionId?: string;
+  type?: string;
 };
 
 function isPasswordChangeResponse(
@@ -75,17 +78,22 @@ function validateSupabaseAccessToken(token: string) {
     throw new Error(INVALID_JWT_MESSAGE);
   }
 
-  const sub = typeof claims.sub === 'string' && claims.sub.length > 0 ? claims.sub : null;
-  const role = typeof claims.role === 'string' && claims.role.length > 0 ? claims.role : null;
-  const eventId = typeof claims.event_id === 'string' && claims.event_id.length > 0 ? claims.event_id : null;
-  const stationId =
-    typeof claims.station_id === 'string' && claims.station_id.length > 0 ? claims.station_id : null;
+  const resolveClaimString = (value: unknown) => (typeof value === 'string' && value.length > 0 ? value : null);
+  const sub = resolveClaimString(claims.sub);
+  const role = resolveClaimString(claims.role);
+  const tokenType = resolveClaimString(claims.type);
+  const eventId = resolveClaimString(claims.event_id) ?? resolveClaimString(claims.eventId);
+  const stationId = resolveClaimString(claims.station_id) ?? resolveClaimString(claims.stationId);
 
-  if (!sub || !role || !eventId || !stationId) {
+  if (!sub || !eventId || !stationId) {
     throw new Error(ACCESS_DENIED_MESSAGE);
   }
 
-  if (role !== 'authenticated' && role !== 'service_role') {
+  if (role) {
+    if (role !== 'authenticated' && role !== 'service_role') {
+      throw new Error(ACCESS_DENIED_MESSAGE);
+    }
+  } else if (tokenType && tokenType !== 'access') {
     throw new Error(ACCESS_DENIED_MESSAGE);
   }
 
@@ -102,8 +110,9 @@ function logAccessTokenClaims(token: string, source: string) {
       source,
       sub: claims.sub,
       role: claims.role,
-      event_id: claims.event_id,
-      station_id: claims.station_id,
+      type: claims.type,
+      event_id: claims.event_id ?? claims.eventId,
+      station_id: claims.station_id ?? claims.stationId,
       exp: claims.exp,
     });
   } catch (error) {
