@@ -1838,6 +1838,7 @@
   width: 100%;
   max-width: 320px;
   min-width: 0;
+  box-sizing: border-box;
 }
 
 .gallery-album-card:hover,

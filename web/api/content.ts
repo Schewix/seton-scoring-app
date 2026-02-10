@@ -30,6 +30,13 @@ type LocalArticleRow = {
   synced_at?: string | null;
 };
 
+type ImportedArticleRow = {
+  id: string;
+  external_id: string | null;
+  updated_at: string | null;
+  synced_at: string | null;
+};
+
 type LeagueScoreRow = {
   troop_id: string;
   event_key: string;
@@ -172,6 +179,20 @@ function sortByDateDesc(a: PublicArticle, b: PublicArticle) {
     return 0;
   }
   return dateB - dateA;
+}
+
+const SYNC_EDIT_GRACE_MS = 60_000;
+
+function wasEditedAfterSync(row: { updated_at?: string | null; synced_at?: string | null }) {
+  if (!row.updated_at || !row.synced_at) {
+    return false;
+  }
+  const updatedAt = Date.parse(row.updated_at);
+  const syncedAt = Date.parse(row.synced_at);
+  if (!Number.isFinite(updatedAt) || !Number.isFinite(syncedAt)) {
+    return false;
+  }
+  return updatedAt - syncedAt > SYNC_EDIT_GRACE_MS;
 }
 
 function mapLocalRow(row: LocalArticleRow): PublicArticle {
@@ -326,24 +347,68 @@ async function handleAdminImport(req: any, res: any) {
     }));
 
     const supabase = getSupabaseAdminClient();
-    const { error: deleteError } = await supabase
+    const { data: existingRows, error: existingError } = await supabase
       .from('content_articles')
-      .delete()
+      .select('id,external_id,updated_at,synced_at')
       .eq('source', 'pionyr');
-    if (deleteError) {
-      res.status(500).json({ error: 'Failed to clear imported articles.' });
+    if (existingError) {
+      res.status(500).json({ error: 'Failed to load imported articles.' });
       return;
     }
 
-    if (rows.length > 0) {
-      const { error: insertError } = await supabase.from('content_articles').insert(rows);
-      if (insertError) {
+    const existingByExternalId = new Map<string, ImportedArticleRow>();
+    (existingRows ?? []).forEach((row: ImportedArticleRow) => {
+      if (typeof row.external_id === 'string' && row.external_id.trim()) {
+        existingByExternalId.set(row.external_id, row);
+      }
+    });
+
+    const upserts: typeof rows = [];
+    const skipped: string[] = [];
+    rows.forEach((row) => {
+      const existing = existingByExternalId.get(row.external_id);
+      if (existing && wasEditedAfterSync(existing)) {
+        skipped.push(row.external_id);
+        return;
+      }
+      upserts.push(row);
+    });
+
+    if (upserts.length > 0) {
+      const { error: upsertError } = await supabase
+        .from('content_articles')
+        .upsert(upserts, { onConflict: 'source,external_id' });
+      if (upsertError) {
         res.status(500).json({ error: 'Failed to import articles.' });
         return;
       }
     }
 
-    res.status(200).json({ ok: true, imported: rows.length });
+    const incomingExternalIds = new Set(rows.map((row) => row.external_id));
+    const deleteIds = (existingRows ?? [])
+      .filter((row: ImportedArticleRow) => {
+        if (!row.external_id || incomingExternalIds.has(row.external_id)) {
+          return false;
+        }
+        return !wasEditedAfterSync(row);
+      })
+      .map((row: ImportedArticleRow) => row.id);
+
+    if (deleteIds.length > 0) {
+      const { error: deleteError } = await supabase.from('content_articles').delete().in('id', deleteIds);
+      if (deleteError) {
+        res.status(500).json({ error: 'Failed to clear imported articles.' });
+        return;
+      }
+    }
+
+    res.status(200).json({
+      ok: true,
+      imported: rows.length,
+      updated: upserts.length,
+      skipped: skipped.length,
+      deleted: deleteIds.length,
+    });
   } catch (error) {
     console.error('[api/content/import] failed', error);
     res.status(500).json({ error: 'Failed to import articles.' });
