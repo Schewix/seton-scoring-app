@@ -122,7 +122,7 @@ interface StationCategorySummary {
 
 type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 
-const WAIT_MINUTES_MAX = 600;
+const WAIT_MINUTES_MAX = 180;
 const OUTBOX_BATCH_SIZE = 5;
 const SCORE_REVIEW_TASK_KEYS = new Set([
   'score-review',
@@ -468,7 +468,7 @@ function StationApp({
   const tempCounterRef = useRef(1);
   const formRef = useRef<HTMLElement | null>(null);
   const ticketQueueRef = useRef<HTMLElement | null>(null);
-  const pointsInputRef = useRef<HTMLButtonElement | null>(null);
+  const pointsInputRef = useRef<HTMLInputElement | null>(null);
   const answersInputRef = useRef<HTMLInputElement | null>(null);
   const [startTime, setStartTime] = useState<string | null>(null);
   const [finishTimeInput, setFinishTimeInput] = useState('');
@@ -2237,7 +2237,7 @@ function StationApp({
       scorePoints = parsed;
     }
 
-    const waitMinutes = useTargetScoring ? 0 : parseWaitDraft(waitDraft);
+    const waitMinutes = parseWaitDraft(waitDraft);
     if (!Number.isInteger(waitMinutes) || waitMinutes < 0 || waitMinutes > WAIT_MINUTES_MAX) {
       pushAlert(`Čekání musí být čas v rozsahu 00:00–${WAIT_TIME_MAX}.`);
       return;
@@ -2938,23 +2938,22 @@ function StationApp({
                   <strong>{manifest.judge.displayName}</strong>
                   <small>{manifest.judge.email}</small>
                 </div>
-                {!useTargetScoring ? (
-                  <div className="wait-field">
-                    <span className="wait-label">Čekání</span>
-                    <div className="wait-display">
-                      <input
-                        type="time"
-                        step={60}
-                        min={WAIT_TIME_ZERO}
-                        max={WAIT_TIME_MAX}
-                        value={waitDraft}
-                        onChange={(event) => setWaitDraft(event.target.value)}
-                        placeholder="hh:mm"
-                      />
-                    </div>
-                    <p className="wait-hint">Zadej čekání ručně ve formátu HH:MM (bez vteřin).</p>
+                <div className="wait-field">
+                  <span className="wait-label">Čekání</span>
+                  <div className="wait-display">
+                    <input
+                      type="time"
+                      step={60}
+                      min={WAIT_TIME_ZERO}
+                      max={WAIT_TIME_MAX}
+                      value={waitDraft}
+                      onChange={(event) => setWaitDraft(event.target.value)}
+                      placeholder="hh:mm"
+                      required
+                    />
                   </div>
-                ) : null}
+                  <p className="wait-hint">Zadej čekání ručně ve formátu HH:MM (bez vteřin).</p>
+                </div>
                 {stationCode === 'T' ? (
                   <div className="calc-grid">
                     <div className="calc-time-card">
@@ -3181,7 +3180,7 @@ function StationApp({
                     value={points}
                     onChange={setPoints}
                     label="Body (0 až 12)"
-                    helperText="Vyber počet bodů, které hlídka získala."
+                    helperText="Zadej počet bodů, které hlídka získala."
                   />
                 )}
                 <button type="button" className="primary" onClick={handleSave} disabled={scoringDisabled}>

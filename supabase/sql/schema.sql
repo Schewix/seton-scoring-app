@@ -33,6 +33,7 @@ create table if not exists patrols (
   patrol_code text not null,
   note text,
   active boolean not null default true,
+  disqualified boolean not null default false,
   created_at timestamptz not null default now(),
   unique (event_id, patrol_code)
 );

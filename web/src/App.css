@@ -759,6 +759,32 @@ body {
   color: var(--text-muted);
 }
 
+.points-input__field {
+  display: flex;
+}
+
+.points-input__field input {
+  flex: 1;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-soft);
+}
+
+.points-input__field input:focus {
+  outline: 2px solid var(--zl-yellow);
+  outline-offset: 2px;
+}
+
+.points-input__field input[aria-invalid='true'] {
+  border-color: rgba(248, 113, 113, 0.7);
+  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.2);
+}
+
 .patrol-code-input__text {
   display: flex;
   flex-direction: column;

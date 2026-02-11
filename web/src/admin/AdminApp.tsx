@@ -22,6 +22,7 @@ import {
   StationCategoryKey,
   toStationCategoryKey,
 } from '../utils/stationCategories';
+import { normalisePatrolCode } from '../components/PatrolCodeInput';
 import AdminLoginScreen from './AdminLoginScreen';
 
 const API_BASE_URL = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
@@ -37,6 +38,15 @@ type PatrolSummary = {
   code: string;
   teamName: string;
   category: StationCategoryKey;
+};
+
+type DisqualifyPatrol = {
+  id: string;
+  code: string;
+  teamName: string;
+  category: string;
+  sex: string;
+  disqualified: boolean;
 };
 
 type StationPassageRow = {
@@ -67,6 +77,24 @@ type MissingDialogState = {
 
 function normalizeText(value: string | null | undefined): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildPatrolCodeVariants(raw: string) {
+  const normalized = normalisePatrolCode(raw);
+  if (!normalized) {
+    return [];
+  }
+  const match = normalized.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  if (!match) {
+    return [normalized];
+  }
+  const parsed = Number.parseInt(match[3], 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return [normalized];
+  }
+  const noPad = `${match[1]}${match[2]}-${parsed}`;
+  const pad = `${match[1]}${match[2]}-${String(parsed).padStart(2, '0')}`;
+  return noPad === pad ? [noPad] : [noPad, pad];
 }
 
 function createEmptyAnswers(): AnswersFormState {
@@ -119,6 +147,12 @@ function AdminDashboard({
   const [lockUpdating, setLockUpdating] = useState(false);
   const [lockMessage, setLockMessage] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [disqualifyCode, setDisqualifyCode] = useState('');
+  const [disqualifyTarget, setDisqualifyTarget] = useState<DisqualifyPatrol | null>(null);
+  const [disqualifyLoading, setDisqualifyLoading] = useState(false);
+  const [disqualifySaving, setDisqualifySaving] = useState(false);
+  const [disqualifyError, setDisqualifyError] = useState<string | null>(null);
+  const [disqualifySuccess, setDisqualifySuccess] = useState<string | null>(null);
 
   useEffect(() => {
     setEventState({ name: manifest.event.name, scoringLocked: manifest.event.scoringLocked });
@@ -388,6 +422,108 @@ function AdminDashboard({
     }
   }, [accessToken]);
 
+  const handleLookupPatrol = useCallback(async () => {
+    setDisqualifyError(null);
+    setDisqualifySuccess(null);
+
+    const variants = buildPatrolCodeVariants(disqualifyCode);
+    if (!variants.length) {
+      setDisqualifyTarget(null);
+      setDisqualifyError('Zadej kód hlídky.');
+      return;
+    }
+
+    setDisqualifyLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('patrols')
+        .select('id, patrol_code, team_name, category, sex, disqualified')
+        .eq('event_id', eventId)
+        .in('patrol_code', variants)
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data) {
+        setDisqualifyTarget(null);
+        setDisqualifyError('Hlídka nebyla nalezena.');
+        return;
+      }
+
+      setDisqualifyTarget({
+        id: data.id,
+        code: normalizeText(data.patrol_code).toUpperCase(),
+        teamName: normalizeText(data.team_name),
+        category: normalizeText(data.category).toUpperCase(),
+        sex: normalizeText(data.sex).toUpperCase(),
+        disqualified: !!data.disqualified,
+      });
+    } catch (error) {
+      console.error('Failed to load patrol', error);
+      setDisqualifyError('Nepodařilo se načíst hlídku.');
+      setDisqualifyTarget(null);
+    } finally {
+      setDisqualifyLoading(false);
+    }
+  }, [disqualifyCode, eventId]);
+
+  const handleDisqualifyPatrol = useCallback(async () => {
+    setDisqualifyError(null);
+    setDisqualifySuccess(null);
+
+    if (!disqualifyTarget) {
+      setDisqualifyError('Nejprve načti hlídku.');
+      return;
+    }
+    if (disqualifyTarget.disqualified) {
+      setDisqualifySuccess('Hlídka je už diskvalifikovaná.');
+      return;
+    }
+    if (!API_BASE_URL) {
+      setDisqualifyError('Chybí konfigurace API (VITE_AUTH_API_URL).');
+      return;
+    }
+    if (!accessToken) {
+      setDisqualifyError('Chybí přístupový token.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Opravdu diskvalifikovat hlídku ${disqualifyTarget.code}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDisqualifySaving(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/patrol-disqualify`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ patrol_code: disqualifyTarget.code, disqualified: true }),
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        const message = body?.error || 'Diskvalifikace se nepodařila.';
+        throw new Error(message);
+      }
+
+      setDisqualifyTarget((prev) => (prev ? { ...prev, disqualified: true } : prev));
+      setDisqualifySuccess(`Hlídka ${disqualifyTarget.code} byla diskvalifikována.`);
+    } catch (error) {
+      console.error('Failed to disqualify patrol', error);
+      setDisqualifyError(
+        error instanceof Error && error.message ? error.message : 'Diskvalifikace se nepodařila.',
+      );
+    } finally {
+      setDisqualifySaving(false);
+    }
+  }, [accessToken, disqualifyTarget]);
+
   useEffect(() => {
     if (!isCalcStation) {
       return;
@@ -612,6 +748,82 @@ function AdminDashboard({
           </header>
           {eventError ? <p className="admin-error">{eventError}</p> : null}
           {lockMessage ? <p className="admin-notice">{lockMessage}</p> : null}
+        </section>
+
+        <section className="admin-card admin-card--with-divider">
+          <header className="admin-card-header">
+            <div>
+              <h2>Diskvalifikace hlídky</h2>
+              <p className="admin-card-subtitle">
+                Zadej ručně kód hlídky, načti její detail a potvrď diskvalifikaci.
+              </p>
+            </div>
+          </header>
+          <div className="admin-disqualify-form">
+            <label className="admin-field" htmlFor="admin-disqualify-code">
+              <span>Kód hlídky</span>
+              <input
+                id="admin-disqualify-code"
+                value={disqualifyCode}
+                onChange={(event) => {
+                  setDisqualifyCode(event.target.value);
+                  setDisqualifyTarget(null);
+                  setDisqualifyError(null);
+                  setDisqualifySuccess(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void handleLookupPatrol();
+                  }
+                }}
+                placeholder="např. NH-12"
+                autoComplete="off"
+              />
+            </label>
+            <button
+              type="button"
+              className="admin-button admin-button--secondary"
+              onClick={handleLookupPatrol}
+              disabled={disqualifyLoading}
+            >
+              {disqualifyLoading ? 'Načítám…' : 'Načíst hlídku'}
+            </button>
+          </div>
+          {disqualifyError ? <p className="admin-error">{disqualifyError}</p> : null}
+          {disqualifySuccess ? <p className="admin-success">{disqualifySuccess}</p> : null}
+          {disqualifyTarget ? (
+            <div className="admin-disqualify-summary">
+              <div>
+                <strong>{disqualifyTarget.code}</strong>
+                <span className="admin-disqualify-team">
+                  {disqualifyTarget.teamName || 'Bez názvu'}
+                </span>
+              </div>
+              <div className="admin-disqualify-meta">
+                <span>{`${disqualifyTarget.category}${disqualifyTarget.sex}`}</span>
+                <span
+                  className={
+                    disqualifyTarget.disqualified
+                      ? 'admin-disqualify-flag admin-disqualify-flag--danger'
+                      : 'admin-disqualify-flag'
+                  }
+                >
+                  {disqualifyTarget.disqualified ? 'Diskvalifikována' : 'Aktivní'}
+                </span>
+              </div>
+              <div className="admin-card-actions">
+                <button
+                  type="button"
+                  className="admin-button admin-button--danger"
+                  onClick={handleDisqualifyPatrol}
+                  disabled={disqualifySaving || disqualifyTarget.disqualified}
+                >
+                  {disqualifySaving ? 'Ukládám…' : 'Diskvalifikovat hlídku'}
+                </button>
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <section className="admin-card admin-card--with-divider">

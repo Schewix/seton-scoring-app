@@ -202,6 +202,7 @@ export default function PatrolCodeInput({
   const feedbackId = `${inputId}-feedback`;
   const textInputId = `${inputId}-text`;
   const textHintId = `${inputId}-hint`;
+  const showWheel = false;
 
   const normalisedValue = useMemo(() => normalisePatrolCode(value), [value]);
   const canonicalValue = useMemo(() => toCanonicalPatrolCode(normalisedValue), [normalisedValue]);
@@ -744,156 +745,160 @@ export default function PatrolCodeInput({
         />
         <small id={textHintId}>Formát: N/M/S/R + H/D + číslo 01–40.</small>
       </div>
-      <div className="patrol-code-input__wheel-headings" aria-hidden="true">
-        <span>Kategorie</span>
-        <span>Pohlaví</span>
-        <span>Číslo hlídky</span>
-      </div>
-      <div
-        className={`patrol-code-input__wheel-group${wheelIsDisabled ? ' is-disabled' : ''}`}
-        role="group"
-        aria-labelledby={labelId}
-        onWheelCapture={
-          isInputFocused
-            ? (event) => {
-              event.preventDefault();
+      {showWheel ? (
+        <>
+          <div className="patrol-code-input__wheel-headings" aria-hidden="true">
+            <span>Kategorie</span>
+            <span>Pohlaví</span>
+            <span>Číslo hlídky</span>
+          </div>
+          <div
+            className={`patrol-code-input__wheel-group${wheelIsDisabled ? ' is-disabled' : ''}`}
+            role="group"
+            aria-labelledby={labelId}
+            onWheelCapture={
+              isInputFocused
+                ? (event) => {
+                  event.preventDefault();
+                }
+                : undefined
             }
-            : undefined
-        }
-      >
-        <div className="picker-highlight" aria-hidden="true" />
-        <Picker
-          className="patrol-code-input__picker"
-          value={pickerValue}
-          onChange={handlePickerChange}
-          height={WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_COUNT}
-          itemHeight={WHEEL_ITEM_HEIGHT}
-          wheelMode="natural"
-          aria-label="Výběr hlídky"
-        >
-          <Picker.Column
-            name="category"
-            className="patrol-code-input__picker-column"
-            aria-label="Kategorie"
-            role="listbox"
-            data-disabled={wheelIsDisabled ? 'true' : undefined}
           >
-            {wheelOptionsCategory.map((option, index) => (
-              <Picker.Item
-                key={`${inputId}-category-option-${index}`}
-                value={option.value}
-                className="patrol-code-input__picker-item"
-                title={option.title}
-                data-disabled={option.disabled ? 'true' : undefined}
-                role="option"
-                aria-selected={pickerValue.category === option.value}
-                aria-disabled={option.disabled || wheelIsDisabled ? true : undefined}
+            <div className="picker-highlight" aria-hidden="true" />
+            <Picker
+              className="patrol-code-input__picker"
+              value={pickerValue}
+              onChange={handlePickerChange}
+              height={WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_COUNT}
+              itemHeight={WHEEL_ITEM_HEIGHT}
+              wheelMode="natural"
+              aria-label="Výběr hlídky"
+            >
+              <Picker.Column
+                name="category"
+                className="patrol-code-input__picker-column"
+                aria-label="Kategorie"
+                role="listbox"
+                data-disabled={wheelIsDisabled ? 'true' : undefined}
               >
-                {({ selected }) => (
-                  <span
-                    className="patrol-code-input__picker-item-label"
-                    data-selected={selected ? 'true' : undefined}
+                {wheelOptionsCategory.map((option, index) => (
+                  <Picker.Item
+                    key={`${inputId}-category-option-${index}`}
+                    value={option.value}
+                    className="patrol-code-input__picker-item"
+                    title={option.title}
                     data-disabled={option.disabled ? 'true' : undefined}
+                    role="option"
+                    aria-selected={pickerValue.category === option.value}
+                    aria-disabled={option.disabled || wheelIsDisabled ? true : undefined}
                   >
-                    {option.label}
-                  </span>
-                )}
-              </Picker.Item>
-            ))}
-          </Picker.Column>
-          <Picker.Column
-            name="gender"
-            className="patrol-code-input__picker-column"
-            aria-label="Pohlaví (H = hoši, D = dívky)"
-            role="listbox"
-            data-disabled={
-              wheelIsDisabled || !selectedCategory ? 'true' : undefined
-            }
-          >
-            {wheelOptionsGender.map((option, index) => (
-              <Picker.Item
-                key={`${inputId}-gender-option-${index}`}
-                value={option.value}
-                className="patrol-code-input__picker-item"
-                title={option.title}
+                    {({ selected }) => (
+                      <span
+                        className="patrol-code-input__picker-item-label"
+                        data-selected={selected ? 'true' : undefined}
+                        data-disabled={option.disabled ? 'true' : undefined}
+                      >
+                        {option.label}
+                      </span>
+                    )}
+                  </Picker.Item>
+                ))}
+              </Picker.Column>
+              <Picker.Column
+                name="gender"
+                className="patrol-code-input__picker-column"
+                aria-label="Pohlaví (H = hoši, D = dívky)"
+                role="listbox"
                 data-disabled={
-                  option.disabled || wheelIsDisabled || !selectedCategory ? 'true' : undefined
-                }
-                role="option"
-                aria-selected={pickerValue.gender === option.value}
-                aria-disabled={
-                  option.disabled || wheelIsDisabled || !selectedCategory ? true : undefined
+                  wheelIsDisabled || !selectedCategory ? 'true' : undefined
                 }
               >
-                {({ selected }) => (
-                  <span
-                    className="patrol-code-input__picker-item-label"
-                    data-selected={selected ? 'true' : undefined}
+                {wheelOptionsGender.map((option, index) => (
+                  <Picker.Item
+                    key={`${inputId}-gender-option-${index}`}
+                    value={option.value}
+                    className="patrol-code-input__picker-item"
+                    title={option.title}
                     data-disabled={
-                      option.disabled || wheelIsDisabled || !selectedCategory
-                        ? 'true'
-                        : undefined
+                      option.disabled || wheelIsDisabled || !selectedCategory ? 'true' : undefined
+                    }
+                    role="option"
+                    aria-selected={pickerValue.gender === option.value}
+                    aria-disabled={
+                      option.disabled || wheelIsDisabled || !selectedCategory ? true : undefined
                     }
                   >
-                    {option.label}
-                  </span>
-                )}
-              </Picker.Item>
-            ))}
-          </Picker.Column>
-          <Picker.Column
-            name="number"
-            className="patrol-code-input__picker-column"
-            aria-label="Číslo hlídky"
-            role="listbox"
-            data-disabled={
-              wheelIsDisabled || !selectedCategory || !selectedGender ? 'true' : undefined
-            }
-          >
-            {numberColumnOptions.map((option, index) => (
-              <Picker.Item
-                key={`${inputId}-number-option-${index}`}
-                value={option.value}
-                className="patrol-code-input__picker-item"
-                title={option.title}
+                    {({ selected }) => (
+                      <span
+                        className="patrol-code-input__picker-item-label"
+                        data-selected={selected ? 'true' : undefined}
+                        data-disabled={
+                          option.disabled || wheelIsDisabled || !selectedCategory
+                            ? 'true'
+                            : undefined
+                        }
+                      >
+                        {option.label}
+                      </span>
+                    )}
+                  </Picker.Item>
+                ))}
+              </Picker.Column>
+              <Picker.Column
+                name="number"
+                className="patrol-code-input__picker-column"
+                aria-label="Číslo hlídky"
+                role="listbox"
                 data-disabled={
-                  option.disabled || wheelIsDisabled || !selectedCategory || !selectedGender
-                    ? 'true'
-                    : undefined
-                }
-                role="option"
-                aria-selected={pickerValue.number === option.value}
-                aria-disabled={
-                  option.disabled || wheelIsDisabled || !selectedCategory || !selectedGender
-                    ? true
-                    : undefined
+                  wheelIsDisabled || !selectedCategory || !selectedGender ? 'true' : undefined
                 }
               >
-                {({ selected }) => (
-                  <span
-                    className="patrol-code-input__picker-item-label"
-                    data-selected={selected ? 'true' : undefined}
+                {numberColumnOptions.map((option, index) => (
+                  <Picker.Item
+                    key={`${inputId}-number-option-${index}`}
+                    value={option.value}
+                    className="patrol-code-input__picker-item"
+                    title={option.title}
                     data-disabled={
                       option.disabled || wheelIsDisabled || !selectedCategory || !selectedGender
                         ? 'true'
                         : undefined
                     }
+                    role="option"
+                    aria-selected={pickerValue.number === option.value}
+                    aria-disabled={
+                      option.disabled || wheelIsDisabled || !selectedCategory || !selectedGender
+                        ? true
+                        : undefined
+                    }
                   >
-                    {option.label}
-                  </span>
-                )}
-              </Picker.Item>
-            ))}
-          </Picker.Column>
-        </Picker>
-        {wheelIsDisabled ? (
-          <div className="patrol-code-input__wheel-skeleton" aria-hidden="true">
-            <div />
-            <div />
-            <div />
+                    {({ selected }) => (
+                      <span
+                        className="patrol-code-input__picker-item-label"
+                        data-selected={selected ? 'true' : undefined}
+                        data-disabled={
+                          option.disabled || wheelIsDisabled || !selectedCategory || !selectedGender
+                            ? 'true'
+                            : undefined
+                        }
+                      >
+                        {option.label}
+                      </span>
+                    )}
+                  </Picker.Item>
+                ))}
+              </Picker.Column>
+            </Picker>
+            {wheelIsDisabled ? (
+              <div className="patrol-code-input__wheel-skeleton" aria-hidden="true">
+                <div />
+                <div />
+                <div />
+              </div>
+            ) : null}
           </div>
-        ) : null}
-      </div>
+        </>
+      ) : null}
       <div className="patrol-code-input__value" aria-live="polite">
         {displayValue}
       </div>
