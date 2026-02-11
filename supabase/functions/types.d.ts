@@ -1,5 +1,5 @@
 declare module 'jsr:@supabase/supabase-js@2' {
-  export * from '@supabase/supabase-js';
+  export * from 'npm:@supabase/supabase-js@2';
 }
 
 declare module 'https://deno.land/std@0.224.0/csv/mod.ts' {
