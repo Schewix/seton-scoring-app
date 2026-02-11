@@ -61,6 +61,12 @@ Další proměnné (`VITE_STATION_PRESET`, `VITE_SCOREBOARD_REFRESH_MS`, …) lz
 - `npm run test:load` – krátký spike test submit pipeline proti lokální Supabase.
 - `npm run test:soak` – dlouhý soak/endurance test (ručně, mimo CI).
 
+One-liner pro vsechny testy krome soak (vyzaduje bezici lokalni Supabase):
+
+```bash
+supabase status >/dev/null 2>&1 || supabase start && pnpm -C web test -- --run && pnpm -C web test:integration && pnpm -C web test:e2e && pnpm -C web test:load
+```
+
 ### Load & soak testy
 
 Soak test simuluje dlouhý běh (standardně 12h), loguje metriky každou minutu a ukládá report do `test-results/`.
