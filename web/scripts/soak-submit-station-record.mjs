@@ -217,18 +217,36 @@ const stationId = randomUuid(seedRng);
 const judgeId = randomUuid(seedRng);
 const sessionId = randomUuid(seedRng);
 
-const accessToken = jwt.sign(
-  {
-    sub: judgeId,
-    sessionId,
-    eventId,
-    stationId,
-    role: 'authenticated',
-    type: 'access',
-  },
-  jwtSecret,
-  { expiresIn: '2h' },
-);
+const accessTokenTtlMs = 2 * 60 * 60 * 1000;
+const accessTokenRefreshSkewMs = 5 * 60 * 1000;
+let accessToken = '';
+let accessTokenExpiresAtMs = 0;
+
+function issueAccessToken() {
+  accessToken = jwt.sign(
+    {
+      sub: judgeId,
+      sessionId,
+      eventId,
+      stationId,
+      role: 'authenticated',
+      type: 'access',
+    },
+    jwtSecret,
+    { expiresIn: Math.floor(accessTokenTtlMs / 1000) },
+  );
+  accessTokenExpiresAtMs = Date.now() + accessTokenTtlMs;
+}
+
+function getAccessToken() {
+  if (!accessToken || Date.now() >= accessTokenExpiresAtMs - accessTokenRefreshSkewMs) {
+    issueAccessToken();
+    console.log('[soak] refreshed access token');
+  }
+  return accessToken;
+}
+
+issueAccessToken();
 
 const maxSubmissionsPerClient = Math.ceil(durationMs / intervalMinMs) + 5;
 const burstCount = burstEveryMinutes > 0 ? Math.ceil(durationMinutes / burstEveryMinutes) : 0;
@@ -307,7 +325,7 @@ async function sendWithChaos(payload) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${getAccessToken()}`,
         ...(apiKey ? { apikey: apiKey } : {}),
       },
       body: JSON.stringify(payload),
