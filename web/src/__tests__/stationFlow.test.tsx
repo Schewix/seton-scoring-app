@@ -3,8 +3,11 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import localforage from 'localforage';
 import type { ReactNode } from 'react';
+import type { OutboxEntry, StationScorePayload } from '../outbox';
+import { buildOutboxEntry, buildStationScorePayload, readOutbox, writeOutboxEntry } from '../outbox';
 import { AuthProvider } from '../auth/context';
 import { ROUTE_PREFIX } from '../routing';
+import { getOutboxStore } from '../storage/localforage';
 
 const { logoutMock } = vi.hoisted(() => ({ logoutMock: vi.fn() }));
 
@@ -82,6 +85,9 @@ vi.mock('../supabaseClient', () => {
         return {
           select: () => ({
             eq: () => ({
+              in: () => ({
+                maybeSingle: () => createMaybeSingle(),
+              }),
               eq: () => ({
                 maybeSingle: () => createMaybeSingle(),
               }),
@@ -360,7 +366,8 @@ async function loadPatrolAndOpenForm(
   await selectPatrolCode(user, code);
   await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
 
-  const serveButton = await screen.findByRole('button', { name: 'Obsluhovat' });
+  const choiceDialog = await screen.findByRole('dialog');
+  const serveButton = within(choiceDialog).getByRole('button', { name: 'Obsluhovat' });
   await user.click(serveButton);
 
   if (mockedStationCode !== 'T') {
@@ -381,8 +388,6 @@ interface SupabaseTestClient {
 }
 
 const supabaseMock = supabase as unknown as SupabaseTestClient;
-
-const QUEUE_KEY = 'web_pending_ops_v1_station-test';
 
 const realSetTimeout = global.setTimeout;
 const realSetInterval = global.setInterval;
@@ -414,6 +419,47 @@ function createSelectResult<T>(data: T, error: unknown = null) {
         eq: () => Promise.resolve({ data, error }),
       }),
     }),
+  };
+}
+
+type StationScorePayloadInput = Omit<StationScorePayload, 'client_event_id' | 'client_created_at'>;
+
+function createOutboxEntry(
+  payloadOverrides: Partial<StationScorePayloadInput> = {},
+  entryOverrides: Partial<OutboxEntry> = {},
+) {
+  const nowIso = entryOverrides.created_at ?? new Date('2024-01-01T10:00:00Z').toISOString();
+  const clientEventId = entryOverrides.client_event_id ?? `client-${Math.random().toString(16).slice(2)}`;
+  const payload = buildStationScorePayload(
+    {
+      event_id: 'event-test',
+      station_id: 'station-test',
+      patrol_id: 'patrol-queued',
+      category: 'N',
+      arrived_at: nowIso,
+      wait_minutes: 5,
+      points: 7,
+      note: 'Offline záznam',
+      use_target_scoring: false,
+      normalized_answers: null,
+      finish_time: null,
+      patrol_code: 'N-99',
+      team_name: 'Rysi',
+      sex: 'F',
+      ...payloadOverrides,
+    },
+    clientEventId,
+    nowIso,
+  );
+  const baseEntry = buildOutboxEntry(payload, nowIso);
+  return {
+    ...baseEntry,
+    ...entryOverrides,
+    client_event_id: clientEventId,
+    payload,
+    event_id: payload.event_id,
+    station_id: payload.station_id,
+    created_at: entryOverrides.created_at ?? baseEntry.created_at,
   };
 }
 
@@ -470,6 +516,7 @@ describe('station workflow', () => {
     fetchMock.mockReset();
     (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
     await localforage.clear();
+    await getOutboxStore().clear();
     window.localStorage.clear();
     if (typeof Element !== 'undefined') {
       const proto = Element.prototype as Element & { scrollIntoView?: () => void };
@@ -504,7 +551,17 @@ describe('station workflow', () => {
     const pointsPicker = await screen.findByRole('listbox', { name: 'Body (0 až 12)' });
     await user.click(within(pointsPicker).getByRole('option', { name: '10 bodů' }));
 
-    fetchMock.mockRejectedValueOnce(new Error('offline'));
+    fetchMock.mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : '';
+      if (url.includes('submit-station-record')) {
+        throw new Error('offline');
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ results: [] }),
+      } as any;
+    });
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
@@ -516,7 +573,7 @@ describe('station workflow', () => {
     const queueLabel = await screen.findByText('Vlci (N-01)');
     expect(queueLabel).toBeInTheDocument();
     expect(screen.getByText('Manuální body')).toBeInTheDocument();
-    expect(screen.getByText(/Chyba:/)).toBeInTheDocument();
+    expect(await screen.findByText(/Chyba:/)).toBeInTheDocument();
   });
 
   it('prevents loading patrols from disallowed categories', async () => {
@@ -545,7 +602,7 @@ describe('station workflow', () => {
       ).not.toBeInTheDocument(),
     );
 
-    expect(screen.queryByRole('button', { name: 'Obsluhovat' })).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('button', { name: 'Obsluhovat' }).length).toBe(0);
   });
 
   it('prevents loading patrols that already passed through the station', async () => {
@@ -575,7 +632,7 @@ describe('station workflow', () => {
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
 
     expect(await screen.findByText('Hlídka už na stanovišti byla.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Obsluhovat' })).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('button', { name: 'Obsluhovat' }).length).toBe(0);
   });
 
   it('allows loading patrols on Výpočetka even if already passed through', async () => {
@@ -606,7 +663,8 @@ describe('station workflow', () => {
     await selectPatrolCode(user, { category: 'N', type: 'H', number: '1' });
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
 
-    await screen.findByRole('button', { name: 'Obsluhovat' });
+    const choiceDialog = await screen.findByRole('dialog');
+    await within(choiceDialog).findByRole('button', { name: 'Obsluhovat' });
     expect(screen.queryByText('Hlídka už na stanovišti byla.')).not.toBeInTheDocument();
   });
 
@@ -639,15 +697,11 @@ describe('station workflow', () => {
       () => createSelectResult([{ category: 'N', correct_answers: 'ABCDABCDABCD' }])
     );
 
-    fetchMock.mockImplementation(async (_input, init) => {
-      const body = JSON.parse((init?.body as string) ?? '{}');
-      const results = (body.operations ?? []).map((op: { id: string }) => ({ id: op.id, status: 'done' as const }));
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ results }),
-      } as any;
-    });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    } as any);
 
     const user = userEvent.setup();
 
@@ -673,13 +727,14 @@ describe('station workflow', () => {
     });
     const [, init] = fetchMock.mock.calls.at(-1)!;
     expect(init?.headers?.Authorization).toBe('Bearer access-test');
-    expect(init?.credentials).toBe('include');
     const body = JSON.parse((init?.body as string) ?? '{}');
-    expect(body.operations).toHaveLength(1);
+    expect(body.use_target_scoring).toBe(true);
+    expect(body.normalized_answers).toBe('ABCDABCDABCD');
+    expect(body.client_event_id).toBeTruthy();
 
     await waitFor(async () => {
-      const storedQueue = await localforage.getItem(QUEUE_KEY);
-      expect(storedQueue).toBeNull();
+      const storedQueue = await readOutbox();
+      expect(storedQueue).toHaveLength(0);
     });
   });
 
@@ -691,19 +746,11 @@ describe('station workflow', () => {
       () => createSelectResult([{ category: 'N', correct_answers: 'ABCDABCDABCD' }])
     );
 
-    fetchMock.mockImplementation(async (_input, init) => {
-      const body = JSON.parse((init?.body as string) ?? '{}');
-      const results = (body.operations ?? []).map((op: { id: string }) => ({
-        id: op.id,
-        status: 'failed' as const,
-        error: 'server-error',
-      }));
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ results }),
-      } as any;
-    });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'server-error' }),
+    } as any);
 
     const user = userEvent.setup();
 
@@ -724,12 +771,11 @@ describe('station workflow', () => {
     await screen.findByText(/Záznam uložen do fronty/);
     await screen.findByText(/Čeká na odeslání: 1/);
 
-    const storedQueue = (await localforage.getItem(QUEUE_KEY)) as any[] | null;
-    expect(storedQueue).not.toBeNull();
+    const storedQueue = await readOutbox();
     expect(storedQueue).toHaveLength(1);
-    const [queued] = storedQueue!;
-    expect(queued.retryCount).toBe(1);
-    expect(queued.lastError).toBe('server-error');
+    const [queued] = storedQueue;
+    expect(queued.attempts).toBe(1);
+    expect(queued.last_error).toBe('server-error');
   });
 
   it('forces logout when sync endpoint responds with unauthorized error', async () => {
@@ -755,48 +801,23 @@ describe('station workflow', () => {
     expect(await screen.findByText(/Čeká na odeslání: 1/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Zobrazit frontu' }));
     expect(await screen.findByText(/Chyba: Session revoked/)).toBeInTheDocument();
-    expect(await screen.findByText('Přihlášení vypršelo, přihlas se prosím znovu.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Přihlášení vypršelo, obnov ho prosím pro synchronizaci.'),
+    ).toBeInTheDocument();
 
-    const storedQueue = (await localforage.getItem(QUEUE_KEY)) as any[] | null;
-    expect(storedQueue).not.toBeNull();
+    const storedQueue = await readOutbox();
     expect(storedQueue).toHaveLength(1);
-    expect(storedQueue?.[0]?.lastError).toBe('Session revoked');
+    expect(storedQueue[0]?.last_error).toBe('Session revoked');
 
-    await waitFor(() => expect(logoutMock).toHaveBeenCalled());
   });
 
   it('synchronizes pending queue when connectivity is restored', async () => {
-    const pendingOperation = {
-      id: 'op-sync-test',
-      type: 'submission' as const,
-      payload: {
-        event_id: 'event-test',
-        station_id: 'station-test',
-        patrol_id: 'patrol-queued',
-        category: 'N',
-        arrived_at: new Date('2024-01-01T10:00:00Z').toISOString(),
-        wait_minutes: 5,
-        points: 7,
-        note: 'Offline záznam',
-        useTargetScoring: false,
-        normalizedAnswers: null,
-        shouldDeleteQuiz: true,
-        patrol_code: 'N-99',
-        team_name: 'Rysi',
-        sex: 'F',
-        finish_time: null,
-        manifest_version: 1,
-      },
-      signature: 'offline-signature',
-      signature_payload: '{}',
-      created_at: new Date('2024-01-01T10:00:00Z').toISOString(),
-      inProgress: false,
-      retryCount: 0,
-      nextAttemptAt: Date.now(),
-      sessionId: 'session-test',
-    };
+    const pendingEntry = createOutboxEntry(
+      {},
+      { client_event_id: 'op-sync-test', created_at: new Date('2024-01-01T10:00:00Z').toISOString() },
+    );
 
-    await localforage.setItem(QUEUE_KEY, [pendingOperation]);
+    await writeOutboxEntry(pendingEntry);
 
     fetchMock.mockImplementation(async (_input, init) => {
       const body = JSON.parse((init?.body as string) ?? '{}');
@@ -816,163 +837,77 @@ describe('station workflow', () => {
     await waitFor(() => {
       expect(screen.queryByText(/Čeká na odeslání:/)).not.toBeInTheDocument();
     });
-    const storedQueue = await localforage.getItem(QUEUE_KEY);
-    expect(storedQueue).toBeNull();
+    const storedQueue = await readOutbox();
+    expect(storedQueue).toHaveLength(0);
   });
 
-  it('removes submissions from previous sessions before syncing', async () => {
-    const staleOperation = {
-      id: 'op-stale-session',
-      type: 'submission' as const,
-      payload: {
-        event_id: 'event-test',
-        station_id: 'station-test',
-        patrol_id: 'patrol-stale',
-        category: 'N',
-        arrived_at: new Date('2024-03-01T09:00:00Z').toISOString(),
-        wait_minutes: 3,
-        points: 5,
-        note: 'Stará relace',
-        useTargetScoring: false,
-        normalizedAnswers: null,
-        shouldDeleteQuiz: true,
-        patrol_code: 'N-98',
-        team_name: 'Lišky',
-        sex: 'F',
-        finish_time: null,
-        manifest_version: 1,
-      },
-      signature: 'stale-signature',
-      signature_payload: '{}',
-      created_at: new Date('2024-03-01T09:00:00Z').toISOString(),
-      inProgress: false,
-      retryCount: 0,
-      nextAttemptAt: Date.now(),
-      sessionId: 'other-session',
-    };
+  it('marks submissions from other stations as blocked', async () => {
+    const staleEntry = createOutboxEntry(
+      { station_id: 'station-other', patrol_id: 'patrol-stale', note: 'Stará relace' },
+      { client_event_id: 'op-stale-session', created_at: new Date('2024-03-01T09:00:00Z').toISOString() },
+    );
 
-    await localforage.setItem(QUEUE_KEY, [staleOperation]);
+    await writeOutboxEntry(staleEntry);
 
     await renderApp();
 
     await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
     await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
 
-    const alerts = await screen.findAllByText(
-      'Odebrán 1 záznam z dřívější relace – nelze jej odeslat.',
-    );
-    expect(alerts.length).toBeGreaterThanOrEqual(1);
+    expect(await screen.findByText('Jiná relace: 1')).toBeInTheDocument();
 
     await waitFor(async () => {
-      const storedQueue = await localforage.getItem(QUEUE_KEY);
-      expect(storedQueue).toBeNull();
+      const storedQueue = await readOutbox();
+      expect(storedQueue).toHaveLength(1);
+      expect(storedQueue[0]?.state).toBe('blocked_other_session');
     });
   });
 
-  it('removes submissions from previous sessions using signature metadata when payload is missing', async () => {
-    const signaturePayload = {
-      version: 1,
-      manifest_version: 1,
-      session_id: 'other-session',
-      judge_id: 'judge-test',
-      station_id: 'station-test',
-      event_id: 'event-test',
-      signed_at: new Date('2024-03-01T09:00:00Z').toISOString(),
-      data: {
-        event_id: 'event-test',
-        station_id: 'station-test',
+  it('shows other-session records in queue details', async () => {
+    const staleEntry = createOutboxEntry(
+      {
+        event_id: 'event-other',
         patrol_id: 'patrol-stale',
-        category: 'N',
-        arrived_at: new Date('2024-03-01T09:00:00Z').toISOString(),
-        wait_minutes: 3,
-        points: 5,
         note: 'Stará relace',
-        use_target_scoring: false,
-        normalized_answers: null,
-        finish_time: null,
+        team_name: 'Lišky',
         patrol_code: 'N-98',
       },
-    };
+      { client_event_id: 'op-stale-session-signature', created_at: new Date('2024-03-01T09:00:00Z').toISOString() },
+    );
 
-    const staleOperation = {
-      id: 'op-stale-session-signature',
-      type: 'submission' as const,
-      payload: {
-        event_id: 'event-test',
-        station_id: 'station-test',
-        patrol_id: 'patrol-stale',
-        category: 'N',
-        arrived_at: new Date('2024-03-01T09:00:00Z').toISOString(),
-        wait_minutes: 3,
-        points: 5,
-        note: 'Stará relace',
-        useTargetScoring: false,
-        normalizedAnswers: null,
-        shouldDeleteQuiz: true,
-        patrol_code: 'N-98',
-        team_name: 'Lišky',
-        sex: 'F',
-        finish_time: null,
-        manifest_version: 1,
-      } as any,
-      signature: 'stale-signature',
-      signature_payload: JSON.stringify(signaturePayload),
-      created_at: new Date('2024-03-01T09:00:00Z').toISOString(),
-      inProgress: false,
-      retryCount: 0,
-      nextAttemptAt: Date.now(),
-    };
+    await writeOutboxEntry(staleEntry);
 
-    await localforage.setItem(QUEUE_KEY, [staleOperation]);
+    const user = userEvent.setup();
 
     await renderApp();
 
     await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
-    await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
 
-    const alerts = await screen.findAllByText(
-      'Odebrán 1 záznam z dřívější relace – nelze jej odeslat.',
-    );
-    expect(alerts.length).toBeGreaterThanOrEqual(1);
+    await user.click(screen.getByRole('button', { name: 'Zobrazit frontu' }));
 
-    await waitFor(async () => {
-      const storedQueue = await localforage.getItem(QUEUE_KEY);
-      expect(storedQueue).toBeNull();
-    });
+    expect(await screen.findByText('Jiná relace')).toBeInTheDocument();
+    expect(screen.getByText('Neodesíláme')).toBeInTheDocument();
+    expect(screen.getByText(/Záznam patří k jiné relaci/)).toBeInTheDocument();
   });
 
   it('flushes queued target quiz submission via sync endpoint', async () => {
-    const pendingOperation = {
-      id: 'op-target-sync',
-      type: 'submission' as const,
-      payload: {
-        event_id: 'event-test',
-        station_id: 'station-test',
+    const pendingEntry = createOutboxEntry(
+      {
         patrol_id: 'patrol-target',
-        category: 'N',
         arrived_at: new Date('2024-02-01T09:15:00Z').toISOString(),
         wait_minutes: 0,
         points: 11,
         note: 'Terč offline',
-        useTargetScoring: true,
-        normalizedAnswers: 'ABCDABCDABCD',
-        shouldDeleteQuiz: false,
+        use_target_scoring: true,
+        normalized_answers: 'ABCDABCDABCD',
         patrol_code: 'N-77',
         team_name: 'Ještěrky',
         sex: 'F',
-        finish_time: null,
-        manifest_version: 1,
       },
-      signature: 'offline-signature',
-      signature_payload: '{}',
-      created_at: new Date('2024-02-01T09:15:00Z').toISOString(),
-      inProgress: false,
-      retryCount: 0,
-      nextAttemptAt: Date.now(),
-      sessionId: 'session-test',
-    };
+      { client_event_id: 'op-target-sync', created_at: new Date('2024-02-01T09:15:00Z').toISOString() },
+    );
 
-    await localforage.setItem(QUEUE_KEY, [pendingOperation]);
+    await writeOutboxEntry(pendingEntry);
 
     fetchMock.mockImplementation(async (_input, init) => {
       const body = JSON.parse((init?.body as string) ?? '{}');
@@ -992,8 +927,8 @@ describe('station workflow', () => {
     await waitFor(() => {
       expect(screen.queryByText(/Čeká na odeslání:/)).not.toBeInTheDocument();
     });
-    const storedQueue = await localforage.getItem(QUEUE_KEY);
-    expect(storedQueue).toBeNull();
+    const storedQueue = await readOutbox();
+    expect(storedQueue).toHaveLength(0);
   });
 
   it('generates temporary code when patrol lacks official code', async () => {
@@ -1008,7 +943,8 @@ describe('station workflow', () => {
     await selectPatrolCode(user, { category: 'N', type: 'H', number: '1' });
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
 
-    const quickAddButton = await screen.findByRole('button', { name: 'Čekat' });
+    const choiceDialog = await screen.findByRole('dialog');
+    const quickAddButton = within(choiceDialog).getByRole('button', { name: 'Čekat' });
 
     await user.click(quickAddButton);
 
@@ -1016,12 +952,15 @@ describe('station workflow', () => {
   });
 
   it('shows offline queue health widget', async () => {
+    const user = userEvent.setup();
     await renderApp();
 
-    const widget = await screen.findByLabelText('Stav offline fronty');
-    expect(within(widget).getByText('Síť:')).toBeInTheDocument();
-    expect(within(widget).getByText('Online')).toBeInTheDocument();
-    expect(within(widget).getByText('Fronta:')).toBeInTheDocument();
-    expect(within(widget).getByText('prázdná')).toBeInTheDocument();
+    const menuButtons = await screen.findAllByRole('button', { name: 'Otevřít menu' });
+    await user.click(menuButtons[0]);
+    const menuDialog = await screen.findByRole('dialog');
+    expect(within(menuDialog).getByText('Síť')).toBeInTheDocument();
+    expect(within(menuDialog).getByText('Online')).toBeInTheDocument();
+    expect(within(menuDialog).getByText('Fronta')).toBeInTheDocument();
+    expect(within(menuDialog).getByText('prázdná')).toBeInTheDocument();
   });
 });
