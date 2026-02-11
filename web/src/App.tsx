@@ -428,6 +428,7 @@ function StationApp({
   const [outboxItems, setOutboxItems] = useState<OutboxEntry[]>([]);
   const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const didRecoverOutbox = useRef(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [authNeedsLogin, setAuthNeedsLogin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -723,7 +724,19 @@ function StationApp({
 
   const refreshOutbox = useCallback(async () => {
     const items = await readOutbox();
-    const normalized = await normalizeOutboxForSession(items);
+    let nextItems = items;
+    if (!didRecoverOutbox.current) {
+      didRecoverOutbox.current = true;
+      const now = Date.now();
+      const recovered = items.map((item) =>
+        item.state === 'sending' ? { ...item, state: 'queued', next_attempt_at: now } : item,
+      );
+      if (recovered.some((item, index) => item !== items[index])) {
+        await writeOutboxEntriesAndSync(recovered);
+      }
+      nextItems = recovered;
+    }
+    const normalized = await normalizeOutboxForSession(nextItems);
     updateOutboxState(normalized);
   }, [normalizeOutboxForSession, updateOutboxState]);
 
