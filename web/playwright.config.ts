@@ -4,8 +4,8 @@ import { createTestJwt } from './e2e/utils';
 import { ensureTestSupabaseEnv } from './src/test/testEnv';
 
 const { supabaseUrl: baseSupabaseUrl, anonKey: baseAnonKey, jwtSecret } = ensureTestSupabaseEnv();
-const supabaseUrl = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL ?? baseSupabaseUrl;
-const anonKey = process.env.VITE_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY ?? baseAnonKey;
+const supabaseUrl = process.env.PLAYWRIGHT_SUPABASE_URL ?? baseSupabaseUrl;
+const anonKey = process.env.PLAYWRIGHT_SUPABASE_ANON_KEY ?? baseAnonKey;
 
 if (!anonKey) {
   throw new Error('Missing SUPABASE_ANON_KEY for E2E tests.');
