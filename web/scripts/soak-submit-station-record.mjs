@@ -81,6 +81,38 @@ function shuffleInPlace(rng, values) {
   }
 }
 
+function printHelp() {
+  console.log(`
+Usage:
+  SOAK_DURATION_MINUTES=60 SOAK_CLIENTS=30 pnpm -C web test:soak
+
+Profiles (set SOAK_PROFILE=race|torture; env overrides still apply):
+
+ZAVOD (race, realistic):
+  SOAK_DURATION_MINUTES=720 SOAK_CLIENTS=30 \\
+  SOAK_MIN_INTERVAL_MS=45000 SOAK_MAX_INTERVAL_MS=120000 \\
+  SOAK_RETRY_RATE=0.05 SOAK_RELOAD_RATE=0.01 \\
+  CHAOS_TIMEOUT_RATE=0.02 CHAOS_TIMEOUT_MS=5000 \\
+  CHAOS_429_RATE=0.01 CHAOS_JITTER_MS_MAX=1000 \\
+  CHAOS_BURST_EVERY_MINUTES=30 DB_CHECK_EVERY_UNIQUE_SUCCESSES=300 \\
+  pnpm -C web test:soak
+
+TORTURE (aggressive):
+  SOAK_DURATION_MINUTES=60 SOAK_CLIENTS=60 \\
+  SOAK_MIN_INTERVAL_MS=5000 SOAK_MAX_INTERVAL_MS=15000 \\
+  SOAK_RETRY_RATE=0.20 SOAK_RELOAD_RATE=0.05 \\
+  CHAOS_TIMEOUT_RATE=0.10 CHAOS_TIMEOUT_MS=2500 \\
+  CHAOS_429_RATE=0.10 CHAOS_JITTER_MS_MAX=3000 \\
+  CHAOS_BURST_EVERY_MINUTES=5 DB_CHECK_EVERY_UNIQUE_SUCCESSES=100 \\
+  pnpm -C web test:soak
+`);
+}
+
+if (process.argv.includes('--help') || process.argv.includes('-h')) {
+  printHelp();
+  process.exit(0);
+}
+
 const supabaseUrl = readEnv('SUPABASE_URL', DEFAULT_SUPABASE_URL).replace(/\/$/, '');
 const jwtSecret = readEnv('SUPABASE_JWT_SECRET', readEnv('JWT_SECRET', DEFAULT_JWT_SECRET));
 const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY', signKey(jwtSecret, 'service_role'));
@@ -91,21 +123,61 @@ const seed = readInteger('SEED', 1337);
 const rng = createRng(seed);
 const seedRng = createRng(seed ^ 0x9e3779b9);
 
-const durationMinutes = readInteger('SOAK_DURATION_MINUTES', 720);
+const soakProfile = readEnv('SOAK_PROFILE', '').toLowerCase();
+const profileDefaults = {
+  race: {
+    durationMinutes: 720,
+    clients: 30,
+    intervalMinMs: 45000,
+    intervalMaxMs: 120000,
+    retryRate: 0.05,
+    reloadRate: 0.01,
+    chaosTimeoutRate: 0.02,
+    chaosTimeoutMs: 5000,
+    chaos429Rate: 0.01,
+    chaosJitterMsMax: 1000,
+    burstEveryMinutes: 30,
+    checkEvery: 300,
+  },
+  torture: {
+    durationMinutes: 60,
+    clients: 60,
+    intervalMinMs: 5000,
+    intervalMaxMs: 15000,
+    retryRate: 0.2,
+    reloadRate: 0.05,
+    chaosTimeoutRate: 0.1,
+    chaosTimeoutMs: 2500,
+    chaos429Rate: 0.1,
+    chaosJitterMsMax: 3000,
+    burstEveryMinutes: 5,
+    checkEvery: 100,
+  },
+};
+
+const selectedDefaults = profileDefaults[soakProfile] ?? {};
+
+const durationMinutes = readInteger('SOAK_DURATION_MINUTES', selectedDefaults.durationMinutes ?? 720);
 const durationMs = durationMinutes * 60 * 1000;
-const clients = readInteger('SOAK_CLIENTS', 30);
-const intervalMinMs = readInteger('SOAK_MIN_INTERVAL_MS', 30000);
-const intervalMaxMs = readInteger('SOAK_MAX_INTERVAL_MS', 90000);
-const retryRate = readNumber('SOAK_RETRY_RATE', 0.1);
-const reloadRate = readNumber('SOAK_RELOAD_RATE', 0.02);
+const clients = readInteger('SOAK_CLIENTS', selectedDefaults.clients ?? 30);
+const intervalMinMs = readInteger('SOAK_MIN_INTERVAL_MS', selectedDefaults.intervalMinMs ?? 30000);
+const intervalMaxMs = readInteger('SOAK_MAX_INTERVAL_MS', selectedDefaults.intervalMaxMs ?? 90000);
+const retryRate = readNumber('SOAK_RETRY_RATE', selectedDefaults.retryRate ?? 0.1);
+const reloadRate = readNumber('SOAK_RELOAD_RATE', selectedDefaults.reloadRate ?? 0.02);
 const quizRate = readNumber('SOAK_QUIZ_RATE', 0.2);
 const timingRate = readNumber('SOAK_TIMING_RATE', 0.1);
-const checkEvery = readInteger('SOAK_CHECK_EVERY', 200);
-const chaosTimeoutRate = readNumber('CHAOS_TIMEOUT_RATE', 0.05);
-const chaosTimeoutMs = readInteger('CHAOS_TIMEOUT_MS', 4000);
-const chaos429Rate = readNumber('CHAOS_429_RATE', 0.05);
-const chaosJitterMsMax = readInteger('CHAOS_JITTER_MS_MAX', 2000);
-const burstEveryMinutes = readInteger('CHAOS_BURST_EVERY_MINUTES', 20);
+const checkEvery = readInteger(
+  'DB_CHECK_EVERY_UNIQUE_SUCCESSES',
+  readInteger('SOAK_CHECK_EVERY', selectedDefaults.checkEvery ?? 200),
+);
+const chaosTimeoutRate = readNumber('CHAOS_TIMEOUT_RATE', selectedDefaults.chaosTimeoutRate ?? 0.05);
+const chaosTimeoutMs = readInteger('CHAOS_TIMEOUT_MS', selectedDefaults.chaosTimeoutMs ?? 4000);
+const chaos429Rate = readNumber('CHAOS_429_RATE', selectedDefaults.chaos429Rate ?? 0.05);
+const chaosJitterMsMax = readInteger('CHAOS_JITTER_MS_MAX', selectedDefaults.chaosJitterMsMax ?? 2000);
+const burstEveryMinutes = readInteger(
+  'CHAOS_BURST_EVERY_MINUTES',
+  selectedDefaults.burstEveryMinutes ?? 20,
+);
 const mode = readEnv('SOAK_MODE', 'standard');
 const endpoint = readEnv(
   'TARGET_URL',
@@ -133,6 +205,7 @@ const config = {
   mode,
   endpoint,
   seed,
+  profile: soakProfile || 'custom',
 };
 
 const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
