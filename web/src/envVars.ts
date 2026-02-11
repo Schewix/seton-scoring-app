@@ -6,4 +6,6 @@ export const env = {
   VITE_ADMIN_MODE: import.meta.env.VITE_ADMIN_MODE as string | undefined,
   VITE_AUTH_API_URL: import.meta.env.VITE_AUTH_API_URL as string | undefined,
   VITE_AUTH_BYPASS: import.meta.env.VITE_AUTH_BYPASS as string | undefined,
+  VITE_AUTH_BYPASS_TOKEN: import.meta.env.VITE_AUTH_BYPASS_TOKEN as string | undefined,
+  VITE_AUTH_BYPASS_PATROLS: import.meta.env.VITE_AUTH_BYPASS_PATROLS as string | undefined,
 };

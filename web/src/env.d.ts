@@ -8,6 +8,8 @@ declare interface ImportMetaEnv {
   readonly VITE_ADMIN_MODE?: string;
   readonly VITE_AUTH_API_URL?: string;
   readonly VITE_AUTH_BYPASS?: string;
+  readonly VITE_AUTH_BYPASS_TOKEN?: string;
+  readonly VITE_AUTH_BYPASS_PATROLS?: string;
   readonly VITE_STATION_CODE?: string;
 }
 
