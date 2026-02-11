@@ -70,6 +70,7 @@ test.beforeEach(async ({ page }) => {
 
 test('outbox se po reloadu obnovi a synchronizuje po navratu online', async ({ page, context }) => {
   await context.setOffline(true);
+  await page.route('**/submit-station-record', (route) => route.abort());
 
   await openPatrolForm(page, patrol.patrol_code);
   await selectPoints(page, 6);
@@ -77,9 +78,9 @@ test('outbox se po reloadu obnovi a synchronizuje po navratu online', async ({ p
 
   await expect(page.getByText(/Čeká na odeslání: 1/)).toBeVisible();
 
-  await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
-
   await context.setOffline(false);
+  await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+  await page.unroute('**/submit-station-record');
   await page.goto(ROUTE_PREFIX);
   await expect(page.getByRole('heading', { name: 'Načtení hlídek' })).toBeVisible();
   await expect(page.getByText(/Čeká na odeslání: 1/)).toBeVisible();
