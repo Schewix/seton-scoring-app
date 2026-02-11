@@ -1880,7 +1880,7 @@
 .gallery-album-grid {
   display: grid;
   gap: 24px;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   justify-content: stretch;
 }
 
@@ -2150,7 +2150,7 @@
 
 @media (max-width: 900px) {
   .gallery-album-grid {
-    grid-template-columns: repeat(auto-fit, minmax(170px, 260px));
+    grid-template-columns: repeat(auto-fill, minmax(170px, 260px));
   }
 
   .gallery-photo-grid {
@@ -2231,7 +2231,7 @@
     text-align: center;
   }
   .gallery-album-grid {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 220px));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 220px));
   }
 
   .gallery-photo-grid {
