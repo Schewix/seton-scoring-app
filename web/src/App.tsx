@@ -19,7 +19,7 @@ import type { AuthStatus } from './auth/types';
 import TicketQueue from './components/TicketQueue';
 import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket, TicketState } from './auth/tickets';
 import { registerPendingSync, setupSyncListener } from './backgroundSync';
-import { appendScanRecord } from './storage/scanHistory';
+import { appendScanRecord, getScanHistory, ScanRecord } from './storage/scanHistory';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
 import { ROUTE_PREFIX, SCOREBOARD_ROUTE_PREFIX, getStationPath, isStationAppPath } from './routing';
@@ -432,6 +432,9 @@ function StationApp({
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [authNeedsLogin, setAuthNeedsLogin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [scanHistory, setScanHistory] = useState<ScanRecord[]>([]);
+  const [scanHistoryLoading, setScanHistoryLoading] = useState(false);
+  const [scanHistoryError, setScanHistoryError] = useState<string | null>(null);
   const [manualCodeDraft, setManualCodeDraft] = useState('');
   const [confirmedManualCode, setConfirmedManualCode] = useState('');
   const [patrolRegistryEntries, setPatrolRegistryEntries] = useState<PatrolRegistryEntry[]>([]);
@@ -2349,9 +2352,32 @@ function StationApp({
     }
     return 'Čeká na odeslání';
   }, [nextAttemptAtLabel, pendingCount, syncing]);
+  const scanHistoryItems = useMemo(() => scanHistory.slice().reverse(), [scanHistory]);
+  const loadScanHistory = useCallback(async () => {
+    if (!eventId || !stationId) {
+      return;
+    }
+    setScanHistoryLoading(true);
+    setScanHistoryError(null);
+    try {
+      const records = await getScanHistory(eventId, stationId);
+      setScanHistory(records);
+    } catch (error) {
+      console.error('scan history load failed', error);
+      setScanHistoryError('Historii skenů se nepodařilo načíst.');
+    } finally {
+      setScanHistoryLoading(false);
+    }
+  }, [eventId, stationId]);
   const handleOpenRules = useCallback((url: string) => {
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
+
+  useEffect(() => {
+    if (menuOpen) {
+      void loadScanHistory();
+    }
+  }, [loadScanHistory, menuOpen]);
 
   useEffect(() => {
     if (!nextAttemptAtIso) {
@@ -2592,6 +2618,50 @@ function StationApp({
                   </strong>
                 </li>
               </ul>
+            </section>
+            <section className="card station-menu-card">
+              <header className="card-header">
+                <h3>Historie skenů</h3>
+              </header>
+              <p className="card-hint">Posledních 100 skenů uložených v tomto zařízení.</p>
+              <div className="station-menu-history-actions">
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => {
+                    void loadScanHistory();
+                  }}
+                  disabled={scanHistoryLoading}
+                >
+                  {scanHistoryLoading ? 'Načítám…' : 'Obnovit'}
+                </button>
+              </div>
+              {scanHistoryError ? <p className="error-text">{scanHistoryError}</p> : null}
+              {scanHistoryItems.length ? (
+                <ul className="scan-history-list">
+                  {scanHistoryItems.map((record, index) => (
+                    <li key={`${record.code}-${record.scannedAt}-${index}`} className="scan-history-item">
+                      <div className="scan-history-meta">
+                        <span className="scan-history-time">{formatTime(record.scannedAt)}</span>
+                        <span className="scan-history-code">{record.code}</span>
+                      </div>
+                      <div className="scan-history-detail">
+                        <span
+                          className={`scan-history-status ${
+                            record.status === 'success' ? 'scan-history-status--success' : 'scan-history-status--failed'
+                          }`}
+                        >
+                          {record.status === 'success' ? 'OK' : 'Chyba'}
+                        </span>
+                        <span className="scan-history-team">{record.teamName ?? '—'}</span>
+                      </div>
+                      {record.reason ? <span className="scan-history-reason">{record.reason}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : scanHistoryLoading ? null : (
+                <p className="card-hint">Zatím tu nejsou žádné skeny.</p>
+              )}
             </section>
             <section className="card station-menu-card">
               <header className="card-header">

@@ -13,15 +13,15 @@ Tato složka obsahuje hlavní webovou aplikaci projektu – rozhraní pro rozhod
 
 ## Požadavky
 
-- Node.js 20 a npm
-- Supabase projekt se schématem popsaným ve složce [`supabase/sql`](../supabase/sql)
+- Node.js 20 + pnpm (doporučeno) nebo npm
+- Supabase projekt se schématem z migrací [`supabase/migrations`](../supabase/migrations)
 - Běžící backend (Express API z adresáře [`../server`](../server)) nebo zapnutý bypass přihlášení
 
 ## Instalace a spuštění
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Vývojový server Vite se spustí na `http://localhost:5173/` (port může být jiný podle konfigurace).
@@ -50,18 +50,18 @@ Pro serverless fotogalerii (Vercel funkce) přidej do environmentu také:
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | E-mail service accountu s přístupem do Drive. |
 | `GOOGLE_PRIVATE_KEY` | Privátní klíč service accountu (s `\\n` místo nových řádků). |
 
-Další proměnné (`VITE_STATION_PRESET`, `VITE_SCOREBOARD_REFRESH_MS`, …) lze doplnit dle potřeby – viz `src/config.ts`.
+Další proměnné lze doplnit dle potřeby – viz `src/envVars.ts`.
 
 ### Build & testy
 
-- `npm run build` – produkční build (výstup `dist/`).
-- `npm run preview` – lokální náhled produkčního buildu.
-- `npm run lint` – kontrola ESLint.
-- `npm run test` – Vitest scénáře v `src/__tests__/`. Testy pokrývají tok offline fronty i automatické skórování terče.
-- `npm run test:load` – krátký spike test submit pipeline proti lokální Supabase.
-- `npm run test:soak` – dlouhý soak/endurance test (ručně, mimo CI).
+- `pnpm build` – produkční build (výstup `dist/`).
+- `pnpm preview` – lokální náhled produkčního buildu.
+- `pnpm lint` – kontrola ESLint.
+- `pnpm test` – Vitest scénáře v `src/__tests__/`. Testy pokrývají tok offline fronty i automatické skórování terče.
+- `pnpm test:load` – krátký spike test submit pipeline proti lokální Supabase.
+- `pnpm test:soak` – dlouhý soak/endurance test (ručně, mimo CI).
 
-One-liner pro vsechny testy krome soak (vyzaduje bezici lokalni Supabase):
+One-liner pro všechny testy kromě soak (spouštěj z rootu repozitáře, vyžaduje běžící lokální Supabase):
 
 ```bash
 supabase status >/dev/null 2>&1 || supabase start && pnpm -C web test -- --run && pnpm -C web test:integration && pnpm -C web test:e2e && pnpm -C web test:load
@@ -80,7 +80,7 @@ SUPABASE_JWT_SECRET=super-secret-jwt-token-with-at-least-32-characters-long \
 SOAK_DURATION_MINUTES=60 \
 SOAK_CLIENTS=30 \
 TARGET_URL=http://127.0.0.1:54321/functions/v1/submit-station-record \
-npm run test:soak
+pnpm test:soak
 ```
 
 Pro testování celé /api vrstvy nastav `TARGET_URL` na `/api/submit-station-record` a ujisti se, že server má
@@ -129,19 +129,20 @@ Poznámky:
 - ZÁVOD profil je ideální spouštět přes noc a ráno zkontrolovat JSON/CSV report.
 - TORTURE profil spouštěj krátce (15–60 min), protože je záměrně agresivní.
 
+### Scoreboard na externím displeji (kiosk)
+
+1. Otevři `/setonuv-zavod/vysledky` nebo alias `/vysledky` (`?view=vysledky` přepne view i z homepage).
+2. Zapni full screen / kiosk režim prohlížeče (Chrome: `--kiosk`, případně ručně F11).
+3. Aplikace si data sama obnovuje (výchozí interval 30 s). Interval upravíš v `web/src/scoreboard/ScoreboardApp.tsx` (`REFRESH_INTERVAL_MS`).
+
 ## Struktura kódu
 
 - `src/App.tsx` – hlavní router a layout rozhraní rozhodčího.
 - `src/features/` – doménové moduly (fronta hlídek, scoring, target, výsledkový přehled).
 - `src/services/` – integrace na Supabase (Realtime, RPC, storage).
-- `src/storage/` – lokální úložiště (`localforage`, `localStorage`). Funkce `appendScanRecord` ukládá historii skenů; aktuálně chybí UI pro její zobrazení.
+- `src/storage/` – lokální úložiště (`localforage`, `localStorage`). Historii skenů zobrazíš v menu stanoviště (sekce „Historie skenů“).
 - `src/__tests__/` – Vitest scénáře simulující práci stanoviště.
 
 ## Distribuce
 
 Produkční build se nasazuje na Vercel (viz CI workflow `deploy-vercel.yml`). Výsledek je PWA se service workerem (`src/sw.ts`) a manifestem v `public/`.
-
-## Známé mezery
-
-- Historie skenů uložená přes `src/storage/scanHistory.ts` nemá uživatelské rozhraní – zvaž doplnění panelu s posledními skeny.
-- Dokumentace nasazení scoreboardu na externí displej je jen v uživatelském manuálu; uvítala by stručný checklist v repozitáři.

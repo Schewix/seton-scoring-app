@@ -33,10 +33,16 @@ async function selectPoints(page: Page, points: number) {
 
 async function flushIfNeeded(page: Page) {
   const sendButton = page.getByRole('button', { name: 'Odeslat nyní' });
-  if (await sendButton.isVisible()) {
-    if (await sendButton.isEnabled()) {
-      await sendButton.click({ timeout: 2000 }).catch(() => {});
-    }
+  if ((await sendButton.count()) === 0) {
+    return;
+  }
+  const visible = await sendButton.isVisible({ timeout: 1000 }).catch(() => false);
+  if (!visible) {
+    return;
+  }
+  const enabled = await sendButton.isEnabled({ timeout: 1000 }).catch(() => false);
+  if (enabled) {
+    await sendButton.click({ timeout: 2000 }).catch(() => {});
   }
 }
 

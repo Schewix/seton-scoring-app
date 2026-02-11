@@ -4,11 +4,11 @@ Seton Scoring App je monorepo pro zapisování výsledků stanovišť závodu Se
 
 ## Rychlý start
 
-1. **Node.js 20** – celý monorepo používá Node 20 (stejná verze jako v CI). V kořenové složce není potřeba spouštět `npm install`; vždy se pracuje uvnitř konkrétního balíčku (`web/`, `server/`, `scripts/`).
-2. **Supabase projekt** – připrav si URL instance, anon/service role klíče a heslo databáze. Schéma a pohledy najdeš v [`supabase/sql`](./supabase/sql).
+1. **Node.js 20 + pnpm** – celý monorepo používá Node 20 (stejná verze jako v CI). Instalace se provádí vždy v cílovém balíčku (`pnpm -C web install`, `pnpm -C server install`).
+2. **Supabase** – lokální vývoj jede přes `supabase start`. Migrace jsou v [`supabase/migrations`](./supabase/migrations), eventové seedy v [`supabase/sql`](./supabase/sql).
 3. **Google Sheets** – hlídky se synchronizují přes Apps Script nebo Supabase Edge Function. Viz [Google Sheets složku](./google-sheets) a funkci [`sync-patrols`](./supabase/functions/sync-patrols).
-4. **Spuštění backendu** – Express API v [`server/`](./server) obsluhuje přihlášení a manifest stanoviště. Stačí vytvořit `.env` podle ukázky níže a spustit `npm run dev`.
-5. **Spuštění webu** – klient pro rozhodčí i výsledkový přehled je v [`web/`](./web). Po nastavení `.env.local` stačí `npm run dev` a otevřít URL z terminálu.
+4. **Spuštění backendu** – Express API v [`server/`](./server) obsluhuje přihlášení a manifest stanoviště. Stačí vytvořit `.env` podle ukázky níže a spustit `pnpm -C server dev`.
+5. **Spuštění webu** – klient pro rozhodčí i výsledkový přehled je v [`web/`](./web). Po nastavení `.env.local` spusť `pnpm -C web dev`.
 
 > Detailní postupy jsou popsány níže a v README jednotlivých složek.
 
@@ -18,7 +18,8 @@ Seton Scoring App je monorepo pro zapisování výsledků stanovišť závodu Se
 | --- | --- |
 | [`web/`](./web) | React + Vite aplikace pro rozhodčí a veřejný výsledkový přehled (PWA, offline fronta, Vitest testy). |
 | [`server/`](./server) | Express API zajišťující přihlášení rozhodčích, vydávání JWT tokenů a manifest stanoviště. |
-| [`supabase/sql`](./supabase/sql) | SQL skripty se schématem, pohledy, RLS politikami a referenčním seedem pro konkrétní ročník. |
+| [`supabase/migrations`](./supabase/migrations) | Supabase CLI migrace (schéma, pohledy, RPC, RLS). |
+| [`supabase/sql`](./supabase/sql) | Ruční/legacy SQL skripty a seedy konkrétních ročníků. |
 | [`supabase/functions/sync-patrols`](./supabase/functions/sync-patrols) | Edge Function, která nahrazuje Apps Script synchronizaci hlídek z Google Sheets. |
 | [`google-sheets/`](./google-sheets) | Google Apps Script a popis struktury sdílené tabulky pro kancelář. |
 | [`scripts/`](./scripts) | Utility (např. generátor QR kódů hlídek). |
@@ -36,8 +37,8 @@ Lokální spuštění:
 
 ```bash
 cd server
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 `.env` soubor vypadá takto:
@@ -52,7 +53,17 @@ ACCESS_TOKEN_TTL_SECONDS=900
 REFRESH_TOKEN_TTL_SECONDS=1209600
 ```
 
-Hotový TypeScript build vytvoří `npm run build`, produkční start zajišťuje `npm start`.
+Hotový TypeScript build vytvoří `pnpm build`, produkční start zajišťuje `pnpm start`.
+
+## Nasazení serveru (Express)
+
+Server je stateless a lze ho nasadit jako jednoduchou Node.js službu nebo kontejner. Základní postup:
+
+1. `pnpm -C server install && pnpm -C server build`
+2. Spuštění: `pnpm -C server start` (nebo `node dist/index.js`).
+3. Nastav produkční proměnné prostředí (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`).
+
+Pro provoz doporučujeme process manager (systemd/pm2) nebo container runtime; server sám o sobě nevyžaduje žádný stav.
 
 ## Webová aplikace (React + Vite)
 
@@ -68,8 +79,8 @@ Instalace a spuštění:
 
 ```bash
 cd web
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Do `.env.local` přidej minimálně tyto proměnné:
@@ -85,14 +96,12 @@ VITE_AUTH_API_URL=https://scoring-backend.example.com
 VITE_AUTH_BYPASS=1  # jen pro lokální vývoj bez přihlášení
 ```
 
-Běžné skripty: `npm run build`, `npm run preview`, `npm run lint`, `npm run test` (Vitest scénáře pokrývají offline frontu i automatické hodnocení terče).
+Běžné skripty: `pnpm build`, `pnpm preview`, `pnpm lint`, `pnpm test` (Vitest scénáře pokrývají offline frontu i automatické hodnocení terče).
 
 ## Sanity CMS + fotogalerie (Google Drive)
 
-Obsah homepage a článků je spravovaný přes Sanity Studio. Metadata fotogalerií obsahují pouze odkaz na Drive složku s fotkami.
+Obsah homepage a článků je spravovaný přes Sanity. Tento repozitář obsahuje pouze klienta (`web/src/data/sanity.ts`); Sanity Studio je mimo repozitář a připojuje se přes `VITE_SANITY_*` proměnné.
 
-- **Studio** – konfigurace je v [`sanity/`](./sanity). Lokální spuštění: `npm install && npm run dev`.
-- **Dokumentace pro editory** – viz [`sanity/README.md`](./sanity/README.md).
 - **Gallery API** – Vercel funkce v `web/api/gallery` načítají fotky z Google Drive přes service account.
 
 ### Google Drive service account
@@ -106,7 +115,14 @@ Obsah homepage a článků je spravovaný přes Sanity Studio. Metadata fotogale
 
 ## Supabase & Google Sheets
 
-1. Spusť SQL skripty v pořadí `schema.sql`, `views.sql`, případně `rls.sql` (zapne RLS) a dle potřeby seed [`seton_2024_seed.sql`](./supabase/sql/seton_2024_seed.sql). RLS politiky předpokládají, že JWT obsahuje `event_id` a `station_id` jako textové UUID.
+1. Schéma a pohledy jsou spravované přes Supabase migrace v [`supabase/migrations`](./supabase/migrations). Lokálně:
+
+   ```bash
+   supabase start
+   supabase db reset
+   ```
+
+   Pro remote prostředí použij `supabase db push` a případně `supabase db seed`. Eventové seedy a ad-hoc skripty zůstávají v [`supabase/sql`](./supabase/sql). RLS politiky předpokládají, že JWT obsahuje `event_id` a `station_id` jako textové UUID.
 2. Hlídky lze synchronizovat dvěma způsoby:
    - **Apps Script** [`google-sheets/AppsScript.gs`](./google-sheets/AppsScript.gs) – nastav `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE` a `EVENT_ID` v Script Properties; šablonu listů popisuje [`SHEET_TEMPLATE_INFO.md`](./google-sheets/SHEET_TEMPLATE_INFO.md).
    - **Edge Function** [`sync-patrols`](./supabase/functions/sync-patrols) – publikuj jednotlivé listy jako CSV a jejich URL ulož do proměnné `SHEET_EXPORTS`. Funkci spouštěj cronem nebo ručně pomocí `supabase functions invoke`.
@@ -114,7 +130,7 @@ Obsah homepage a článků je spravovaný přes Sanity Studio. Metadata fotogale
 
    ```bash
    cd scripts
-   npm install
+   pnpm install
    SUPABASE_URL=... \
    SUPABASE_SERVICE_ROLE_KEY=... \
    node generate-qr-codes.mjs <EVENT_ID> [output-dir]
@@ -125,10 +141,11 @@ Obsah homepage a článků je spravovaný přes Sanity Studio. Metadata fotogale
 - [`deploy-vercel.yml`](./.github/workflows/deploy-vercel.yml) buildí `web/` a nasazuje ji na Vercel. Potřebné sekrety: `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_TOKEN`.
 - [`supabase.yml`](./.github/workflows/supabase.yml) spouští `supabase db push && supabase db seed`. Vyžaduje `SUPABASE_ACCESS_TOKEN` a `SUPABASE_DB_PASSWORD`.
 
-## Chybějící nebo plánované oblasti
+## Dokumentace
 
-- **Historie skenů na stanovišti:** web ukládá každý QR sken přes `appendScanRecord`, ale chybí rozhraní pro zobrazení/export historie. Doplnění jednoduchého náhledu by usnadnilo diagnostiku chyb skenování.
-- **Dokumentace procesů nasazení serveru:** Express backend se nasazuje manuálně; stojí za to doplnit playbook pro produkční provoz (např. Vercel Functions, Fly.io nebo Supabase Edge Functions).
-- **Automatizace Supabase migrací:** SQL skripty se spouští ručně. Integrace se Supabase CLI (`supabase db push`) je částečně připravená v CI, ale chybí popsaný lokální workflow.
+- [`README.md`](./README.md) – přehled repozitáře, infrastruktury a rychlý start.
+- [`web/README.md`](./web/README.md) – detailní popis webového klienta, testů a load/soak skriptů.
+- [`supabase/functions/sync-patrols/README.md`](./supabase/functions/sync-patrols/README.md) – provozní návod k Edge Function.
+- [`docs/`](./docs) – uživatelský manuál a postupy pro obsluhu stanovišť.
 
 Podrobnější poznámky a rozpracované nápady jsou v [`notes/`](./notes).

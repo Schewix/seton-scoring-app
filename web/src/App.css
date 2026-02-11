@@ -459,6 +459,81 @@ body {
   font-family: 'SFMono-Regular', 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
 }
 
+.station-menu-history-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.scan-history-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.scan-history-item {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(4, 55, 44, 0.08);
+  background: rgba(4, 55, 44, 0.04);
+}
+
+.scan-history-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #5c6f62;
+}
+
+.scan-history-code {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: 'SFMono-Regular', 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
+  color: #2f4a2d;
+}
+
+.scan-history-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+  color: #1f2c22;
+}
+
+.scan-history-status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.scan-history-status--success {
+  background: rgba(87, 170, 39, 0.16);
+  color: #2f4a2d;
+}
+
+.scan-history-status--failed {
+  background: rgba(200, 50, 40, 0.16);
+  color: #8b2c22;
+}
+
+.scan-history-reason {
+  font-size: 12px;
+  color: #6a8268;
+}
+
 .station-menu-rules-actions {
   display: grid;
   gap: 12px;

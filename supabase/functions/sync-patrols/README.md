@@ -8,6 +8,8 @@ Funkce běží v prostředí Deno na Supabase a ke komunikaci s databází použ
 2. aktualizuje údaje o hlídce (`team_name`, kategorie, poznámka, aktivita),
 3. vytvoří/aktualizuje záznam o startu (`timings`) pokud je ve zdroji vyplněný čas.
 
+> Poznámka: Tento README se týká jen Edge Function `sync-patrols`. Kontext celé aplikace a migrací je v root [`README.md`](../../README.md).
+
 ## Nasazení
 
 ```bash
