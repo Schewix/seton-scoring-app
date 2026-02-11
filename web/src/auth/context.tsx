@@ -46,6 +46,32 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const AUTH_BYPASS = env.VITE_AUTH_BYPASS === '1' || env.VITE_AUTH_BYPASS === 'true';
+const AUTH_BYPASS_TOKEN = env.VITE_AUTH_BYPASS_TOKEN ?? '';
+const AUTH_BYPASS_CLAIMS = (() => {
+  if (!AUTH_BYPASS_TOKEN) return null;
+  try {
+    return decodeJwt<SupabaseJwtClaims>(AUTH_BYPASS_TOKEN);
+  } catch {
+    return null;
+  }
+})();
+const AUTH_BYPASS_EVENT_ID =
+  AUTH_BYPASS_CLAIMS?.event_id ?? AUTH_BYPASS_CLAIMS?.eventId ?? env.VITE_EVENT_ID ?? 'event-test';
+const AUTH_BYPASS_STATION_ID =
+  AUTH_BYPASS_CLAIMS?.station_id ?? AUTH_BYPASS_CLAIMS?.stationId ?? env.VITE_STATION_ID ?? 'station-test';
+const AUTH_BYPASS_JUDGE_ID = AUTH_BYPASS_CLAIMS?.sub ?? 'judge-test';
+const AUTH_BYPASS_JUDGE_EMAIL = AUTH_BYPASS_CLAIMS?.email ?? 'test@example.com';
+const AUTH_BYPASS_SESSION_ID = AUTH_BYPASS_CLAIMS?.sessionId ?? 'session-test';
+const AUTH_BYPASS_PATROLS_RAW = env.VITE_AUTH_BYPASS_PATROLS ?? '';
+const AUTH_BYPASS_PATROLS: PatrolSummary[] = (() => {
+  if (!AUTH_BYPASS_PATROLS_RAW) return [];
+  try {
+    const parsed = JSON.parse(AUTH_BYPASS_PATROLS_RAW);
+    return Array.isArray(parsed) ? (parsed as PatrolSummary[]) : [];
+  } catch {
+    return [];
+  }
+})();
 
 type SupabaseJwtClaims = {
   sub?: string;
@@ -172,14 +198,14 @@ function useInitialization(setStatus: (status: AuthStatus) => void) {
             setStatus({
               state: 'authenticated',
               manifest: {
-                judge: { id: 'judge-test', email: 'test@example.com', displayName: 'Test Judge' },
+                judge: { id: AUTH_BYPASS_JUDGE_ID, email: AUTH_BYPASS_JUDGE_EMAIL, displayName: 'Test Judge' },
                 station: {
-                  id: env.VITE_STATION_ID || 'station-test',
+                  id: AUTH_BYPASS_STATION_ID,
                   code: 'X',
                   name: 'Testovací stanoviště',
                 },
                 event: {
-                  id: env.VITE_EVENT_ID || 'event-test',
+                  id: AUTH_BYPASS_EVENT_ID,
                   name: 'Test Event',
                   scoringLocked: false,
                 },
@@ -187,13 +213,13 @@ function useInitialization(setStatus: (status: AuthStatus) => void) {
                 allowedTasks: [],
                 manifestVersion: 1,
               },
-              patrols: [],
+              patrols: AUTH_BYPASS_PATROLS,
               deviceKey: new Uint8Array(32),
               tokens: {
-                accessToken: '',
+                accessToken: AUTH_BYPASS_TOKEN,
                 accessTokenExpiresAt: Date.now() + 3600 * 1000,
                 refreshToken: 'test-refresh',
-                sessionId: 'session-test',
+                sessionId: AUTH_BYPASS_SESSION_ID,
               },
             });
           }
