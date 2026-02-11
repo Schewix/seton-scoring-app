@@ -80,6 +80,49 @@ npm run test:soak
 Pro testování celé /api vrstvy nastav `TARGET_URL` na `/api/submit-station-record` a ujisti se, že server má
 nastavené `JWT_SECRET` a `REFRESH_TOKEN_SECRET`.
 
+#### Recommended defaults
+
+Profil 1: ZÁVOD (realistické, vhodné spustit noc před akcí)
+
+- Cíl: simulace reálného provozu + běžné mobilní výpadky, bez extrémního trápení.
+- Pass criteria (informativní, neblokující): error rate typicky < 0.5%, p95 typicky < 800–1200 ms (lokál), bez duplicit/invariant failu.
+
+Copy/paste:
+
+```bash
+SOAK_DURATION_MINUTES=720 SOAK_CLIENTS=30 \
+SOAK_MIN_INTERVAL_MS=45000 SOAK_MAX_INTERVAL_MS=120000 \
+SOAK_RETRY_RATE=0.05 SOAK_RELOAD_RATE=0.01 \
+CHAOS_TIMEOUT_RATE=0.02 CHAOS_TIMEOUT_MS=5000 \
+CHAOS_429_RATE=0.01 CHAOS_JITTER_MS_MAX=1000 \
+CHAOS_BURST_EVERY_MINUTES=30 DB_CHECK_EVERY_UNIQUE_SUCCESSES=300 \
+pnpm -C web test:soak
+```
+
+Profil 2: TORTURE MODE (agresivní, krátké běhy 15–60 min)
+
+- Cíl: vyvolat thundering herd, retry bouře, timeouts a ověřit, že invarianty drží.
+- Pass criteria (striktní): žádné duplicity / invariant fail = MUST. Error rate může být vyšší (např. až 5–10%)
+  kvůli simulovaným timeoutům/429, ale retry/backoff nesmí způsobit runaway.
+
+Copy/paste:
+
+```bash
+SOAK_DURATION_MINUTES=60 SOAK_CLIENTS=60 \
+SOAK_MIN_INTERVAL_MS=5000 SOAK_MAX_INTERVAL_MS=15000 \
+SOAK_RETRY_RATE=0.20 SOAK_RELOAD_RATE=0.05 \
+CHAOS_TIMEOUT_RATE=0.10 CHAOS_TIMEOUT_MS=2500 \
+CHAOS_429_RATE=0.10 CHAOS_JITTER_MS_MAX=3000 \
+CHAOS_BURST_EVERY_MINUTES=5 DB_CHECK_EVERY_UNIQUE_SUCCESSES=100 \
+pnpm -C web test:soak
+```
+
+Poznámky:
+
+- Lokální latence/p95 se liší podle stroje; klíčové je “žádné duplicity” a stabilní chování retry/backoff.
+- ZÁVOD profil je ideální spouštět přes noc a ráno zkontrolovat JSON/CSV report.
+- TORTURE profil spouštěj krátce (15–60 min), protože je záměrně agresivní.
+
 ## Struktura kódu
 
 - `src/App.tsx` – hlavní router a layout rozhraní rozhodčího.
