@@ -95,6 +95,7 @@ const COMPETITIONS: Competition[] = [
 ];
 
 const NAV_ITEMS = [
+  { id: 'domu', label: 'Domů', href: '/' },
   { id: 'aktualni-poradi', label: 'Aktuální pořadí', href: '/aktualni-poradi' },
   { id: 'clanky', label: 'Články a novinky', href: '/clanky' },
   { id: 'fotogalerie', label: 'Fotogalerie', href: '/fotogalerie' },
@@ -170,6 +171,10 @@ const CURRENT_LEAGUE_SCORES: Record<string, Partial<Record<LeagueEvent, number>>
 
 const HISTORICAL_LEAGUE_EMBED_URL =
   'https://docs.google.com/spreadsheets/d/14TLcdhZzW1jAgFk-eBWcOeh3uB8Ec2QewfNVjhefWJE/gviz/tq?tqx=out:html&gid=1022719772';
+
+const HEADER_SUBTITLE = 'Soutěže, oddíly a informace na jednom místě.';
+const HEADER_LEAD =
+  'Aktuality z akcí SPTO, fotogalerie a přehled soutěží na jednom místě. Podívej se, co se právě děje v Zelené lize.';
 
 const SPTO_HISTORY_HIGHLIGHTS = [
   'Tábornické oddíly se v Brně začaly sdružovat v roce 1964.',
@@ -500,8 +505,6 @@ const TROOPS: Troop[] = [
   },
 ];
 
-const HEADER_SUBTITLE = 'Soutěže, oddíly a informace na jednom místě.';
-
 const APPLICATION_LINKS = [
   {
     label: 'Setonův závod – aplikace',
@@ -685,7 +688,28 @@ function getPhotoThumbUrl(photo: GalleryPhoto | undefined | null, size: number) 
   if (photo.thumbnailLink) {
     return toDriveSizedUrl(photo.thumbnailLink, size);
   }
-  return photo.fullImageUrl ?? photo.webContentLink ?? '';
+  const fallback = photo.fullImageUrl ?? photo.webContentLink;
+  return fallback ? toProxyImageUrl(fallback, size) : '';
+}
+
+function buildPhotoSrcSet(photo: GalleryPhoto | undefined | null, sizes: number[]) {
+  const entries = sizes
+    .map((size) => {
+      const url = getPhotoThumbUrl(photo, size);
+      return url ? `${url} ${size}w` : null;
+    })
+    .filter((entry): entry is string => Boolean(entry));
+  return entries.join(', ');
+}
+
+function buildArticleSrcSet(url: string, sizes: number[]) {
+  const entries = sizes
+    .map((size) => {
+      const sized = getArticleThumbUrl(url, size);
+      return sized ? `${sized} ${size}w` : null;
+    })
+    .filter((entry): entry is string => Boolean(entry));
+  return entries.join(', ');
 }
 
 const portableTextComponents = {
@@ -695,7 +719,7 @@ const portableTextComponents = {
       if (!src) {
         return null;
       }
-      return <img src={src} alt={value.alt ?? ''} loading="lazy" />;
+      return <img src={src} alt={value.alt ?? ''} loading="lazy" decoding="async" />;
     },
   },
 };
@@ -803,35 +827,44 @@ function ArticlesIndexPage({
     <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="articles-heading">
         <section className="homepage-section" aria-labelledby="articles-heading">
-          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
+          <div className="homepage-section-header homepage-section-header--left">
             <h1 id="articles-heading">Články ze soutěží</h1>
-            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
+            <span className="homepage-section-accent" aria-hidden="true" />
           </div>
-          <p className="homepage-lead" style={{ maxWidth: '720px' }}>
+          <p className="homepage-lead">
             {articlesLoading ? 'Načítám články z redakce…' : 'Reportáže a novinky z posledních akcí.'}
           </p>
           {articlesLoading ? (
-            <div className="homepage-card" style={{ maxWidth: '720px' }}>
+            <div className="homepage-card">
               <p style={{ margin: 0 }}>Načítám články z redakce…</p>
             </div>
           ) : articles.length > 0 ? (
             <div className="homepage-article-grid">
-              {articles.map((article) => (
-                <article key={article.href} className="homepage-article-card">
-                  <div className="homepage-article-row">
-                    <div className={`homepage-article-thumb${article.coverImage?.url ? '' : ' is-empty'}`}>
-                      {article.coverImage?.url ? (
-                        <img
-                          src={getArticleThumbUrl(article.coverImage.url, 360)}
-                          alt={article.coverImage.alt ?? article.title}
-                          loading="lazy"
-                          decoding="async"
-                          fetchPriority="low"
-                        />
-                      ) : (
-                        <span aria-hidden="true">SPTO</span>
-                      )}
-                    </div>
+              {articles.map((article) => {
+                const coverUrl = article.coverImage?.url ? getArticleThumbUrl(article.coverImage.url, 360) : '';
+                const coverSrcSet = article.coverImage?.url
+                  ? buildArticleSrcSet(article.coverImage.url, [180, 240, 360, 480])
+                  : '';
+                return (
+                  <article key={article.href} className="homepage-article-card">
+                    <div className="homepage-article-row">
+                      <div className={`homepage-article-thumb${article.coverImage?.url ? '' : ' is-empty'}`}>
+                        {article.coverImage?.url ? (
+                          <img
+                            src={coverUrl}
+                            srcSet={coverSrcSet || undefined}
+                            sizes="(max-width: 700px) 28vw, 120px"
+                            width={120}
+                            height={120}
+                            alt={article.coverImage.alt ?? article.title}
+                            loading="lazy"
+                            decoding="async"
+                            fetchPriority="low"
+                          />
+                        ) : (
+                          <span aria-hidden="true">SPTO</span>
+                        )}
+                      </div>
                     <div className="homepage-article-body">
                       <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <time
@@ -873,10 +906,11 @@ function ArticlesIndexPage({
                     </div>
                   </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <div className="homepage-card" style={{ maxWidth: '720px' }}>
+            <div className="homepage-card">
               <p style={{ margin: 0 }}>Zatím tu není žádný článek z redakce.</p>
             </div>
           )}
@@ -1800,14 +1834,24 @@ function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
   }, [album.folderId]);
 
   const coverPhoto = preview?.files?.find((file) => file.thumbnailLink || file.fullImageUrl || file.webContentLink) ?? null;
-  const coverUrl = getPhotoThumbUrl(coverPhoto ?? undefined, 1200) || null;
+  const coverUrl = getPhotoThumbUrl(coverPhoto ?? undefined, 720) || null;
+  const coverSrcSet = coverPhoto ? buildPhotoSrcSet(coverPhoto, [360, 540, 720, 960]) : '';
   const previewPhotos = preview?.files ?? [];
 
   return (
     <a className="gallery-album-card" href={`/fotogalerie/${album.slug}`}>
       <div className="gallery-album-cover">
         {coverUrl ? (
-          <img src={coverUrl} alt={album.title} loading="lazy" decoding="async" />
+          <img
+            src={coverUrl}
+            srcSet={coverSrcSet || undefined}
+            sizes="(max-width: 700px) 90vw, (max-width: 1100px) 45vw, 320px"
+            width={960}
+            height={540}
+            alt={album.title}
+            loading="lazy"
+            decoding="async"
+          />
         ) : (
           <div className="gallery-album-cover-placeholder" />
         )}
@@ -1829,11 +1873,16 @@ function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
       <div className="gallery-album-thumbs">
         {previewPhotos.length > 0 ? (
           previewPhotos.slice(0, 4).map((photo) => {
-            const thumbUrl = getPhotoThumbUrl(photo, 360);
+            const thumbUrl = getPhotoThumbUrl(photo, 240);
+            const thumbSrcSet = buildPhotoSrcSet(photo, [120, 180, 240, 360]);
             return thumbUrl ? (
               <img
                 key={photo.fileId}
                 src={thumbUrl}
+                srcSet={thumbSrcSet || undefined}
+                sizes="(max-width: 700px) 20vw, 72px"
+                width={120}
+                height={120}
                 alt={photo.name}
                 loading="lazy"
                 decoding="async"
@@ -2060,27 +2109,34 @@ function GalleryAlbumPage({
           {album.year}
         </p>
         <div className="gallery-photo-grid">
-          {photos.map((photo, index) => (
-            <button
-              key={photo.fileId}
-              type="button"
-              className="gallery-photo-thumb"
-              onClick={() => setLightboxIndex(index)}
-            >
-              {getPhotoThumbUrl(photo, 640) ? (
-                <img
-                  src={getPhotoThumbUrl(photo, 640)}
-                  alt={photo.name}
-                  loading={index < 6 ? 'eager' : 'lazy'}
-                  decoding="async"
-                  sizes="(max-width: 600px) 45vw, (max-width: 900px) 30vw, 220px"
-                  fetchPriority={index < 4 ? 'high' : 'auto'}
-                />
-              ) : (
-                <span>{photo.name}</span>
-              )}
-            </button>
-          ))}
+          {photos.map((photo, index) => {
+            const thumbUrl = getPhotoThumbUrl(photo, 480);
+            const thumbSrcSet = buildPhotoSrcSet(photo, [240, 360, 480, 640]);
+            return (
+              <button
+                key={photo.fileId}
+                type="button"
+                className="gallery-photo-thumb"
+                onClick={() => setLightboxIndex(index)}
+              >
+                {thumbUrl ? (
+                  <img
+                    src={thumbUrl}
+                    srcSet={thumbSrcSet || undefined}
+                    alt={photo.name}
+                    loading={index < 6 ? 'eager' : 'lazy'}
+                    decoding="async"
+                    sizes="(max-width: 600px) 45vw, (max-width: 900px) 30vw, 220px"
+                    width={480}
+                    height={360}
+                    fetchPriority={index < 4 ? 'high' : 'auto'}
+                  />
+                ) : (
+                  <span>{photo.name}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
         {!isLoading && photos.length === 0 ? <div className="gallery-loading">Zatím zde nejsou žádné fotky.</div> : null}
         {isLoading ? <div className="gallery-loading">Načítám fotky…</div> : null}
@@ -2310,7 +2366,7 @@ function resolveActiveNav(pathname: string) {
   const normalized = pathname.replace(/\/$/, '') || '/';
   const segments = normalized.split('/').filter(Boolean);
   if (segments.length === 0) {
-    return undefined;
+    return 'domu';
   }
   const slug = segments[0];
   if (slug === 'souteze' || slug === 'aplikace' || COMPETITIONS.some((event) => event.slug === slug)) {
@@ -2341,10 +2397,14 @@ function SiteHeader({
   activeSection,
   title,
   subtitle,
+  lead,
+  showActions,
 }: {
   activeSection?: string;
   title?: string;
   subtitle?: string;
+  lead?: string;
+  showActions?: boolean;
 }) {
   const [navOpen, setNavOpen] = useState(false);
   const navPanelId = 'homepage-nav-panel';
@@ -2367,6 +2427,17 @@ function SiteHeader({
             <p className="homepage-eyebrow">SPTO · Zelená liga</p>
             <h1>{title ?? 'SPTO a Zelená liga'}</h1>
             <p className="homepage-subtitle">{subtitle ?? HEADER_SUBTITLE}</p>
+            {lead ? <p className="homepage-lead homepage-hero-lead">{lead}</p> : null}
+            {showActions ? (
+              <div className="homepage-cta-group homepage-cta-group--inline">
+                <a className="homepage-cta primary" href="/clanky">
+                  Nadcházející akce
+                </a>
+                <a className="homepage-cta secondary" href="/souteze">
+                  Soutěže
+                </a>
+              </div>
+            ) : null}
           </div>
         </div>
       </header>
@@ -2418,17 +2489,27 @@ function SiteShell({
   activeSection,
   headerTitle,
   headerSubtitle,
+  headerLead,
+  showHeroActions,
 }: {
   children: React.ReactNode;
   activeSection?: string;
   headerTitle?: string;
   headerSubtitle?: string;
+  headerLead?: string;
+  showHeroActions?: boolean;
 }) {
   const resolvedActiveSection =
     activeSection ?? (typeof window !== 'undefined' ? resolveActiveNav(window.location.pathname) : undefined);
   return (
     <div className="homepage-shell" style={{ scrollBehavior: 'smooth' }}>
-      <SiteHeader activeSection={resolvedActiveSection} title={headerTitle} subtitle={headerSubtitle} />
+      <SiteHeader
+        activeSection={resolvedActiveSection}
+        title={headerTitle}
+        subtitle={headerSubtitle}
+        lead={headerLead}
+        showActions={showHeroActions}
+      />
       {children}
       <AppFooter className="homepage-footer" />
     </div>
@@ -2438,6 +2519,7 @@ function SiteShell({
 function HomepageCarousel({ images }: { images: CarouselImage[] }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const activeImageId = images[activeIndex]?.id;
 
   useEffect(() => {
     if (images.length <= 1 || isPaused) {
@@ -2472,11 +2554,22 @@ function HomepageCarousel({ images }: { images: CarouselImage[] }) {
         className="homepage-carousel-frame"
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
+        onFocus={() => setIsPaused(true)}
+        onBlur={() => setIsPaused(false)}
       >
         <div className="homepage-carousel-track" style={{ transform: `translateX(-${activeIndex * 100}%)` }}>
           {images.map((image) => (
             <figure key={image.id} className="homepage-carousel-slide">
-              <img src={image.src} alt={image.alt} loading="lazy" />
+              <img
+                src={image.src}
+                alt={image.alt}
+                loading={image.id === activeImageId ? 'eager' : 'lazy'}
+                decoding="async"
+                fetchPriority={image.id === activeImageId ? 'high' : 'low'}
+                width={1600}
+                height={900}
+                sizes="(max-width: 900px) 100vw, 1120px"
+              />
             </figure>
           ))}
         </div>
@@ -2522,19 +2615,22 @@ function Homepage({
 }) {
   const headerTitle = homepageContent?.heroTitle ?? undefined;
   const headerSubtitle = homepageContent?.heroSubtitle ?? undefined;
+  const headerLead = HEADER_LEAD;
   const homepageArticles = articles.slice(0, 4);
 
   return (
     <SiteShell
       headerTitle={headerTitle ?? undefined}
       headerSubtitle={headerSubtitle ?? undefined}
+      headerLead={headerLead}
+      showHeroActions
     >
-      <main className="homepage-main" aria-labelledby="homepage-intro-heading" style={{ maxWidth: '1120px', gap: '64px' }}>
+      <main className="homepage-main" aria-labelledby="homepage-intro-heading">
         <HomepageCarousel images={HOMEPAGE_CAROUSEL} />
         <section className="homepage-section" aria-labelledby="homepage-intro-heading">
-          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
+          <div className="homepage-section-header homepage-section-header--left">
             <h2 id="homepage-intro-heading">O SPTO a Zelené lize</h2>
-            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
+            <span className="homepage-section-accent" aria-hidden="true" />
           </div>
           <div className="homepage-card" style={{ maxWidth: '920px', boxShadow: 'none' }}>
             {homepageContent?.intro?.length ? (
@@ -2556,32 +2652,43 @@ function Homepage({
         </section>
 
         <section className="homepage-section" id="clanky" aria-labelledby="clanky-heading">
-          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
+          <div className="homepage-section-header homepage-section-header--left">
             <h2 id="clanky-heading">Články ze soutěží</h2>
-            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
+            <span className="homepage-section-accent" aria-hidden="true" />
           </div>
           {articlesLoading ? (
             <div className="homepage-card" style={{ maxWidth: '720px' }}>
               <p style={{ margin: 0 }}>Načítám články z redakce…</p>
             </div>
           ) : homepageArticles.length > 0 ? (
-            <div className="homepage-article-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-              {homepageArticles.map((article) => (
-                <article key={article.title} className="homepage-article-card" style={{ minHeight: '220px' }}>
-                  <div className="homepage-article-row">
-                    <div className={`homepage-article-thumb${article.coverImage?.url ? '' : ' is-empty'}`}>
-                      {article.coverImage?.url ? (
-                        <img
-                          src={getArticleThumbUrl(article.coverImage.url, 360)}
-                          alt={article.coverImage.alt ?? article.title}
-                          loading="lazy"
-                          decoding="async"
-                          fetchPriority="low"
-                        />
-                      ) : (
-                        <span aria-hidden="true">SPTO</span>
-                      )}
-                    </div>
+            <div className="homepage-article-grid">
+              {homepageArticles.map((article) => {
+                const coverUrl = article.coverImage?.url
+                  ? getArticleThumbUrl(article.coverImage.url, 360)
+                  : '';
+                const coverSrcSet = article.coverImage?.url
+                  ? buildArticleSrcSet(article.coverImage.url, [180, 240, 360, 480])
+                  : '';
+                return (
+                  <article key={article.title} className="homepage-article-card" style={{ minHeight: '220px' }}>
+                    <div className="homepage-article-row">
+                      <div className={`homepage-article-thumb${article.coverImage?.url ? '' : ' is-empty'}`}>
+                        {article.coverImage?.url ? (
+                          <img
+                            src={coverUrl}
+                            srcSet={coverSrcSet || undefined}
+                            sizes="(max-width: 700px) 28vw, 120px"
+                            width={120}
+                            height={120}
+                            alt={article.coverImage.alt ?? article.title}
+                            loading="lazy"
+                            decoding="async"
+                            fetchPriority="low"
+                          />
+                        ) : (
+                          <span aria-hidden="true">SPTO</span>
+                        )}
+                      </div>
                     <div className="homepage-article-body">
                       <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <time
@@ -2638,9 +2745,9 @@ function Homepage({
         </section>
 
         <section className="homepage-section" id="zelenaliga" aria-labelledby="zelenaliga-heading">
-          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
+          <div className="homepage-section-header homepage-section-header--left">
             <h2 id="zelenaliga-heading">Zelená liga</h2>
-            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
+            <span className="homepage-section-accent" aria-hidden="true" />
           </div>
           <div className="homepage-card homepage-league-card is-compact">
             <div className="homepage-league-top" style={{ padding: '24px' }}>
@@ -2673,9 +2780,9 @@ function Homepage({
         </section>
 
         <section className="homepage-section" id="o-spto" aria-labelledby="o-spto-heading">
-          <div className="homepage-section-header" style={{ textAlign: 'left', alignItems: 'flex-start', maxWidth: '720px' }}>
+          <div className="homepage-section-header homepage-section-header--left">
             <h2 id="o-spto-heading">O SPTO</h2>
-            <span className="homepage-section-accent" aria-hidden="true" style={{ alignSelf: 'flex-start' }} />
+            <span className="homepage-section-accent" aria-hidden="true" />
           </div>
           <div className="homepage-card" style={{ maxWidth: '880px' }}>
             <ul className="homepage-about-list">
