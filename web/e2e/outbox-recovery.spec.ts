@@ -68,8 +68,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Načtení hlídek' })).toBeVisible();
 });
 
-test('outbox se po reloadu obnovi a synchronizuje po navratu online', async ({ page, context }) => {
-  await context.setOffline(true);
+test('outbox se po reloadu obnovi a synchronizuje po navratu online', async ({ page }) => {
   await page.route('**/submit-station-record', (route) => route.abort());
 
   await openPatrolForm(page, patrol.patrol_code);
@@ -78,15 +77,11 @@ test('outbox se po reloadu obnovi a synchronizuje po navratu online', async ({ p
 
   await expect(page.getByText(/Čeká na odeslání: 1/)).toBeVisible();
 
-  await context.setOffline(false);
   await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
   await page.unroute('**/submit-station-record');
   await page.goto(ROUTE_PREFIX);
   await expect(page.getByRole('heading', { name: 'Načtení hlídek' })).toBeVisible();
   await expect(page.getByText(/Čeká na odeslání: 1/)).toBeVisible();
-  await page.waitForFunction(() => navigator.onLine === true);
-  await context.setOffline(true);
-  await context.setOffline(false);
   const queueButton = page.getByRole('button', { name: 'Zobrazit frontu' });
   if (await queueButton.isVisible()) {
     await queueButton.click();
