@@ -53,7 +53,7 @@ describe('submit_station_record rpc last-write-wins', () => {
       .maybeSingle();
 
     expect(score?.points).toBe(20);
-    expect(score?.client_created_at).toBe(t2);
+    expect(new Date(score?.client_created_at ?? 0).toISOString()).toBe(t2);
   });
 
   it('keeps newer write when submitted out of order (B then A)', async () => {
@@ -72,6 +72,6 @@ describe('submit_station_record rpc last-write-wins', () => {
       .maybeSingle();
 
     expect(score?.points).toBe(20);
-    expect(score?.client_created_at).toBe(t2);
+    expect(new Date(score?.client_created_at ?? 0).toISOString()).toBe(t2);
   });
 });
