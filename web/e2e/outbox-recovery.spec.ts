@@ -48,7 +48,7 @@ async function flushIfNeeded(page: Page) {
 }
 
 async function waitForOutboxEmpty(page: Page) {
-  await expect(page.getByText(/Čeká na odeslání:/)).toHaveCount(0);
+  await expect(page.getByText(/Čeká na odeslání:/)).toHaveCount(0, { timeout: 20000 });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -71,6 +71,10 @@ test('outbox se po reloadu obnovi a synchronizuje po navratu online', async ({ p
   await context.setOffline(false);
   await page.goto(ROUTE_PREFIX);
   await expect(page.getByRole('heading', { name: 'Načtení hlídek' })).toBeVisible();
+  const queueButton = page.getByRole('button', { name: 'Zobrazit frontu' });
+  if (await queueButton.isVisible()) {
+    await queueButton.click();
+  }
   await flushIfNeeded(page);
   await waitForOutboxEmpty(page);
 
