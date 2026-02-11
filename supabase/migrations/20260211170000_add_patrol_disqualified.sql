@@ -1,19 +1,12 @@
--- Public event metadata view for read-only clients
-create or replace view events_public as
-select
-  e.id,
-  e.name,
-  e.starts_at,
-  e.ends_at
-from events e;
+-- Add disqualification flag to patrols and adjust result ordering.
 
-grant select on events_public to anon, authenticated;
+alter table patrols
+  add column if not exists disqualified boolean not null default false;
 
 drop view if exists scoreboard_view;
 drop view if exists results_ranked;
 drop view if exists results;
 
--- Results view (sum points, sum without 'T', pure time)
 create or replace view results as
 select
   p.event_id,
@@ -48,9 +41,9 @@ select
   jsonb_object_agg(st.code, s.points order by st.code) filter (where st.code is not null) as station_points_breakdown
 from patrols p
 join events e on e.id = p.event_id
-left join station_scores s on s.patrol_id=p.id and s.event_id=p.event_id
+left join station_scores s on s.patrol_id = p.id and s.event_id = p.event_id
 left join stations st on st.id = s.station_id
-left join timings t on t.event_id=p.event_id and t.patrol_id=p.id
+left join timings t on t.event_id = p.event_id and t.patrol_id = p.id
 left join (
   select
     sp.event_id,
@@ -74,7 +67,6 @@ group by
   t.finish_time,
   waits.wait_minutes;
 
--- Ranking per (category, sex)
 create or replace view results_ranked as
 select
   r.*,
@@ -84,7 +76,6 @@ select
   ) as rank_in_bracket
 from results r;
 
--- Scoreboard view (ensures up-to-date event names without duplicating data)
 create or replace view scoreboard_view as
 select
   r.event_id,

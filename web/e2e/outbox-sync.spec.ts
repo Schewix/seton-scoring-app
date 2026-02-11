@@ -5,16 +5,6 @@ import { ROUTE_PREFIX } from '../src/routing';
 
 const patrol = seedData.patrols[0];
 
-function pointsLabel(points: number) {
-  if (points === 1) {
-    return '1 bod';
-  }
-  if (points >= 2 && points <= 4) {
-    return `${points} body`;
-  }
-  return `${points} bodů`;
-}
-
 async function openPatrolForm(page: Page, code: string) {
   await page.getByLabel('Zadání z klávesnice').fill(code);
   const confirmButton = page.getByRole('button', { name: 'Načíst hlídku' });
@@ -37,7 +27,8 @@ async function openPatrolForm(page: Page, code: string) {
 }
 
 async function selectPoints(page: Page, points: number) {
-  await page.getByRole('option', { name: pointsLabel(points) }).click();
+  const pointsInput = page.getByLabel('Body (0 až 12)');
+  await pointsInput.fill(String(points));
 }
 
 async function flushIfNeeded(page: Page) {

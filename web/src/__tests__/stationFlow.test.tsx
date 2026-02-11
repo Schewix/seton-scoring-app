@@ -345,14 +345,10 @@ async function selectPatrolCode(
     number: string;
   },
 ) {
-  const categoryGroup = screen.getByRole('listbox', { name: 'Kategorie' });
-  const typeGroup = screen.getByRole('listbox', { name: 'Pohlaví (H = hoši, D = dívky)' });
-  const numberGroup = screen.getByRole('listbox', { name: 'Číslo hlídky' });
-
-  await user.click(within(categoryGroup).getByRole('option', { name: category }));
-  await user.click(within(typeGroup).getByRole('option', { name: type }));
+  const manualInput = screen.getByLabelText('Zadání z klávesnice');
   const paddedNumber = number.padStart(2, '0');
-  await user.click(within(numberGroup).getByRole('option', { name: paddedNumber }));
+  await user.clear(manualInput);
+  await user.type(manualInput, `${category}${type}-${paddedNumber}`);
 }
 
 async function loadPatrolAndOpenForm(
@@ -548,8 +544,9 @@ describe('station workflow', () => {
 
     await loadPatrolAndOpenForm(user);
 
-    const pointsPicker = await screen.findByRole('listbox', { name: 'Body (0 až 12)' });
-    await user.click(within(pointsPicker).getByRole('option', { name: '10 bodů' }));
+    const pointsInput = await screen.findByLabelText('Body (0 až 12)');
+    await user.clear(pointsInput);
+    await user.type(pointsInput, '10');
 
     fetchMock.mockImplementation(async (input) => {
       const url = typeof input === 'string' ? input : input instanceof Request ? input.url : '';
@@ -590,8 +587,9 @@ describe('station workflow', () => {
 
     await selectPatrolCode(user, { category: 'M', type: 'H', number: '1' });
 
-    const categoryGroup = screen.getByRole('listbox', { name: 'Kategorie' });
-    await user.click(within(categoryGroup).getByRole('option', { name: 'N' }));
+    const manualInput = screen.getByLabelText('Zadání z klávesnice');
+    await user.clear(manualInput);
+    await user.type(manualInput, 'NH-01');
 
     const loadButton = screen.getByRole('button', { name: 'Načíst hlídku' });
     expect(loadButton).toBeDisabled();
@@ -677,14 +675,14 @@ describe('station workflow', () => {
 
     await loadPatrolAndOpenForm(user);
 
-    const pointsPicker = await screen.findByRole('listbox', { name: 'Body (0 až 12)' });
+    const pointsInput = await screen.findByLabelText('Body (0 až 12)');
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
     expect(
       await screen.findByText('Body musí být celé číslo v rozsahu 0 až 12.'),
     ).toBeInTheDocument();
-    expect(within(pointsPicker).queryByRole('option', { selected: true })).not.toBeInTheDocument();
+    expect(pointsInput).toHaveValue('');
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.queryByText(/Záznam uložen do fronty/)).not.toBeInTheDocument();
   });
@@ -793,8 +791,9 @@ describe('station workflow', () => {
 
     await loadPatrolAndOpenForm(user);
 
-    const pointsPicker = await screen.findByRole('listbox', { name: 'Body (0 až 12)' });
-    await user.click(within(pointsPicker).getByRole('option', { name: '10 bodů' }));
+    const pointsInput = await screen.findByLabelText('Body (0 až 12)');
+    await user.clear(pointsInput);
+    await user.type(pointsInput, '10');
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 

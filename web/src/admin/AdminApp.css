@@ -194,6 +194,80 @@
   justify-content: flex-end;
 }
 
+.admin-disqualify-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.admin-field {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-field span {
+  font-weight: 600;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+
+.admin-field input {
+  min-height: 46px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  padding: 10px 14px;
+  font-size: 1rem;
+  background: var(--surface);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+.admin-field input:focus {
+  outline-color: var(--py-blue);
+}
+
+.admin-disqualify-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.admin-disqualify-team {
+  margin-left: 8px;
+  color: var(--text-2);
+}
+
+.admin-disqualify-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.admin-disqualify-flag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  background: var(--zl-green-50);
+  color: #2e7d32;
+}
+
+.admin-disqualify-flag--danger {
+  background: #fff1ec;
+  color: var(--py-flame);
+}
+
 .admin-card--with-divider .admin-card-header {
   padding-bottom: 16px;
   border-bottom: 1px solid #eaeaea;
