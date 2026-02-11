@@ -72,6 +72,7 @@ test('outbox se po reloadu obnovi a synchronizuje po navratu online', async ({ p
   await context.setOffline(false);
   await page.goto(ROUTE_PREFIX);
   await expect(page.getByRole('heading', { name: 'Načtení hlídek' })).toBeVisible();
+  await expect(page.getByText(/Čeká na odeslání: 1/)).toBeVisible();
   await page.waitForFunction(() => navigator.onLine === true);
   await context.setOffline(true);
   await context.setOffline(false);
