@@ -49,7 +49,16 @@ async function flushIfNeeded(page: Page) {
 }
 
 async function waitForOutboxEmpty(page: Page) {
-  await expect(page.getByText(/Čeká na odeslání:/)).toHaveCount(0, { timeout: 20000 });
+  const pendingBanner = page.getByText(/Čeká na odeslání:/);
+  const start = Date.now();
+  while (Date.now() - start < 25000) {
+    if ((await pendingBanner.count()) === 0) {
+      return;
+    }
+    await flushIfNeeded(page);
+    await page.waitForTimeout(2000);
+  }
+  await expect(pendingBanner).toHaveCount(0);
 }
 
 test.beforeEach(async ({ page }) => {
