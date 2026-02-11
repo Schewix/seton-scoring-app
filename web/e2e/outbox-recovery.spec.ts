@@ -42,7 +42,8 @@ async function selectPoints(page: Page, points: number) {
 
 async function flushIfNeeded(page: Page) {
   const sendButton = page.getByRole('button', { name: 'Odeslat nyní' });
-  if (await sendButton.isVisible()) {
+  if ((await sendButton.count()) > 0) {
+    await sendButton.scrollIntoViewIfNeeded();
     await expect(sendButton).toBeEnabled();
     await sendButton.click({ timeout: 2000 }).catch(() => {});
   }
