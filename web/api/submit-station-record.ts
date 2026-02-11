@@ -75,6 +75,10 @@ function isString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function isValidDateString(value: string) {
+  return Number.isFinite(Date.parse(value));
+}
+
 function ensurePayload(body: unknown): SubmissionPayload | null {
   if (!body || typeof body !== 'object') {
     return null;
@@ -87,6 +91,9 @@ function ensurePayload(body: unknown): SubmissionPayload | null {
     return null;
   }
   if (!isString(payload.client_created_at) || !isString(payload.arrived_at)) {
+    return null;
+  }
+  if (!isValidDateString(payload.client_created_at) || !isValidDateString(payload.arrived_at)) {
     return null;
   }
   if (!isString(payload.category) || !isString(payload.patrol_code)) {
@@ -105,6 +112,9 @@ function ensurePayload(body: unknown): SubmissionPayload | null {
     return null;
   }
   if (payload.finish_time !== null && typeof payload.finish_time !== 'string') {
+    return null;
+  }
+  if (payload.finish_time !== null && !isValidDateString(payload.finish_time)) {
     return null;
   }
   if (typeof payload.note !== 'string') {
@@ -274,6 +284,22 @@ export default async function handler(req: any, res: any) {
 
   if (!assignment) {
     return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { data: station, error: stationError } = await supabaseAdmin
+    .from('stations')
+    .select('id')
+    .eq('id', body.station_id)
+    .eq('event_id', body.event_id)
+    .maybeSingle();
+
+  if (stationError) {
+    logError('stations lookup failed', stationError);
+    return respond(res, 500, 'Station lookup failed', stationError.message);
+  }
+
+  if (!station) {
+    return res.status(400).json({ error: 'Invalid station for event' });
   }
 
   const submittedBy = judgeId;

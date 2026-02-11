@@ -102,6 +102,10 @@ function isString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function isValidDateString(value: string) {
+  return Number.isFinite(Date.parse(value));
+}
+
 function ensurePayload(body: unknown): SubmissionPayload | null {
   if (!body || typeof body !== 'object') {
     return null;
@@ -114,6 +118,9 @@ function ensurePayload(body: unknown): SubmissionPayload | null {
     return null;
   }
   if (!isString(payload.client_created_at) || !isString(payload.arrived_at)) {
+    return null;
+  }
+  if (!isValidDateString(payload.client_created_at) || !isValidDateString(payload.arrived_at)) {
     return null;
   }
   if (!isString(payload.category) || !isString(payload.patrol_code)) {
@@ -132,6 +139,9 @@ function ensurePayload(body: unknown): SubmissionPayload | null {
     return null;
   }
   if (payload.finish_time !== null && typeof payload.finish_time !== 'string') {
+    return null;
+  }
+  if (payload.finish_time !== null && !isValidDateString(payload.finish_time)) {
     return null;
   }
   if (typeof payload.note !== 'string') {
@@ -206,6 +216,20 @@ Deno.serve(async (req) => {
 
   if (tokenEventId !== body.event_id || tokenStationId !== body.station_id) {
     return jsonResponse({ error: 'Forbidden' }, 403);
+  }
+
+  const { data: station, error: stationError } = await supabaseAdmin
+    .from('stations')
+    .select('id')
+    .eq('id', body.station_id)
+    .eq('event_id', body.event_id)
+    .maybeSingle();
+  if (stationError) {
+    logError('stations lookup failed', stationError);
+    return jsonResponse({ error: 'Station lookup failed' }, 500);
+  }
+  if (!station) {
+    return jsonResponse({ error: 'Invalid station for event' }, 400);
   }
   const submittedBy = judgeId;
   const { error: submitError } = await supabaseAdmin.rpc('submit_station_record', {
