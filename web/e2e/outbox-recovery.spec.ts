@@ -43,6 +43,7 @@ async function selectPoints(page: Page, points: number) {
 async function flushIfNeeded(page: Page) {
   const sendButton = page.getByRole('button', { name: 'Odeslat nyní' });
   if (await sendButton.isVisible()) {
+    await expect(sendButton).toBeEnabled();
     await sendButton.click({ timeout: 2000 }).catch(() => {});
   }
 }
@@ -71,6 +72,9 @@ test('outbox se po reloadu obnovi a synchronizuje po navratu online', async ({ p
   await context.setOffline(false);
   await page.goto(ROUTE_PREFIX);
   await expect(page.getByRole('heading', { name: 'Načtení hlídek' })).toBeVisible();
+  await page.waitForFunction(() => navigator.onLine === true);
+  await context.setOffline(true);
+  await context.setOffline(false);
   const queueButton = page.getByRole('button', { name: 'Zobrazit frontu' });
   if (await queueButton.isVisible()) {
     await queueButton.click();
