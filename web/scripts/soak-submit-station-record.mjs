@@ -516,22 +516,33 @@ async function checkInvariants(reason) {
   invariantCheckInFlight = true;
   lastInvariantCheck = Date.now();
 
-  const { data: scores, error: scoresError } = await supabaseAdmin
-    .from('station_scores')
-    .select('client_event_id')
-    .eq('event_id', eventId);
-  const { data: passages, error: passagesError } = await supabaseAdmin
-    .from('station_passages')
-    .select('client_event_id')
-    .eq('event_id', eventId);
-  const { data: quizzes, error: quizzesError } = await supabaseAdmin
-    .from('station_quiz_responses')
-    .select('client_event_id')
-    .eq('event_id', eventId);
-  const { data: timings, error: timingsError } = await supabaseAdmin
-    .from('timings')
-    .select('client_event_id')
-    .eq('event_id', eventId);
+  const fetchClientEventIds = async (table) => {
+    const pageSize = 1000;
+    let from = 0;
+    let rows = [];
+    for (;;) {
+      const { data, error } = await supabaseAdmin
+        .from(table)
+        .select('client_event_id')
+        .eq('event_id', eventId)
+        .order('client_event_id', { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) {
+        return { data: rows, error };
+      }
+      rows = rows.concat(data ?? []);
+      if (!data || data.length < pageSize) {
+        break;
+      }
+      from += pageSize;
+    }
+    return { data: rows, error: null };
+  };
+
+  const { data: scores, error: scoresError } = await fetchClientEventIds('station_scores');
+  const { data: passages, error: passagesError } = await fetchClientEventIds('station_passages');
+  const { data: quizzes, error: quizzesError } = await fetchClientEventIds('station_quiz_responses');
+  const { data: timings, error: timingsError } = await fetchClientEventIds('timings');
 
   const scoreIds = (scores ?? []).map((row) => row.client_event_id);
   const passageIds = (passages ?? []).map((row) => row.client_event_id);
