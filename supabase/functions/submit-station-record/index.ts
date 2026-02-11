@@ -48,6 +48,16 @@ type SubmissionPayload = {
   sex?: string;
 };
 
+type TokenClaims = {
+  sub?: string;
+  sessionId?: string;
+  event_id?: string;
+  eventId?: string;
+  station_id?: string;
+  stationId?: string;
+  type?: string;
+};
+
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -145,9 +155,33 @@ Deno.serve(async (req) => {
   }
 
   const token = authHeader.slice('Bearer '.length).trim();
-  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
-  if (userError || !userData?.user) {
-    logError('auth.getUser failed', userError);
+
+  const claims = decodeJwt(token) as TokenClaims | null;
+  if (!claims || claims.type !== 'access') {
+    return jsonResponse({ error: 'Invalid session' }, 401);
+  }
+
+  const resolveClaimString = (value: unknown) => (typeof value === 'string' && value.trim().length > 0 ? value : '');
+  const judgeId = resolveClaimString(claims.sub);
+  const sessionId = resolveClaimString(claims.sessionId);
+  const tokenEventId = resolveClaimString(claims.event_id) || resolveClaimString(claims.eventId);
+  const tokenStationId = resolveClaimString(claims.station_id) || resolveClaimString(claims.stationId);
+
+  if (!judgeId || !sessionId || !tokenEventId || !tokenStationId) {
+    return jsonResponse({ error: 'Invalid session' }, 401);
+  }
+
+  const { data: session, error: sessionError } = await supabaseAdmin
+    .from('judge_sessions')
+    .select('id, judge_id, revoked_at')
+    .eq('id', sessionId)
+    .eq('judge_id', judgeId)
+    .maybeSingle();
+  if (sessionError) {
+    logError('judge_sessions lookup failed', sessionError);
+    return jsonResponse({ error: 'Invalid session' }, 401);
+  }
+  if (!session || session.revoked_at) {
     return jsonResponse({ error: 'Invalid session' }, 401);
   }
 
@@ -170,128 +204,42 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Invalid wait minutes' }, 400);
   }
 
-  const claims = decodeJwt(token);
-  if (!claims || claims.event_id !== body.event_id || claims.station_id !== body.station_id) {
+  if (tokenEventId !== body.event_id || tokenStationId !== body.station_id) {
     return jsonResponse({ error: 'Forbidden' }, 403);
   }
+  const submittedBy = judgeId;
+  const { error: submitError } = await supabaseAdmin.rpc('submit_station_record', {
+    p_event_id: body.event_id,
+    p_station_id: body.station_id,
+    p_patrol_id: body.patrol_id,
+    p_category: body.category,
+    p_arrived_at: body.arrived_at,
+    p_wait_minutes: body.wait_minutes,
+    p_points: body.points,
+    p_note: body.note,
+    p_use_target_scoring: body.use_target_scoring,
+    p_normalized_answers: body.normalized_answers,
+    p_finish_time: body.finish_time,
+    p_client_event_id: body.client_event_id,
+    p_client_created_at: body.client_created_at,
+    p_submitted_by: submittedBy,
+  });
 
-  const { data: existingScore, error: existingError } = await supabaseAdmin
-    .from('station_scores')
-    .select('*')
-    .eq('client_event_id', body.client_event_id)
-    .maybeSingle();
-
-  if (existingError) {
-    logError('station_scores lookup failed', existingError);
-    return jsonResponse({ error: 'Lookup failed' }, 500);
-  }
-
-  if (existingScore) {
-    return jsonResponse({ score: existingScore }, 200);
-  }
-
-  const submittedBy = userData.user.id;
-  const { data: score, error: scoreError } = await supabaseAdmin
-    .from('station_scores')
-    .upsert(
-      {
-        event_id: body.event_id,
-        station_id: body.station_id,
-        patrol_id: body.patrol_id,
-        points: body.points,
-        note: body.note || null,
-        client_event_id: body.client_event_id,
-        client_created_at: body.client_created_at,
-        submitted_by: submittedBy,
-      },
-      { onConflict: 'event_id,patrol_id,station_id' },
-    )
-    .select('*')
-    .maybeSingle();
-
-  if (scoreError) {
-    logError('station_scores upsert failed', scoreError);
+  if (submitError) {
+    logError('submit_station_record failed', submitError);
     return jsonResponse({ error: 'Score insert failed' }, 500);
   }
 
-  const { error: passageError } = await supabaseAdmin
-    .from('station_passages')
-    .upsert(
-      {
-        event_id: body.event_id,
-        station_id: body.station_id,
-        patrol_id: body.patrol_id,
-        arrived_at: body.arrived_at,
-        wait_minutes: body.wait_minutes,
-        client_event_id: body.client_event_id,
-        client_created_at: body.client_created_at,
-        submitted_by: submittedBy,
-      },
-      { onConflict: 'event_id,patrol_id,station_id' },
-    );
+  const { data: score, error: scoreError } = await supabaseAdmin
+    .from('station_scores')
+    .select('*')
+    .eq('event_id', body.event_id)
+    .eq('station_id', body.station_id)
+    .eq('patrol_id', body.patrol_id)
+    .maybeSingle();
 
-  if (passageError) {
-    logError('station_passages upsert failed', passageError);
-    return jsonResponse({ error: 'Passage upsert failed' }, 500);
-  }
-
-  if (body.finish_time) {
-    const { error: timingError } = await supabaseAdmin
-      .from('timings')
-      .upsert(
-        {
-          event_id: body.event_id,
-          patrol_id: body.patrol_id,
-          finish_time: body.finish_time,
-          client_event_id: body.client_event_id,
-          client_created_at: body.client_created_at,
-          submitted_by: submittedBy,
-        },
-        { onConflict: 'event_id,patrol_id' },
-      );
-
-    if (timingError) {
-      logError('timings upsert failed', timingError);
-      return jsonResponse({ error: 'Timing upsert failed' }, 500);
-    }
-  }
-
-  if (body.use_target_scoring && body.normalized_answers) {
-    const { error: quizError } = await supabaseAdmin
-      .from('station_quiz_responses')
-      .upsert(
-        {
-          event_id: body.event_id,
-          station_id: body.station_id,
-          patrol_id: body.patrol_id,
-          category: body.category,
-          answers: body.normalized_answers,
-          correct_count: body.points,
-          client_event_id: body.client_event_id,
-          client_created_at: body.client_created_at,
-          submitted_by: submittedBy,
-        },
-        { onConflict: 'event_id,station_id,patrol_id' },
-      );
-
-    if (quizError) {
-      logError('station_quiz_responses upsert failed', quizError);
-      return jsonResponse({ error: 'Quiz upsert failed' }, 500);
-    }
-  } else if (!body.use_target_scoring) {
-    const { error: deleteError } = await supabaseAdmin
-      .from('station_quiz_responses')
-      .delete()
-      .match({
-        event_id: body.event_id,
-        station_id: body.station_id,
-        patrol_id: body.patrol_id,
-      });
-
-    if (deleteError) {
-      logError('station_quiz_responses delete failed', deleteError);
-      return jsonResponse({ error: 'Quiz delete failed' }, 500);
-    }
+  if (scoreError) {
+    logError('station_scores lookup failed', scoreError);
   }
 
   return jsonResponse({ score }, 200);
