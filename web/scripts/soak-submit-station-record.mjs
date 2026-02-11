@@ -545,7 +545,7 @@ async function writeReport(status, reportFailures) {
     status,
     started_at: new Date(runStartTime).toISOString(),
     ended_at: new Date(endTime).toISOString(),
-    duration_ms: endTime - startTime,
+    duration_ms: endTime - runStartTime,
     config,
     summary: {
       attempts: metrics.attempts,
