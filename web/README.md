@@ -58,6 +58,27 @@ Další proměnné (`VITE_STATION_PRESET`, `VITE_SCOREBOARD_REFRESH_MS`, …) lz
 - `npm run preview` – lokální náhled produkčního buildu.
 - `npm run lint` – kontrola ESLint.
 - `npm run test` – Vitest scénáře v `src/__tests__/`. Testy pokrývají tok offline fronty i automatické skórování terče.
+- `npm run test:load` – krátký spike test submit pipeline proti lokální Supabase.
+- `npm run test:soak` – dlouhý soak/endurance test (ručně, mimo CI).
+
+### Load & soak testy
+
+Soak test simuluje dlouhý běh (standardně 12h), loguje metriky každou minutu a ukládá report do `test-results/`.
+Reporty jsou ve formátu JSON + CSV a mají název `soak-report-<timestamp>.*`.
+
+Příklad spuštění (1h proti lokální Supabase Edge Function):
+
+```bash
+SUPABASE_URL=http://127.0.0.1:54321 \
+SUPABASE_JWT_SECRET=super-secret-jwt-token-with-at-least-32-characters-long \
+SOAK_DURATION_MINUTES=60 \
+SOAK_CLIENTS=30 \
+TARGET_URL=http://127.0.0.1:54321/functions/v1/submit-station-record \
+npm run test:soak
+```
+
+Pro testování celé /api vrstvy nastav `TARGET_URL` na `/api/submit-station-record` a ujisti se, že server má
+nastavené `JWT_SECRET` a `REFRESH_TOKEN_SECRET`.
 
 ## Struktura kódu
 
