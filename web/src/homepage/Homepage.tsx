@@ -2730,7 +2730,8 @@ function Homepage({
                     </div>
                   </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="homepage-card" style={{ maxWidth: '720px' }}>
