@@ -20,7 +20,6 @@ import TicketQueue from './components/TicketQueue';
 import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket, TicketState } from './auth/tickets';
 import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord } from './storage/scanHistory';
-import { getOutboxStore } from './storage/localforage';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
 import { ROUTE_PREFIX, SCOREBOARD_ROUTE_PREFIX, getStationPath, isStationAppPath } from './routing';
@@ -41,6 +40,16 @@ import {
 import { ACCESS_DENIED_MESSAGE } from './auth/messages';
 import competitionRulesPdf from './assets/pravidla/pravidla-souteze.pdf';
 import stationRulesPdf from './assets/pravidla/pravidla-stanovist.pdf';
+import {
+  OutboxEntry,
+  StationScorePayload,
+  deleteOutboxEntries,
+  enqueueStationScore as enqueueStationScoreHelper,
+  flushOutboxBatch,
+  readOutbox,
+  writeOutboxEntries,
+  writeOutboxEntry,
+} from './outbox';
 
 const SUPABASE_BASE_URL = (env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
 
@@ -65,40 +74,7 @@ interface Patrol {
   patrol_code: string | null;
 }
 
-type OutboxState = 'queued' | 'sending' | 'sent' | 'failed' | 'needs_auth' | 'blocked_other_session';
-
-interface StationScorePayload {
-  client_event_id: string;
-  client_created_at: string;
-  event_id: string;
-  station_id: string;
-  patrol_id: string;
-  category: string;
-  arrived_at: string;
-  wait_minutes: number;
-  points: number;
-  note: string;
-  use_target_scoring: boolean;
-  normalized_answers: string | null;
-  finish_time: string | null;
-  patrol_code: string;
-  team_name?: string;
-  sex?: string;
-}
-
-interface OutboxEntry {
-  client_event_id: string;
-  type: 'station_score';
-  payload: StationScorePayload;
-  event_id: string;
-  station_id: string;
-  state: OutboxState;
-  attempts: number;
-  last_error?: string;
-  next_attempt_at: number;
-  created_at: string;
-  response?: Record<string, unknown> | null;
-}
+type OutboxState = OutboxEntry['state'];
 
 interface StationScoreRow {
   stationId: string;
@@ -290,56 +266,18 @@ function compareSummaryPatrols(a: StationSummaryPatrol, b: StationSummaryPatrol)
   return keyA.label.localeCompare(keyB.label, 'cs');
 }
 
-async function readOutbox(): Promise<OutboxEntry[]> {
-  const outboxStore = getOutboxStore();
-  const keys = await outboxStore.keys();
-  if (!keys.length) {
-    return [];
-  }
-  const entries = await Promise.all(keys.map((key: string) => outboxStore.getItem<OutboxEntry>(key)));
-  return entries.filter((entry: OutboxEntry | null): entry is OutboxEntry => Boolean(entry));
-}
-
-async function writeOutboxEntries(items: OutboxEntry[]) {
-  const outboxStore = getOutboxStore();
-  if (!items.length) {
-    return;
-  }
-  await Promise.all(items.map((item) => outboxStore.setItem(item.client_event_id, item)));
+async function writeOutboxEntriesAndSync(items: OutboxEntry[]) {
+  await writeOutboxEntries(items);
   if (typeof window !== 'undefined') {
     void registerPendingSync();
   }
 }
 
-async function writeOutboxEntry(item: OutboxEntry) {
-  const outboxStore = getOutboxStore();
-  await outboxStore.setItem(item.client_event_id, item);
+async function writeOutboxEntryAndSync(item: OutboxEntry) {
+  await writeOutboxEntry(item);
   if (typeof window !== 'undefined') {
     void registerPendingSync();
   }
-}
-
-async function deleteOutboxEntries(ids: string[]) {
-  const outboxStore = getOutboxStore();
-  if (!ids.length) {
-    return;
-  }
-  await Promise.all(ids.map((id) => outboxStore.removeItem(id)));
-}
-
-function generateClientEventId() {
-  const cryptoObj = typeof globalThis !== 'undefined' ? (globalThis.crypto as Crypto | undefined) : undefined;
-  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
-    return cryptoObj.randomUUID();
-  }
-  return `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function computeBackoffMs(retryCount: number) {
-  const base = 5000;
-  const max = 5 * 60 * 1000;
-  const delay = base * 2 ** Math.max(0, retryCount - 1);
-  return Math.min(max, delay);
 }
 
 function formatTime(value: string) {
@@ -776,7 +714,7 @@ function StationApp({
         return item;
       });
       if (changed) {
-        await writeOutboxEntries(updated);
+        await writeOutboxEntriesAndSync(updated);
       }
       return updated;
     },
@@ -1645,7 +1583,7 @@ function StationApp({
             next_attempt_at: now,
           };
         });
-        await writeOutboxEntries(updated);
+        await writeOutboxEntriesAndSync(updated);
         updateOutboxState(updated);
         setAuthNeedsLogin(true);
         if (import.meta.env.DEV) {
@@ -1662,7 +1600,7 @@ function StationApp({
       return item;
     });
     if (cleared.some((item, index) => item !== items[index])) {
-      await writeOutboxEntries(cleared);
+      await writeOutboxEntriesAndSync(cleared);
       items = cleared;
       updateOutboxState(items);
       setAuthNeedsLogin(false);
@@ -1672,104 +1610,47 @@ function StationApp({
       return;
     }
 
-    const batch = ready.slice(0, OUTBOX_BATCH_SIZE);
-    const batchIds = new Set(batch.map((item) => item.client_event_id));
+    const batchIds = new Set(ready.slice(0, OUTBOX_BATCH_SIZE).map((item) => item.client_event_id));
     const sendingItems = items.map<OutboxEntry>((item) =>
       batchIds.has(item.client_event_id) ? { ...item, state: 'sending' } : item,
     );
-    await writeOutboxEntries(sendingItems);
+    await writeOutboxEntriesAndSync(sendingItems);
     updateOutboxState(sendingItems);
     setSyncing(true);
 
     try {
       const accessToken = sessionResult.accessToken;
       const endpoint = SUBMIT_STATION_RECORD_URL;
-      const resultMap = new Map<string, OutboxEntry>();
-      let flushed = 0;
 
       if (import.meta.env.DEV) {
         console.debug('[outbox] submit batch', { endpoint, hasAccessToken: Boolean(accessToken) });
       }
 
-      for (const item of batch) {
-        try {
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${accessToken}`,
-            },
-            body: JSON.stringify(item.payload),
-          });
+      const { updated, sentIds } = await flushOutboxBatch({
+        items,
+        eventId,
+        stationId,
+        accessToken,
+        endpoint,
+        fetchFn: fetch,
+        now,
+        batchSize: OUTBOX_BATCH_SIZE,
+      });
 
-          let body: Record<string, unknown> | null = null;
-          try {
-            body = (await response.json()) as Record<string, unknown>;
-          } catch (error) {
-            body = null;
-          }
-
-          if (response.ok) {
-            flushed += 1;
-            resultMap.set(item.client_event_id, {
-              ...item,
-              state: 'sent',
-              last_error: undefined,
-              response: body,
-            });
-            continue;
-          }
-
-          if (response.status === 401) {
-            setAuthNeedsLogin(true);
-            resultMap.set(item.client_event_id, {
-              ...item,
-              state: 'needs_auth',
-              last_error: body?.error ? String(body.error) : 'missing-session',
-              next_attempt_at: now,
-            });
-            continue;
-          }
-
-          if (response.status === 403) {
-            resultMap.set(item.client_event_id, {
-              ...item,
-              state: 'blocked_other_session',
-              last_error: body?.error ? String(body.error) : 'forbidden',
-              next_attempt_at: now,
-            });
-            continue;
-          }
-
-          const retryCount = item.attempts + 1;
-          resultMap.set(item.client_event_id, {
-            ...item,
-            state: 'failed',
-            attempts: retryCount,
-            last_error: body?.error ? String(body.error) : `HTTP ${response.status}`,
-            next_attempt_at: Date.now() + computeBackoffMs(retryCount),
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'network-error';
-          const retryCount = item.attempts + 1;
-          resultMap.set(item.client_event_id, {
-            ...item,
-            state: 'failed',
-            attempts: retryCount,
-            last_error: message,
-            next_attempt_at: Date.now() + computeBackoffMs(retryCount),
-          });
-        }
+      const needsAuth = updated.some((item) => item.state === 'needs_auth');
+      if (needsAuth) {
+        setAuthNeedsLogin(true);
       }
 
-      const updated: OutboxEntry[] = sendingItems.map(
-        (item) => resultMap.get(item.client_event_id) ?? item,
-      );
-      await writeOutboxEntries(updated);
-      updateOutboxState(updated);
+      const retained = updated.filter((item) => item.state !== 'sent');
+      if (sentIds.length > 0) {
+        await deleteOutboxEntries(sentIds);
+      }
+      await writeOutboxEntriesAndSync(retained);
+      updateOutboxState(retained);
 
-      if (flushed) {
-        pushAlert(`Synchronizováno ${flushed} záznamů.`);
+      if (sentIds.length > 0) {
+        pushAlert(`Synchronizováno ${sentIds.length} záznamů.`);
         void loadStationPassages();
       }
     } finally {
@@ -2158,37 +2039,16 @@ function StationApp({
 
   const enqueueStationScore = useCallback(
     async (payload: Omit<StationScorePayload, 'client_event_id' | 'client_created_at'>) => {
-      const now = new Date().toISOString();
-      const clientEventId = generateClientEventId();
-      const submission: StationScorePayload = {
-        ...payload,
-        client_event_id: clientEventId,
-        client_created_at: now,
-      };
-      const outboxEntry: OutboxEntry = {
-        client_event_id: clientEventId,
-        type: 'station_score',
-        payload: submission,
-        event_id: payload.event_id,
-        station_id: payload.station_id,
-        state: 'queued',
-        attempts: 0,
-        next_attempt_at: Date.now(),
-        created_at: now,
-        response: null,
-      };
-      try {
-        await writeOutboxEntry(outboxEntry);
-        await refreshOutbox();
-        if (typeof navigator === 'undefined' || navigator.onLine) {
-          void flushOutbox();
-        }
-        return true;
-      } catch (error) {
-        console.error('Failed to persist submission queue', error);
-        pushAlert('Nepodařilo se uložit záznam do fronty. Zkus to prosím znovu.');
-        return false;
-      }
+      return enqueueStationScoreHelper(
+        payload,
+        {
+          write: writeOutboxEntryAndSync,
+          refresh: refreshOutbox,
+          flush: () => void flushOutbox(),
+          pushAlert,
+          isOnline: () => typeof navigator === 'undefined' || navigator.onLine,
+        },
+      );
     },
     [flushOutbox, pushAlert, refreshOutbox],
   );
