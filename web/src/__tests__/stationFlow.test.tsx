@@ -293,6 +293,7 @@ vi.mock('../auth/context', async () => {
     logout: logoutMock,
     updateManifest: vitest.fn(),
     refreshManifest: vitest.fn().mockResolvedValue(undefined),
+    refreshTokens: vitest.fn().mockResolvedValue(false),
     get status() {
       return {
         state: 'authenticated' as const,
@@ -801,7 +802,7 @@ describe('station workflow', () => {
     await user.click(screen.getByRole('button', { name: 'Zobrazit frontu' }));
     expect(await screen.findByText(/Chyba: Session revoked/)).toBeInTheDocument();
     expect(
-      await screen.findByText('Přihlášení vypršelo, obnov ho prosím pro synchronizaci.'),
+      await screen.findByText('Pro odeslání fronty se přihlas (1 čeká na přihlášení).'),
     ).toBeInTheDocument();
 
     const storedQueue = await readOutbox();
