@@ -1487,6 +1487,11 @@ textarea {
   gap: 16px;
 }
 
+.station-summary-card .card-actions {
+  flex-direction: column;
+  align-items: center;
+}
+
 .station-summary-grid {
   display: grid;
   gap: 12px;
