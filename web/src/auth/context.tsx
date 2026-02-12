@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   ReactNode,
 } from 'react';
@@ -27,7 +28,7 @@ import type {
   PatrolSummary,
   StationManifest,
 } from './types';
-import { fetchManifest, loginRequest } from './api';
+import { AuthRefreshError, fetchManifest, loginRequest, refreshSessionRequest } from './api';
 import { deriveWrappingKey, encryptDeviceKey, generateDeviceKey, decryptDeviceKey, digestPin } from './crypto';
 import { toBase64 } from './base64';
 import { decodeJwt } from './jwt';
@@ -41,6 +42,7 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   updateManifest: (manifest: StationManifest, patrols: PatrolSummary[]) => Promise<void>;
   refreshManifest: () => Promise<void>;
+  refreshTokens: (options?: { force?: boolean; reason?: string }) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -72,6 +74,8 @@ const AUTH_BYPASS_PATROLS: PatrolSummary[] = (() => {
     return [];
   }
 })();
+
+const ACCESS_REFRESH_SKEW_MS = 5 * 60 * 1000;
 
 type SupabaseJwtClaims = {
   sub?: string;
@@ -317,6 +321,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tokens: { refreshToken: string; accessToken: string | null; accessTokenExpiresAt: number | null; sessionId: string };
     encryptedDeviceKey: { ciphertext: string; iv: string; deviceSalt: string };
   } | null>(null);
+  const refreshInFlightRef = useRef<Promise<boolean> | null>(null);
+  const pendingRefreshRef = useRef(false);
 
   const handleInitializationState = useCallback(
     async (state: AuthStatus) => {
@@ -413,6 +419,104 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const refreshTokens = useCallback(
+    async (options?: { force?: boolean; reason?: string }) => {
+      if (AUTH_BYPASS) {
+        return true;
+      }
+      if (status.state !== 'authenticated') {
+        return false;
+      }
+      const expiresAt = status.tokens.accessTokenExpiresAt;
+      if (
+        !options?.force &&
+        typeof expiresAt === 'number' &&
+        Number.isFinite(expiresAt) &&
+        Date.now() < expiresAt - ACCESS_REFRESH_SKEW_MS
+      ) {
+        return false;
+      }
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        pendingRefreshRef.current = true;
+        return false;
+      }
+      if (refreshInFlightRef.current) {
+        return refreshInFlightRef.current;
+      }
+
+      const refreshToken = status.tokens.refreshToken;
+      if (!refreshToken) {
+        return false;
+      }
+
+      const refreshPromise = (async () => {
+        try {
+          const response = await refreshSessionRequest(refreshToken);
+          logAccessTokenClaims(response.access_token, 'refresh');
+          const claims = validateSupabaseAccessToken(response.access_token);
+          const sessionId =
+            typeof claims.sessionId === 'string' && claims.sessionId.length
+              ? claims.sessionId
+              : status.tokens.sessionId;
+          const accessTokenExpiresAt = Date.now() + response.access_token_expires_in * 1000;
+          const nextTokens = {
+            refreshToken: response.refresh_token,
+            accessToken: response.access_token,
+            accessTokenExpiresAt,
+            sessionId,
+          };
+
+          await setTokens(nextTokens);
+
+          const storedPayload = await getDeviceKeyPayload();
+          if (storedPayload) {
+            const wrappingKey = await deriveWrappingKey(nextTokens.refreshToken, storedPayload.deviceSalt);
+            const encrypted = await encryptDeviceKey(status.deviceKey, wrappingKey);
+            await setDeviceKeyPayload({ ...encrypted, deviceSalt: storedPayload.deviceSalt });
+            setCachedData((prev) => {
+              if (!prev) return prev;
+              return { ...prev, encryptedDeviceKey: { ...encrypted, deviceSalt: storedPayload.deviceSalt } };
+            });
+          }
+
+          setStatus((prev) => {
+            if (prev.state !== 'authenticated') return prev;
+            return { ...prev, tokens: nextTokens };
+          });
+          setCachedData((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              tokens: {
+                refreshToken: nextTokens.refreshToken,
+                accessToken: nextTokens.accessToken,
+                accessTokenExpiresAt,
+                sessionId,
+              },
+            };
+          });
+
+          pendingRefreshRef.current = false;
+          return true;
+        } catch (error) {
+          if (error instanceof AuthRefreshError && (error.status === 401 || error.status === 403)) {
+            console.warn('[auth] refresh rejected', { status: error.status, message: error.message });
+            await logout();
+          } else {
+            console.error('[auth] refresh failed', error);
+          }
+          return false;
+        } finally {
+          refreshInFlightRef.current = null;
+        }
+      })();
+
+      refreshInFlightRef.current = refreshPromise;
+      return refreshPromise;
+    },
+    [logout, status],
+  );
+
   const refreshManifest = useCallback(async () => {
     if (status.state !== 'authenticated') {
       return;
@@ -454,6 +558,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [status]);
+
+  useEffect(() => {
+    if (AUTH_BYPASS || status.state !== 'authenticated') {
+      return undefined;
+    }
+    const expiresAt = status.tokens.accessTokenExpiresAt;
+    if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
+      return undefined;
+    }
+    const refreshAt = expiresAt - ACCESS_REFRESH_SKEW_MS;
+    if (refreshAt <= Date.now()) {
+      void refreshTokens({ reason: 'expiry' });
+      return undefined;
+    }
+    const timeoutId = window.setTimeout(() => {
+      void refreshTokens({ reason: 'expiry' });
+    }, Math.max(0, refreshAt - Date.now()));
+    return () => window.clearTimeout(timeoutId);
+  }, [refreshTokens, status.state, status.tokens.accessTokenExpiresAt]);
+
+  useEffect(() => {
+    if (AUTH_BYPASS || typeof window === 'undefined') {
+      return undefined;
+    }
+    const handleOnline = () => {
+      if (pendingRefreshRef.current) {
+        pendingRefreshRef.current = false;
+        void refreshTokens({ force: true, reason: 'online' });
+        return;
+      }
+      if (status.state !== 'authenticated') {
+        return;
+      }
+      const expiresAt = status.tokens.accessTokenExpiresAt;
+      if (
+        typeof expiresAt === 'number' &&
+        Number.isFinite(expiresAt) &&
+        Date.now() >= expiresAt - ACCESS_REFRESH_SKEW_MS
+      ) {
+        void refreshTokens({ reason: 'online' });
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [refreshTokens, status.state, status.tokens.accessTokenExpiresAt]);
 
   const unlock = useCallback(
     async (pin?: string) => {
@@ -536,8 +685,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       updateManifest,
       refreshManifest,
+      refreshTokens,
     }),
-    [status, login, unlock, logout, updateManifest, refreshManifest],
+    [status, login, unlock, logout, updateManifest, refreshManifest, refreshTokens],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

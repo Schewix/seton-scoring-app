@@ -8,6 +8,14 @@ export interface LoginSuccessResponse {
   patrols: PatrolSummary[];
 }
 
+export interface RefreshSuccessResponse {
+  access_token: string;
+  access_token_expires_in: number;
+  refresh_token: string;
+  refresh_token_expires_in: number;
+  device_salt?: string;
+}
+
 export interface LoginRequiresPasswordChangeResponse {
   id?: string;
   must_change_password: true;

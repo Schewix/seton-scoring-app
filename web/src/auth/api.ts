@@ -1,5 +1,5 @@
 import { env } from '../envVars';
-import type { LoginResponse, StationManifest } from './types';
+import type { LoginResponse, RefreshSuccessResponse, StationManifest } from './types';
 
 const FALLBACK_BASE_URL = import.meta.env.PROD ? '/api' : env.VITE_SUPABASE_URL ?? '';
 const BASE_URL = (env.VITE_AUTH_API_URL ?? FALLBACK_BASE_URL).replace(/\/$/, '');
@@ -55,6 +55,16 @@ export class ManifestFetchError extends Error {
   }
 }
 
+export class AuthRefreshError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'AuthRefreshError';
+    this.status = status;
+  }
+}
+
 const loggedManifestWarnings = new Set<string>();
 
 function logManifestWarningOnce(key: string, message: string, details: Record<string, unknown>) {
@@ -93,6 +103,28 @@ export function requestPasswordReset(email: string) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email }),
   }).then((res) => handleResponse<{ success: true }>(res));
+}
+
+export async function refreshSessionRequest(refreshToken: string) {
+  const url = `${BASE_URL}/auth/refresh`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+
+  if (!response.ok) {
+    let message = 'Refresh failed';
+    try {
+      const body = await response.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // ignore
+    }
+    throw new AuthRefreshError(message, response.status);
+  }
+
+  return response.json() as Promise<RefreshSuccessResponse>;
 }
 
 export async function fetchManifest(_accessToken: string) {

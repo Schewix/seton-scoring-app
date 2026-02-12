@@ -60,6 +60,7 @@ if (!SUPABASE_BASE_URL) {
 const SUBMIT_STATION_RECORD_URL = import.meta.env.PROD
   ? '/api/submit-station-record'
   : `${SUPABASE_BASE_URL}/functions/v1/submit-station-record`;
+const ACCESS_TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
 
 if (import.meta.env.DEV) {
   console.debug('[outbox] resolved submit endpoint', { submitStationRecordUrl: SUBMIT_STATION_RECORD_URL });
@@ -401,10 +402,12 @@ function StationApp({
   auth,
   refreshManifest,
   logout,
+  refreshTokens,
 }: {
   auth: AuthenticatedState;
   refreshManifest: () => Promise<void>;
   logout: () => Promise<void>;
+  refreshTokens: (options?: { force?: boolean; reason?: string }) => Promise<boolean>;
 }) {
   const manifest = auth.manifest;
   const eventId = manifest.event.id;
@@ -483,6 +486,8 @@ function StationApp({
   const [stationPassageLoading, setStationPassageLoading] = useState(false);
   const [stationPassageError, setStationPassageError] = useState<string | null>(null);
   const [selectedSummaryCategory, setSelectedSummaryCategory] = useState<StationCategoryKey | null>(null);
+  const [showCompletedSummary, setShowCompletedSummary] = useState(false);
+  const [showScannerPanel, setShowScannerPanel] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -564,6 +569,10 @@ function StationApp({
       return allowedStationCategorySet.has(previous) ? previous : null;
     });
   }, [allowedStationCategorySet]);
+
+  useEffect(() => {
+    setShowCompletedSummary(false);
+  }, [selectedSummaryCategory]);
   const isCategoryAllowed = useCallback(
     (category: string | null | undefined) => {
       if (allowedCategorySet.size === 0) {
@@ -1597,6 +1606,20 @@ function StationApp({
       return;
     }
 
+    if (shouldRefreshAccessToken()) {
+      const refreshed = await refreshAccessToken({ reason: 'outbox-preflight' });
+      if (refreshed) {
+        setAuthNeedsLogin(false);
+        return;
+      }
+    } else if (!auth.tokens.accessToken) {
+      const refreshed = await refreshAccessToken({ force: true, reason: 'missing-access' });
+      if (refreshed) {
+        setAuthNeedsLogin(false);
+        return;
+      }
+    }
+
     const sessionResult = requireAccessToken(auth.tokens.accessToken);
     if (!sessionResult.accessToken) {
       if (sessionResult.shouldBlock) {
@@ -1674,11 +1697,23 @@ function StationApp({
       });
 
       const needsAuth = updated.some((item) => item.state === 'needs_auth');
+      let nextItems = updated;
       if (needsAuth) {
         setAuthNeedsLogin(true);
+        if (isOnline) {
+          const refreshed = await refreshAccessToken({ force: true, reason: 'outbox-401' });
+          if (refreshed) {
+            nextItems = updated.map((item) =>
+              item.state === 'needs_auth'
+                ? { ...item, state: 'queued', last_error: undefined, next_attempt_at: now }
+                : item,
+            );
+            setAuthNeedsLogin(false);
+          }
+        }
       }
 
-      const retained = updated.filter((item) => item.state !== 'sent');
+      const retained = nextItems.filter((item) => item.state !== 'sent');
       if (sentIds.length > 0) {
         await deleteOutboxEntries(sentIds);
       }
@@ -1698,8 +1733,10 @@ function StationApp({
     loadStationPassages,
     normalizeOutboxForSession,
     pushAlert,
+    refreshAccessToken,
     setAuthNeedsLogin,
     stationId,
+    shouldRefreshAccessToken,
     syncing,
     updateOutboxState,
   ]);
@@ -1805,14 +1842,49 @@ function StationApp({
     () => currentSessionItems.filter((item) => item.state === 'needs_auth').length,
     [currentSessionItems],
   );
+  const shouldShowAuthBanner = authNeedsLogin || needsAuthCount > 0;
+  const authBannerMessage = useMemo(() => {
+    if (!isOnline) {
+      return 'Jste offline – přihlášení ověříme po návratu online.';
+    }
+    if (needsAuthCount > 0) {
+      return `Pro odeslání fronty se přihlas (${needsAuthCount} čeká na přihlášení).`;
+    }
+    return 'Přihlášení vypršelo, obnov ho prosím pro synchronizaci.';
+  }, [isOnline, needsAuthCount]);
+
+  const shouldRefreshAccessToken = useCallback(() => {
+    const expiresAt = auth.tokens.accessTokenExpiresAt;
+    if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
+      return true;
+    }
+    return Date.now() >= expiresAt - ACCESS_TOKEN_REFRESH_SKEW_MS;
+  }, [auth.tokens.accessTokenExpiresAt]);
+
+  const refreshAccessToken = useCallback(
+    async (options?: { force?: boolean; reason?: string }) => {
+      if (!isOnline) {
+        return false;
+      }
+      return refreshTokens(options);
+    },
+    [isOnline, refreshTokens],
+  );
 
   const handleLoginPrompt = useCallback(() => {
     if (!isOnline) {
       pushAlert('Jste offline, přihlášení ověříme po obnovení připojení.');
       return;
     }
-    void logout();
-  }, [isOnline, logout, pushAlert]);
+    void (async () => {
+      const refreshed = await refreshAccessToken({ force: true, reason: 'manual' });
+      if (refreshed) {
+        setAuthNeedsLogin(false);
+        return;
+      }
+      pushAlert('Nepodařilo se obnovit přihlášení. Zkus to prosím znovu.');
+    })();
+  }, [isOnline, pushAlert, refreshAccessToken]);
 
   useEffect(() => {
     resetForm();
@@ -2877,31 +2949,45 @@ function StationApp({
                   <div className="station-summary-section">
                     <div className="station-summary-section-header">
                       <h4>Splněné hlídky ({selectedSummaryDetail.completed.length})</h4>
+                      {selectedSummaryDetail.completed.length ? (
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => setShowCompletedSummary((prev) => !prev)}
+                          aria-expanded={showCompletedSummary}
+                        >
+                          {showCompletedSummary ? 'Skrýt hotové' : 'Ukázat hotové'}
+                        </button>
+                      ) : null}
                     </div>
                     {selectedSummaryDetail.completed.length ? (
-                      <ul className="station-summary-list">
-                        {selectedSummaryDetail.completed.map((patrol) => {
-                          const codeLabel = formatSummaryPatrolLabel(patrol);
-                          return (
-                            <li key={patrol.id}>
-                              <button
-                                type="button"
-                                className="station-summary-item"
-                                data-visited="1"
-                                onClick={() => handleSelectSummaryPatrol(patrol)}
-                                disabled={stationCode !== 'T'}
-                                aria-label={`Vybrat hlídku ${codeLabel}`}
-                              >
-                                <div className="station-summary-item-header">
-                                  <strong>{codeLabel}</strong>
-                                  <span className="station-summary-item-status">Hotovo</span>
-                                </div>
-                                {patrol.teamName ? <span>{patrol.teamName}</span> : null}
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
+                      showCompletedSummary ? (
+                        <ul className="station-summary-list">
+                          {selectedSummaryDetail.completed.map((patrol) => {
+                            const codeLabel = formatSummaryPatrolLabel(patrol);
+                            return (
+                              <li key={patrol.id}>
+                                <button
+                                  type="button"
+                                  className="station-summary-item"
+                                  data-visited="1"
+                                  onClick={() => handleSelectSummaryPatrol(patrol)}
+                                  disabled={stationCode !== 'T'}
+                                  aria-label={`Vybrat hlídku ${codeLabel}`}
+                                >
+                                  <div className="station-summary-item-header">
+                                    <strong>{codeLabel}</strong>
+                                    <span className="station-summary-item-status">Hotovo</span>
+                                  </div>
+                                  {patrol.teamName ? <span>{patrol.teamName}</span> : null}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="card-hint">Hotové hlídky jsou skryté.</p>
+                      )
                     ) : (
                       <p className="card-hint">Zatím tu nejsou hotové hlídky.</p>
                     )}
@@ -2920,86 +3006,101 @@ function StationApp({
                     : 'Zadej kód hlídky ručně a obsluhuj ji.'}
                 </p>
               </div>
-            </header>
-            <div className="scanner-wrapper">
-              {/*
-              <div className="scanner-controls">
+              <div className="card-actions">
                 <button
                   type="button"
                   className="ghost"
-                  onClick={() => setScanActive((prev) => !prev)}
+                  onClick={() => setShowScannerPanel((prev) => !prev)}
+                  aria-expanded={showScannerPanel}
+                  aria-controls="scanner-panel"
                 >
-                  {scanActive ? 'Vypnout skener' : 'Zapnout skener'}
-                </button>
-                <span className={`scanner-status ${scanActive ? 'active' : 'inactive'}`}>
-                  {scanActive ? 'Skener je zapnutý' : 'Skener je vypnutý'}
-                </span>
-              </div>
-              <QRScanner active={scanActive} onResult={handleScanResult} onError={(err) => console.error(err)} />
-              */}
-              <div className="manual-entry">
-                <PatrolCodeInput
-                  value={manualCodeDraft}
-                  onChange={setManualCodeDraft}
-                  label="Ruční kód"
-                  registry={patrolRegistryState}
-                  onValidationChange={setManualValidation}
-                  excludePatrolIds={stationPassageVisitedSet}
-                  allowedCategories={allowedCategorySet}
-                  validationMode="station-only"
-                />
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => {
-                    void handleManualConfirm();
-                  }}
-                  disabled={!manualValidation.valid}
-                >
-                  Načíst hlídku
+                  {showScannerPanel ? 'Skrýt načítání' : 'Zobrazit načítání'}
                 </button>
               </div>
-              {scannerPatrol ? (
-                <div className="scanner-preview">
-                  <strong>{scannerPatrol.team_name}</strong>
-                  {previewPatrolCode ? (
-                    <span
-                      className="scanner-code"
-                      aria-label={`Kód hlídky ${previewPatrolCode}`}
-                      data-code={previewPatrolCode}
-                    >
-                      <span className="scanner-code__label" aria-hidden="true">
-                        Kód
+            </header>
+            {showScannerPanel ? (
+              <div className="scanner-wrapper" id="scanner-panel">
+                {/*
+                <div className="scanner-controls">
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => setScanActive((prev) => !prev)}
+                  >
+                    {scanActive ? 'Vypnout skener' : 'Zapnout skener'}
+                  </button>
+                  <span className={`scanner-status ${scanActive ? 'active' : 'inactive'}`}>
+                    {scanActive ? 'Skener je zapnutý' : 'Skener je vypnutý'}
+                  </span>
+                </div>
+                <QRScanner active={scanActive} onResult={handleScanResult} onError={(err) => console.error(err)} />
+                */}
+                <div className="manual-entry">
+                  <PatrolCodeInput
+                    value={manualCodeDraft}
+                    onChange={setManualCodeDraft}
+                    label="Ruční kód"
+                    registry={patrolRegistryState}
+                    onValidationChange={setManualValidation}
+                    excludePatrolIds={stationPassageVisitedSet}
+                    allowedCategories={allowedCategorySet}
+                    validationMode="station-only"
+                  />
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => {
+                      void handleManualConfirm();
+                    }}
+                    disabled={!manualValidation.valid}
+                  >
+                    Načíst hlídku
+                  </button>
+                </div>
+                {scannerPatrol ? (
+                  <div className="scanner-preview">
+                    <strong>{scannerPatrol.team_name}</strong>
+                    {previewPatrolCode ? (
+                      <span
+                        className="scanner-code"
+                        aria-label={`Kód hlídky ${previewPatrolCode}`}
+                        data-code={previewPatrolCode}
+                      >
+                        <span className="scanner-code__label" aria-hidden="true">
+                          Kód
+                        </span>
                       </span>
-                    </span>
-                  ) : null}
-                  <span>{formatPatrolMetaLabel(scannerPatrol)}</span>
-                  <div className="scanner-actions">
-                    <button
-                      type="button"
-                      className="primary"
-                      onClick={handleServePatrol}
-                      disabled={enableTicketQueue && isPatrolInQueue}
-                    >
-                      Obsluhovat
-                    </button>
-                    {enableTicketQueue ? (
+                    ) : null}
+                    <span>{formatPatrolMetaLabel(scannerPatrol)}</span>
+                    <div className="scanner-actions">
                       <button
                         type="button"
-                        className="ghost"
-                        onClick={() => handleAddTicket('waiting')}
-                        disabled={isPatrolInQueue}
+                        className="primary"
+                        onClick={handleServePatrol}
+                        disabled={enableTicketQueue && isPatrolInQueue}
                       >
-                        Čekat
+                        Obsluhovat
                       </button>
+                      {enableTicketQueue ? (
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => handleAddTicket('waiting')}
+                          disabled={isPatrolInQueue}
+                        >
+                          Čekat
+                        </button>
+                      ) : null}
+                    </div>
+                    {enableTicketQueue && isPatrolInQueue ? (
+                      <span className="scanner-note">Hlídka už čeká ve frontě.</span>
                     ) : null}
                   </div>
-                  {enableTicketQueue && isPatrolInQueue ? (
-                    <span className="scanner-note">Hlídka už čeká ve frontě.</span>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
+                ) : null}
+              </div>
+            ) : (
+              <p className="card-hint">Načítání hlídek je skryté.</p>
+            )}
           </section>
 
           {enableTicketQueue ? (
@@ -3299,16 +3400,12 @@ function StationApp({
             ) : (
               <p className="form-placeholder">Nejprve načti hlídku a otevři formulář.</p>
             )}
-            {authNeedsLogin ? (
+            {shouldShowAuthBanner ? (
               <div className="pending-auth-banner" role="status">
-                <div className="pending-auth-text">
-                  {isOnline
-                    ? 'Přihlášení vypršelo, obnov ho prosím pro synchronizaci.'
-                    : 'Jste offline – přihlášení ověříme po návratu online.'}
-                </div>
+                <div className="pending-auth-text">{authBannerMessage}</div>
                 {isOnline ? (
                   <button type="button" className="ghost" onClick={handleLoginPrompt}>
-                    Obnovit přihlášení
+                    Přihlásit
                   </button>
                 ) : null}
               </div>
@@ -3337,16 +3434,6 @@ function StationApp({
                     </button>
                   </div>
                 </div>
-                {needsAuthCount > 0 ? (
-                  <div className="pending-auth-banner" role="status">
-                    <div className="pending-auth-text">
-                      Pro odeslání fronty se přihlas ({needsAuthCount} čeká na přihlášení).
-                    </div>
-                    <button type="button" className="ghost" onClick={handleLoginPrompt}>
-                      Přihlásit
-                    </button>
-                  </div>
-                ) : null}
                 {showPendingDetails ? (
                   <div className="pending-preview">
                     {outboxItems.length === 0 ? (
@@ -3573,7 +3660,7 @@ export function useStationRouting(status: AuthStatus) {
 }
 
 function App() {
-  const { status, refreshManifest, logout } = useAuth();
+  const { status, refreshManifest, logout, refreshTokens } = useAuth();
 
   useStationRouting(status);
 
@@ -3631,6 +3718,7 @@ function App() {
         auth={status}
         refreshManifest={refreshManifest}
         logout={logout}
+        refreshTokens={refreshTokens}
       />
     );
   }
