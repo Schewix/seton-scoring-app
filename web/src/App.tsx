@@ -20,6 +20,7 @@ import TicketQueue from './components/TicketQueue';
 import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket, TicketState } from './auth/tickets';
 import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord, getScanHistory, ScanRecord } from './storage/scanHistory';
+import { getManualPatrols, upsertManualPatrol } from './storage/manualPatrols';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
 import { ROUTE_PREFIX, SCOREBOARD_ROUTE_PREFIX, getStationPath, isStationAppPath } from './routing';
@@ -447,6 +448,7 @@ function StationApp({
   const [patrolRegistryLoading, setPatrolRegistryLoading] = useState(true);
   const [patrolRegistryError, setPatrolRegistryError] = useState<string | null>(null);
   const [accessDeniedMessage, setAccessDeniedMessage] = useState<string | null>(null);
+  const [manualPatrols, setManualPatrols] = useState<Patrol[]>([]);
   const [manualValidation, setManualValidation] = useState<PatrolValidationState>({
     code: '',
     valid: false,
@@ -476,6 +478,7 @@ function StationApp({
   const tempCodesRef = useRef<Map<string, string>>(new Map());
   const tempCounterRef = useRef(1);
   const formRef = useRef<HTMLElement | null>(null);
+  const summaryRef = useRef<HTMLElement | null>(null);
   const ticketQueueRef = useRef<HTMLElement | null>(null);
   const pointsInputRef = useRef<HTMLInputElement | null>(null);
   const answersInputRef = useRef<HTMLInputElement | null>(null);
@@ -506,6 +509,26 @@ function StationApp({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!eventId) {
+        return;
+      }
+      try {
+        const stored = await getManualPatrols(eventId);
+        if (!cancelled) {
+          setManualPatrols(stored);
+        }
+      } catch (error) {
+        console.error('manual patrols load failed', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId]);
+
   const enableTicketQueue = !isTargetStation;
   const scrollToQueue = useCallback(() => {
     if (!enableTicketQueue) {
@@ -522,6 +545,18 @@ function StationApp({
       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }, [enableTicketQueue]);
+  const scrollToSummary = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const element = summaryRef.current;
+    if (!element) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
   const allowedCategorySet = useMemo(() => {
     const manifestCategories = Array.isArray(manifest.allowedCategories)
       ? manifest.allowedCategories
@@ -807,6 +842,22 @@ function StationApp({
     pushAlert('Staré záznamy z jiné relace byly odstraněny.');
   }, [otherSessionItems, outboxItems, pushAlert, updateOutboxState]);
 
+  const handleRemoveOutboxEntry = useCallback(
+    async (entry: OutboxEntry) => {
+      if (typeof window !== 'undefined') {
+        const confirmed = window.confirm('Opravdu chcete záznam z fronty odstranit?');
+        if (!confirmed) {
+          return;
+        }
+      }
+      await deleteOutboxEntries([entry.client_event_id]);
+      const filtered = outboxItems.filter((item) => item.client_event_id !== entry.client_event_id);
+      updateOutboxState(filtered);
+      pushAlert('Záznam byl z fronty odstraněn.');
+    },
+    [outboxItems, pushAlert, updateOutboxState],
+  );
+
   const lastManifestToastAtRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -836,6 +887,7 @@ function StationApp({
   );
 
   const previewPatrolCode = scannerPatrol ? resolvePatrolCode(scannerPatrol) : '';
+  const isManualScannerPatrol = Boolean(scannerPatrol && scannerPatrol.id.startsWith('manual-'));
 
   useEffect(() => {
     let cancelled = false;
@@ -965,6 +1017,30 @@ function StationApp({
     });
     return map;
   }, [auth.patrols, isCategoryAllowed]);
+
+  const registerManualPatrol = useCallback(
+    async (patrol: Patrol) => {
+      if (!eventId) {
+        return;
+      }
+      if (!patrol.id.startsWith('manual-') || !patrol.patrol_code) {
+        return;
+      }
+      try {
+        const next = await upsertManualPatrol(eventId, {
+          id: patrol.id,
+          team_name: patrol.team_name,
+          category: patrol.category,
+          sex: patrol.sex,
+          patrol_code: patrol.patrol_code,
+        });
+        setManualPatrols(next);
+      } catch (error) {
+        console.error('manual patrols persist failed', error);
+      }
+    },
+    [eventId],
+  );
 
   const stationPassageVisitedSet = useMemo(() => {
     const visited = new Set<string>();
@@ -1470,6 +1546,7 @@ function StationApp({
     }));
     let totalExpected = 0;
     let totalVisited = 0;
+    const seen = new Set<string>();
 
     auth.patrols.forEach((patrolSummary) => {
       if (!isCategoryAllowed(patrolSummary.category)) {
@@ -1480,6 +1557,10 @@ function StationApp({
         return;
       }
       const normalizedCode = normalisePatrolCode(patrolSummary.patrol_code ?? '');
+      seen.add(patrolSummary.id);
+      if (normalizedCode) {
+        seen.add(`code:${normalizedCode}`);
+      }
       const teamName = (patrolSummary.team_name || '').trim();
       const detail: StationSummaryPatrol = {
         id: patrolSummary.id,
@@ -1493,6 +1574,38 @@ function StationApp({
       record[stationCategory].expected += 1;
       totalExpected += 1;
 
+      if (detail.visited) {
+        record[stationCategory].visited += 1;
+        totalVisited += 1;
+        record[stationCategory].completed.push(detail);
+      } else {
+        record[stationCategory].missing.push(detail);
+      }
+    });
+
+    manualPatrols.forEach((manual) => {
+      if (!isCategoryAllowed(manual.category)) {
+        return;
+      }
+      const stationCategory = toStationCategoryKey(manual.category, manual.sex);
+      if (!stationCategory || !allowedStationCategorySet.has(stationCategory)) {
+        return;
+      }
+      const normalizedCode = normalisePatrolCode(manual.patrol_code ?? '');
+      if (seen.has(manual.id) || (normalizedCode && seen.has(`code:${normalizedCode}`))) {
+        return;
+      }
+      const visited = stationPassageVisitedSet.has(manual.id) || manual.id.startsWith('manual-');
+      const detail: StationSummaryPatrol = {
+        id: manual.id,
+        code: normalizedCode || manual.patrol_code || manual.id,
+        teamName: (manual.team_name || 'Ruční hlídka').trim(),
+        baseCategory: manual.category,
+        sex: manual.sex,
+        visited,
+      };
+      record[stationCategory].expected += 1;
+      totalExpected += 1;
       if (detail.visited) {
         record[stationCategory].visited += 1;
         totalVisited += 1;
@@ -1528,6 +1641,7 @@ function StationApp({
     allowedStationCategorySet,
     auth.patrols,
     isCategoryAllowed,
+    manualPatrols,
     stationPassageVisitedSet,
   ]);
 
@@ -1622,7 +1736,7 @@ function StationApp({
     loadStationPassages();
   }, [loadStationPassages]);
 
-  const flushOutbox = useCallback(async () => {
+  const flushOutbox = useCallback(async (options?: { force?: boolean }) => {
     let items = await readOutbox();
     items = await normalizeOutboxForSession(items);
     updateOutboxState(items);
@@ -1632,6 +1746,24 @@ function StationApp({
     }
 
     const now = Date.now();
+    if (options?.force) {
+      const forced = items.map((item) => {
+        if (
+          item.event_id === eventId &&
+          item.station_id === stationId &&
+          (item.state === 'queued' || item.state === 'failed') &&
+          item.next_attempt_at > now
+        ) {
+          return { ...item, next_attempt_at: now };
+        }
+        return item;
+      });
+      if (forced.some((item, index) => item !== items[index])) {
+        await writeOutboxEntriesAndSync(forced);
+        items = forced;
+        updateOutboxState(items);
+      }
+    }
     const ready = items.filter(
       (item) =>
         item.event_id === eventId &&
@@ -1758,7 +1890,6 @@ function StationApp({
       updateOutboxState(retained);
 
       if (sentIds.length > 0) {
-        pushAlert(`Synchronizováno ${sentIds.length} záznamů.`);
         void loadStationPassages();
       }
     } finally {
@@ -2381,6 +2512,7 @@ function StationApp({
     if (!queued) {
       return;
     }
+    void registerManualPatrol(activePatrol);
     if (enableTicketQueue) {
       updateTickets((current) =>
         current.map((ticket) =>
@@ -2389,7 +2521,6 @@ function StationApp({
       );
     }
     setShowPendingDetails(false);
-    pushAlert(`Záznam uložen do fronty (${submissionData.team_name ?? submissionData.patrol_code}).`);
     resetForm();
     scrollToQueue();
   }, [
@@ -2406,6 +2537,7 @@ function StationApp({
     arrivedAt,
     stationId,
     finishAt,
+    registerManualPatrol,
     resolvePatrolCode,
     scoringDisabled,
     scrollToQueue,
@@ -2598,19 +2730,16 @@ function StationApp({
             </div>
           </div>
           <div className="hero-meta">
-            <div className="hero-panel hero-panel--menu">
-              <span className="hero-panel-label">Menu</span>
-              <button
-                type="button"
-                className="hero-menu-button"
-                onClick={() => setMenuOpen((prev) => !prev)}
-                aria-expanded={menuOpen}
-                aria-controls="station-menu"
-              >
-                <span className="hero-menu-icon" aria-hidden="true" />
-                {menuOpen ? 'Zavřít menu' : 'Otevřít menu'}
-              </button>
-            </div>
+            <button
+              type="button"
+              className="hero-menu-button"
+              onClick={() => setMenuOpen((prev) => !prev)}
+              aria-expanded={menuOpen}
+              aria-controls="station-menu"
+            >
+              <span className="hero-menu-icon" aria-hidden="true" />
+              {menuOpen ? 'Zavřít menu' : 'Otevřít menu'}
+            </button>
           </div>
           {displayAlerts.length ? (
             <div className="hero-alerts">
@@ -2846,20 +2975,7 @@ function StationApp({
       <main className="content">
         <>
           {accessDeniedMessage ? <p className="error-text">{accessDeniedMessage}</p> : null}
-          {!showScannerPanel ? (
-            <div className="scanner-toggle-inline">
-              <button
-                type="button"
-                className="ghost"
-                onClick={() => setShowScannerPanel(true)}
-                aria-expanded={showScannerPanel}
-                aria-controls="scanner-panel"
-              >
-                Zobrazit ruční načítání kódů
-              </button>
-            </div>
-          ) : null}
-          <section className="card station-summary-card">
+          <section ref={summaryRef} className="card station-summary-card">
             <header className="card-header">
               <div>
                 <h2>Přehled průchodů</h2>
@@ -2872,6 +2988,15 @@ function StationApp({
                 <button
                   type="button"
                   className="ghost"
+                  onClick={() => setShowScannerPanel((prev) => !prev)}
+                  aria-expanded={showScannerPanel}
+                  aria-controls="scanner-panel"
+                >
+                  {showScannerPanel ? 'Skrýt ruční načítání' : 'Zobrazit ruční načítání kódů'}
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
                   onClick={handleRefreshStationPassages}
                   disabled={stationPassageLoading}
                 >
@@ -2879,6 +3004,105 @@ function StationApp({
                 </button>
               </div>
             </header>
+            {showScannerPanel ? (
+              <section className="card scanner-card">
+                <header className="card-header">
+                  <div>
+                    <h2>Načtení hlídek</h2>
+                    <p className="card-subtitle">
+                      {enableTicketQueue
+                        ? 'Zadej kód hlídky ručně. Hlídku pak přidej do fronty nebo rovnou obsluhuj.'
+                        : 'Zadej kód hlídky ručně a obsluhuj ji.'}
+                    </p>
+                  </div>
+                </header>
+                <div className="scanner-wrapper" id="scanner-panel">
+                  {/*
+                  <div className="scanner-controls">
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => setScanActive((prev) => !prev)}
+                    >
+                      {scanActive ? 'Vypnout skener' : 'Zapnout skener'}
+                    </button>
+                    <span className={`scanner-status ${scanActive ? 'active' : 'inactive'}`}>
+                      {scanActive ? 'Skener je zapnutý' : 'Skener je vypnutý'}
+                    </span>
+                  </div>
+                  <QRScanner active={scanActive} onResult={handleScanResult} onError={(err) => console.error(err)} />
+                  */}
+                <div className="manual-entry">
+                  <PatrolCodeInput
+                    value={manualCodeDraft}
+                    onChange={setManualCodeDraft}
+                    label="Ruční kód"
+                    registry={patrolRegistryState}
+                    onValidationChange={setManualValidation}
+                    excludePatrolIds={stationPassageVisitedSet}
+                    allowedCategories={allowedCategorySet}
+                    validationMode="station-only"
+                    action={(
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => {
+                          void handleManualConfirm();
+                        }}
+                        disabled={!manualValidation.valid}
+                      >
+                        Načíst hlídku
+                      </button>
+                    )}
+                  />
+                </div>
+                  {scannerPatrol ? (
+                    <div className="scanner-preview">
+                      {!isManualScannerPatrol ? (
+                        <>
+                          <strong>{scannerPatrol.team_name}</strong>
+                          {previewPatrolCode ? (
+                            <span
+                              className="scanner-code"
+                              aria-label={`Kód hlídky ${previewPatrolCode}`}
+                              data-code={previewPatrolCode}
+                            >
+                              <span className="scanner-code__label" aria-hidden="true">
+                                Kód
+                              </span>
+                            </span>
+                          ) : null}
+                          <span>{formatPatrolMetaLabel(scannerPatrol)}</span>
+                        </>
+                      ) : null}
+                      <div className="scanner-actions">
+                        <button
+                          type="button"
+                          className="primary"
+                          onClick={handleServePatrol}
+                          disabled={enableTicketQueue && isPatrolInQueue}
+                        >
+                          Obsluhovat
+                        </button>
+                        {enableTicketQueue ? (
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={() => handleAddTicket('waiting')}
+                            disabled={isPatrolInQueue}
+                          >
+                            Čekat
+                          </button>
+                        ) : null}
+                      </div>
+                      {enableTicketQueue && isPatrolInQueue ? (
+                        <span className="scanner-note" aria-hidden="true" />
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
             {stationPassageError ? <p className="error-text">{stationPassageError}</p> : null}
             {stationCategorySummary.items.length ? (
               <>
@@ -3027,117 +3251,13 @@ function StationApp({
               </div>
             ) : null}
           </section>
-          {showScannerPanel ? (
-            <section className="card scanner-card">
-              <header className="card-header">
-                <div>
-                  <h2>Načtení hlídek</h2>
-                  <p className="card-subtitle">
-                    {enableTicketQueue
-                      ? 'Zadej kód hlídky ručně. Hlídku pak přidej do fronty nebo rovnou obsluhuj.'
-                      : 'Zadej kód hlídky ručně a obsluhuj ji.'}
-                  </p>
-                </div>
-                <div className="card-actions">
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={() => setShowScannerPanel((prev) => !prev)}
-                    aria-expanded={showScannerPanel}
-                    aria-controls="scanner-panel"
-                  >
-                    {showScannerPanel ? 'Skrýt ruční načítání' : 'Zobrazit ruční načítání kódů'}
-                  </button>
-                </div>
-              </header>
-              <div className="scanner-wrapper" id="scanner-panel">
-                {/*
-                <div className="scanner-controls">
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={() => setScanActive((prev) => !prev)}
-                  >
-                    {scanActive ? 'Vypnout skener' : 'Zapnout skener'}
-                  </button>
-                  <span className={`scanner-status ${scanActive ? 'active' : 'inactive'}`}>
-                    {scanActive ? 'Skener je zapnutý' : 'Skener je vypnutý'}
-                  </span>
-                </div>
-                <QRScanner active={scanActive} onResult={handleScanResult} onError={(err) => console.error(err)} />
-                */}
-                <div className="manual-entry">
-                  <PatrolCodeInput
-                    value={manualCodeDraft}
-                    onChange={setManualCodeDraft}
-                    label="Ruční kód"
-                    registry={patrolRegistryState}
-                    onValidationChange={setManualValidation}
-                    excludePatrolIds={stationPassageVisitedSet}
-                    allowedCategories={allowedCategorySet}
-                    validationMode="station-only"
-                  />
-                  <button
-                    type="button"
-                    className="primary"
-                    onClick={() => {
-                      void handleManualConfirm();
-                    }}
-                    disabled={!manualValidation.valid}
-                  >
-                    Načíst hlídku
-                  </button>
-                </div>
-                {scannerPatrol ? (
-                  <div className="scanner-preview">
-                    <strong>{scannerPatrol.team_name}</strong>
-                    {previewPatrolCode ? (
-                      <span
-                        className="scanner-code"
-                        aria-label={`Kód hlídky ${previewPatrolCode}`}
-                        data-code={previewPatrolCode}
-                      >
-                        <span className="scanner-code__label" aria-hidden="true">
-                          Kód
-                        </span>
-                      </span>
-                    ) : null}
-                    <span>{formatPatrolMetaLabel(scannerPatrol)}</span>
-                    <div className="scanner-actions">
-                      <button
-                        type="button"
-                        className="primary"
-                        onClick={handleServePatrol}
-                        disabled={enableTicketQueue && isPatrolInQueue}
-                      >
-                        Obsluhovat
-                      </button>
-                      {enableTicketQueue ? (
-                        <button
-                          type="button"
-                          className="ghost"
-                          onClick={() => handleAddTicket('waiting')}
-                          disabled={isPatrolInQueue}
-                        >
-                          Čekat
-                        </button>
-                      ) : null}
-                    </div>
-                    {enableTicketQueue && isPatrolInQueue ? (
-                      <span className="scanner-note" aria-hidden="true" />
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-
           {enableTicketQueue ? (
             <TicketQueue
               ref={ticketQueueRef}
               tickets={tickets}
               heartbeat={tick}
               onChangeState={handleTicketStateChange}
+              onBackToSummary={scrollToSummary}
             />
           ) : null}
 
@@ -3458,7 +3578,11 @@ function StationApp({
                     >
                       {showPendingDetails ? 'Skrýt frontu' : 'Zobrazit frontu'}
                     </button>
-                    <button type="button" onClick={flushOutbox} disabled={syncing || pendingCount === 0}>
+                    <button
+                      type="button"
+                      onClick={() => void flushOutbox({ force: true })}
+                      disabled={syncing || pendingCount === 0}
+                    >
                       {syncing ? 'Pracuji…' : 'Odeslat nyní'}
                     </button>
                   </div>
@@ -3479,6 +3603,7 @@ function StationApp({
                                   <th>Rozhodčí</th>
                                   <th>Poznámka</th>
                                   <th>Stav</th>
+                                  <th>Akce</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -3545,6 +3670,16 @@ function StationApp({
                                             <span className="pending-subline">Chyba: {item.last_error}</span>
                                           ) : null}
                                         </div>
+                                      </td>
+                                      <td>
+                                        <button
+                                          type="button"
+                                          className="ghost pending-remove"
+                                          onClick={() => void handleRemoveOutboxEntry(item)}
+                                          disabled={item.state === 'sending'}
+                                        >
+                                          Smazat
+                                        </button>
                                       </td>
                                     </tr>
                                   );

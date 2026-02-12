@@ -584,7 +584,6 @@ describe('station workflow', () => {
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
-    expect(await screen.findByText(/Záznam uložen do fronty/)).toBeInTheDocument();
     expect(await screen.findByText(/Čeká na odeslání: 1/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Zobrazit frontu' }));
@@ -747,8 +746,6 @@ describe('station workflow', () => {
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
-    await screen.findByText(/Záznam uložen do fronty/);
-
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     await waitFor(() => {
       expect(screen.queryByText(/Čeká na odeslání:/)).not.toBeInTheDocument();
@@ -796,7 +793,6 @@ describe('station workflow', () => {
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
-    await screen.findByText(/Záznam uložen do fronty/);
     await screen.findByText(/Čeká na odeslání: 1/);
 
     const storedQueue = await readOutbox();

@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import Picker from 'react-mobile-picker';
 
 const PATROL_CODE_REGEX = /^(N|M|S|R)(H|D)-(0[1-9]|[12][0-9]|3[0-9]|40)$/;
@@ -69,6 +69,7 @@ interface PatrolCodeInputProps {
   onValidationChange?: (state: PatrolValidationState) => void;
   id?: string;
   label?: string;
+  action?: ReactNode;
   excludePatrolIds?: ReadonlySet<string> | null;
   allowedCategories?: ReadonlySet<string> | null;
   validationMode?: 'registry' | 'station-only';
@@ -192,6 +193,7 @@ export default function PatrolCodeInput({
   onValidationChange,
   id,
   label,
+  action,
   excludePatrolIds,
   allowedCategories,
   validationMode = 'registry',
@@ -730,19 +732,22 @@ export default function PatrolCodeInput({
       ) : null}
       <div className="patrol-code-input__text">
         <label htmlFor={textInputId}>Zadání z klávesnice</label>
-        <input
-          id={textInputId}
-          type="text"
-          inputMode="text"
-          autoComplete="off"
-          placeholder="Např. RH-01"
-          value={textInputValue}
-          onChange={handleTextInputChange}
-          onFocus={() => setIsInputFocused(true)}
-          onBlur={() => setIsInputFocused(false)}
-          aria-describedby={`${textHintId}${validationState.message ? ` ${feedbackId}` : ''}`}
-          aria-invalid={validationState.reason === 'format' ? true : undefined}
-        />
+        <div className="patrol-code-input__row">
+          <input
+            id={textInputId}
+            type="text"
+            inputMode="text"
+            autoComplete="off"
+            placeholder="Např. RH-01"
+            value={textInputValue}
+            onChange={handleTextInputChange}
+            onFocus={() => setIsInputFocused(true)}
+            onBlur={() => setIsInputFocused(false)}
+            aria-describedby={`${textHintId}${validationState.message ? ` ${feedbackId}` : ''}`}
+            aria-invalid={validationState.reason === 'format' ? true : undefined}
+          />
+          {action ? <div className="patrol-code-input__action">{action}</div> : null}
+        </div>
         <small id={textHintId}>Formát: N/M/S/R + H/D + číslo 01–40.</small>
       </div>
       {showWheel ? (

@@ -6,6 +6,7 @@ interface TicketQueueProps {
   tickets: Ticket[];
   onChangeState: (id: string, nextState: Ticket['state']) => void;
   heartbeat: number;
+  onBackToSummary?: () => void;
 }
 
 function formatDuration(ms: number) {
@@ -23,7 +24,7 @@ function slaClass(ms: number) {
 }
 
 const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQueue(
-  { tickets, onChangeState, heartbeat }: TicketQueueProps,
+  { tickets, onChangeState, heartbeat, onBackToSummary }: TicketQueueProps,
   ref,
 ) {
   const grouped = useMemo(() => {
@@ -57,6 +58,13 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
             čekání / obsluha hlídky, stav se počítá z časových značek (zvládne offline i restart).
           </p>
         </div>
+        {onBackToSummary ? (
+          <div className="card-actions">
+            <button type="button" className="ghost" onClick={onBackToSummary}>
+              Zpět na přehled
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <div className="tickets-grid">
