@@ -1,48 +1,22 @@
 import { createClient } from '@supabase/supabase-js';
-import jwt from 'jsonwebtoken';
 import { setTimeout as delay } from 'node:timers/promises';
-
-const DEFAULT_SUPABASE_URL = 'http://127.0.0.1:54321';
-const DEFAULT_JWT_SECRET = 'super-secret-jwt-token-with-at-least-32-characters-long';
-
-function readEnv(name, fallback = '') {
-  const value = process.env[name];
-  return value && value.trim().length > 0 ? value.trim() : fallback;
-}
-
-function readNumber(name, fallback) {
-  const raw = readEnv(name, '');
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function readInteger(name, fallback) {
-  const raw = readEnv(name, '');
-  if (!raw) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function signKey(secret, role) {
-  return jwt.sign({ role }, secret, { expiresIn: '10y' });
-}
-
-function createRng(seed) {
-  let state = seed >>> 0;
-  return () => {
-    state = (state * 1664525 + 1013904223) % 0x100000000;
-    return state / 0x100000000;
-  };
-}
-
-function percentile(values, pct) {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const rank = Math.ceil((pct / 100) * sorted.length) - 1;
-  const idx = Math.min(Math.max(rank, 0), sorted.length - 1);
-  return sorted[idx];
-}
+import {
+  DEFAULT_JWT_SECRET,
+  DEFAULT_SUPABASE_URL,
+  buildStationRecordPayload,
+  createRng,
+  createAccessTokenProvider,
+  findDuplicates,
+  percentile,
+  randomInt,
+  randomUuid,
+  readEnv,
+  readInteger,
+  readNumber,
+  setupMemoryLogging,
+  signKey,
+  writeReport,
+} from './stress-helpers.mjs';
 
 const supabaseUrl = readEnv('SUPABASE_URL', DEFAULT_SUPABASE_URL).replace(/\/$/, '');
 const jwtSecret = readEnv('SUPABASE_JWT_SECRET', readEnv('JWT_SECRET', DEFAULT_JWT_SECRET));
@@ -66,34 +40,33 @@ const endpoint = readEnv(
 );
 
 const rng = createRng(rngSeed);
+const seedRng = createRng(rngSeed ^ 0x9e3779b9);
 
 const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false },
 });
 
-const eventId = crypto.randomUUID();
-const stationId = crypto.randomUUID();
-const judgeId = crypto.randomUUID();
-const sessionId = crypto.randomUUID();
+const eventId = randomUuid(seedRng);
+const stationId = randomUuid(seedRng);
+const judgeId = randomUuid(seedRng);
+const sessionId = randomUuid(seedRng);
 
-const accessToken = jwt.sign(
-  {
-    sub: judgeId,
-    sessionId,
-    eventId,
-    stationId,
-    role: 'authenticated',
-    type: 'access',
-  },
+const { getAccessToken } = createAccessTokenProvider({
   jwtSecret,
-  { expiresIn: '2h' },
-);
+  judgeId,
+  sessionId,
+  eventId,
+  stationId,
+  ttlMs: 2 * 60 * 60 * 1000,
+  refreshSkewMs: 5 * 60 * 1000,
+  logPrefix: 'spike',
+});
 
 const maxRequests = Math.ceil((durationSec * 1000) / intervalMinMs) * clients + clients;
 const patrolCount = maxRequests + 10;
 
 const patrolRows = Array.from({ length: patrolCount }, (_value, index) => ({
-  id: crypto.randomUUID(),
+  id: randomUuid(seedRng),
   event_id: eventId,
   team_name: `Spike Patrol ${index + 1}`,
   category: 'M',
@@ -112,10 +85,6 @@ function nextPatrol() {
   return patrol;
 }
 
-function randomInt(min, max) {
-  return Math.floor(rng() * (max - min + 1)) + min;
-}
-
 function shouldRetry() {
   return rng() < retryRate;
 }
@@ -129,24 +98,19 @@ function shouldUseTiming() {
 }
 
 function buildPayload({ patrol, clientEventId, createdAt, useQuiz, useTiming }) {
-  return {
-    client_event_id: clientEventId,
-    client_created_at: createdAt,
-    event_id: eventId,
-    station_id: stationId,
-    patrol_id: patrol.id,
-    category: 'M',
-    arrived_at: createdAt,
-    wait_minutes: 1,
+  return buildStationRecordPayload({
+    eventId,
+    stationId,
+    patrol,
+    clientEventId,
+    createdAt,
+    useQuiz,
+    useTiming,
     points: useQuiz ? 4 : 7,
     note: 'Spike test',
-    use_target_scoring: useQuiz,
-    normalized_answers: useQuiz ? 'ABCD' : null,
-    finish_time: useTiming ? createdAt : null,
-    patrol_code: patrol.patrol_code,
-    team_name: patrol.team_name,
-    sex: patrol.sex,
-  };
+    category: 'M',
+    waitMinutes: 1,
+  });
 }
 
 async function sendRequest(payload) {
@@ -156,7 +120,7 @@ async function sendRequest(payload) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${getAccessToken()}`,
         apikey: apiKey,
       },
       body: JSON.stringify(payload),
@@ -236,18 +200,20 @@ async function cleanup() {
   await supabaseAdmin.from('events').delete().eq('id', eventId);
 }
 
-function findDuplicates(values) {
-  const seen = new Set();
-  const duplicates = new Set();
-  for (const value of values) {
-    if (seen.has(value)) {
-      duplicates.add(value);
-    } else {
-      seen.add(value);
-    }
+let failureReason = null;
+function recordFailure(message) {
+  if (!failureReason) {
+    failureReason = message;
   }
-  return duplicates;
+  process.exitCode = 1;
 }
+
+const memoryLogger = setupMemoryLogging({
+  label: 'spike',
+  intervalMinutes: readInteger('MEMORY_LOG_INTERVAL_MINUTES', 10),
+  maxHeapDeltaMb: readNumber('MAX_HEAP_DELTA_MB', 0),
+  onViolation: (message) => recordFailure(message),
+});
 
 async function run() {
   console.log('[spike] seeding data...');
@@ -258,15 +224,60 @@ async function run() {
 
   const submissions = new Map();
   const successfulIds = new Set();
-  const durations = [];
-  let totalRequests = 0;
-  let totalErrors = 0;
+  const history = [];
+  const metrics = {
+    attempts: 0,
+    success: 0,
+    fail: 0,
+    retries: 0,
+    durations: [],
+    windowDurations: [],
+    windowAttempts: 0,
+    windowSuccess: 0,
+    windowFail: 0,
+    windowRetries: 0,
+  };
+
+  function logMinuteMetrics() {
+    const windowP50 = percentile(metrics.windowDurations, 50);
+    const windowP95 = percentile(metrics.windowDurations, 95);
+    const windowErrorRate = metrics.windowAttempts === 0 ? 0 : metrics.windowFail / metrics.windowAttempts;
+    const totalErrorRate = metrics.attempts === 0 ? 0 : metrics.fail / metrics.attempts;
+
+    history.push({
+      timestamp: new Date().toISOString(),
+      window_attempts: metrics.windowAttempts,
+      window_success: metrics.windowSuccess,
+      window_fail: metrics.windowFail,
+      window_error_rate: windowErrorRate,
+      window_p50_ms: Math.round(windowP50),
+      window_p95_ms: Math.round(windowP95),
+      total_attempts: metrics.attempts,
+      total_success: metrics.success,
+      total_fail: metrics.fail,
+      total_error_rate: totalErrorRate,
+      total_retries: metrics.retries,
+    });
+
+    console.log(
+      `[spike] +1m ok ${metrics.windowSuccess}/${metrics.windowAttempts} err ${(windowErrorRate * 100).toFixed(2)}% ` +
+        `p50 ${Math.round(windowP50)}ms p95 ${Math.round(windowP95)}ms`,
+    );
+
+    metrics.windowDurations = [];
+    metrics.windowAttempts = 0;
+    metrics.windowSuccess = 0;
+    metrics.windowFail = 0;
+    metrics.windowRetries = 0;
+  }
+
+  const logTimer = setInterval(logMinuteMetrics, 60 * 1000);
 
   async function runClient(index) {
-    await delay(randomInt(0, intervalMinMs));
+    await delay(randomInt(rng, 0, intervalMinMs));
     while (Date.now() - startTime < durationMs) {
       const patrol = nextPatrol();
-      const clientEventId = crypto.randomUUID();
+      const clientEventId = randomUuid(rng);
       const createdAt = new Date().toISOString();
       const useQuiz = shouldUseQuiz();
       const useTiming = shouldUseTiming();
@@ -275,27 +286,39 @@ async function run() {
       submissions.set(clientEventId, { useQuiz, useTiming });
 
       const result = await sendRequest(payload);
-      totalRequests += 1;
-      durations.push(result.duration);
+      metrics.attempts += 1;
+      metrics.windowAttempts += 1;
+      metrics.durations.push(result.duration);
+      metrics.windowDurations.push(result.duration);
       if (result.ok) {
         successfulIds.add(clientEventId);
+        metrics.success += 1;
+        metrics.windowSuccess += 1;
       } else {
-        totalErrors += 1;
+        metrics.fail += 1;
+        metrics.windowFail += 1;
       }
 
       if (shouldRetry()) {
-        await delay(randomInt(150, 600));
+        metrics.retries += 1;
+        metrics.windowRetries += 1;
+        await delay(randomInt(rng, 150, 600));
         const retryResult = await sendRequest(payload);
-        totalRequests += 1;
-        durations.push(retryResult.duration);
+        metrics.attempts += 1;
+        metrics.windowAttempts += 1;
+        metrics.durations.push(retryResult.duration);
+        metrics.windowDurations.push(retryResult.duration);
         if (retryResult.ok) {
           successfulIds.add(clientEventId);
+          metrics.success += 1;
+          metrics.windowSuccess += 1;
         } else {
-          totalErrors += 1;
+          metrics.fail += 1;
+          metrics.windowFail += 1;
         }
       }
 
-      await delay(randomInt(intervalMinMs, intervalMaxMs));
+      await delay(randomInt(rng, intervalMinMs, intervalMaxMs));
     }
 
     console.log(`[spike] client ${index} done`);
@@ -305,14 +328,20 @@ async function run() {
     `[spike] start ${clients} clients for ${durationSec}s, interval ${intervalMinMs}-${intervalMaxMs}ms, retries ${(retryRate * 100).toFixed(1)}%`,
   );
 
-  await Promise.all(Array.from({ length: clients }, (_value, index) => runClient(index + 1)));
+  try {
+    await Promise.all(Array.from({ length: clients }, (_value, index) => runClient(index + 1)));
+  } finally {
+    clearInterval(logTimer);
+  }
 
-  const p50 = percentile(durations, 50);
-  const p95 = percentile(durations, 95);
-  const errorRate = totalRequests === 0 ? 0 : totalErrors / totalRequests;
+  logMinuteMetrics();
 
-  console.log('[spike] requests:', totalRequests);
-  console.log('[spike] errors:', totalErrors, `(${(errorRate * 100).toFixed(2)}%)`);
+  const p50 = percentile(metrics.durations, 50);
+  const p95 = percentile(metrics.durations, 95);
+  const errorRate = metrics.attempts === 0 ? 0 : metrics.fail / metrics.attempts;
+
+  console.log('[spike] requests:', metrics.attempts);
+  console.log('[spike] errors:', metrics.fail, `(${(errorRate * 100).toFixed(2)}%)`);
   console.log('[spike] p50:', Math.round(p50), 'ms');
   console.log('[spike] p95:', Math.round(p95), 'ms');
 
@@ -372,16 +401,74 @@ async function run() {
     failures.push(`timings count ${(timings ?? []).length} != expected ${expectedTimingCount}`);
   }
 
+  if (failureReason) {
+    failures.push(failureReason);
+  }
+
   if (failures.length) {
     console.error('[spike] FAIL', failures);
-    process.exitCode = 1;
+    recordFailure(failures[0]);
   } else {
     console.log('[spike] PASS');
   }
+
+  const summary = {
+    attempts: metrics.attempts,
+    success: metrics.success,
+    fail: metrics.fail,
+    error_rate: errorRate,
+    retries: metrics.retries,
+    p50_ms: Math.round(p50),
+    p95_ms: Math.round(p95),
+    unique_success: successfulIds.size,
+  };
+
+  const csvFields = [
+    'timestamp',
+    'window_attempts',
+    'window_success',
+    'window_fail',
+    'window_error_rate',
+    'window_p50_ms',
+    'window_p95_ms',
+    'total_attempts',
+    'total_success',
+    'total_fail',
+    'total_error_rate',
+    'total_retries',
+  ];
+
+  await writeReport({
+    label: 'spike',
+    status: failures.length ? 'failed' : 'completed',
+    runStartTime: startTime,
+    config: {
+      clients,
+      duration_sec: durationSec,
+      interval_min_ms: intervalMinMs,
+      interval_max_ms: intervalMaxMs,
+      retry_rate: retryRate,
+      quiz_rate: quizRate,
+      timing_rate: timingRate,
+      max_p95_ms: maxP95Ms,
+      max_error_rate: maxErrorRate,
+      endpoint,
+      seed: rngSeed,
+    },
+    summary,
+    history,
+    csvFields,
+    failures: failures.length ? failures.map((message) => ({ message })) : null,
+    memory: {
+      summary: memoryLogger.getSummary(),
+      samples: memoryLogger.samples,
+    },
+  });
 }
 
 try {
   await run();
 } finally {
+  memoryLogger.stop();
   await cleanup();
 }

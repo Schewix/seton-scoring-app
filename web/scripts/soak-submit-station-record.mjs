@@ -1,78 +1,25 @@
 import { createClient } from '@supabase/supabase-js';
-import jwt from 'jsonwebtoken';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-
-const DEFAULT_SUPABASE_URL = 'http://127.0.0.1:54321';
-const DEFAULT_JWT_SECRET = 'super-secret-jwt-token-with-at-least-32-characters-long';
-
-function readEnv(name, fallback = '') {
-  const value = process.env[name];
-  return value && value.trim().length > 0 ? value.trim() : fallback;
-}
-
-function readNumber(name, fallback) {
-  const raw = readEnv(name, '');
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function readInteger(name, fallback) {
-  const raw = readEnv(name, '');
-  if (!raw) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function signKey(secret, role) {
-  return jwt.sign({ role }, secret, { expiresIn: '10y' });
-}
-
-function createRng(seed) {
-  let state = seed >>> 0;
-  return () => {
-    state = (state * 1664525 + 1013904223) % 0x100000000;
-    return state / 0x100000000;
-  };
-}
-
-function randomInt(rng, min, max) {
-  return Math.floor(rng() * (max - min + 1)) + min;
-}
-
-function percentile(values, pct) {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const rank = Math.ceil((pct / 100) * sorted.length) - 1;
-  const idx = Math.min(Math.max(rank, 0), sorted.length - 1);
-  return sorted[idx];
-}
-
-function randomUuid(rng) {
-  const bytes = new Uint8Array(16);
-  for (let i = 0; i < bytes.length; i += 1) {
-    bytes[i] = Math.floor(rng() * 256);
-  }
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-function findDuplicates(values) {
-  const seen = new Set();
-  const duplicates = new Set();
-  for (const value of values) {
-    if (seen.has(value)) {
-      duplicates.add(value);
-    } else {
-      seen.add(value);
-    }
-  }
-  return duplicates;
-}
+import {
+  DEFAULT_JWT_SECRET,
+  DEFAULT_SUPABASE_URL,
+  buildStationRecordPayload,
+  computeBackoffMs,
+  createAccessTokenProvider,
+  createChaosSender,
+  createRng,
+  findDuplicates,
+  percentile,
+  randomInt,
+  randomUuid,
+  readEnv,
+  readInteger,
+  readNumber,
+  setupMemoryLogging,
+  signKey,
+} from './stress-helpers.mjs';
 
 function shuffleInPlace(rng, values) {
   for (let i = values.length - 1; i > 0; i -= 1) {
@@ -219,34 +166,16 @@ const sessionId = randomUuid(seedRng);
 
 const accessTokenTtlMs = 2 * 60 * 60 * 1000;
 const accessTokenRefreshSkewMs = 5 * 60 * 1000;
-let accessToken = '';
-let accessTokenExpiresAtMs = 0;
-
-function issueAccessToken() {
-  accessToken = jwt.sign(
-    {
-      sub: judgeId,
-      sessionId,
-      eventId,
-      stationId,
-      role: 'authenticated',
-      type: 'access',
-    },
-    jwtSecret,
-    { expiresIn: Math.floor(accessTokenTtlMs / 1000) },
-  );
-  accessTokenExpiresAtMs = Date.now() + accessTokenTtlMs;
-}
-
-function getAccessToken() {
-  if (!accessToken || Date.now() >= accessTokenExpiresAtMs - accessTokenRefreshSkewMs) {
-    issueAccessToken();
-    console.log('[soak] refreshed access token');
-  }
-  return accessToken;
-}
-
-issueAccessToken();
+const { getAccessToken } = createAccessTokenProvider({
+  jwtSecret,
+  judgeId,
+  sessionId,
+  eventId,
+  stationId,
+  ttlMs: accessTokenTtlMs,
+  refreshSkewMs: accessTokenRefreshSkewMs,
+  logPrefix: 'soak',
+});
 
 const maxSubmissionsPerClient = Math.ceil(durationMs / intervalMinMs) + 5;
 const burstCount = burstEveryMinutes > 0 ? Math.ceil(durationMinutes / burstEveryMinutes) : 0;
@@ -274,76 +203,19 @@ function nextPatrol() {
 }
 
 function buildPayload({ patrol, clientEventId, createdAt, useQuiz, useTiming }) {
-  return {
-    client_event_id: clientEventId,
-    client_created_at: createdAt,
-    event_id: eventId,
-    station_id: stationId,
-    patrol_id: patrol.id,
-    category: 'M',
-    arrived_at: createdAt,
-    wait_minutes: 1,
+  return buildStationRecordPayload({
+    eventId,
+    stationId,
+    patrol,
+    clientEventId,
+    createdAt,
+    useQuiz,
+    useTiming,
     points: useQuiz ? 4 : 7,
     note: 'Soak test',
-    use_target_scoring: useQuiz,
-    normalized_answers: useQuiz ? 'ABCD' : null,
-    finish_time: useTiming ? createdAt : null,
-    patrol_code: patrol.patrol_code,
-    team_name: patrol.team_name,
-    sex: patrol.sex,
-  };
-}
-
-function computeBackoffMs(attempts) {
-  const base = 1000;
-  const max = 30000;
-  const exp = Math.min(max, base * 2 ** Math.max(0, attempts - 1));
-  const jitter = Math.floor(rng() * exp * 0.3);
-  return Math.min(max, exp + jitter);
-}
-
-async function sendWithChaos(payload) {
-  if (chaosJitterMsMax > 0) {
-    await delay(randomInt(rng, 0, chaosJitterMsMax));
-  }
-
-  if (rng() < chaos429Rate) {
-    return { ok: false, status: 429, duration: 0, simulated429: true };
-  }
-
-  inFlightRequests += 1;
-  const shouldTimeout = rng() < chaosTimeoutRate;
-  const controller = shouldTimeout ? new AbortController() : null;
-  const timeoutId = shouldTimeout
-    ? setTimeout(() => {
-        controller.abort();
-      }, chaosTimeoutMs)
-    : null;
-
-  const start = performance.now();
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${getAccessToken()}`,
-        ...(apiKey ? { apikey: apiKey } : {}),
-      },
-      body: JSON.stringify(payload),
-      signal: controller?.signal,
-    });
-    const duration = performance.now() - start;
-    return { ok: response.ok, status: response.status, duration };
-  } catch (error) {
-    const duration = performance.now() - start;
-    const timedOut = Boolean(controller?.signal.aborted);
-    return { ok: false, status: 0, duration, timedOut, error };
-  } finally {
-    inFlightRequests = Math.max(0, inFlightRequests - 1);
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-  }
+    category: 'M',
+    waitMinutes: 1,
+  });
 }
 
 async function seedData() {
@@ -475,6 +347,23 @@ let nextInvariantCheck = checkEvery;
 
 let burstId = 0;
 const burstWaiters = new Set();
+
+const sendWithChaos = createChaosSender({
+  rng,
+  endpoint,
+  getAccessToken,
+  apiKey,
+  chaosTimeoutRate,
+  chaosTimeoutMs,
+  chaos429Rate,
+  chaosJitterMsMax,
+  onRequestStart: () => {
+    inFlightRequests += 1;
+  },
+  onRequestEnd: () => {
+    inFlightRequests = Math.max(0, inFlightRequests - 1);
+  },
+});
 function triggerBurst() {
   burstId += 1;
   for (const waiter of burstWaiters) {
@@ -516,6 +405,13 @@ function recordFailure(message) {
   stopRequested = true;
   process.exitCode = 1;
 }
+
+const memoryLogger = setupMemoryLogging({
+  label: 'soak',
+  intervalMinutes: readInteger('MEMORY_LOG_INTERVAL_MINUTES', 10),
+  maxHeapDeltaMb: readNumber('MAX_HEAP_DELTA_MB', 0),
+  onViolation: (message) => recordFailure(message),
+});
 
 function buildEntry(now, allowDuplicateAfterSuccess = true) {
   const patrol = nextPatrol();
@@ -683,6 +579,10 @@ async function writeReport(status, reportFailures) {
       pending_outbox: pending,
       reloads: reloadCount,
       last_invariant_check_ms: lastInvariantCheck ? endTime - lastInvariantCheck : null,
+    },
+    memory: {
+      summary: memoryLogger.getSummary(),
+      samples: memoryLogger.samples,
     },
     failures: reportFailures ?? null,
     history,
@@ -894,7 +794,7 @@ async function runClient(client, startTime) {
         result.status === 429 ||
         (result.status >= 500 && result.status < 600);
       if (retryable) {
-        entry.next_attempt_at = Date.now() + computeBackoffMs(entry.attempts);
+        entry.next_attempt_at = Date.now() + computeBackoffMs(rng, entry.attempts);
       } else {
         client.queue.splice(readyIndex, 1);
       }
@@ -1005,5 +905,6 @@ try {
   recordFailure(error instanceof Error ? error.message : String(error));
   await writeReport('failed', [{ message: failureReason ?? 'fatal error' }]);
 } finally {
+  memoryLogger.stop();
   await cleanup();
 }

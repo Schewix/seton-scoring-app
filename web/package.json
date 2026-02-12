@@ -12,7 +12,13 @@
     "test:integration": "vitest -c vitest.integration.config.ts --run",
     "test:e2e": "playwright test",
     "test:load": "node scripts/spike-submit-station-record.mjs",
-    "test:soak": "node scripts/soak-submit-station-record.mjs"
+    "test:soak": "node scripts/soak-submit-station-record.mjs",
+    "test:stress:scoreboard": "node scripts/stress-scoreboard-read-write.mjs",
+    "test:stress:outbox": "node scripts/stress-outbox-massive-flush.mjs",
+    "test:stress:herd": "node scripts/stress-thundering-herd-restart.mjs",
+    "test:stress:dbmix": "node scripts/stress-db-constraints-mix.mjs",
+    "test:stress:coldstart": "node scripts/stress-cold-start-edge.mjs",
+    "test:stress:ratelimit": "node scripts/stress-rate-limit.mjs"
   },
   "dependencies": {
     "@portabletext/react": "^3.1.3",
