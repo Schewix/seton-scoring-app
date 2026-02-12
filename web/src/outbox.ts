@@ -108,6 +108,38 @@ export function computeBackoffMs(retryCount: number) {
   return Math.min(max, delay);
 }
 
+const NETWORK_ERROR_MESSAGES = ['failed to fetch', 'load failed', 'networkerror', 'network request failed'];
+
+export function isLikelyNetworkFailure(lastError?: string) {
+  if (!lastError) {
+    return false;
+  }
+  const normalized = lastError.trim().toLowerCase();
+  return NETWORK_ERROR_MESSAGES.some((message) => normalized.includes(message));
+}
+
+export function releaseNetworkBackoff(
+  items: OutboxEntry[],
+  params: { eventId: string; stationId: string; now: number },
+) {
+  let changed = false;
+  const updated = items.map((item) => {
+    if (
+      item.event_id === params.eventId &&
+      item.station_id === params.stationId &&
+      item.state === 'failed' &&
+      item.next_attempt_at > params.now &&
+      isLikelyNetworkFailure(item.last_error)
+    ) {
+      changed = true;
+      return { ...item, next_attempt_at: params.now };
+    }
+    return item;
+  });
+
+  return { updated, changed };
+}
+
 export async function enqueueStationScore(
   payload: Omit<StationScorePayload, 'client_event_id' | 'client_created_at'>,
   deps: {
