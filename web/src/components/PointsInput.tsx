@@ -8,7 +8,6 @@ interface PointsInputProps {
   min?: number;
   max?: number;
   helperText?: string;
-  clearLabel?: string;
 }
 
 function normaliseBounds(min: number | undefined, max: number | undefined) {
@@ -33,7 +32,6 @@ const PointsInput = forwardRef<HTMLInputElement, PointsInputProps>(function Poin
     min,
     max,
     helperText,
-    clearLabel = 'Vymazat výběr',
   },
   ref,
 ) {
@@ -81,8 +79,6 @@ const PointsInput = forwardRef<HTMLInputElement, PointsInputProps>(function Poin
     [onChange, resolvedMax, resolvedMin],
   );
 
-  const handleClear = useCallback(() => onChange(''), [onChange]);
-
   return (
     <div className="points-input">
       {label ? (
@@ -121,11 +117,6 @@ const PointsInput = forwardRef<HTMLInputElement, PointsInputProps>(function Poin
         <small id={helperId} className={isValidSelection || value === '' ? undefined : 'invalid'}>
           {helperMessage}
         </small>
-        {value ? (
-          <button type="button" className="ghost points-input__clear" onClick={handleClear}>
-            {clearLabel}
-          </button>
-        ) : null}
       </div>
     </div>
   );

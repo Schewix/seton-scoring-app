@@ -810,6 +810,12 @@ function StationApp({
     });
     return ids;
   }, [enableTicketQueue, tickets]);
+  const hasQueueTickets = useMemo(() => {
+    if (!enableTicketQueue) {
+      return false;
+    }
+    return tickets.some((ticket) => ticket.state === 'waiting' || ticket.state === 'serving');
+  }, [enableTicketQueue, tickets]);
   const otherSessionItems = useMemo(
     () => outboxItems.filter((item) => item.event_id !== eventId || item.station_id !== stationId),
     [eventId, outboxItems, stationId],
@@ -1436,6 +1442,13 @@ function StationApp({
       });
     },
     [initializeFormForPatrol, patrolById, pushAlert, tickets, updateTickets],
+  );
+
+  const handleRemoveTicket = useCallback(
+    (id: string) => {
+      updateTickets((current) => current.filter((ticket) => ticket.id !== id));
+    },
+    [updateTickets],
   );
 
   useEffect(() => {
@@ -2522,7 +2535,11 @@ function StationApp({
     }
     setShowPendingDetails(false);
     resetForm();
-    scrollToQueue();
+    if (hasQueueTickets) {
+      scrollToQueue();
+    } else {
+      scrollToSummary();
+    }
   }, [
     autoScore,
     note,
@@ -2541,7 +2558,9 @@ function StationApp({
     resolvePatrolCode,
     scoringDisabled,
     scrollToQueue,
+    scrollToSummary,
     enableTicketQueue,
+    hasQueueTickets,
   ]);
 
   const totalAnswers = useMemo(
@@ -3056,25 +3075,23 @@ function StationApp({
                     )}
                   />
                 </div>
-                  {scannerPatrol ? (
+                  {scannerPatrol && !isManualScannerPatrol ? (
                     <div className="scanner-preview">
-                      {!isManualScannerPatrol ? (
-                        <>
-                          <strong>{scannerPatrol.team_name}</strong>
-                          {previewPatrolCode ? (
-                            <span
-                              className="scanner-code"
-                              aria-label={`Kód hlídky ${previewPatrolCode}`}
-                              data-code={previewPatrolCode}
-                            >
-                              <span className="scanner-code__label" aria-hidden="true">
-                                Kód
-                              </span>
+                      <>
+                        <strong>{scannerPatrol.team_name}</strong>
+                        {previewPatrolCode ? (
+                          <span
+                            className="scanner-code"
+                            aria-label={`Kód hlídky ${previewPatrolCode}`}
+                            data-code={previewPatrolCode}
+                          >
+                            <span className="scanner-code__label" aria-hidden="true">
+                              Kód
                             </span>
-                          ) : null}
-                          <span>{formatPatrolMetaLabel(scannerPatrol)}</span>
-                        </>
-                      ) : null}
+                          </span>
+                        ) : null}
+                        <span>{formatPatrolMetaLabel(scannerPatrol)}</span>
+                      </>
                       <div className="scanner-actions">
                         <button
                           type="button"
@@ -3257,6 +3274,7 @@ function StationApp({
               tickets={tickets}
               heartbeat={tick}
               onChangeState={handleTicketStateChange}
+              onRemove={handleRemoveTicket}
               onBackToSummary={scrollToSummary}
             />
           ) : null}
