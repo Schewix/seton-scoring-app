@@ -772,14 +772,12 @@ function NotFoundPage() {
 }
 
 function InfoPage({
-  eyebrow,
   title,
   lead,
   links,
   backHref = '/',
   listClassName,
 }: {
-  eyebrow?: string;
   title: string;
   lead: string;
   links?: InfoLink[];
@@ -789,7 +787,6 @@ function InfoPage({
   return (
     <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="info-heading">
-        {eyebrow ? <p className="homepage-eyebrow">{eyebrow}</p> : null}
         <h1 id="info-heading">{title}</h1>
         <p className="homepage-lead">{lead}</p>
         <div className="homepage-card">
@@ -952,7 +949,6 @@ function TroopsPage() {
   return (
     <SiteShell>
       <main className="homepage-main homepage-single troops-page" aria-labelledby="troops-heading">
-        <p className="homepage-eyebrow">SPTO · Oddíly</p>
         <h1 id="troops-heading">Oddíly SPTO</h1>
         <p className="homepage-lead">Seznam oddílů zapojených do pionýrského tábornictví.</p>
         <div className="homepage-card">
@@ -1000,7 +996,6 @@ function TroopDetailPage({ troop }: { troop: Troop }) {
   return (
     <SiteShell>
       <main className="homepage-main homepage-single troop-detail" aria-labelledby="troop-heading">
-        <p className="homepage-eyebrow">SPTO · Oddíly</p>
         <h1 id="troop-heading">{formatTroopName(troop)}</h1>
         <p className="homepage-lead">{detailParts.join(' · ')}</p>
         <div className="homepage-card troop-detail-card">
@@ -1035,7 +1030,6 @@ function ContactsPage() {
   return (
     <SiteShell>
       <main className="homepage-main homepage-single contacts-page" aria-labelledby="contacts-heading">
-        <p className="homepage-eyebrow">SPTO · Kontakty</p>
         <h1 id="contacts-heading">Kontakty</h1>
         <p className="homepage-lead">Rádi poradíme s činností oddílů i s organizací soutěží.</p>
         <div className="homepage-card">
@@ -1109,7 +1103,6 @@ function ArticlePage({ article }: { article: Article }) {
   return (
     <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="article-heading">
-        <p className="homepage-eyebrow">SPTO · Článek</p>
         <h1 id="article-heading">{article.title}</h1>
         <div className={`homepage-card${hasMedia ? ' homepage-article-layout' : ''}`}>
           <div className="homepage-article-text">
@@ -1533,7 +1526,6 @@ function RedakcePage() {
   return (
     <SiteShell>
       <main className="homepage-main">
-        <p className="homepage-eyebrow">SPTO · Redakce</p>
         <h1>Redakce článků</h1>
         <p className="homepage-lead">Správa článků pro zelenaliga.cz.</p>
 
@@ -1915,7 +1907,6 @@ function GalleryOverviewPage({ albums, loading }: { albums: DriveAlbum[]; loadin
   return (
     <SiteShell>
       <main className="homepage-main homepage-single gallery-page" aria-labelledby="gallery-heading">
-        <p className="homepage-eyebrow">SPTO · Fotogalerie</p>
         <h1 id="gallery-heading">Fotogalerie</h1>
         <p className="homepage-lead">Veřejná galerie akcí SPTO s fotkami uloženými na Google Drive.</p>
         {loading ? (
@@ -2103,7 +2094,6 @@ function GalleryAlbumPage({
   return (
     <SiteShell>
       <main className="homepage-main homepage-single gallery-page" aria-labelledby="album-heading">
-        <p className="homepage-eyebrow">SPTO · Fotogalerie</p>
         <h1 id="album-heading">{album.title}</h1>
         <p className="homepage-lead">
           {album.year}
@@ -2220,7 +2210,6 @@ function ArticlePageLoader({ slug, articles }: { slug: string; articles: Article
   if (!article) {
     return (
       <InfoPage
-        eyebrow="SPTO · Články"
         title="Načítám článek"
         lead="Obsah článku se právě připravuje."
         backHref="/clanky"
@@ -2422,7 +2411,6 @@ function SiteHeader({
             <span className="homepage-logo-caption">SPTO Brno</span>
           </a>
           <div className="homepage-header-copy">
-            <p className="homepage-eyebrow">SPTO · Zelená liga</p>
             <h1>{title ?? 'SPTO a Zelená liga'}</h1>
             <p className="homepage-subtitle">{subtitle ?? HEADER_SUBTITLE}</p>
             {lead ? <p className="homepage-lead homepage-hero-lead">{lead}</p> : null}
@@ -2789,7 +2777,6 @@ function CompetitionsPage() {
   return (
     <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="competitions-heading">
-        <p className="homepage-eyebrow">SPTO · Soutěže</p>
         <h1 id="competitions-heading">Soutěže SPTO</h1>
         <p className="homepage-lead">Přehled závodů Zelené ligy a souvisejících aplikací.</p>
         <div className="homepage-card">
@@ -2833,7 +2820,6 @@ function ApplicationsPage() {
   return (
     <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="apps-heading">
-        <p className="homepage-eyebrow">SPTO · Aplikace</p>
         <h1 id="apps-heading">Aplikace SPTO</h1>
         <p className="homepage-lead">Digitální nástroje pro soutěže, bodování a výsledky.</p>
         <div className="homepage-card">
@@ -2863,7 +2849,6 @@ function LeagueStandingsPage({ leagueScores }: { leagueScores: LeagueScoresRecor
   return (
     <SiteShell>
       <main className="homepage-main homepage-single homepage-league-page" aria-labelledby="league-heading">
-        <p className="homepage-eyebrow">SPTO · Zelená liga</p>
         <h1 id="league-heading">Aktuální pořadí</h1>
         <p className="homepage-lead">Body oddílů v jednotlivých soutěžích a celkový součet.</p>
         <div className="homepage-card homepage-league-table-card">
@@ -2939,7 +2924,6 @@ function CompetitionRulesPage({ slug }: CompetitionRulesPageProps) {
   return (
     <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="rules-heading">
-        <p className="homepage-eyebrow">SPTO · Soutěže</p>
         <h1 id="rules-heading">{competition.name}</h1>
         <p className="homepage-lead">{competition.description ?? 'Pravidla a dokumenty k soutěži.'}</p>
         {rules.length > 0 ? (
@@ -2971,7 +2955,6 @@ function AboutSptoPage() {
   return (
     <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="about-spto-heading">
-        <p className="homepage-eyebrow">SPTO · O SPTO</p>
         <h1 id="about-spto-heading">O SPTO</h1>
         <p className="homepage-lead">Historie, založení a zásady fungování Sdružení pionýrských tábornických oddílů.</p>
 
@@ -3216,7 +3199,6 @@ export default function ZelenaligaSite() {
       const readableSlug = slugify(slug).replace(/-/g, ' ');
       return (
         <InfoPage
-          eyebrow="SPTO · Zelená liga"
           title={readableSlug}
           lead="Obsah stránky připravujeme. Podívej se na hlavní rozcestník."
         />

@@ -87,24 +87,6 @@
   color: var(--text);
 }
 
-.homepage-eyebrow {
-  margin: 0;
-  font-size: 0.85rem;
-  letter-spacing: 0.4em;
-  text-transform: uppercase;
-  color: rgba(4, 55, 44, 0.55);
-  font-weight: 700;
-}
-
-.homepage-eyebrow-accent {
-  display: inline-block;
-  width: 60px;
-  height: 3px;
-  border-radius: 2px;
-  background: #ffcc33;
-  margin-top: 8px;
-}
-
 .homepage-subtitle {
   margin: 4px 0 0;
   font-size: 0.9rem;
