@@ -5,6 +5,7 @@ import { computeWaitTime } from '../auth/tickets';
 interface TicketQueueProps {
   tickets: Ticket[];
   onChangeState: (id: string, nextState: Ticket['state']) => void;
+  onRemove?: (id: string) => void;
   heartbeat: number;
   onBackToSummary?: () => void;
 }
@@ -24,7 +25,7 @@ function slaClass(ms: number) {
 }
 
 const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQueue(
-  { tickets, onChangeState, heartbeat, onBackToSummary }: TicketQueueProps,
+  { tickets, onChangeState, onRemove, heartbeat, onBackToSummary }: TicketQueueProps,
   ref,
 ) {
   const grouped = useMemo(() => {
@@ -58,13 +59,6 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
             čekání / obsluha hlídky, stav se počítá z časových značek (zvládne offline i restart).
           </p>
         </div>
-        {onBackToSummary ? (
-          <div className="card-actions">
-            <button type="button" className="ghost" onClick={onBackToSummary}>
-              Zpět na přehled
-            </button>
-          </div>
-        ) : null}
       </header>
 
       <div className="tickets-grid">
@@ -88,6 +82,18 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
                       <button type="button" onClick={() => onChangeState(ticket.id, 'serving')}>
                         Obsluhovat
                       </button>
+                      {onRemove ? (
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => {
+                            onRemove(ticket.id);
+                            onBackToSummary?.();
+                          }}
+                        >
+                          Zpět na přehled
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </li>
@@ -118,6 +124,18 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
                       <button type="button" onClick={() => onChangeState(ticket.id, 'waiting')}>
                         Čekat
                       </button>
+                      {onRemove ? (
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => {
+                            onRemove(ticket.id);
+                            onBackToSummary?.();
+                          }}
+                        >
+                          Zpět na přehled
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </li>
