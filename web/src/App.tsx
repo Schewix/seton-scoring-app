@@ -541,6 +541,9 @@ function StationApp({
   const tempCounterRef = useRef(1);
   const formRef = useRef<HTMLElement | null>(null);
   const summaryRef = useRef<HTMLElement | null>(null);
+  const summaryDetailRef = useRef<HTMLDivElement | null>(null);
+  const summaryMissingRef = useRef<HTMLDivElement | null>(null);
+  const summaryCompletedRef = useRef<HTMLDivElement | null>(null);
   const ticketQueueRef = useRef<HTMLElement | null>(null);
   const pointsInputRef = useRef<HTMLInputElement | null>(null);
   const answersInputRef = useRef<HTMLInputElement | null>(null);
@@ -1728,6 +1731,23 @@ function StationApp({
       stationCategorySummary.items.find((item) => item.key === selectedSummaryCategory) ?? null
     );
   }, [selectedSummaryCategory, stationCategorySummary]);
+
+  useEffect(() => {
+    if (!selectedSummaryDetail) {
+      return;
+    }
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const target =
+      summaryMissingRef.current ?? summaryCompletedRef.current ?? summaryDetailRef.current;
+    if (!target) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [selectedSummaryDetail]);
 
   const handleSelectSummaryCategory = useCallback((category: StationCategoryKey) => {
     setSelectedSummaryCategory((previous) => (previous === category ? null : category));
@@ -3263,7 +3283,12 @@ function StationApp({
               <p className="card-hint">Pro toto stanoviště nejsou žádné hlídky k zobrazení.</p>
             )}
             {selectedSummaryDetail ? (
-              <div className="station-summary-detail" role="region" aria-live="polite">
+              <div
+                ref={summaryDetailRef}
+                className="station-summary-detail"
+                role="region"
+                aria-live="polite"
+              >
                 <div className="station-summary-detail-header">
                   <h3>{formatStationCategoryDetailLabel(selectedSummaryDetail.key)}</h3>
                   <button
@@ -3286,7 +3311,7 @@ function StationApp({
                 </p>
                 <div className="station-summary-sections">
                   {selectedSummaryDetail.missing.length ? (
-                    <div className="station-summary-section">
+                    <div ref={summaryMissingRef} className="station-summary-section">
                       <div className="station-summary-section-header">
                         <h4>Chybějící hlídky ({selectedSummaryDetail.missing.length})</h4>
                         <span className="card-hint">Kliknutím vybereš hlídku k obsluze.</span>
@@ -3317,7 +3342,7 @@ function StationApp({
                       </ul>
                     </div>
                   ) : null}
-                  <div className="station-summary-section">
+                  <div ref={summaryCompletedRef} className="station-summary-section">
                     <div className="station-summary-section-header">
                       <h4>Splněné hlídky ({selectedSummaryDetail.completed.length})</h4>
                       {selectedSummaryDetail.completed.length ? (
