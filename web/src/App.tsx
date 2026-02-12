@@ -62,6 +62,7 @@ if (!SUPABASE_BASE_URL) {
 const SUBMIT_STATION_RECORD_URL = import.meta.env.PROD
   ? '/api/submit-station-record'
   : `${SUPABASE_BASE_URL}/functions/v1/submit-station-record`;
+const SCORE_REVIEW_URL = import.meta.env.PROD ? '/api/station-score-review' : '';
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
 const OUTBOX_FLUSH_LOCK_TTL_MS = 30 * 1000;
 
@@ -227,6 +228,23 @@ function parseWaitDraft(value: string) {
     return NaN;
   }
   return total;
+}
+
+function normalizeWaitInput(value: string, fallback: string) {
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return WAIT_TIME_ZERO;
+  }
+  const match = trimmed.match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!match) {
+    return fallback;
+  }
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return fallback;
+  }
+  return formatWaitMinutes(hours * 60 + minutes);
 }
 
 function formatPatrolMetaLabel(patrol: { patrol_code: string | null; category: string; sex: string } | null) {
@@ -1200,7 +1218,7 @@ function StationApp({
   );
 
   const loadScoreReview = useCallback(
-    async (patrolId: string) => {
+    async (patrolId: string, patrolCode?: string | null) => {
       if (!canReviewStationScores) {
         setScoreReviewRows([]);
         setScoreReviewState({});
@@ -1213,42 +1231,93 @@ function StationApp({
       setScoreReviewError(null);
 
       try {
-        const [stationsRes, scoresRes, waitsRes] = await Promise.all([
-          supabase
-            .from('stations')
-            .select('id, code, name')
-            .eq('event_id', eventId),
-          supabase
-            .from('station_scores')
-            .select('station_id, points, judge, note')
-            .eq('event_id', eventId)
-            .eq('patrol_id', patrolId),
-          supabase
-            .from('station_passages')
-            .select('station_id, wait_minutes')
-            .eq('event_id', eventId)
-            .eq('patrol_id', patrolId),
-        ]);
+        let stationsData: { id: string; code: string; name: string }[] = [];
+        let scoresData: { station_id: string; points: number | null; judge: string | null; note: string | null }[] = [];
+        let waitsData: { station_id: string; wait_minutes: number | null }[] = [];
 
-        setScoreReviewLoading(false);
+        if (SCORE_REVIEW_URL) {
+          const response = await fetch(SCORE_REVIEW_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              event_id: eventId,
+              patrol_id: patrolId,
+              patrol_code: patrolCode ?? '',
+            }),
+          });
 
-        if (stationsRes.error || scoresRes.error || waitsRes.error) {
-          reportSupabaseError('stations.review', stationsRes.error, stationsRes.status);
-          reportSupabaseError('station_scores.review', scoresRes.error, scoresRes.status);
-          reportSupabaseError('station_passages.review', waitsRes.error, waitsRes.status);
-          console.error(
-            'Failed to load station scores for review',
-            stationsRes.error,
-            scoresRes.error,
-            waitsRes.error,
-          );
-          setScoreReviewRows([]);
-          setScoreReviewState({});
-          setScoreReviewError('Nepodařilo se načíst body ostatních stanovišť.');
-          return;
+          setScoreReviewLoading(false);
+
+          if (!response.ok) {
+            const detail = await response.text().catch(() => '');
+            console.error('Failed to load station scores for review', {
+              status: response.status,
+              detail,
+            });
+            setScoreReviewRows([]);
+            setScoreReviewState({});
+            setScoreReviewError('Nepodařilo se načíst body ostatních stanovišť.');
+            return;
+          }
+
+          const payload = (await response.json().catch(() => null)) as
+            | {
+                stations?: { id: string; code: string; name: string }[];
+                scores?: { station_id: string; points: number | null; judge: string | null; note: string | null }[];
+                waits?: { station_id: string; wait_minutes: number | null }[];
+              }
+            | null;
+
+          stationsData = payload?.stations ?? [];
+          scoresData = payload?.scores ?? [];
+          waitsData = payload?.waits ?? [];
+        } else {
+          const [stationsRes, scoresRes, waitsRes] = await Promise.all([
+            supabase
+              .from('stations')
+              .select('id, code, name')
+              .eq('event_id', eventId),
+            supabase
+              .from('station_scores')
+              .select('station_id, points, judge, note')
+              .eq('event_id', eventId)
+              .eq('patrol_id', patrolId),
+            supabase
+              .from('station_passages')
+              .select('station_id, wait_minutes')
+              .eq('event_id', eventId)
+              .eq('patrol_id', patrolId),
+          ]);
+
+          setScoreReviewLoading(false);
+
+          if (stationsRes.error || scoresRes.error || waitsRes.error) {
+            reportSupabaseError('stations.review', stationsRes.error, stationsRes.status);
+            reportSupabaseError('station_scores.review', scoresRes.error, scoresRes.status);
+            reportSupabaseError('station_passages.review', waitsRes.error, waitsRes.status);
+            console.error(
+              'Failed to load station scores for review',
+              stationsRes.error,
+              scoresRes.error,
+              waitsRes.error,
+            );
+            setScoreReviewRows([]);
+            setScoreReviewState({});
+            setScoreReviewError('Nepodařilo se načíst body ostatních stanovišť.');
+            return;
+          }
+
+          stationsData = (stationsRes.data ?? []) as { id: string; code: string; name: string }[];
+          scoresData = (scoresRes.data ?? []) as {
+            station_id: string;
+            points: number | null;
+            judge: string | null;
+            note: string | null;
+          }[];
+          waitsData = (waitsRes.data ?? []) as { station_id: string; wait_minutes: number | null }[];
         }
 
-        const stations = ((stationsRes.data ?? []) as { id: string; code: string; name: string }[]).map((station) => ({
+        const stations = stationsData.map((station) => ({
           id: station.id,
           code: (station.code || '').trim().toUpperCase(),
           name: station.name,
@@ -1258,19 +1327,17 @@ function StationApp({
           string,
           { points: number | null; judge: string | null; note: string | null }
         >();
-        ((scoresRes.data ?? []) as { station_id: string; points: number | null; judge: string | null; note: string | null }[]).forEach(
-          (row) => {
-            scoreMap.set(row.station_id, {
-              points: typeof row.points === 'number' ? row.points : row.points ?? null,
-              judge: row.judge ?? null,
-              note: row.note ?? null,
-            });
-          },
-        );
+        scoresData.forEach((row) => {
+          scoreMap.set(row.station_id, {
+            points: typeof row.points === 'number' ? row.points : row.points ?? null,
+            judge: row.judge ?? null,
+            note: row.note ?? null,
+          });
+        });
 
         const waitValues = new Map<string, number>();
         const waitPresent = new Set<string>();
-        ((waitsRes.data ?? []) as { station_id: string; wait_minutes: number | null }[]).forEach((row) => {
+        waitsData.forEach((row) => {
           const station = row.station_id;
           if (typeof station !== 'string' || station.length === 0) {
             return;
@@ -1367,7 +1434,7 @@ function StationApp({
 
       void loadTimingData(data.id);
       if (canReviewStationScores) {
-        void loadScoreReview(data.id);
+        void loadScoreReview(data.id, data.patrol_code);
       }
 
       if (typeof window !== 'undefined') {
@@ -1445,11 +1512,12 @@ function StationApp({
     setScoreReviewState((prev) => {
       const current =
         prev[stationId] ?? { ok: false, pointsDraft: '', waitDraft: WAIT_TIME_ZERO, saving: false, error: null };
+      const nextWaitDraft = normalizeWaitInput(value, current.waitDraft);
       return {
         ...prev,
         [stationId]: {
           ...current,
-          waitDraft: value,
+          waitDraft: nextWaitDraft,
           error: null,
         },
       };
@@ -1458,7 +1526,7 @@ function StationApp({
 
   const handleRefreshScoreReview = useCallback(() => {
     if (activePatrol) {
-      void loadScoreReview(activePatrol.id);
+      void loadScoreReview(activePatrol.id, activePatrol.patrol_code);
     }
   }, [loadScoreReview, activePatrol]);
 
@@ -2527,7 +2595,7 @@ function StationApp({
         }
 
         pushAlert(`Záznam pro stanoviště ${baseRow.stationCode || stationId} aktualizován.`);
-        await loadScoreReview(activePatrol.id);
+        await loadScoreReview(activePatrol.id, activePatrol.patrol_code);
         setScoreReviewState((prev) => {
           const current = prev[stationId];
           if (!current) {
@@ -3448,7 +3516,9 @@ function StationApp({
                       min={WAIT_TIME_ZERO}
                       max={WAIT_TIME_MAX}
                       value={waitDraft}
-                      onChange={(event) => setWaitDraft(event.target.value)}
+                      onChange={(event) =>
+                        setWaitDraft((current) => normalizeWaitInput(event.target.value, current))
+                      }
                       placeholder="hh:mm"
                       required
                     />
