@@ -276,10 +276,6 @@ body {
   justify-content: center;
   width: auto;
   margin-left: auto;
-  position: fixed;
-  top: 20px;
-  right: max(16px, calc((100vw - 960px) / 2 + 24px));
-  z-index: 30;
 }
 
 .hero-menu-icon {
