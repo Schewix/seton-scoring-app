@@ -38,7 +38,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
   const hasEmail = email.trim().length > 0;
   const hasPassword = password.length > 0;
   const hasPin = pin.trim().length > 0;
-  const isFormValid = requirePinOnly ? hasPin : hasEmail && hasPassword && hasPin;
+  const isFormValid = requirePinOnly ? hasPin : hasEmail && hasPassword;
   const submitDisabled = loading || !isFormValid;
   const submitLabel = requirePinOnly ? 'Odemknout' : 'Přihlásit';
   const loadingLabel = requirePinOnly ? 'Odemykám…' : 'Přihlašuji…';
@@ -67,6 +67,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
   const emailFieldId = 'login-email';
   const passwordFieldId = 'login-password';
   const pinFieldId = 'login-pin';
+  const pinLabel = requirePinOnly ? 'PIN' : 'PIN (povinný mimo Výpočetku)';
 
   const emailError = error?.field === 'email' ? error.message : null;
   const passwordError = error?.field === 'password' ? error.message : null;
@@ -215,7 +216,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
 
             <div className="login-field-group">
               <label className="login-field" htmlFor={pinFieldId}>
-                <span>PIN</span>
+                <span>{pinLabel}</span>
                 <input
                   id={pinFieldId}
                   type="password"
@@ -229,7 +230,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
                     setError((current) => (current && current.field === 'pin' ? null : current));
                   }}
                   placeholder="např. 1234"
-                  required
+                  required={requirePinOnly}
                   aria-invalid={pinError ? 'true' : 'false'}
                   aria-describedby={pinError ? `${pinFieldId}-error` : undefined}
                 />

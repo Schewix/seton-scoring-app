@@ -348,6 +348,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async ({ email, password, pin }: { email: string; password: string; pin?: string }) => {
+      const normalizedPin = pin?.trim() || undefined;
       const deviceKey = await generateDeviceKey();
       const devicePublicKey = toBase64(deviceKey);
       const response = await loginRequest(email, password, devicePublicKey);
@@ -357,7 +358,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           state: 'password-change-required',
           email,
           judgeId: response.id,
-          pendingPin: pin,
+          pendingPin: normalizedPin,
         });
         return;
       }
@@ -367,6 +368,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const success = response;
+      const stationCode = success.manifest.station.code?.trim().toUpperCase() ?? '';
+      if (stationCode !== 'T' && !normalizedPin) {
+        throw new Error('PIN required');
+      }
       const accessClaims = decodeJwt<{ sessionId?: string }>(success.access_token);
       logAccessTokenClaims(success.access_token, 'login');
       validateSupabaseAccessToken(success.access_token);
@@ -388,7 +393,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           sessionId,
         }),
         setDeviceKeyPayload({ ...encrypted, deviceSalt: success.device_salt }),
-        setPinHash(pin ? await digestPin(pin) : null),
+        setPinHash(normalizedPin ? await digestPin(normalizedPin) : null),
       ]);
 
       setCachedData({
