@@ -76,9 +76,9 @@ body {
 }
 
 .hero-meta {
-  display: grid;
-  gap: 18px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
 }
 
 .hero-alerts {
@@ -271,7 +271,8 @@ body {
   align-items: center;
   gap: 10px;
   justify-content: center;
-  width: 100%;
+  width: auto;
+  margin-left: auto;
 }
 
 .hero-menu-icon {
@@ -619,7 +620,7 @@ body {
   }
 
   .hero-meta {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-self: end;
   }
 }
 
@@ -866,6 +867,13 @@ body {
   gap: 6px;
 }
 
+.patrol-code-input__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .patrol-code-input__text label {
   font-size: 0.75rem;
   letter-spacing: 0.08em;
@@ -874,6 +882,7 @@ body {
 }
 
 .patrol-code-input__text input {
+  flex: 1 1 220px;
   border-radius: 12px;
   border: 1px solid var(--border);
   padding: 10px 12px;
@@ -893,6 +902,15 @@ body {
 .patrol-code-input__text input[aria-invalid='true'] {
   border-color: rgba(248, 113, 113, 0.7);
   box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.2);
+}
+
+.patrol-code-input__action {
+  display: flex;
+  align-items: center;
+}
+
+.patrol-code-input__action button {
+  white-space: nowrap;
 }
 
 .patrol-code-input__wheel-group {
@@ -1762,20 +1780,16 @@ textarea {
 .manual-entry {
   display: flex;
   gap: 16px;
-  align-items: flex-start;
+  align-items: center;
   flex-wrap: wrap;
   width: 100%;
 }
 
 .manual-entry .patrol-code-input {
-  flex: 1 1 260px;
+  flex: 1 1 100%;
   min-width: 0;
-  width: min(100%, 560px);
-  max-width: 560px;
-}
-
-.manual-entry button {
-  align-self: flex-start;
+  width: 100%;
+  max-width: none;
 }
 
 .manual-entry input {
@@ -2135,6 +2149,11 @@ textarea {
   border-bottom: none;
 }
 
+.pending-table th:last-child,
+.pending-table td:last-child {
+  text-align: right;
+}
+
 .pending-patrol strong {
   display: block;
   font-size: 15px;
@@ -2175,6 +2194,11 @@ textarea {
   font-size: 12px;
   text-transform: uppercase;
   color: #7c2d12;
+}
+
+.pending-remove {
+  padding: 6px 10px;
+  font-size: 12px;
 }
 
 .patrol-choice-backdrop {
