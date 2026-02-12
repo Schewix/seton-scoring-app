@@ -479,6 +479,7 @@ function StationApp({
   const scoringDisabled = scoringLocked && !isTargetStation;
   const [activePatrol, setActivePatrol] = useState<Patrol | null>(null);
   const [scannerPatrol, setScannerPatrol] = useState<Patrol | null>(null);
+  const [scannerSource, setScannerSource] = useState<'manual' | 'scan' | 'summary' | null>(null);
   const [showPatrolChoice, setShowPatrolChoice] = useState(false);
   const [points, setPoints] = useState('');
   const [note, setNote] = useState('');
@@ -954,7 +955,7 @@ function StationApp({
   );
 
   const previewPatrolCode = scannerPatrol ? resolvePatrolCode(scannerPatrol) : '';
-  const isManualScannerPatrol = Boolean(scannerPatrol && scannerPatrol.id.startsWith('manual-'));
+  const showScannerPreview = Boolean(scannerPatrol && scannerSource === 'scan');
 
   useEffect(() => {
     let cancelled = false;
@@ -1752,6 +1753,7 @@ function StationApp({
         return;
       }
       setScannerPatrol({ ...data });
+      setScannerSource('summary');
       setShowPatrolChoice(true);
       setScanActive(false);
       setManualCodeDraft('');
@@ -1766,6 +1768,7 @@ function StationApp({
       setManualCodeDraft,
       setScanActive,
       setScannerPatrol,
+      setScannerSource,
       setShowPatrolChoice,
       stationCode,
     ],
@@ -2043,7 +2046,8 @@ function StationApp({
 
   const resetForm = useCallback(() => {
     setActivePatrol(null);
-    setScannerPatrol(null);
+      setScannerPatrol(null);
+      setScannerSource(null);
     setShowPatrolChoice(false);
     setPoints('');
     setNote('');
@@ -2331,8 +2335,9 @@ function StationApp({
     });
     const hapticType = normalized === confirmedManualCode ? 'light' : 'heavy';
     triggerHaptic(hapticType);
+    setScannerSource('manual');
     void fetchPatrol(normalized, { allowFallback: true });
-  }, [confirmedManualCode, fetchPatrol, manualValidation]);
+  }, [confirmedManualCode, fetchPatrol, manualValidation, setScannerSource]);
 
   const handleScanResult = useCallback(
     async (text: string) => {
@@ -2354,9 +2359,10 @@ function StationApp({
         return;
       }
       lastScanRef.current = { code: scannedCode, at: now };
+      setScannerSource('scan');
       await fetchPatrol(scannedCode);
     },
-    [eventId, fetchPatrol, pushAlert, stationId]
+    [eventId, fetchPatrol, pushAlert, setScannerSource, stationId]
   );
 
   useEffect(() => {
@@ -3168,7 +3174,7 @@ function StationApp({
                     )}
                   />
                 </div>
-                  {scannerPatrol && !isManualScannerPatrol ? (
+                  {showScannerPreview ? (
                     <div className="scanner-preview">
                       <>
                         <strong>{scannerPatrol.team_name}</strong>
