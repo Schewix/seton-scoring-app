@@ -47,6 +47,7 @@ import {
   deleteOutboxEntries,
   enqueueStationScore as enqueueStationScoreHelper,
   flushOutboxBatch,
+  releaseNetworkBackoff,
   readOutbox,
   writeOutboxEntries,
   writeOutboxEntry,
@@ -62,6 +63,7 @@ const SUBMIT_STATION_RECORD_URL = import.meta.env.PROD
   ? '/api/submit-station-record'
   : `${SUPABASE_BASE_URL}/functions/v1/submit-station-record`;
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
+const OUTBOX_FLUSH_LOCK_TTL_MS = 30 * 1000;
 
 if (import.meta.env.DEV) {
   console.debug('[outbox] resolved submit endpoint', { submitStationRecordUrl: SUBMIT_STATION_RECORD_URL });
@@ -144,6 +146,58 @@ function formatWaitMinutes(totalMinutes: number) {
     .padStart(2, '0');
   const minutes = (clamped % 60).toString().padStart(2, '0');
   return `${hours}:${minutes}`;
+}
+
+function getOutboxFlushLockKey(eventId: string, stationId: string) {
+  return `outbox-flush-lock:${eventId}:${stationId}`;
+}
+
+function tryAcquireOutboxFlushLock(eventId: string, stationId: string, ownerId: string, now: number) {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+  try {
+    const lockKey = getOutboxFlushLockKey(eventId, stationId);
+    const currentRaw = window.localStorage.getItem(lockKey);
+    if (currentRaw) {
+      const current = JSON.parse(currentRaw) as { ownerId?: string; expiresAt?: number };
+      const currentOwner = typeof current.ownerId === 'string' ? current.ownerId : '';
+      const currentExpires = typeof current.expiresAt === 'number' ? current.expiresAt : 0;
+      if (currentOwner && currentOwner !== ownerId && currentExpires > now) {
+        return false;
+      }
+    }
+
+    const next = { ownerId, expiresAt: now + OUTBOX_FLUSH_LOCK_TTL_MS };
+    window.localStorage.setItem(lockKey, JSON.stringify(next));
+    const confirmedRaw = window.localStorage.getItem(lockKey);
+    if (!confirmedRaw) {
+      return false;
+    }
+    const confirmed = JSON.parse(confirmedRaw) as { ownerId?: string };
+    return confirmed.ownerId === ownerId;
+  } catch {
+    return true;
+  }
+}
+
+function releaseOutboxFlushLock(eventId: string, stationId: string, ownerId: string) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    const lockKey = getOutboxFlushLockKey(eventId, stationId);
+    const currentRaw = window.localStorage.getItem(lockKey);
+    if (!currentRaw) {
+      return;
+    }
+    const current = JSON.parse(currentRaw) as { ownerId?: string };
+    if (current.ownerId === ownerId) {
+      window.localStorage.removeItem(lockKey);
+    }
+  } catch {
+    // ignore localStorage lock release errors
+  }
 }
 
 const WAIT_TIME_ZERO = formatWaitMinutes(0);
@@ -436,6 +490,13 @@ function StationApp({
   const [showPendingDetails, setShowPendingDetails] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const didRecoverOutbox = useRef(false);
+  const flushInFlightRef = useRef(false);
+  const reconnectRetryTimeoutRef = useRef<number | null>(null);
+  const flushLockOwnerIdRef = useRef(
+    typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `flush-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  );
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [authNeedsLogin, setAuthNeedsLogin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1750,163 +1811,181 @@ function StationApp({
   }, [loadStationPassages]);
 
   const flushOutbox = useCallback(async (options?: { force?: boolean }) => {
-    let items = await readOutbox();
-    items = await normalizeOutboxForSession(items);
-    updateOutboxState(items);
-
-    if (syncing) {
+    if (flushInFlightRef.current) {
       return;
     }
+    flushInFlightRef.current = true;
+    const lockOwnerId = flushLockOwnerIdRef.current;
+    let hasCrossTabLock = false;
 
-    const now = Date.now();
-    if (options?.force) {
-      const forced = items.map((item) => {
-        if (
+    try {
+      const now = Date.now();
+      hasCrossTabLock = tryAcquireOutboxFlushLock(eventId, stationId, lockOwnerId, now);
+      if (!hasCrossTabLock) {
+        return;
+      }
+
+      let items = await readOutbox();
+      items = await normalizeOutboxForSession(items);
+      updateOutboxState(items);
+
+      const released = releaseNetworkBackoff(items, { eventId, stationId, now });
+      if (released.changed) {
+        items = released.updated;
+        await writeOutboxEntriesAndSync(items);
+        updateOutboxState(items);
+      }
+
+      if (options?.force) {
+        const forced = items.map((item) => {
+          if (
+            item.event_id === eventId &&
+            item.station_id === stationId &&
+            (item.state === 'queued' || item.state === 'failed') &&
+            item.next_attempt_at > now
+          ) {
+            return { ...item, next_attempt_at: now };
+          }
+          return item;
+        });
+        if (forced.some((item, index) => item !== items[index])) {
+          await writeOutboxEntriesAndSync(forced);
+          items = forced;
+          updateOutboxState(items);
+        }
+      }
+      const ready = items.filter(
+        (item) =>
           item.event_id === eventId &&
           item.station_id === stationId &&
           (item.state === 'queued' || item.state === 'failed') &&
-          item.next_attempt_at > now
-        ) {
-          return { ...item, next_attempt_at: now };
+          item.next_attempt_at <= now,
+      );
+      if (!ready.length) {
+        return;
+      }
+
+      if (shouldRefreshAccessToken()) {
+        const refreshed = await refreshAccessToken({ reason: 'outbox-preflight' });
+        if (refreshed) {
+          setAuthNeedsLogin(false);
+          return;
+        }
+      } else if (!auth.tokens.accessToken) {
+        const refreshed = await refreshAccessToken({ force: true, reason: 'missing-access' });
+        if (refreshed) {
+          setAuthNeedsLogin(false);
+          return;
+        }
+      }
+
+      const sessionResult = requireAccessToken(auth.tokens.accessToken);
+      if (!sessionResult.accessToken) {
+        if (sessionResult.shouldBlock) {
+          const updated = items.map<OutboxEntry>((item) => {
+            if (
+              item.event_id !== eventId ||
+              item.station_id !== stationId ||
+              item.state === 'sent' ||
+              item.state === 'blocked_other_session'
+            ) {
+              return item;
+            }
+            if (item.state === 'needs_auth') {
+              return item;
+            }
+            return {
+              ...item,
+              state: 'needs_auth',
+              last_error: sessionResult.error ?? NO_SESSION_ERROR,
+              next_attempt_at: now,
+            };
+          });
+          await writeOutboxEntriesAndSync(updated);
+          updateOutboxState(updated);
+          setAuthNeedsLogin(true);
+          if (import.meta.env.DEV) {
+            console.debug('[outbox] auth block', { error: sessionResult.error ?? NO_SESSION_ERROR });
+          }
+        }
+        return;
+      }
+
+      const cleared = items.map<OutboxEntry>((item) => {
+        if (item.event_id === eventId && item.station_id === stationId && item.state === 'needs_auth') {
+          return { ...item, state: 'queued', last_error: undefined, next_attempt_at: now };
         }
         return item;
       });
-      if (forced.some((item, index) => item !== items[index])) {
-        await writeOutboxEntriesAndSync(forced);
-        items = forced;
+      if (cleared.some((item, index) => item !== items[index])) {
+        await writeOutboxEntriesAndSync(cleared);
+        items = cleared;
         updateOutboxState(items);
-      }
-    }
-    const ready = items.filter(
-      (item) =>
-        item.event_id === eventId &&
-        item.station_id === stationId &&
-        (item.state === 'queued' || item.state === 'failed') &&
-        item.next_attempt_at <= now,
-    );
-    if (!ready.length) {
-      return;
-    }
-
-    if (shouldRefreshAccessToken()) {
-      const refreshed = await refreshAccessToken({ reason: 'outbox-preflight' });
-      if (refreshed) {
         setAuthNeedsLogin(false);
-        return;
       }
-    } else if (!auth.tokens.accessToken) {
-      const refreshed = await refreshAccessToken({ force: true, reason: 'missing-access' });
-      if (refreshed) {
-        setAuthNeedsLogin(false);
-        return;
-      }
-    }
 
-    const sessionResult = requireAccessToken(auth.tokens.accessToken);
-    if (!sessionResult.accessToken) {
-      if (sessionResult.shouldBlock) {
-        const updated = items.map<OutboxEntry>((item) => {
-          if (
-            item.event_id !== eventId ||
-            item.station_id !== stationId ||
-            item.state === 'sent' ||
-            item.state === 'blocked_other_session'
-          ) {
-            return item;
-          }
-          if (item.state === 'needs_auth') {
-            return item;
-          }
-          return {
-            ...item,
-            state: 'needs_auth',
-            last_error: sessionResult.error ?? NO_SESSION_ERROR,
-            next_attempt_at: now,
-          };
-        });
-        await writeOutboxEntriesAndSync(updated);
-        updateOutboxState(updated);
-        setAuthNeedsLogin(true);
+      const batchIds = new Set(ready.slice(0, OUTBOX_BATCH_SIZE).map((item) => item.client_event_id));
+      const sendingItems = items.map<OutboxEntry>((item) =>
+        batchIds.has(item.client_event_id) ? { ...item, state: 'sending' } : item,
+      );
+      await writeOutboxEntriesAndSync(sendingItems);
+      updateOutboxState(sendingItems);
+      setSyncing(true);
+
+      try {
+        const accessToken = sessionResult.accessToken;
+        const endpoint = SUBMIT_STATION_RECORD_URL;
+
         if (import.meta.env.DEV) {
-          console.debug('[outbox] auth block', { error: sessionResult.error ?? NO_SESSION_ERROR });
+          console.debug('[outbox] submit batch', { endpoint, hasAccessToken: Boolean(accessToken) });
         }
-      }
-      return;
-    }
 
-    const cleared = items.map<OutboxEntry>((item) => {
-      if (item.event_id === eventId && item.station_id === stationId && item.state === 'needs_auth') {
-        return { ...item, state: 'queued', last_error: undefined, next_attempt_at: now };
-      }
-      return item;
-    });
-    if (cleared.some((item, index) => item !== items[index])) {
-      await writeOutboxEntriesAndSync(cleared);
-      items = cleared;
-      updateOutboxState(items);
-      setAuthNeedsLogin(false);
-    }
+        const { updated, sentIds } = await flushOutboxBatch({
+          items,
+          eventId,
+          stationId,
+          accessToken,
+          endpoint,
+          fetchFn: fetch,
+          now,
+          batchSize: OUTBOX_BATCH_SIZE,
+        });
 
-    if (syncing) {
-      return;
-    }
-
-    const batchIds = new Set(ready.slice(0, OUTBOX_BATCH_SIZE).map((item) => item.client_event_id));
-    const sendingItems = items.map<OutboxEntry>((item) =>
-      batchIds.has(item.client_event_id) ? { ...item, state: 'sending' } : item,
-    );
-    await writeOutboxEntriesAndSync(sendingItems);
-    updateOutboxState(sendingItems);
-    setSyncing(true);
-
-    try {
-      const accessToken = sessionResult.accessToken;
-      const endpoint = SUBMIT_STATION_RECORD_URL;
-
-      if (import.meta.env.DEV) {
-        console.debug('[outbox] submit batch', { endpoint, hasAccessToken: Boolean(accessToken) });
-      }
-
-      const { updated, sentIds } = await flushOutboxBatch({
-        items,
-        eventId,
-        stationId,
-        accessToken,
-        endpoint,
-        fetchFn: fetch,
-        now,
-        batchSize: OUTBOX_BATCH_SIZE,
-      });
-
-      const needsAuth = updated.some((item) => item.state === 'needs_auth');
-      let nextItems = updated;
-      if (needsAuth) {
-        setAuthNeedsLogin(true);
-        if (isOnline) {
-          const refreshed = await refreshAccessToken({ force: true, reason: 'outbox-401' });
-          if (refreshed) {
-            nextItems = updated.map((item) =>
-              item.state === 'needs_auth'
-                ? { ...item, state: 'queued', last_error: undefined, next_attempt_at: now }
-                : item,
-            );
-            setAuthNeedsLogin(false);
+        const needsAuth = updated.some((item) => item.state === 'needs_auth');
+        let nextItems = updated;
+        if (needsAuth) {
+          setAuthNeedsLogin(true);
+          if (isOnline) {
+            const refreshed = await refreshAccessToken({ force: true, reason: 'outbox-401' });
+            if (refreshed) {
+              nextItems = updated.map((item) =>
+                item.state === 'needs_auth'
+                  ? { ...item, state: 'queued', last_error: undefined, next_attempt_at: now }
+                  : item,
+              );
+              setAuthNeedsLogin(false);
+            }
           }
         }
-      }
 
-      const retained = nextItems.filter((item) => item.state !== 'sent');
-      if (sentIds.length > 0) {
-        await deleteOutboxEntries(sentIds);
-      }
-      await writeOutboxEntriesAndSync(retained);
-      updateOutboxState(retained);
+        const retained = nextItems.filter((item) => item.state !== 'sent');
+        if (sentIds.length > 0) {
+          await deleteOutboxEntries(sentIds);
+        }
+        await writeOutboxEntriesAndSync(retained);
+        updateOutboxState(retained);
 
-      if (sentIds.length > 0) {
-        void loadStationPassages();
+        if (sentIds.length > 0) {
+          void loadStationPassages();
+        }
+      } finally {
+        setSyncing(false);
       }
     } finally {
-      setSyncing(false);
+      if (hasCrossTabLock) {
+        releaseOutboxFlushLock(eventId, stationId, lockOwnerId);
+      }
+      flushInFlightRef.current = false;
     }
   }, [
     auth.tokens.accessToken,
@@ -1918,15 +1997,29 @@ function StationApp({
     setAuthNeedsLogin,
     stationId,
     shouldRefreshAccessToken,
-    syncing,
     updateOutboxState,
   ]);
 
   useEffect(() => {
     void flushOutbox();
-    const onOnline = () => flushOutbox();
+    const onOnline = () => {
+      const jitterMs = Math.floor(Math.random() * 301);
+      if (reconnectRetryTimeoutRef.current !== null) {
+        window.clearTimeout(reconnectRetryTimeoutRef.current);
+      }
+      reconnectRetryTimeoutRef.current = window.setTimeout(() => {
+        reconnectRetryTimeoutRef.current = null;
+        void flushOutbox();
+      }, jitterMs);
+    };
     window.addEventListener('online', onOnline);
-    return () => window.removeEventListener('online', onOnline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      if (reconnectRetryTimeoutRef.current !== null) {
+        window.clearTimeout(reconnectRetryTimeoutRef.current);
+        reconnectRetryTimeoutRef.current = null;
+      }
+    };
   }, [flushOutbox]);
 
   useEffect(() => {

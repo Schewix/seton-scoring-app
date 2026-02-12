@@ -3,6 +3,8 @@ import {
   buildStationScorePayload,
   enqueueStationScore,
   flushOutboxBatch,
+  isLikelyNetworkFailure,
+  releaseNetworkBackoff,
   type OutboxEntry,
   type StationScorePayload,
 } from '../outbox';
@@ -123,6 +125,57 @@ describe('outbox enqueue', () => {
 });
 
 describe('outbox flush', () => {
+  it('detects browser network failures from error message', () => {
+    expect(isLikelyNetworkFailure('Load failed')).toBe(true);
+    expect(isLikelyNetworkFailure('Failed to fetch')).toBe(true);
+    expect(isLikelyNetworkFailure('HTTP 500')).toBe(false);
+  });
+
+  it('releases retry backoff after reconnect for network errors', () => {
+    const now = Date.now();
+    const item: OutboxEntry = {
+      client_event_id: 'client-1',
+      type: 'station_score',
+      payload: buildStationScorePayload(
+        {
+          event_id: 'event-1',
+          station_id: 'station-1',
+          patrol_id: 'patrol-1',
+          category: 'M',
+          arrived_at: '2025-01-01T00:00:00.000Z',
+          wait_minutes: 0,
+          points: 5,
+          note: '',
+          use_target_scoring: false,
+          normalized_answers: null,
+          finish_time: null,
+          patrol_code: 'MH-1',
+          team_name: 'Test',
+          sex: 'H',
+        },
+        'client-1',
+        '2025-01-01T00:00:00.000Z',
+      ),
+      event_id: 'event-1',
+      station_id: 'station-1',
+      state: 'failed',
+      attempts: 2,
+      last_error: 'Load failed',
+      next_attempt_at: now + 60_000,
+      created_at: '2025-01-01T00:00:00.000Z',
+      response: null,
+    };
+
+    const { updated, changed } = releaseNetworkBackoff([item], {
+      eventId: 'event-1',
+      stationId: 'station-1',
+      now,
+    });
+
+    expect(changed).toBe(true);
+    expect(updated[0]?.next_attempt_at).toBe(now);
+  });
+
   it('keeps items when network fails', async () => {
     const item: OutboxEntry = {
       client_event_id: 'client-1',
