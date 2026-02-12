@@ -1931,10 +1931,11 @@ textarea {
   width: 72px;
   text-align: center;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .score-review-input--wait {
-  width: 88px;
+  width: 120px;
 }
 
 .score-review-station {
