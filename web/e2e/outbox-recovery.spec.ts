@@ -6,7 +6,7 @@ import { ROUTE_PREFIX } from '../src/routing';
 const patrol = seedData.patrols[0];
 
 async function openPatrolForm(page: Page, code: string) {
-  const toggle = page.getByRole('button', { name: /Zobrazit načítání|Skrýt načítání/ });
+  const toggle = page.getByRole('button', { name: /Zobrazit ruční načítání kódů|Skrýt ruční načítání/ });
   if (await toggle.isVisible()) {
     const expanded = await toggle.getAttribute('aria-expanded');
     if (expanded !== 'true') {
@@ -70,7 +70,7 @@ test.beforeEach(async ({ page }) => {
   await clearStationData();
   await page.goto(ROUTE_PREFIX);
   await expect(
-    page.getByRole('button', { name: /Zobrazit načítání|Skrýt načítání/ }),
+    page.getByRole('button', { name: /Zobrazit ruční načítání kódů|Skrýt ruční načítání/ }),
   ).toBeVisible();
 });
 
@@ -120,7 +120,7 @@ test('outbox se po reloadu obnovi a synchronizuje po navratu online', async ({ p
   await context.setOffline(false);
   await page.goto(ROUTE_PREFIX);
   await expect(
-    page.getByRole('button', { name: /Zobrazit načítání|Skrýt načítání/ }),
+    page.getByRole('button', { name: /Zobrazit ruční načítání kódů|Skrýt ruční načítání/ }),
   ).toBeVisible();
   await expect(page.getByText(/Čeká na odeslání: 1/)).toBeVisible();
   const queueButton = page.getByRole('button', { name: 'Zobrazit frontu' });
