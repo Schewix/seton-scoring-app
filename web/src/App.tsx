@@ -2932,12 +2932,12 @@ function StationApp({
                       : null}
                 </p>
                 <div className="station-summary-sections">
-                  <div className="station-summary-section">
-                    <div className="station-summary-section-header">
-                      <h4>Chybějící hlídky ({selectedSummaryDetail.missing.length})</h4>
-                      <span className="card-hint">Kliknutím vybereš hlídku k obsluze.</span>
-                    </div>
-                    {selectedSummaryDetail.missing.length ? (
+                  {selectedSummaryDetail.missing.length ? (
+                    <div className="station-summary-section">
+                      <div className="station-summary-section-header">
+                        <h4>Chybějící hlídky ({selectedSummaryDetail.missing.length})</h4>
+                        <span className="card-hint">Kliknutím vybereš hlídku k obsluze.</span>
+                      </div>
                       <ul className="station-summary-list">
                         {selectedSummaryDetail.missing.map((patrol) => {
                           const codeLabel = formatSummaryPatrolLabel(patrol);
@@ -2962,10 +2962,8 @@ function StationApp({
                           );
                         })}
                       </ul>
-                    ) : (
-                      <p className="card-hint">Všechny hlídky už byly na stanovišti.</p>
-                    )}
-                  </div>
+                    </div>
+                  ) : null}
                   <div className="station-summary-section">
                     <div className="station-summary-section-header">
                       <h4>Splněné hlídky ({selectedSummaryDetail.completed.length})</h4>
@@ -3113,7 +3111,7 @@ function StationApp({
                       ) : null}
                     </div>
                     {enableTicketQueue && isPatrolInQueue ? (
-                      <span className="scanner-note">Hlídka už čeká ve frontě.</span>
+                      <span className="scanner-note" aria-hidden="true" />
                     ) : null}
                   </div>
                 ) : null}
