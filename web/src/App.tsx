@@ -1389,29 +1389,49 @@ function StationApp({
     setStationPassageError(null);
 
     try {
-      const { data, error, status } = await supabase
-        .from('station_passages')
-        .select('patrol_id')
-        .eq('event_id', eventId)
-        .eq('station_id', stationId);
+      const judgeId = manifest.judge.id;
+      const [passagesRes, scoresRes] = await Promise.all([
+        supabase
+          .from('station_passages')
+          .select('patrol_id')
+          .eq('event_id', eventId)
+          .eq('station_id', stationId)
+          .eq('submitted_by', judgeId),
+        supabase
+          .from('station_scores')
+          .select('patrol_id')
+          .eq('event_id', eventId)
+          .eq('station_id', stationId)
+          .eq('submitted_by', judgeId),
+      ]);
 
-      if (error) {
-        reportSupabaseError('station_passages.summary', error, status);
-        throw error;
+      if (passagesRes.error || scoresRes.error) {
+        reportSupabaseError('station_passages.summary', passagesRes.error, passagesRes.status);
+        reportSupabaseError('station_scores.summary', scoresRes.error, scoresRes.status);
+        throw passagesRes.error || scoresRes.error;
       }
 
-      const rows = (data ?? []) as { patrol_id: string | null }[];
-      const ids = rows
-        .map((row) => row.patrol_id)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0);
-      setStationPassageIds(ids);
+      const rows = (passagesRes.data ?? []) as { patrol_id: string | null }[];
+      const scoreRows = (scoresRes.data ?? []) as { patrol_id: string | null }[];
+      const ids = new Set<string>();
+      rows.forEach((row) => {
+        if (typeof row.patrol_id === 'string' && row.patrol_id.length > 0) {
+          ids.add(row.patrol_id);
+        }
+      });
+      scoreRows.forEach((row) => {
+        if (typeof row.patrol_id === 'string' && row.patrol_id.length > 0) {
+          ids.add(row.patrol_id);
+        }
+      });
+      setStationPassageIds(Array.from(ids));
     } catch (error) {
       console.error('Failed to load station passages summary', error);
       setStationPassageError('Nepodařilo se načíst průchody hlídek.');
     } finally {
       setStationPassageLoading(false);
     }
-  }, [eventId, stationId, reportSupabaseError]);
+  }, [eventId, manifest.judge.id, reportSupabaseError, stationId]);
 
   const stationCategorySummary = useMemo<StationCategorySummary>(() => {
     const record = createStationCategoryRecord(() => ({

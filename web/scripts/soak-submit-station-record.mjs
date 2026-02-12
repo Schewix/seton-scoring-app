@@ -311,6 +311,7 @@ async function sendWithChaos(payload) {
     return { ok: false, status: 429, duration: 0, simulated429: true };
   }
 
+  inFlightRequests += 1;
   const shouldTimeout = rng() < chaosTimeoutRate;
   const controller = shouldTimeout ? new AbortController() : null;
   const timeoutId = shouldTimeout
@@ -338,6 +339,7 @@ async function sendWithChaos(payload) {
     const timedOut = Boolean(controller?.signal.aborted);
     return { ok: false, status: 0, duration, timedOut, error };
   } finally {
+    inFlightRequests = Math.max(0, inFlightRequests - 1);
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
@@ -463,6 +465,8 @@ const metrics = {
 
 const history = [];
 let stopRequested = false;
+let pauseRequested = false;
+let inFlightRequests = 0;
 let failureReason = null;
 let reloadCount = 0;
 let lastInvariantCheck = 0;
@@ -500,6 +504,13 @@ async function waitForDelayOrBurst(delayMs, currentBurstId) {
   return result;
 }
 
+async function waitForInFlightDrain(timeoutMs = 10000) {
+  const start = Date.now();
+  while (inFlightRequests > 0 && Date.now() - start < timeoutMs) {
+    await delay(50);
+  }
+}
+
 function recordFailure(message) {
   failureReason = message;
   stopRequested = true;
@@ -533,108 +544,113 @@ async function checkInvariants(reason) {
   }
   invariantCheckInFlight = true;
   lastInvariantCheck = Date.now();
+  pauseRequested = true;
+  await waitForInFlightDrain();
 
-  const fetchClientEventIds = async (table) => {
-    const pageSize = 1000;
-    let from = 0;
-    let rows = [];
-    for (;;) {
-      const { data, error } = await supabaseAdmin
-        .from(table)
-        .select('client_event_id')
-        .eq('event_id', eventId)
-        .order('client_event_id', { ascending: true })
-        .range(from, from + pageSize - 1);
-      if (error) {
-        return { data: rows, error };
+  try {
+    const fetchClientEventIds = async (table) => {
+      const pageSize = 1000;
+      let from = 0;
+      let rows = [];
+      for (;;) {
+        const { data, error } = await supabaseAdmin
+          .from(table)
+          .select('client_event_id')
+          .eq('event_id', eventId)
+          .order('client_event_id', { ascending: true })
+          .range(from, from + pageSize - 1);
+        if (error) {
+          return { data: rows, error };
+        }
+        rows = rows.concat(data ?? []);
+        if (!data || data.length < pageSize) {
+          break;
+        }
+        from += pageSize;
       }
-      rows = rows.concat(data ?? []);
-      if (!data || data.length < pageSize) {
-        break;
-      }
-      from += pageSize;
+      return { data: rows, error: null };
+    };
+
+    const { data: scores, error: scoresError } = await fetchClientEventIds('station_scores');
+    const { data: passages, error: passagesError } = await fetchClientEventIds('station_passages');
+    const { data: quizzes, error: quizzesError } = await fetchClientEventIds('station_quiz_responses');
+    const { data: timings, error: timingsError } = await fetchClientEventIds('timings');
+
+    const scoreIds = (scores ?? []).map((row) => row.client_event_id);
+    const passageIds = (passages ?? []).map((row) => row.client_event_id);
+    const quizIds = (quizzes ?? []).map((row) => row.client_event_id);
+    const timingIds = (timings ?? []).map((row) => row.client_event_id);
+
+    const scoreDupes = findDuplicates(scoreIds);
+    const passageDupes = findDuplicates(passageIds);
+    const quizDupes = findDuplicates(quizIds);
+    const timingDupes = findDuplicates(timingIds);
+
+    const expectedScoreCount = successfulIds.size;
+    const expectedQuizCount = Array.from(successfulIds).filter((id) => submissions.get(id)?.useQuiz).length;
+    const expectedTimingCount = Array.from(successfulIds).filter((id) => submissions.get(id)?.useTiming).length;
+
+    const failures = [];
+    if (scoresError) {
+      failures.push({ message: 'station_scores query failed', detail: scoresError.message });
     }
-    return { data: rows, error: null };
-  };
+    if (passagesError) {
+      failures.push({ message: 'station_passages query failed', detail: passagesError.message });
+    }
+    if (quizzesError) {
+      failures.push({ message: 'station_quiz_responses query failed', detail: quizzesError.message });
+    }
+    if (timingsError) {
+      failures.push({ message: 'timings query failed', detail: timingsError.message });
+    }
+    if (scoreDupes.size || passageDupes.size || quizDupes.size || timingDupes.size) {
+      failures.push({
+        message: 'duplicate client_event_id entries detected',
+        scoreDupes: Array.from(scoreDupes).slice(0, 5),
+        passageDupes: Array.from(passageDupes).slice(0, 5),
+        quizDupes: Array.from(quizDupes).slice(0, 5),
+        timingDupes: Array.from(timingDupes).slice(0, 5),
+      });
+    }
+    if ((scores ?? []).length !== expectedScoreCount) {
+      failures.push({
+        message: 'station_scores count mismatch',
+        expected: expectedScoreCount,
+        actual: (scores ?? []).length,
+      });
+    }
+    if ((passages ?? []).length !== expectedScoreCount) {
+      failures.push({
+        message: 'station_passages count mismatch',
+        expected: expectedScoreCount,
+        actual: (passages ?? []).length,
+      });
+    }
+    if ((quizzes ?? []).length !== expectedQuizCount) {
+      failures.push({
+        message: 'station_quiz_responses count mismatch',
+        expected: expectedQuizCount,
+        actual: (quizzes ?? []).length,
+      });
+    }
+    if ((timings ?? []).length !== expectedTimingCount) {
+      failures.push({
+        message: 'timings count mismatch',
+        expected: expectedTimingCount,
+        actual: (timings ?? []).length,
+      });
+    }
 
-  const { data: scores, error: scoresError } = await fetchClientEventIds('station_scores');
-  const { data: passages, error: passagesError } = await fetchClientEventIds('station_passages');
-  const { data: quizzes, error: quizzesError } = await fetchClientEventIds('station_quiz_responses');
-  const { data: timings, error: timingsError } = await fetchClientEventIds('timings');
-
-  const scoreIds = (scores ?? []).map((row) => row.client_event_id);
-  const passageIds = (passages ?? []).map((row) => row.client_event_id);
-  const quizIds = (quizzes ?? []).map((row) => row.client_event_id);
-  const timingIds = (timings ?? []).map((row) => row.client_event_id);
-
-  const scoreDupes = findDuplicates(scoreIds);
-  const passageDupes = findDuplicates(passageIds);
-  const quizDupes = findDuplicates(quizIds);
-  const timingDupes = findDuplicates(timingIds);
-
-  const expectedScoreCount = successfulIds.size;
-  const expectedQuizCount = Array.from(successfulIds).filter((id) => submissions.get(id)?.useQuiz).length;
-  const expectedTimingCount = Array.from(successfulIds).filter((id) => submissions.get(id)?.useTiming).length;
-
-  const failures = [];
-  if (scoresError) {
-    failures.push({ message: 'station_scores query failed', detail: scoresError.message });
+    if (failures.length) {
+      console.error('[soak] invariant failure', reason, failures);
+      recordFailure(`Invariant failure: ${failures[0]?.message ?? 'unknown'}`);
+    } else {
+      console.log('[soak] invariants OK', { reason, expectedScoreCount, expectedQuizCount, expectedTimingCount });
+    }
+  } finally {
+    pauseRequested = false;
+    invariantCheckInFlight = false;
   }
-  if (passagesError) {
-    failures.push({ message: 'station_passages query failed', detail: passagesError.message });
-  }
-  if (quizzesError) {
-    failures.push({ message: 'station_quiz_responses query failed', detail: quizzesError.message });
-  }
-  if (timingsError) {
-    failures.push({ message: 'timings query failed', detail: timingsError.message });
-  }
-  if (scoreDupes.size || passageDupes.size || quizDupes.size || timingDupes.size) {
-    failures.push({
-      message: 'duplicate client_event_id entries detected',
-      scoreDupes: Array.from(scoreDupes).slice(0, 5),
-      passageDupes: Array.from(passageDupes).slice(0, 5),
-      quizDupes: Array.from(quizDupes).slice(0, 5),
-      timingDupes: Array.from(timingDupes).slice(0, 5),
-    });
-  }
-  if ((scores ?? []).length !== expectedScoreCount) {
-    failures.push({
-      message: 'station_scores count mismatch',
-      expected: expectedScoreCount,
-      actual: (scores ?? []).length,
-    });
-  }
-  if ((passages ?? []).length !== expectedScoreCount) {
-    failures.push({
-      message: 'station_passages count mismatch',
-      expected: expectedScoreCount,
-      actual: (passages ?? []).length,
-    });
-  }
-  if ((quizzes ?? []).length !== expectedQuizCount) {
-    failures.push({
-      message: 'station_quiz_responses count mismatch',
-      expected: expectedQuizCount,
-      actual: (quizzes ?? []).length,
-    });
-  }
-  if ((timings ?? []).length !== expectedTimingCount) {
-    failures.push({
-      message: 'timings count mismatch',
-      expected: expectedTimingCount,
-      actual: (timings ?? []).length,
-    });
-  }
-
-  if (failures.length) {
-    console.error('[soak] invariant failure', reason, failures);
-    recordFailure(`Invariant failure: ${failures[0]?.message ?? 'unknown'}`);
-  } else {
-    console.log('[soak] invariants OK', { reason, expectedScoreCount, expectedQuizCount, expectedTimingCount });
-  }
-
-  invariantCheckInFlight = false;
 }
 
 async function writeReport(status, reportFailures) {
@@ -770,6 +786,10 @@ async function runClient(client, startTime) {
   await delay(randomInt(rng, 0, intervalMinMs));
 
   while (!stopRequested && Date.now() - startTime < durationMs) {
+    if (pauseRequested) {
+      await delay(200);
+      continue;
+    }
     const now = Date.now();
     if (mode === 'outbox-stress') {
       const pending = clientsState.reduce((sum, item) => sum + item.queue.length, 0);
