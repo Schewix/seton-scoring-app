@@ -529,6 +529,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [logout, status],
   );
 
+  const accessTokenExpiresAt =
+    status.state === 'authenticated' ? status.tokens.accessTokenExpiresAt : null;
+
   const refreshManifest = useCallback(async () => {
     if (status.state !== 'authenticated') {
       return;
@@ -575,11 +578,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (AUTH_BYPASS || status.state !== 'authenticated') {
       return undefined;
     }
-    const expiresAt = status.tokens.accessTokenExpiresAt;
-    if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
+    if (typeof accessTokenExpiresAt !== 'number' || !Number.isFinite(accessTokenExpiresAt)) {
       return undefined;
     }
-    const refreshAt = expiresAt - ACCESS_REFRESH_SKEW_MS;
+    const refreshAt = accessTokenExpiresAt - ACCESS_REFRESH_SKEW_MS;
     if (refreshAt <= Date.now()) {
       void refreshTokens({ reason: 'expiry' });
       return undefined;
@@ -588,7 +590,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       void refreshTokens({ reason: 'expiry' });
     }, Math.max(0, refreshAt - Date.now()));
     return () => window.clearTimeout(timeoutId);
-  }, [refreshTokens, status.state, status.tokens.accessTokenExpiresAt]);
+  }, [accessTokenExpiresAt, refreshTokens, status.state]);
 
   useEffect(() => {
     if (AUTH_BYPASS || typeof window === 'undefined') {
@@ -603,18 +605,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (status.state !== 'authenticated') {
         return;
       }
-      const expiresAt = status.tokens.accessTokenExpiresAt;
       if (
-        typeof expiresAt === 'number' &&
-        Number.isFinite(expiresAt) &&
-        Date.now() >= expiresAt - ACCESS_REFRESH_SKEW_MS
+        typeof accessTokenExpiresAt === 'number' &&
+        Number.isFinite(accessTokenExpiresAt) &&
+        Date.now() >= accessTokenExpiresAt - ACCESS_REFRESH_SKEW_MS
       ) {
         void refreshTokens({ reason: 'online' });
       }
     };
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
-  }, [refreshTokens, status.state, status.tokens.accessTokenExpiresAt]);
+  }, [accessTokenExpiresAt, refreshTokens, status.state]);
 
   const unlock = useCallback(
     async (pin?: string) => {
