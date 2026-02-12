@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import Picker from 'react-mobile-picker';
 
-const PATROL_CODE_REGEX = /^(N|M|S|R)(H|D)-(0[1-9]|[12][0-9]|3[0-9]|40)$/;
+const PATROL_CODE_REGEX = /^(N|M|S|R)(H|D)-(0?[1-9]|[12][0-9]|3[0-9]|40)$/;
 const PARTIAL_PATROL_CODE_REGEX = /^(?:[NMSR]|[NMSR]-|[NMSR][HD](?:-\d{0,2})?)$/;
 
 const CATEGORY_OPTIONS = ['N', 'M', 'S', 'R'] as const;
@@ -80,7 +80,7 @@ function formatNumberLabel(raw: string) {
   if (!Number.isFinite(parsed)) {
     return raw;
   }
-  return parsed.toString().padStart(2, '0');
+  return parsed.toString();
 }
 
 function formatDisplayValue(normalised: string) {
@@ -89,7 +89,7 @@ function formatDisplayValue(normalised: string) {
   }
   const fullMatch = normalised.match(/^([NMSR])([HD])-(\d{1,2})$/);
   if (fullMatch) {
-    return `${fullMatch[1]}${fullMatch[2]}-${fullMatch[3].padStart(2, '0')}`;
+    return `${fullMatch[1]}${fullMatch[2]}-${fullMatch[3]}`;
   }
   const partialGender = normalised.match(/^([NMSR])([HD])$/);
   if (partialGender) {
@@ -161,7 +161,7 @@ function toCanonicalPatrolCode(normalised: string) {
   if (!fullMatch) {
     return normalised;
   }
-  return `${fullMatch[1]}${fullMatch[2]}-${fullMatch[3].padStart(2, '0')}`;
+  return `${fullMatch[1]}${fullMatch[2]}-${fullMatch[3]}`;
 }
 
 function parsePatrolCodeParts(normalised: string) {
@@ -738,7 +738,7 @@ export default function PatrolCodeInput({
             type="text"
             inputMode="text"
             autoComplete="off"
-            placeholder="Např. RH-01"
+          placeholder="Např. RH-1"
             value={textInputValue}
             onChange={handleTextInputChange}
             onFocus={() => setIsInputFocused(true)}
@@ -748,7 +748,7 @@ export default function PatrolCodeInput({
           />
           {action ? <div className="patrol-code-input__action">{action}</div> : null}
         </div>
-        <small id={textHintId}>Formát: N/M/S/R + H/D + číslo 01–40.</small>
+        <small id={textHintId}>Formát: N/M/S/R + H/D + číslo 1–40.</small>
       </div>
       {showWheel ? (
         <>
