@@ -2967,16 +2967,28 @@ function StationApp({
             </div>
           </div>
           <div className="hero-meta">
-            <button
-              type="button"
-              className="hero-menu-button"
-              onClick={() => setMenuOpen((prev) => !prev)}
-              aria-expanded={menuOpen}
-              aria-controls="station-menu"
-            >
-              <span className="hero-menu-icon" aria-hidden="true" />
-              {menuOpen ? 'Zavřít menu' : 'Otevřít menu'}
-            </button>
+            <div className="hero-menu-actions">
+              <button
+                type="button"
+                className="hero-menu-button"
+                onClick={() => setMenuOpen((prev) => !prev)}
+                aria-expanded={menuOpen}
+                aria-controls="station-menu"
+              >
+                <span className="hero-menu-icon" aria-hidden="true" />
+                {menuOpen ? 'Zavřít menu' : 'Otevřít menu'}
+              </button>
+              {isTargetStation ? (
+                <a
+                  className="hero-menu-link"
+                  href={SCOREBOARD_ROUTE_PREFIX}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Otevřít výsledky
+                </a>
+              ) : null}
+            </div>
           </div>
           {displayAlerts.length ? (
             <div className="hero-alerts">
