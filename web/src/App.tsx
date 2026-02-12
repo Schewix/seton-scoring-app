@@ -423,14 +423,14 @@ function getStationDisplayName(name: string, code: string | null | undefined): s
 }
 
 const STATION_CATEGORY_LABELS: Record<StationCategoryKey, { chip: string; detail: string }> = {
-  NH: { chip: 'N/H', detail: 'N – hoši' },
-  ND: { chip: 'N/D', detail: 'N – dívky' },
-  MH: { chip: 'M/H', detail: 'M – hoši' },
-  MD: { chip: 'M/D', detail: 'M – dívky' },
-  SH: { chip: 'S/H', detail: 'S – hoši' },
-  SD: { chip: 'S/D', detail: 'S – dívky' },
-  RH: { chip: 'R/H', detail: 'R – hoši' },
-  RD: { chip: 'R/D', detail: 'R – dívky' },
+  NH: { chip: 'NH', detail: 'N – hoši' },
+  ND: { chip: 'ND', detail: 'N – dívky' },
+  MH: { chip: 'MH', detail: 'M – hoši' },
+  MD: { chip: 'MD', detail: 'M – dívky' },
+  SH: { chip: 'SH', detail: 'S – hoši' },
+  SD: { chip: 'SD', detail: 'S – dívky' },
+  RH: { chip: 'RH', detail: 'R – hoši' },
+  RD: { chip: 'RD', detail: 'R – dívky' },
 };
 
 function formatStationCategoryChipLabel(category: StationCategoryKey): string {
