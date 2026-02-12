@@ -1218,7 +1218,12 @@ function StationApp({
   );
 
   const loadScoreReview = useCallback(
-    async (patrolId: string, patrolCode?: string | null) => {
+    async (
+      patrolId: string,
+      patrolCode?: string | null,
+      patrolCategory?: string | null,
+      patrolSex?: string | null,
+    ) => {
       if (!canReviewStationScores) {
         setScoreReviewRows([]);
         setScoreReviewState({});
@@ -1317,11 +1322,22 @@ function StationApp({
           waitsData = (waitsRes.data ?? []) as { station_id: string; wait_minutes: number | null }[];
         }
 
-        const stations = stationsData.map((station) => ({
+        const patrolStationCategory = toStationCategoryKey(patrolCategory, patrolSex);
+        const stations = stationsData
+          .map((station) => ({
           id: station.id,
           code: (station.code || '').trim().toUpperCase(),
           name: station.name,
-        }));
+        }))
+          .filter((station) => {
+            if (station.code === 'T' || station.code === 'R') {
+              return false;
+            }
+            if (!patrolStationCategory) {
+              return true;
+            }
+            return getAllowedStationCategories(station.code).includes(patrolStationCategory);
+          });
 
         const scoreMap = new Map<
           string,
@@ -1434,7 +1450,7 @@ function StationApp({
 
       void loadTimingData(data.id);
       if (canReviewStationScores) {
-        void loadScoreReview(data.id, data.patrol_code);
+        void loadScoreReview(data.id, data.patrol_code, data.category, data.sex);
       }
 
       if (typeof window !== 'undefined') {
@@ -1526,7 +1542,12 @@ function StationApp({
 
   const handleRefreshScoreReview = useCallback(() => {
     if (activePatrol) {
-      void loadScoreReview(activePatrol.id, activePatrol.patrol_code);
+      void loadScoreReview(
+        activePatrol.id,
+        activePatrol.patrol_code,
+        activePatrol.category,
+        activePatrol.sex,
+      );
     }
   }, [loadScoreReview, activePatrol]);
 
@@ -2595,7 +2616,12 @@ function StationApp({
         }
 
         pushAlert(`Záznam pro stanoviště ${baseRow.stationCode || stationId} aktualizován.`);
-        await loadScoreReview(activePatrol.id, activePatrol.patrol_code);
+        await loadScoreReview(
+          activePatrol.id,
+          activePatrol.patrol_code,
+          activePatrol.category,
+          activePatrol.sex,
+        );
         setScoreReviewState((prev) => {
           const current = prev[stationId];
           if (!current) {
