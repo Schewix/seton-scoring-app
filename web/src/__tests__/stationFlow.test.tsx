@@ -122,11 +122,16 @@ vi.mock('../supabaseClient', () => {
       case 'station_passages':
         return {
           upsert: () => Promise.resolve({ error: new Error('Offline') }),
-          select: () => ({
-            eq: () => ({
-              eq: () => Promise.resolve({ data: [], error: null }),
-            }),
-          }),
+          select: () => {
+            const result = Promise.resolve({ data: [], error: null });
+            const eqChain: any = {
+              eq: () => eqChain,
+              then: result.then.bind(result),
+              catch: result.catch.bind(result),
+              finally: result.finally?.bind(result),
+            };
+            return eqChain;
+          },
         };
       case 'station_scores':
         return {
@@ -144,6 +149,7 @@ vi.mock('../supabaseClient', () => {
             };
             const secondEqObj: any = {
               order: () => orderObj,
+              eq: () => finalResult,
               then: finalResult.then.bind(finalResult),
               catch: finalResult.catch.bind(finalResult),
               finally: finalResult.finally?.bind(finalResult),
@@ -346,7 +352,14 @@ async function selectPatrolCode(
     number: string;
   },
 ) {
-  const manualInput = screen.getByLabelText('Zadání z klávesnice');
+  const toggleButton = await screen.findByRole('button', {
+    name: /Zobrazit načítání|Skrýt načítání/,
+  });
+  if (toggleButton.getAttribute('aria-expanded') !== 'true') {
+    await user.click(toggleButton);
+  }
+
+  const manualInput = await screen.findByLabelText('Zadání z klávesnice');
   const paddedNumber = number.padStart(2, '0');
   await user.clear(manualInput);
   await user.type(manualInput, `${category}${type}-${paddedNumber}`);
@@ -608,15 +621,19 @@ describe('station workflow', () => {
     supabaseMock.__setMock(
       'station_passages',
       () => ({
-        select: () => ({
-          eq: () => ({
-            eq: () =>
-              Promise.resolve({
-                data: [{ patrol_id: 'patrol-1' }],
-                error: null,
-              }),
-          }),
-        }),
+        select: () => {
+          const result = Promise.resolve({
+            data: [{ patrol_id: 'patrol-1' }],
+            error: null,
+          });
+          const eqChain: any = {
+            eq: () => eqChain,
+            then: result.then.bind(result),
+            catch: result.catch.bind(result),
+            finally: result.finally?.bind(result),
+          };
+          return eqChain;
+        },
         upsert: vi.fn(),
       }),
     );
@@ -640,15 +657,19 @@ describe('station workflow', () => {
     supabaseMock.__setMock(
       'station_passages',
       () => ({
-        select: () => ({
-          eq: () => ({
-            eq: () =>
-              Promise.resolve({
-                data: [{ patrol_id: 'patrol-1' }],
-                error: null,
-              }),
-          }),
-        }),
+        select: () => {
+          const result = Promise.resolve({
+            data: [{ patrol_id: 'patrol-1' }],
+            error: null,
+          });
+          const eqChain: any = {
+            eq: () => eqChain,
+            then: result.then.bind(result),
+            catch: result.catch.bind(result),
+            finally: result.finally?.bind(result),
+          };
+          return eqChain;
+        },
         upsert: vi.fn(),
       }),
     );

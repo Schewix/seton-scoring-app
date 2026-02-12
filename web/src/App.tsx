@@ -1573,6 +1573,24 @@ function StationApp({
     [stationCategorySummary.totalExpected, stationCategorySummary.totalVisited],
   );
 
+  const shouldRefreshAccessToken = useCallback(() => {
+    const expiresAt = auth.tokens.accessTokenExpiresAt;
+    if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
+      return true;
+    }
+    return Date.now() >= expiresAt - ACCESS_TOKEN_REFRESH_SKEW_MS;
+  }, [auth.tokens.accessTokenExpiresAt]);
+
+  const refreshAccessToken = useCallback(
+    async (options?: { force?: boolean; reason?: string }) => {
+      if (!isOnline) {
+        return false;
+      }
+      return refreshTokens(options);
+    },
+    [isOnline, refreshTokens],
+  );
+
   useEffect(() => {
     if (!isTargetStation) {
       setCategoryAnswers({});
@@ -1852,24 +1870,6 @@ function StationApp({
     }
     return 'Přihlášení vypršelo, obnov ho prosím pro synchronizaci.';
   }, [isOnline, needsAuthCount]);
-
-  const shouldRefreshAccessToken = useCallback(() => {
-    const expiresAt = auth.tokens.accessTokenExpiresAt;
-    if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
-      return true;
-    }
-    return Date.now() >= expiresAt - ACCESS_TOKEN_REFRESH_SKEW_MS;
-  }, [auth.tokens.accessTokenExpiresAt]);
-
-  const refreshAccessToken = useCallback(
-    async (options?: { force?: boolean; reason?: string }) => {
-      if (!isOnline) {
-        return false;
-      }
-      return refreshTokens(options);
-    },
-    [isOnline, refreshTokens],
-  );
 
   const handleLoginPrompt = useCallback(() => {
     if (!isOnline) {
