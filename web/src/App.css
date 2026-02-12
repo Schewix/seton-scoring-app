@@ -1923,6 +1923,13 @@ textarea {
   vertical-align: middle;
 }
 
+.score-review-table th:nth-child(1),
+.score-review-table th:nth-child(2),
+.score-review-table td:nth-child(1),
+.score-review-table td:nth-child(2) {
+  text-align: center;
+}
+
 .score-review-table tbody tr:last-child td {
   border-bottom: none;
 }
