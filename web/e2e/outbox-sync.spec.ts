@@ -6,6 +6,13 @@ import { ROUTE_PREFIX } from '../src/routing';
 const patrol = seedData.patrols[0];
 
 async function openPatrolForm(page: Page, code: string) {
+  const toggle = page.getByRole('button', { name: /Zobrazit načítání|Skrýt načítání/ });
+  if (await toggle.isVisible()) {
+    const expanded = await toggle.getAttribute('aria-expanded');
+    if (expanded !== 'true') {
+      await toggle.click();
+    }
+  }
   await page.getByLabel('Zadání z klávesnice').fill(code);
   const confirmButton = page.getByRole('button', { name: 'Načíst hlídku' });
   await expect(confirmButton).toBeEnabled();
@@ -45,7 +52,9 @@ async function waitForOutboxEmpty(page: Page) {
 test.beforeEach(async ({ page }) => {
   await clearStationData();
   await page.goto(ROUTE_PREFIX);
-  await expect(page.getByRole('heading', { name: 'Načtení hlídek' })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /Zobrazit načítání|Skrýt načítání/ }),
+  ).toBeVisible();
 });
 
 test('offline záznam se po návratu online synchronizuje', async ({ page, context }) => {

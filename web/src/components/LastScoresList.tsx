@@ -234,6 +234,13 @@ export function LastScoresList({
     load();
   }, [load]);
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void load({ skipLoader: true });
+    }, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [load]);
+
   const scheduleRealtimeRefresh = useCallback(() => {
     if (refreshTimeout.current) {
       clearTimeout(refreshTimeout.current);

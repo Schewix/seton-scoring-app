@@ -340,6 +340,14 @@ async function renderApp() {
   });
 }
 
+async function waitForScannerToggle() {
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: /Zobrazit načítání|Skrýt načítání/ }),
+    ).toBeInTheDocument(),
+  );
+}
+
 async function selectPatrolCode(
   user: ReturnType<typeof userEvent.setup>,
   {
@@ -554,7 +562,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
 
     await loadPatrolAndOpenForm(user);
 
@@ -597,7 +605,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
 
     await selectPatrolCode(user, { category: 'M', type: 'H', number: '1' });
 
@@ -642,7 +650,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
 
     await selectPatrolCode(user, { category: 'N', type: 'H', number: '1' });
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
@@ -678,7 +686,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
 
     await selectPatrolCode(user, { category: 'N', type: 'H', number: '1' });
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
@@ -693,7 +701,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
 
     await loadPatrolAndOpenForm(user);
 
@@ -727,7 +735,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
     await loadPatrolAndOpenForm(user);
 
     await screen.findAllByText(/Vlci/);
@@ -776,7 +784,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
     await loadPatrolAndOpenForm(user);
 
     await screen.findAllByText(/Vlci/);
@@ -809,7 +817,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
 
     await loadPatrolAndOpenForm(user);
 
@@ -852,7 +860,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await waitFor(() => {
@@ -872,7 +880,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
     await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
 
     expect(await screen.findByText('Jiná relace: 1')).toBeInTheDocument();
@@ -902,7 +910,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
 
     await user.click(screen.getByRole('button', { name: 'Zobrazit frontu' }));
 
@@ -942,7 +950,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await waitFor(() => {
@@ -959,7 +967,7 @@ describe('station workflow', () => {
 
     await renderApp();
 
-    await waitFor(() => expect(screen.getByText('Načtení hlídek')).toBeInTheDocument());
+    await waitForScannerToggle();
 
     await selectPatrolCode(user, { category: 'N', type: 'H', number: '1' });
     await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));

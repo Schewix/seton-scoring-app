@@ -461,7 +461,7 @@ body {
 
 .station-menu-history-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   margin-top: 8px;
 }
 
@@ -1675,6 +1675,12 @@ textarea {
 
 .scanner-card {
   gap: 18px;
+}
+
+.scanner-toggle-inline {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 16px;
 }
 
 .scanner-wrapper {

@@ -357,7 +357,10 @@ function waitSecondsToMinutes(seconds: number) {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return 0;
   }
-  return Math.max(0, Math.floor(seconds / 60));
+  const safeSeconds = Math.floor(seconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+  return Math.max(0, remainder > 30 ? minutes + 1 : minutes);
 }
 
 function getStationDisplayName(name: string, code: string | null | undefined): string {
@@ -760,6 +763,18 @@ function StationApp({
     () => outboxItems.filter((item) => item.event_id === eventId && item.station_id === stationId),
     [eventId, outboxItems, stationId],
   );
+  const queuedPatrolIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!enableTicketQueue) {
+      return ids;
+    }
+    tickets.forEach((ticket) => {
+      if (ticket.state === 'waiting' || ticket.state === 'serving') {
+        ids.add(ticket.patrolId);
+      }
+    });
+    return ids;
+  }, [enableTicketQueue, tickets]);
   const otherSessionItems = useMemo(
     () => outboxItems.filter((item) => item.event_id !== eventId || item.station_id !== stationId),
     [eventId, outboxItems, stationId],
@@ -924,7 +939,7 @@ function StationApp({
         }
         setShowPatrolChoice(false);
       } else {
-        pushAlert('Hlídka už je ve frontě.');
+        setShowPatrolChoice(false);
       }
     },
     [scannerPatrol, pushAlert, resolvePatrolCode, scoringDisabled, updateTickets],
@@ -972,8 +987,12 @@ function StationApp({
       }
     });
 
+    queuedPatrolIds.forEach((id) => {
+      visited.add(id);
+    });
+
     return visited;
-  }, [currentSessionItems, eventId, stationId, stationPassageIds]);
+  }, [currentSessionItems, eventId, queuedPatrolIds, stationId, stationPassageIds]);
 
 
   const loadTimingData = useCallback(
@@ -2832,7 +2851,8 @@ function StationApp({
               <div>
                 <h2>Přehled průchodů</h2>
                 <p className="card-subtitle">
-                  Sleduj, kolik hlídek už stanoviště navštívilo podle kategorií.
+                  Sleduj, kolik hlídek už stanoviště navštívilo podle kategorií. Hlídky lze
+                  načítat také přes tlačítko „Zobrazit načítání“.
                 </p>
               </div>
               <div className="card-actions">
@@ -2996,29 +3016,29 @@ function StationApp({
               </div>
             ) : null}
           </section>
-          <section className="card scanner-card">
-            <header className="card-header">
-              <div>
-                <h2>Načtení hlídek</h2>
-                <p className="card-subtitle">
-                  {enableTicketQueue
-                    ? 'Zadej kód hlídky ručně. Hlídku pak přidej do fronty nebo rovnou obsluhuj.'
-                    : 'Zadej kód hlídky ručně a obsluhuj ji.'}
-                </p>
-              </div>
-              <div className="card-actions">
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => setShowScannerPanel((prev) => !prev)}
-                  aria-expanded={showScannerPanel}
-                  aria-controls="scanner-panel"
-                >
-                  {showScannerPanel ? 'Skrýt načítání' : 'Zobrazit načítání'}
-                </button>
-              </div>
-            </header>
-            {showScannerPanel ? (
+          {showScannerPanel ? (
+            <section className="card scanner-card">
+              <header className="card-header">
+                <div>
+                  <h2>Načtení hlídek</h2>
+                  <p className="card-subtitle">
+                    {enableTicketQueue
+                      ? 'Zadej kód hlídky ručně. Hlídku pak přidej do fronty nebo rovnou obsluhuj.'
+                      : 'Zadej kód hlídky ručně a obsluhuj ji.'}
+                  </p>
+                </div>
+                <div className="card-actions">
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => setShowScannerPanel((prev) => !prev)}
+                    aria-expanded={showScannerPanel}
+                    aria-controls="scanner-panel"
+                  >
+                    {showScannerPanel ? 'Skrýt načítání' : 'Zobrazit načítání'}
+                  </button>
+                </div>
+              </header>
               <div className="scanner-wrapper" id="scanner-panel">
                 {/*
                 <div className="scanner-controls">
@@ -3098,10 +3118,20 @@ function StationApp({
                   </div>
                 ) : null}
               </div>
-            ) : (
-              <p className="card-hint">Načítání hlídek je skryté.</p>
-            )}
-          </section>
+            </section>
+          ) : (
+            <div className="scanner-toggle-inline">
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => setShowScannerPanel(true)}
+                aria-expanded={showScannerPanel}
+                aria-controls="scanner-panel"
+              >
+                Zobrazit načítání
+              </button>
+            </div>
+          )}
 
           {enableTicketQueue ? (
             <TicketQueue
