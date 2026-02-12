@@ -324,25 +324,47 @@ export async function checkStationInvariants({
   expectedTimingCount,
   reason,
   logPrefix = 'stress',
+  pageSize,
 }) {
+  const effectivePageSize = Number.isFinite(pageSize)
+    ? pageSize
+    : readInteger('INVARIANT_PAGE_SIZE', 400);
+
+  const fetchIds = async (table) => {
+    const ids = [];
+    let offset = 0;
+    while (true) {
+      const { data, error } = await supabaseAdmin
+        .from(table)
+        .select('client_event_id')
+        .eq('event_id', eventId)
+        .range(offset, offset + effectivePageSize - 1);
+
+      if (error) {
+        return { ids, error };
+      }
+
+      if (!data || data.length === 0) {
+        break;
+      }
+
+      ids.push(...data.map((row) => row.client_event_id));
+
+      if (data.length < effectivePageSize) {
+        break;
+      }
+
+      offset += data.length;
+    }
+    return { ids, error: null };
+  };
+
   const failures = [];
 
-  const { data: scores, error: scoresError } = await supabaseAdmin
-    .from('station_scores')
-    .select('client_event_id')
-    .eq('event_id', eventId);
-  const { data: passages, error: passagesError } = await supabaseAdmin
-    .from('station_passages')
-    .select('client_event_id')
-    .eq('event_id', eventId);
-  const { data: quizzes, error: quizzesError } = await supabaseAdmin
-    .from('station_quiz_responses')
-    .select('client_event_id')
-    .eq('event_id', eventId);
-  const { data: timings, error: timingsError } = await supabaseAdmin
-    .from('timings')
-    .select('client_event_id')
-    .eq('event_id', eventId);
+  const { ids: scoreIds, error: scoresError } = await fetchIds('station_scores');
+  const { ids: passageIds, error: passagesError } = await fetchIds('station_passages');
+  const { ids: quizIds, error: quizzesError } = await fetchIds('station_quiz_responses');
+  const { ids: timingIds, error: timingsError } = await fetchIds('timings');
 
   if (scoresError) {
     failures.push({ message: 'station_scores query failed', detail: scoresError.message });
@@ -356,11 +378,6 @@ export async function checkStationInvariants({
   if (timingsError) {
     failures.push({ message: 'timings query failed', detail: timingsError.message });
   }
-
-  const scoreIds = (scores ?? []).map((row) => row.client_event_id);
-  const passageIds = (passages ?? []).map((row) => row.client_event_id);
-  const quizIds = (quizzes ?? []).map((row) => row.client_event_id);
-  const timingIds = (timings ?? []).map((row) => row.client_event_id);
 
   const scoreDupes = findDuplicates(scoreIds);
   const passageDupes = findDuplicates(passageIds);
@@ -377,35 +394,35 @@ export async function checkStationInvariants({
     });
   }
 
-  if (typeof expectedScoreCount === 'number' && (scores ?? []).length !== expectedScoreCount) {
+  if (typeof expectedScoreCount === 'number' && scoreIds.length !== expectedScoreCount) {
     failures.push({
       message: 'station_scores count mismatch',
       expected: expectedScoreCount,
-      actual: (scores ?? []).length,
+      actual: scoreIds.length,
     });
   }
 
-  if (typeof expectedScoreCount === 'number' && (passages ?? []).length !== expectedScoreCount) {
+  if (typeof expectedScoreCount === 'number' && passageIds.length !== expectedScoreCount) {
     failures.push({
       message: 'station_passages count mismatch',
       expected: expectedScoreCount,
-      actual: (passages ?? []).length,
+      actual: passageIds.length,
     });
   }
 
-  if (typeof expectedQuizCount === 'number' && (quizzes ?? []).length !== expectedQuizCount) {
+  if (typeof expectedQuizCount === 'number' && quizIds.length !== expectedQuizCount) {
     failures.push({
       message: 'station_quiz_responses count mismatch',
       expected: expectedQuizCount,
-      actual: (quizzes ?? []).length,
+      actual: quizIds.length,
     });
   }
 
-  if (typeof expectedTimingCount === 'number' && (timings ?? []).length !== expectedTimingCount) {
+  if (typeof expectedTimingCount === 'number' && timingIds.length !== expectedTimingCount) {
     failures.push({
       message: 'timings count mismatch',
       expected: expectedTimingCount,
-      actual: (timings ?? []).length,
+      actual: timingIds.length,
     });
   }
 

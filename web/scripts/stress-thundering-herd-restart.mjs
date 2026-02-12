@@ -94,7 +94,7 @@ function nextPatrol() {
   return patrol;
 }
 
-async function seed() {
+async function seedData() {
   const assertNoError = (error, context) => {
     if (error) {
       const message = typeof error === 'object' && error !== null && 'message' in error ? error.message : String(error);
@@ -376,7 +376,7 @@ let runStartTime = Date.now();
 async function run() {
   console.log('[stress-herd] config', config);
   console.log('[stress-herd] seeding data...');
-  await seed();
+  await seedData();
 
   prepareQueues();
   console.log(`[stress-herd] prepared ${herdClients * pendingPerClient} pending entries`);

@@ -559,6 +559,7 @@ function StationApp({
   const [selectedSummaryCategory, setSelectedSummaryCategory] = useState<StationCategoryKey | null>(null);
   const [showCompletedSummary, setShowCompletedSummary] = useState(false);
   const [showScannerPanel, setShowScannerPanel] = useState(false);
+  const lastSummaryScrollRef = useRef<StationCategoryKey | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1733,21 +1734,25 @@ function StationApp({
   }, [selectedSummaryCategory, stationCategorySummary]);
 
   useEffect(() => {
-    if (!selectedSummaryDetail) {
+    if (!selectedSummaryCategory) {
+      lastSummaryScrollRef.current = null;
+      return;
+    }
+    if (lastSummaryScrollRef.current === selectedSummaryCategory) {
       return;
     }
     if (typeof window === 'undefined') {
       return;
     }
-    const target =
-      summaryMissingRef.current ?? summaryCompletedRef.current ?? summaryDetailRef.current;
+    const target = summaryDetailRef.current;
     if (!target) {
       return;
     }
     window.requestAnimationFrame(() => {
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-  }, [selectedSummaryDetail]);
+    lastSummaryScrollRef.current = selectedSummaryCategory;
+  }, [selectedSummaryCategory]);
 
   const handleSelectSummaryCategory = useCallback((category: StationCategoryKey) => {
     setSelectedSummaryCategory((previous) => (previous === category ? null : category));

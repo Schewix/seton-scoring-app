@@ -110,7 +110,7 @@ function nextInsertPatrol() {
   return patrol;
 }
 
-async function seed() {
+async function seedData() {
   const assertNoError = (error, context) => {
     if (error) {
       const message = typeof error === 'object' && error !== null && 'message' in error ? error.message : String(error);
@@ -335,7 +335,7 @@ let runStartTime = Date.now();
 async function run() {
   console.log('[stress-dbmix] config', config);
   console.log('[stress-dbmix] seeding data...');
-  await seed();
+  await seedData();
 
   runStartTime = Date.now();
   const logTimer = setInterval(logMinuteMetrics, 60 * 1000);

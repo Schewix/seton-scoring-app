@@ -91,7 +91,7 @@ function nextPatrol() {
   return patrol;
 }
 
-async function seed() {
+async function seedData() {
   const assertNoError = (error, context) => {
     if (error) {
       const message = typeof error === 'object' && error !== null && 'message' in error ? error.message : String(error);
@@ -364,7 +364,7 @@ let runStartTime = Date.now();
 async function run() {
   console.log('[stress-outbox] config', config);
   console.log('[stress-outbox] seeding data...');
-  await seed();
+  await seedData();
 
   prepareOutbox();
   console.log(`[stress-outbox] prepared ${queue.length} pending entries`);

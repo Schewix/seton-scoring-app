@@ -28,7 +28,8 @@ const anonKey = readEnv('SUPABASE_ANON_KEY', signKey(jwtSecret, 'anon'));
 const apiKey = readEnv('RATE_LIMIT_API_KEY', anonKey || serviceRoleKey);
 
 const seed = readInteger('SEED', 1337);
-const rng = createRng(seed);
+const dataRng = createRng(seed);
+const chaosRng = createRng(seed ^ 0xa5a5a5a5);
 const seedRng = createRng(seed ^ 0x9e3779b9);
 
 const requestCount = readInteger('RATE_LIMIT_REQUESTS', 200);
@@ -83,7 +84,7 @@ function nextPatrol() {
   return patrol;
 }
 
-async function seed() {
+async function seedData() {
   const assertNoError = (error, context) => {
     if (error) {
       const message = typeof error === 'object' && error !== null && 'message' in error ? error.message : String(error);
@@ -171,7 +172,7 @@ const memoryLogger = setupMemoryLogging({
 });
 
 const sendWithChaos = createChaosSender({
-  rng,
+  rng: chaosRng,
   endpoint,
   getAccessToken,
   apiKey,
@@ -236,7 +237,7 @@ async function sendWithRetry(payload) {
   let attempt = 0;
   while (!stopRequested && attempt < retryMaxAttempts) {
     if (chaosJitterMsMax > 0) {
-      await delay(randomInt(rng, 0, chaosJitterMsMax));
+      await delay(randomInt(chaosRng, 0, chaosJitterMsMax));
     }
 
     const result = await sendWithChaos(payload);
@@ -261,7 +262,7 @@ async function sendWithRetry(payload) {
     if (status === 429 || status === 0 || status >= 500) {
       attempt += 1;
       metrics.retries += 1;
-      const backoff = computeBackoffMs(rng, attempt, 300, 5000, 0.2);
+      const backoff = computeBackoffMs(chaosRng, attempt, 300, 5000, 0.2);
       await delay(backoff);
       continue;
     }
@@ -277,7 +278,7 @@ let runStartTime = Date.now();
 async function run() {
   console.log('[stress-ratelimit] config', config);
   console.log('[stress-ratelimit] seeding data...');
-  await seed();
+  await seedData();
 
   runStartTime = Date.now();
   const logTimer = setInterval(logMinuteMetrics, 60 * 1000);
@@ -286,10 +287,10 @@ async function run() {
     const tasks = [];
     for (let i = 0; i < requestCount; i += 1) {
       const patrol = nextPatrol();
-      const clientEventId = randomUuid(rng);
+      const clientEventId = randomUuid(dataRng);
       const createdAt = new Date().toISOString();
-      const useQuiz = rng() < 0.2;
-      const useTiming = rng() < 0.1;
+      const useQuiz = dataRng() < 0.2;
+      const useTiming = dataRng() < 0.1;
       const payload = buildStationRecordPayload({
         eventId,
         stationId,
