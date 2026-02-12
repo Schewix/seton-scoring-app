@@ -2725,11 +2725,25 @@ function StationApp({
               <span>{formatPatrolMetaLabel(scannerPatrol)}</span>
             </div>
             <div className="patrol-choice-actions">
-              <button type="button" className="primary" onClick={handleServePatrol}>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  handleServePatrol();
+                  setShowPatrolChoice(false);
+                }}
+              >
                 Obsluhovat
               </button>
               {enableTicketQueue ? (
-                <button type="button" className="ghost" onClick={() => handleAddTicket('waiting')}>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => {
+                    handleAddTicket('waiting');
+                    setShowPatrolChoice(false);
+                  }}
+                >
                   Čekat
                 </button>
               ) : null}
