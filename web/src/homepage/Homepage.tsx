@@ -2398,13 +2398,11 @@ function SiteHeader({
   title,
   subtitle,
   lead,
-  showActions,
 }: {
   activeSection?: string;
   title?: string;
   subtitle?: string;
   lead?: string;
-  showActions?: boolean;
 }) {
   const [navOpen, setNavOpen] = useState(false);
   const navPanelId = 'homepage-nav-panel';
@@ -2428,16 +2426,6 @@ function SiteHeader({
             <h1>{title ?? 'SPTO a Zelená liga'}</h1>
             <p className="homepage-subtitle">{subtitle ?? HEADER_SUBTITLE}</p>
             {lead ? <p className="homepage-lead homepage-hero-lead">{lead}</p> : null}
-            {showActions ? (
-              <div className="homepage-cta-group homepage-cta-group--inline">
-                <a className="homepage-cta primary" href="/clanky">
-                  Nadcházející akce
-                </a>
-                <a className="homepage-cta secondary" href="/souteze">
-                  Soutěže
-                </a>
-              </div>
-            ) : null}
           </div>
         </div>
       </header>
@@ -2490,14 +2478,12 @@ function SiteShell({
   headerTitle,
   headerSubtitle,
   headerLead,
-  showHeroActions,
 }: {
   children: React.ReactNode;
   activeSection?: string;
   headerTitle?: string;
   headerSubtitle?: string;
   headerLead?: string;
-  showHeroActions?: boolean;
 }) {
   const resolvedActiveSection =
     activeSection ?? (typeof window !== 'undefined' ? resolveActiveNav(window.location.pathname) : undefined);
@@ -2508,7 +2494,6 @@ function SiteShell({
         title={headerTitle}
         subtitle={headerSubtitle}
         lead={headerLead}
-        showActions={showHeroActions}
       />
       {children}
       <AppFooter className="homepage-footer" />
@@ -2623,7 +2608,6 @@ function Homepage({
       headerTitle={headerTitle ?? undefined}
       headerSubtitle={headerSubtitle ?? undefined}
       headerLead={headerLead}
-      showHeroActions
     >
       <main className="homepage-main" aria-labelledby="homepage-intro-heading">
         <HomepageCarousel images={HOMEPAGE_CAROUSEL} />
