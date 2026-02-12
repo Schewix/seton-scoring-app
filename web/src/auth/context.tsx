@@ -419,6 +419,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const logout = useCallback(async () => {
+    await Promise.all([
+      setManifest(null),
+      setPatrols([]),
+      setTokens(null),
+      setDeviceKeyPayload(null),
+      setPinHash(null),
+    ]);
+    setCachedData(null);
+    setStatus({ state: 'unauthenticated' });
+  }, []);
+
   const refreshTokens = useCallback(
     async (options?: { force?: boolean; reason?: string }) => {
       if (AUTH_BYPASS) {
@@ -656,18 +668,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [cachedData],
   );
-
-  const logout = useCallback(async () => {
-    await Promise.all([
-      setManifest(null),
-      setPatrols([]),
-      setTokens(null),
-      setDeviceKeyPayload(null),
-      setPinHash(null),
-    ]);
-    setCachedData(null);
-    setStatus({ state: 'unauthenticated' });
-  }, []);
 
   const updateManifest = useCallback(async (manifest: StationManifest, patrols: PatrolSummary[]) => {
     await Promise.all([setManifest(manifest), setPatrols(patrols)]);
