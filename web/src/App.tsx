@@ -2846,13 +2846,26 @@ function StationApp({
       <main className="content">
         <>
           {accessDeniedMessage ? <p className="error-text">{accessDeniedMessage}</p> : null}
+          {!showScannerPanel ? (
+            <div className="scanner-toggle-inline">
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => setShowScannerPanel(true)}
+                aria-expanded={showScannerPanel}
+                aria-controls="scanner-panel"
+              >
+                Zobrazit ruční načítání kódů
+              </button>
+            </div>
+          ) : null}
           <section className="card station-summary-card">
             <header className="card-header">
               <div>
                 <h2>Přehled průchodů</h2>
                 <p className="card-subtitle">
                   Sleduj, kolik hlídek už stanoviště navštívilo podle kategorií. Hlídky lze
-                  načítat také přes tlačítko „Zobrazit načítání“.
+                  načítat také přes tlačítko „Zobrazit ruční načítání kódů“.
                 </p>
               </div>
               <div className="card-actions">
@@ -3033,7 +3046,7 @@ function StationApp({
                     aria-expanded={showScannerPanel}
                     aria-controls="scanner-panel"
                   >
-                    {showScannerPanel ? 'Skrýt načítání' : 'Zobrazit načítání'}
+                    {showScannerPanel ? 'Skrýt ruční načítání' : 'Zobrazit ruční načítání kódů'}
                   </button>
                 </div>
               </header>
@@ -3117,19 +3130,7 @@ function StationApp({
                 ) : null}
               </div>
             </section>
-          ) : (
-            <div className="scanner-toggle-inline">
-              <button
-                type="button"
-                className="ghost"
-                onClick={() => setShowScannerPanel(true)}
-                aria-expanded={showScannerPanel}
-                aria-controls="scanner-panel"
-              >
-                Zobrazit načítání
-              </button>
-            </div>
-          )}
+          ) : null}
 
           {enableTicketQueue ? (
             <TicketQueue

@@ -343,7 +343,7 @@ async function renderApp() {
 async function waitForScannerToggle() {
   await waitFor(() =>
     expect(
-      screen.getByRole('button', { name: /Zobrazit načítání|Skrýt načítání/ }),
+      screen.getByRole('button', { name: /Zobrazit ruční načítání kódů|Skrýt ruční načítání/ }),
     ).toBeInTheDocument(),
   );
 }
@@ -361,7 +361,7 @@ async function selectPatrolCode(
   },
 ) {
   const toggleButton = await screen.findByRole('button', {
-    name: /Zobrazit načítání|Skrýt načítání/,
+    name: /Zobrazit ruční načítání kódů|Skrýt ruční načítání/,
   });
   if (toggleButton.getAttribute('aria-expanded') !== 'true') {
     await user.click(toggleButton);
