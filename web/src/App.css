@@ -586,8 +586,13 @@ body {
   margin-bottom: 16px;
 }
 
-.station-menu-rules-actions button {
+.station-menu-rules-actions button,
+.station-menu-rules-actions a {
   width: 100%;
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 18px;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -595,24 +600,30 @@ body {
   border-color: rgba(255, 216, 79, 0.5);
   box-shadow: 0 10px 22px rgba(255, 216, 79, 0.18);
   color: #3f3025;
+  text-decoration: none;
 }
 
 .station-menu-rules-actions button.primary,
-.station-menu-rules-actions button.ghost {
+.station-menu-rules-actions button.ghost,
+.station-menu-rules-actions a.primary,
+.station-menu-rules-actions a.ghost {
   background: rgba(255, 216, 79, 0.32);
   border-color: rgba(255, 216, 79, 0.5);
   box-shadow: 0 10px 22px rgba(255, 216, 79, 0.18);
   color: #3f3025;
 }
 
-.station-menu-rules-actions button:hover {
+.station-menu-rules-actions button:hover,
+.station-menu-rules-actions a:hover {
   background: rgba(255, 216, 79, 0.45);
   border-color: rgba(255, 216, 79, 0.6);
   transform: none;
 }
 
 .station-menu-rules-actions button.primary:hover,
-.station-menu-rules-actions button.ghost:hover {
+.station-menu-rules-actions button.ghost:hover,
+.station-menu-rules-actions a.primary:hover,
+.station-menu-rules-actions a.ghost:hover {
   background: rgba(255, 216, 79, 0.45);
   border-color: rgba(255, 216, 79, 0.6);
   transform: none;

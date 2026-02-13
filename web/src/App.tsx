@@ -3182,6 +3182,17 @@ function StationApp({
                 ))}
               </ul>
             </section>
+            <section className="card station-menu-card">
+              <header className="card-header">
+                <h3>Další aplikace</h3>
+              </header>
+              <p className="card-hint">Přepni se na samostatné bodování turnaje Deskové hry.</p>
+              <div className="station-menu-rules-actions">
+                <a className="primary" href="/aplikace/deskovky">
+                  Otevřít Deskovky
+                </a>
+              </div>
+            </section>
           </aside>
         </div>
       ) : null}

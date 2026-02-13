@@ -8,6 +8,12 @@ export const ADMIN_ROUTE_PREFIX = `${ROUTE_PREFIX}/admin`;
 export const LEGACY_ADMIN_ROUTE_PREFIX = `${LEGACY_ROUTE_PREFIX}/admin`;
 export const FORGOT_PASSWORD_ROUTE = `${ROUTE_PREFIX}/zapomenute-heslo`;
 export const LEGACY_FORGOT_PASSWORD_ROUTE = `${LEGACY_ROUTE_PREFIX}/zapomenute-heslo`;
+export const DESKOVKY_ROUTE_PREFIX = '/aplikace/deskovky';
+export const LEGACY_DESKOVKY_ROUTE_PREFIX = '/deskovky';
+export const DESKOVKY_MATCH_NEW_ROUTE = `${DESKOVKY_ROUTE_PREFIX}/match/new`;
+export const DESKOVKY_STANDINGS_ROUTE = `${DESKOVKY_ROUTE_PREFIX}/standings`;
+export const DESKOVKY_ADMIN_ROUTE = `${DESKOVKY_ROUTE_PREFIX}/admin`;
+export const DESKOVKY_RULES_ROUTE = `${DESKOVKY_ROUTE_PREFIX}/pravidla`;
 
 const ADDITIONAL_STATION_PREFIXES = [
   `${ROUTE_PREFIX}/station`,
@@ -22,6 +28,12 @@ const ADDITIONAL_SCOREBOARD_PREFIXES = [
   LEGACY_SCOREBOARD_ROUTE_PREFIX,
   '/scoreboard',
   '/vysledky',
+];
+const DESKOVKY_PREFIXES = [
+  DESKOVKY_ROUTE_PREFIX,
+  LEGACY_DESKOVKY_ROUTE_PREFIX,
+  '/aplikace/deskove-hry',
+  '/deskove-hry',
 ];
 
 function stripDiacritics(value: string): string {
@@ -75,4 +87,8 @@ export function isAdminPathname(pathname: string): boolean {
     pathname === LEGACY_ADMIN_ROUTE_PREFIX ||
     pathname.startsWith(`${LEGACY_ADMIN_ROUTE_PREFIX}/`)
   );
+}
+
+export function isDeskovkyPathname(pathname: string): boolean {
+  return DESKOVKY_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }

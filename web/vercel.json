@@ -110,6 +110,14 @@
       "destination": "/"
     },
     {
+      "source": "/deskovky",
+      "destination": "/"
+    },
+    {
+      "source": "/deskovky/(.*)",
+      "destination": "/"
+    },
+    {
       "source": "/stations/(.*)",
       "destination": "/"
     },

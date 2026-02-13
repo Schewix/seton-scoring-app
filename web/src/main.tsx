@@ -6,11 +6,13 @@ import { AuthProvider } from './auth/context';
 import ErrorBoundary from './components/ErrorBoundary';
 import { registerSW } from 'virtual:pwa-register';
 import {
+  DESKOVKY_ROUTE_PREFIX,
   FORGOT_PASSWORD_ROUTE,
   LEGACY_FORGOT_PASSWORD_ROUTE,
   LEGACY_ROUTE_PREFIX,
   ROUTE_PREFIX,
   isAdminPathname,
+  isDeskovkyPathname,
   isScoreboardPathname,
   isStationAppPath,
 } from './routing';
@@ -103,6 +105,7 @@ const normalizedPath = pathname.replace(/\/$/, '') || '/';
 const isScoreboardPath = isScoreboardPathname(pathname);
 const isAdminPath = isAdminPathname(pathname);
 const isHomepagePath = normalizedPath === '/';
+const isDeskovkyPath = isDeskovkyPathname(pathname);
 const isScoringNamespace =
   normalizedPath === ROUTE_PREFIX ||
   normalizedPath.startsWith(`${ROUTE_PREFIX}/`) ||
@@ -129,6 +132,14 @@ if (isAdminPath) {
     })
     .catch((error) => {
       console.error('Failed to load admin view', error);
+    });
+} else if (isDeskovkyPath || normalizedPath === DESKOVKY_ROUTE_PREFIX) {
+  import('./features/deskovky/DeskovkyApp')
+    .then(({ default: DeskovkyApp }) => {
+      render(<DeskovkyApp />);
+    })
+    .catch((error) => {
+      console.error('Failed to load deskovky app', error);
     });
 } else if (
   (view && forgotPasswordViews.has(view)) ||
