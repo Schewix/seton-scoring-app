@@ -2728,7 +2728,7 @@ function DeskovkyApp() {
   }
 
   if (status.state === 'unauthenticated') {
-    return <LoginScreen />;
+    return <LoginScreen variant="deskovky" />;
   }
 
   if (status.state === 'password-change-required') {
@@ -2737,12 +2737,13 @@ function DeskovkyApp() {
         email={status.email}
         judgeId={status.judgeId}
         pendingPin={status.pendingPin}
+        variant="deskovky"
       />
     );
   }
 
   if (status.state === 'locked') {
-    return <LoginScreen requirePinOnly />;
+    return <LoginScreen requirePinOnly variant="deskovky" />;
   }
 
   if (status.state === 'authenticated') {

@@ -8,9 +8,10 @@ interface Props {
   email: string;
   judgeId?: string;
   pendingPin?: string;
+  variant?: 'seton' | 'deskovky';
 }
 
-export default function ChangePasswordScreen({ email, judgeId, pendingPin }: Props) {
+export default function ChangePasswordScreen({ email, judgeId, pendingPin, variant = 'seton' }: Props) {
   const { login, logout } = useAuth();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -55,11 +56,28 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin }: Pro
     }
   };
 
+  const isDeskovky = variant === 'deskovky';
+  const heroEyebrow = isDeskovky ? 'Deskové hry - aplikace' : 'Setonův závod - aplikace';
+  const heroSubtitle = isDeskovky
+    ? 'Dokonči změnu hesla a vrať se zpět k zadávání zápasů turnaje.'
+    : 'Dokonči změnu hesla a vrať se zpět ke správě stanoviště.';
+  const heroItems = isDeskovky
+    ? [
+        'Bezpečné přihlášení rozhodčích turnaje',
+        'Okamžitý návrat do modulu Deskovky',
+        'Podpora PINu pro sdílené zařízení',
+      ]
+    : [
+        'Šifrované uložení přístupových údajů',
+        'Okamžité přihlášení po úspěšné změně',
+        'Podpora PINu pro zamčené stanoviště',
+      ];
+
   return (
-    <div className="auth-shell">
+    <div className={`auth-shell ${isDeskovky ? 'auth-shell--deskovky' : ''}`.trim()}>
       <div className="auth-shell-content">
         <div className="auth-layout">
-          <div className="auth-hero">
+          <div className={`auth-hero ${isDeskovky ? 'auth-hero--deskovky' : ''}`.trim()}>
             <div className="auth-hero-brand">
               <a
                 className="auth-hero-logo"
@@ -72,14 +90,14 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin }: Pro
               <span className="auth-hero-caption">SPTO Brno</span>
             </div>
             <div className="auth-hero-copy">
-              <span className="auth-hero-eyebrow">Setonův závod - aplikace</span>
+              <span className="auth-hero-eyebrow">{heroEyebrow}</span>
               <h1>Obnova přístupu</h1>
-              <p>Dokonči změnu hesla a vrať se zpět ke správě stanoviště.</p>
+              <p>{heroSubtitle}</p>
             </div>
             <ul className="auth-hero-list">
-              <li>Šifrované uložení přístupových údajů</li>
-              <li>Okamžité přihlášení po úspěšné změně</li>
-              <li>Podpora PINu pro zamčené stanoviště</li>
+              {heroItems.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
             </ul>
           </div>
 
@@ -87,7 +105,7 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin }: Pro
             <div className="auth-card-header">
               <h2>Změna hesla</h2>
               <p className="auth-description">
-                Dokonči změnu hesla a vrať se zpět ke správě stanoviště.
+                {heroSubtitle}
               </p>
               <p className="auth-caption">
                 Účet <strong>{email}</strong> vyžaduje nastavení nového hesla.

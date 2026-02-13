@@ -1,3 +1,23 @@
+.deskovky-shell {
+  --zl-green: #0b63b5;
+  --zl-green-dark: #084785;
+  --zl-green-50: #eaf2fb;
+  --border: #bfd5eb;
+  --surface: #f7fbff;
+  --zebra: #f1f7fe;
+  background: #eaf2fb;
+}
+
+.deskovky-shell .admin-button--secondary {
+  color: #0055a4;
+}
+
+.deskovky-shell .admin-header-actions .admin-button,
+.deskovky-shell .admin-header-actions .admin-button:hover,
+.deskovky-shell .admin-header-actions .admin-button:focus-visible {
+  color: #0055a4;
+}
+
 .deskovky-shell .admin-content {
   gap: 22px;
 }
@@ -142,7 +162,7 @@
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--border);
-  background: #0b1d13;
+  background: #091b33;
 }
 
 .deskovky-scanner-panel .qr-scanner video {

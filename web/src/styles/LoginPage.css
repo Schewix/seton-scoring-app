@@ -325,6 +325,41 @@
   justify-content: center;
 }
 
+.login-page--deskovky {
+  background: #eaf2fb;
+}
+
+.login-page--deskovky .login-hero {
+  background: linear-gradient(180deg, #0b63b5 0%, #084785 100%);
+  box-shadow: 0 20px 40px rgba(9, 77, 141, 0.22);
+}
+
+.login-page--deskovky .login-card {
+  border-color: #bfd5eb;
+}
+
+.login-page--deskovky .login-field input {
+  border-color: #bfd5eb;
+}
+
+.login-page--deskovky .login-field input::placeholder {
+  color: #7995b5;
+}
+
+.login-page--deskovky .login-field input:focus-visible {
+  outline: 3px solid rgba(0, 85, 164, 0.35);
+}
+
+.login-page--deskovky .login-offline {
+  background: rgba(0, 85, 164, 0.1);
+  color: #0055a4;
+}
+
+.login-page--deskovky .login-offline-indicator {
+  background: #0055a4;
+  box-shadow: 0 0 0 4px rgba(0, 85, 164, 0.2);
+}
+
 @media (max-width: 960px) {
   .login-layout {
     grid-template-columns: 1fr;

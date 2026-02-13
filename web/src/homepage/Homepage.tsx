@@ -11,8 +11,6 @@ interface Competition {
   name: string;
   description?: string;
   href: string;
-  appHref?: string;
-  appLabel?: string;
   ruleMatchers: string[];
 }
 
@@ -22,8 +20,6 @@ const COMPETITIONS: Competition[] = [
     name: 'Setonův závod',
     description: 'Týmový tábornický závod hlídek na stanovištích v přírodě.',
     href: '/souteze/setonuv-zavod',
-    appHref: '/aplikace/setonuv-zavod',
-    appLabel: 'Setonův závod - aplikace',
     ruleMatchers: ['pravidla-souteze', 'pravidla-stanovist', 'zelena-liga', 'stavba-stanu'],
   },
   {
@@ -514,6 +510,11 @@ const APPLICATION_LINKS = [
     label: 'Setonův závod - aplikace',
     description: 'Hlavní rozhraní pro sběr bodů a správu stanovišť.',
     href: '/aplikace/setonuv-zavod',
+  },
+  {
+    label: 'Deskové hry - aplikace',
+    description: 'Rozhraní pro rozhodčí deskových her, zadávání zápasů a pořadí.',
+    href: '/aplikace/deskovky',
   },
 ];
 
@@ -2794,13 +2795,6 @@ function CompetitionsPage() {
                       {competition.name}
                     </a>
                     <p>{competition.description ?? 'Pravidla a dokumenty k soutěži.'}</p>
-                    {competition.appHref ? (
-                      <p>
-                        <a className="homepage-inline-link" href={competition.appHref}>
-                          {competition.appLabel ?? 'Otevřít aplikaci'}
-                        </a>
-                      </p>
-                    ) : null}
                   </li>
                 ))}
               </ul>

@@ -2603,6 +2603,10 @@ textarea {
   color: var(--text);
 }
 
+.auth-shell--deskovky {
+  background: #eaf2fb;
+}
+
 .auth-overlay {
   position: fixed;
   inset: 0;
@@ -2693,6 +2697,10 @@ textarea {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   z-index: 0;
+}
+
+.auth-shell--deskovky .auth-hero {
+  background: linear-gradient(180deg, #0b63b5 0%, #084785 100%);
 }
 
 .auth-hero > * {
@@ -2922,6 +2930,12 @@ textarea {
   background: #ecfdf3;
   color: #03603c;
   border-left: 4px solid var(--zl-green);
+}
+
+.auth-shell--deskovky .auth-alert--success {
+  background: #eaf2fb;
+  color: #0055a4;
+  border-left-color: #0055a4;
 }
 
 .auth-alert-icon {

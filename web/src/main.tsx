@@ -9,6 +9,7 @@ import {
   DESKOVKY_ROUTE_PREFIX,
   FORGOT_PASSWORD_ROUTE,
   LEGACY_FORGOT_PASSWORD_ROUTE,
+  LEGACY_FORGOT_PASSWORD_ROUTE_ALT,
   LEGACY_ROUTE_PREFIX,
   ROUTE_PREFIX,
   isAdminPathname,
@@ -114,6 +115,12 @@ const isScoringNamespace =
   isStationAppPath(normalizedPath);
 const scoreboardViews = new Set(['scoreboard', 'vysledky']);
 const forgotPasswordViews = new Set(['zapomenute-heslo', 'forgot-password']);
+const forgotPasswordPathnames = new Set([
+  FORGOT_PASSWORD_ROUTE,
+  LEGACY_FORGOT_PASSWORD_ROUTE,
+  LEGACY_FORGOT_PASSWORD_ROUTE_ALT,
+  '/zapomenute-heslo',
+]);
 
 function render(element: React.ReactNode) {
   root.render(
@@ -143,8 +150,7 @@ if (isAdminPath) {
     });
 } else if (
   (view && forgotPasswordViews.has(view)) ||
-  normalizedPath === FORGOT_PASSWORD_ROUTE ||
-  normalizedPath === LEGACY_FORGOT_PASSWORD_ROUTE
+  forgotPasswordPathnames.has(normalizedPath)
 ) {
   import('./auth/ForgotPasswordScreen')
     .then(({ default: ForgotPasswordScreen }) => {

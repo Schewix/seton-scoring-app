@@ -4,7 +4,7 @@ import { useAuth } from '../auth/context';
 import AppFooter from '../components/AppFooter';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import { translateLoginError, type LoginErrorFeedback } from '../auth/loginErrors';
-import { FORGOT_PASSWORD_ROUTE } from '../routing';
+import { FORGOT_PASSWORD_ROUTE, ADMIN_ROUTE_PREFIX } from '../routing';
 
 export default function AdminLoginScreen() {
   const { login } = useAuth();
@@ -69,6 +69,7 @@ export default function AdminLoginScreen() {
   };
 
   const heroItems = ['Správa dat závodu', 'Export výsledků', 'Přehled stanovišť'];
+  const forgotPasswordHref = `${FORGOT_PASSWORD_ROUTE}?next=${encodeURIComponent(ADMIN_ROUTE_PREFIX)}`;
 
   return (
     <div className="login-page login-page--admin">
@@ -199,7 +200,7 @@ export default function AdminLoginScreen() {
             </button>
 
             <div className="login-links">
-              <a className="login-link" href={FORGOT_PASSWORD_ROUTE}>
+              <a className="login-link" href={forgotPasswordHref}>
                 Zapomenuté heslo
               </a>
               <a className="login-link login-link--muted" href="/">

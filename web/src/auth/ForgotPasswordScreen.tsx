@@ -40,9 +40,18 @@ export default function ForgotPasswordScreen() {
   const showSuccess = feedback === 'success';
   const showError = feedback === 'error';
 
-  const handleBackToLogin = useCallback(() => {
-    window.location.assign(ROUTE_PREFIX);
+  const resolveNextPath = useCallback(() => {
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get('next')?.trim();
+    if (!next || !next.startsWith('/') || next.startsWith('//')) {
+      return ROUTE_PREFIX;
+    }
+    return next;
   }, []);
+
+  const handleBackToLogin = useCallback(() => {
+    window.location.assign(resolveNextPath());
+  }, [resolveNextPath]);
 
   return (
     <div className="login-page login-page--forgot">

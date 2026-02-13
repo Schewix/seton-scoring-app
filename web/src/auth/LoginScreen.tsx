@@ -3,14 +3,23 @@ import '../styles/LoginPage.css';
 import { useAuth } from './context';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
-import { ADMIN_ROUTE_PREFIX, FORGOT_PASSWORD_ROUTE } from '../routing';
+import {
+  ADMIN_ROUTE_PREFIX,
+  DESKOVKY_ADMIN_ROUTE,
+  DESKOVKY_ROUTE_PREFIX,
+  FORGOT_PASSWORD_ROUTE,
+  ROUTE_PREFIX,
+} from '../routing';
 import { translateLoginError, type LoginErrorFeedback } from './loginErrors';
+
+type LoginVariant = 'seton' | 'deskovky';
 
 interface Props {
   requirePinOnly?: boolean;
+  variant?: LoginVariant;
 }
 
-export default function LoginScreen({ requirePinOnly }: Props) {
+export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props) {
   const { login, unlock } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -42,32 +51,64 @@ export default function LoginScreen({ requirePinOnly }: Props) {
   const submitDisabled = loading || !isFormValid;
   const submitLabel = requirePinOnly ? 'Odemknout' : 'Přihlásit';
   const loadingLabel = requirePinOnly ? 'Odemykám…' : 'Přihlašuji…';
+  const isDeskovky = variant === 'deskovky';
 
-  const formTitle = requirePinOnly ? 'Odemknutí stanoviště' : 'Přihlášení rozhodčího';
-  const heroTitle = 'Setonův závod - aplikace';
+  const formTitle = requirePinOnly
+    ? isDeskovky
+      ? 'Odemknutí účtu rozhodčího'
+      : 'Odemknutí stanoviště'
+    : isDeskovky
+      ? 'Přihlášení rozhodčího'
+      : 'Přihlášení rozhodčího';
+  const heroEyebrow = isDeskovky ? 'Deskové hry - aplikace' : 'Setonův závod - aplikace';
+  const heroTitle = heroEyebrow;
   const heroSubtitle = requirePinOnly
-    ? 'Odemkni uložené stanoviště aplikace Setonův závod a pokračuj i bez připojení.'
-    : 'Záznam výsledků ze stanovišť závodu.';
+    ? isDeskovky
+      ? 'Odemkni uložený účet rozhodčího Deskovek a pokračuj v turnaji.'
+      : 'Odemkni uložené stanoviště aplikace Setonův závod a pokračuj i bez připojení.'
+    : isDeskovky
+      ? 'Zápis zápasů turnaje a průběžného pořadí kategorií.'
+      : 'Záznam výsledků ze stanovišť závodu.';
   const heroItems = requirePinOnly
-    ? [
-        'Práce v offline režimu',
-        'Bezpečné odemknutí pomocí PINu',
-        'Automatická synchronizace výsledků',
-      ]
-    : [
-        'Přihlášení rozhodčích stanovišť',
-        'Offline režim se synchronizací',
-        'Export výsledků do tabulek',
-      ];
+    ? isDeskovky
+      ? [
+          'Rychlé odemknutí pomocí PINu',
+          'Bezpečný návrat do rozpracovaného zápisu',
+          'Pokračování bez nového přihlášení',
+        ]
+      : [
+          'Práce v offline režimu',
+          'Bezpečné odemknutí pomocí PINu',
+          'Automatická synchronizace výsledků',
+        ]
+    : isDeskovky
+      ? [
+          'Přihlášení rozhodčích turnaje',
+          'Skenování QR visaček hráčů',
+          'Průběžné pořadí podle her a kategorií',
+        ]
+      : [
+          'Přihlášení rozhodčích stanovišť',
+          'Offline režim se synchronizací',
+          'Export výsledků do tabulek',
+        ];
   const descriptionText = requirePinOnly
-    ? 'Zadej PIN pro odemknutí uloženého stanoviště.'
-    : 'Přihlašovací údaje získáš od hlavního rozhodčího.';
+    ? isDeskovky
+      ? 'Zadej PIN pro odemknutí uloženého účtu rozhodčího.'
+      : 'Zadej PIN pro odemknutí uloženého stanoviště.'
+    : isDeskovky
+      ? 'Přihlašovací údaje získáš od hlavního rozhodčího turnaje.'
+      : 'Přihlašovací údaje získáš od hlavního rozhodčího.';
   const descriptionId = requirePinOnly ? 'login-description-pin' : 'login-description';
+  const adminHref = isDeskovky ? DESKOVKY_ADMIN_ROUTE : ADMIN_ROUTE_PREFIX;
+  const adminLabel = isDeskovky ? 'Přihlášení pro admina Deskovek' : 'Přihlášení pro admina závodu';
+  const forgotNext = isDeskovky ? DESKOVKY_ROUTE_PREFIX : ROUTE_PREFIX;
+  const forgotPasswordHref = `${FORGOT_PASSWORD_ROUTE}?next=${encodeURIComponent(forgotNext)}`;
 
   const emailFieldId = 'login-email';
   const passwordFieldId = 'login-password';
   const pinFieldId = 'login-pin';
-  const pinLabel = requirePinOnly ? 'PIN' : 'PIN (povinný mimo Výpočetku)';
+  const pinLabel = requirePinOnly ? 'PIN' : isDeskovky ? 'PIN (dle nastavení účtu)' : 'PIN (povinný mimo Výpočetku)';
 
   const emailError = error?.field === 'email' ? error.message : null;
   const passwordError = error?.field === 'password' ? error.message : null;
@@ -103,10 +144,10 @@ export default function LoginScreen({ requirePinOnly }: Props) {
   };
 
   return (
-    <div className="login-page login-page--referee">
+    <div className={`login-page login-page--referee ${isDeskovky ? 'login-page--deskovky' : ''}`.trim()}>
       <div className="login-main">
         <div className="login-layout">
-          <section className="login-hero" aria-label="Informace pro rozhodčí">
+          <section className={`login-hero ${isDeskovky ? 'login-hero--deskovky' : ''}`.trim()} aria-label="Informace pro rozhodčí">
             <div className="login-hero-brand">
               <img src={zelenaLigaLogo} alt="Logo SPTO Brno" className="login-hero-logo" />
               <div className="login-hero-brand-text">
@@ -115,7 +156,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
               </div>
             </div>
             <div className="login-hero-copy">
-              <span className="login-hero-eyebrow">Setonův závod - aplikace</span>
+              <span className="login-hero-eyebrow">{heroEyebrow}</span>
               <h1>{heroTitle}</h1>
               <p>{heroSubtitle}</p>
             </div>
@@ -126,8 +167,8 @@ export default function LoginScreen({ requirePinOnly }: Props) {
                 </li>
               ))}
             </ul>
-            <a className="login-hero-button" href={ADMIN_ROUTE_PREFIX} target="_blank" rel="noreferrer">
-            <span>Přihlášení pro admina závodu</span>
+            <a className="login-hero-button" href={adminHref} target="_blank" rel="noreferrer">
+              <span>{adminLabel}</span>
               <span className="login-hero-button-icon" aria-hidden="true">
                 →
               </span>
@@ -246,7 +287,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
               {loading ? loadingLabel : submitLabel}
             </button>
             <div className="login-links">
-              <a className="login-link" href={FORGOT_PASSWORD_ROUTE}>
+              <a className="login-link" href={forgotPasswordHref}>
                 Zapomenuté heslo
               </a>
               <a className="login-link login-link--muted" href="/">
