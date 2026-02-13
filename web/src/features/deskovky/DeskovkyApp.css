@@ -281,6 +281,39 @@
   display: none;
 }
 
+.deskovky-slot-toggle-meta {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.deskovky-slot-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.deskovky-slot-toggle .deskovky-slot-status--loaded {
+  color: #1f5f38;
+  background: #e7f8ed;
+  border: 1px solid #b9e6c8;
+}
+
+.deskovky-slot-toggle .deskovky-slot-status--missing {
+  color: #8a5a1f;
+  background: #fff4dc;
+  border: 1px solid #f3d58d;
+}
+
 .deskovky-slot-mobile-head {
   display: none;
   justify-content: space-between;

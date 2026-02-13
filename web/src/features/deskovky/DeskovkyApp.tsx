@@ -970,6 +970,7 @@ function NewMatchPage({
 
       if (duplicate) {
         setError(`Hráč ${shortCode} už je v zápase přidaný.`);
+        showToast('Hráč už je v zápase');
         return false;
       }
 
@@ -1292,6 +1293,7 @@ function NewMatchPage({
           {entries.map((entry) => {
             const code = entry.player?.short_code ?? 'Prázdný slot';
             const title = entry.player?.display_name || entry.player?.team_name || 'Nenačteno';
+            const statusLabel = entry.player ? 'Načteno' : 'Chybí';
             const validation = seatValidationMap.get(entry.seat);
             const expanded = !isMobile || activeSeat === entry.seat;
             const invalid = submitAttempted && Boolean(validation?.errors.length);
@@ -1312,9 +1314,18 @@ function NewMatchPage({
                     aria-expanded={expanded}
                     aria-controls={`deskovky-slot-content-${entry.seat}`}
                   >
-                    <span>Slot {entry.seat}</span>
-                    <strong>{code}</strong>
-                    <span className="deskovky-slot-summary">{title}</span>
+                    <span className="deskovky-slot-toggle-meta">
+                      <span>Slot {entry.seat}</span>
+                      <span
+                        className={`deskovky-slot-status ${
+                          entry.player ? 'deskovky-slot-status--loaded' : 'deskovky-slot-status--missing'
+                        }`}
+                      >
+                        {statusLabel}
+                      </span>
+                    </span>
+                    <strong>{title}</strong>
+                    <span className="deskovky-slot-summary">{entry.player ? code : 'Nenačteno'}</span>
                   </button>
                 ) : (
                   <header>
