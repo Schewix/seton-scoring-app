@@ -19,7 +19,7 @@
 }
 
 .deskovky-shell .admin-content {
-  gap: 22px;
+  gap: 18px;
 }
 
 .deskovky-shell .app-footer {
@@ -27,7 +27,7 @@
 }
 
 .deskovky-nav-card {
-  padding: 16px;
+  padding: 10px 12px;
 }
 
 .deskovky-nav-grid {
@@ -281,6 +281,19 @@
   display: none;
 }
 
+.deskovky-slot-toggle:focus-visible,
+.deskovky-slot-card .ghost:focus-visible,
+.deskovky-scanner-backdrop:focus-visible {
+  outline: 2px solid #0b63b5;
+  outline-offset: 2px;
+}
+
+.deskovky-shell .admin-field input:focus-visible,
+.deskovky-shell .admin-field select:focus-visible {
+  outline: 2px solid #0b63b5;
+  outline-offset: 2px;
+}
+
 .deskovky-slot-toggle-meta {
   width: 100%;
   display: flex;
@@ -522,7 +535,7 @@
   }
 
   .deskovky-shell .app-footer {
-    padding-top: 14px;
+    padding-top: 8px;
   }
 
   .deskovky-nav-card {

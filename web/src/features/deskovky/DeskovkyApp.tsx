@@ -1277,8 +1277,14 @@ function NewMatchPage({
                 value={manualCode}
                 onChange={(eventTarget) => setManualCode(eventTarget.target.value.toUpperCase())}
                 placeholder="Short code hráče"
+                aria-label="Kód hráče pro ruční přidání"
               />
-              <button type="button" className="admin-button admin-button--primary" onClick={() => void handleManualAdd()}>
+              <button
+                type="button"
+                className="admin-button admin-button--primary"
+                onClick={() => void handleManualAdd()}
+                aria-label="Přidat hráče podle kódu"
+              >
                 Přidat
               </button>
             </div>
@@ -1337,6 +1343,7 @@ function NewMatchPage({
                     onClick={() => setActiveSeat(entry.seat)}
                     aria-expanded={expanded}
                     aria-controls={`deskovky-slot-content-${entry.seat}`}
+                    aria-label={`Slot ${entry.seat} ${statusLabel}`}
                   >
                     <span className="deskovky-slot-toggle-meta">
                       <span>Slot {entry.seat}</span>
@@ -1355,7 +1362,12 @@ function NewMatchPage({
                   <header>
                     <span>Slot {entry.seat}</span>
                     {entry.player ? (
-                      <button type="button" className="ghost" onClick={() => handleRemovePlayer(entry.seat)}>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => handleRemovePlayer(entry.seat)}
+                        aria-label={`Odebrat hráče ze slotu ${entry.seat}`}
+                      >
                         Odebrat
                       </button>
                     ) : null}
@@ -1367,7 +1379,12 @@ function NewMatchPage({
                     <div className="deskovky-slot-mobile-head">
                       <strong>{code}</strong>
                       {entry.player ? (
-                        <button type="button" className="ghost" onClick={() => handleRemovePlayer(entry.seat)}>
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => handleRemovePlayer(entry.seat)}
+                          aria-label={`Odebrat hráče ze slotu ${entry.seat}`}
+                        >
                           Odebrat
                         </button>
                       ) : null}
@@ -3065,7 +3082,7 @@ function DeskovkyDashboard({
               type="button"
               className="admin-button admin-button--secondary admin-button--pill"
               onClick={() => logout()}
-              aria-label={isMobile ? 'Odhlásit se z Deskovek' : undefined}
+              aria-label="Odhlásit se"
             >
               Odhlásit se
             </button>
