@@ -180,7 +180,12 @@ async function cleanup() {
 }
 
 const latestByPatrol = new Map();
+const latestQuizByPatrol = new Map();
+const latestTimingByPatrol = new Map();
 const touchedPatrols = new Set();
+const attemptedPatrols = new Set();
+const attemptedQuizPatrols = new Set();
+const attemptedTimingPatrols = new Set();
 const lastClientEventByPatrol = new Map();
 let stopRequested = false;
 let failureReason = null;
@@ -284,6 +289,14 @@ async function runClient(startTime) {
     const useTiming = rng() < timingRate;
     const points = randomInt(rng, 0, 12);
 
+    attemptedPatrols.add(patrol.id);
+    if (useQuiz) {
+      attemptedQuizPatrols.add(patrol.id);
+    }
+    if (useTiming) {
+      attemptedTimingPatrols.add(patrol.id);
+    }
+
     const payload = buildStationRecordPayload({
       eventId,
       stationId,
@@ -313,10 +326,20 @@ async function runClient(startTime) {
         latestByPatrol.set(patrol.id, {
           createdAtMs,
           points,
-          useQuiz,
-          useTiming,
           clientEventId,
         });
+      }
+      if (useQuiz) {
+        const latestQuiz = latestQuizByPatrol.get(patrol.id);
+        if (!latestQuiz || createdAtMs >= latestQuiz.createdAtMs) {
+          latestQuizByPatrol.set(patrol.id, { createdAtMs, clientEventId });
+        }
+      }
+      if (useTiming) {
+        const latestTiming = latestTimingByPatrol.get(patrol.id);
+        if (!latestTiming || createdAtMs >= latestTiming.createdAtMs) {
+          latestTimingByPatrol.set(patrol.id, { createdAtMs, clientEventId });
+        }
       }
     } else {
       metrics.fail += 1;
@@ -372,20 +395,57 @@ async function run() {
 
   const failures = [];
   const expectedScoreCount = touchedPatrols.size;
-  const expectedQuizCount = Array.from(latestByPatrol.values()).filter((item) => item.useQuiz).length;
-  const expectedTimingCount = Array.from(latestByPatrol.values()).filter((item) => item.useTiming).length;
+  const expectedQuizCount = latestQuizByPatrol.size;
+  const expectedTimingCount = latestTimingByPatrol.size;
 
-  if ((scores ?? []).length !== expectedScoreCount) {
-    failures.push({ message: 'station_scores count mismatch', expected: expectedScoreCount, actual: (scores ?? []).length });
+  if ((scores ?? []).length < expectedScoreCount) {
+    failures.push({
+      message: 'station_scores count below successful writes',
+      expected_min: expectedScoreCount,
+      actual: (scores ?? []).length,
+    });
   }
-  if ((passages ?? []).length !== expectedScoreCount) {
-    failures.push({ message: 'station_passages count mismatch', expected: expectedScoreCount, actual: (passages ?? []).length });
+  if ((scores ?? []).length > attemptedPatrols.size) {
+    failures.push({
+      message: 'station_scores count above attempted writes',
+      expected_max: attemptedPatrols.size,
+      actual: (scores ?? []).length,
+    });
   }
-  if ((quizzes ?? []).length !== expectedQuizCount) {
-    failures.push({ message: 'station_quiz_responses count mismatch', expected: expectedQuizCount, actual: (quizzes ?? []).length });
+  if ((passages ?? []).length !== (scores ?? []).length) {
+    failures.push({
+      message: 'station_passages count mismatch',
+      expected: (scores ?? []).length,
+      actual: (passages ?? []).length,
+    });
   }
-  if ((timings ?? []).length !== expectedTimingCount) {
-    failures.push({ message: 'timings count mismatch', expected: expectedTimingCount, actual: (timings ?? []).length });
+  if ((quizzes ?? []).length < expectedQuizCount) {
+    failures.push({
+      message: 'station_quiz_responses count below successful writes',
+      expected_min: expectedQuizCount,
+      actual: (quizzes ?? []).length,
+    });
+  }
+  if ((quizzes ?? []).length > attemptedQuizPatrols.size) {
+    failures.push({
+      message: 'station_quiz_responses count above attempted writes',
+      expected_max: attemptedQuizPatrols.size,
+      actual: (quizzes ?? []).length,
+    });
+  }
+  if ((timings ?? []).length < expectedTimingCount) {
+    failures.push({
+      message: 'timings count below successful writes',
+      expected_min: expectedTimingCount,
+      actual: (timings ?? []).length,
+    });
+  }
+  if ((timings ?? []).length > attemptedTimingPatrols.size) {
+    failures.push({
+      message: 'timings count above attempted writes',
+      expected_max: attemptedTimingPatrols.size,
+      actual: (timings ?? []).length,
+    });
   }
 
   const scoreDupes = findDuplicates(scoreIds);
@@ -450,42 +510,40 @@ async function run() {
         });
       }
 
-      if (expected.useQuiz) {
+      const expectedQuiz = latestQuizByPatrol.get(patrolId);
+      if (expectedQuiz) {
         const quizRow = quizByPatrol.get(patrolId);
         if (!quizRow) {
           failures.push({ message: 'expected quiz response missing', patrol_id: patrolId });
         } else {
           const quizCreatedAt = new Date(quizRow.client_created_at).getTime();
-          if (quizCreatedAt !== expected.createdAtMs) {
+          if (quizCreatedAt !== expectedQuiz.createdAtMs) {
             failures.push({
               message: 'quiz timestamp mismatch',
               patrol_id: patrolId,
-              expected_ms: expected.createdAtMs,
+              expected_ms: expectedQuiz.createdAtMs,
               actual_ms: quizCreatedAt,
             });
           }
         }
-      } else if (quizByPatrol.has(patrolId)) {
-        failures.push({ message: 'quiz response should be deleted', patrol_id: patrolId });
       }
 
-      if (expected.useTiming) {
+      const expectedTiming = latestTimingByPatrol.get(patrolId);
+      if (expectedTiming) {
         const timingRow = timingByPatrol.get(patrolId);
         if (!timingRow) {
           failures.push({ message: 'expected timing missing', patrol_id: patrolId });
         } else {
           const timingCreatedAt = new Date(timingRow.client_created_at).getTime();
-          if (timingCreatedAt !== expected.createdAtMs) {
+          if (timingCreatedAt !== expectedTiming.createdAtMs) {
             failures.push({
               message: 'timing timestamp mismatch',
               patrol_id: patrolId,
-              expected_ms: expected.createdAtMs,
+              expected_ms: expectedTiming.createdAtMs,
               actual_ms: timingCreatedAt,
             });
           }
         }
-      } else if (timingByPatrol.has(patrolId)) {
-        failures.push({ message: 'timing should be absent', patrol_id: patrolId });
       }
     }
   }

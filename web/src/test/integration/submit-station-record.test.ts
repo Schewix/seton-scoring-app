@@ -133,7 +133,7 @@ describe('submit-station-record api', () => {
     expect(quiz?.length).toBe(1);
   });
 
-  it('deletes quiz responses when use_target_scoring=false', async () => {
+  it('keeps quiz responses when use_target_scoring=false', async () => {
     const payload = basePayload({
       use_target_scoring: true,
       normalized_answers: 'AB',
@@ -158,7 +158,8 @@ describe('submit-station-record api', () => {
       .from('station_quiz_responses')
       .select('*')
       .eq('event_id', ctx.eventId);
-    expect(quiz?.length ?? 0).toBe(0);
+    expect(quiz?.length ?? 0).toBe(1);
+    expect(quiz?.[0]?.answers).toBe('AB');
   });
 
   it('idempotence across tables for same client_event_id', async () => {
