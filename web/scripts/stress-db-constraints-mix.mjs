@@ -186,6 +186,12 @@ const touchedPatrols = new Set();
 const attemptedPatrols = new Set();
 const attemptedQuizPatrols = new Set();
 const attemptedTimingPatrols = new Set();
+const attemptedByPatrol = new Map();
+const attemptedQuizTimesByPatrol = new Map();
+const attemptedTimingTimesByPatrol = new Map();
+const failedPatrols = new Set();
+const failedQuizPatrols = new Set();
+const failedTimingPatrols = new Set();
 const lastClientEventByPatrol = new Map();
 let stopRequested = false;
 let failureReason = null;
@@ -297,6 +303,30 @@ async function runClient(startTime) {
       attemptedTimingPatrols.add(patrol.id);
     }
 
+    let attempted = attemptedByPatrol.get(patrol.id);
+    if (!attempted) {
+      attempted = {
+        minMs: createdAtMs,
+        maxMs: createdAtMs,
+        attempts: new Map(),
+      };
+      attemptedByPatrol.set(patrol.id, attempted);
+    }
+    attempted.minMs = Math.min(attempted.minMs, createdAtMs);
+    attempted.maxMs = Math.max(attempted.maxMs, createdAtMs);
+    attempted.attempts.set(createdAtMs, { points, useQuiz, useTiming });
+
+    if (useQuiz) {
+      const quizTimes = attemptedQuizTimesByPatrol.get(patrol.id) ?? new Set();
+      quizTimes.add(createdAtMs);
+      attemptedQuizTimesByPatrol.set(patrol.id, quizTimes);
+    }
+    if (useTiming) {
+      const timingTimes = attemptedTimingTimesByPatrol.get(patrol.id) ?? new Set();
+      timingTimes.add(createdAtMs);
+      attemptedTimingTimesByPatrol.set(patrol.id, timingTimes);
+    }
+
     const payload = buildStationRecordPayload({
       eventId,
       stationId,
@@ -346,6 +376,13 @@ async function runClient(startTime) {
       metrics.windowFail += 1;
       metrics.retries += 1;
       metrics.windowRetries += 1;
+      failedPatrols.add(patrol.id);
+      if (useQuiz) {
+        failedQuizPatrols.add(patrol.id);
+      }
+      if (useTiming) {
+        failedTimingPatrols.add(patrol.id);
+      }
       await delay(computeBackoffMs(rng, 1));
     }
 
@@ -374,15 +411,18 @@ async function run() {
   const { data: scores } = await supabaseAdmin
     .from('station_scores')
     .select('patrol_id, points, client_created_at, client_event_id')
-    .eq('event_id', eventId);
+    .eq('event_id', eventId)
+    .eq('station_id', stationId);
   const { data: passages } = await supabaseAdmin
     .from('station_passages')
     .select('patrol_id, client_created_at, client_event_id')
-    .eq('event_id', eventId);
+    .eq('event_id', eventId)
+    .eq('station_id', stationId);
   const { data: quizzes } = await supabaseAdmin
     .from('station_quiz_responses')
     .select('patrol_id, client_created_at, client_event_id')
-    .eq('event_id', eventId);
+    .eq('event_id', eventId)
+    .eq('station_id', stationId);
   const { data: timings } = await supabaseAdmin
     .from('timings')
     .select('patrol_id, client_created_at, client_event_id')
@@ -405,13 +445,6 @@ async function run() {
       actual: (scores ?? []).length,
     });
   }
-  if ((scores ?? []).length > attemptedPatrols.size) {
-    failures.push({
-      message: 'station_scores count above attempted writes',
-      expected_max: attemptedPatrols.size,
-      actual: (scores ?? []).length,
-    });
-  }
   if ((passages ?? []).length !== (scores ?? []).length) {
     failures.push({
       message: 'station_passages count mismatch',
@@ -426,24 +459,10 @@ async function run() {
       actual: (quizzes ?? []).length,
     });
   }
-  if ((quizzes ?? []).length > attemptedQuizPatrols.size) {
-    failures.push({
-      message: 'station_quiz_responses count above attempted writes',
-      expected_max: attemptedQuizPatrols.size,
-      actual: (quizzes ?? []).length,
-    });
-  }
   if ((timings ?? []).length < expectedTimingCount) {
     failures.push({
       message: 'timings count below successful writes',
       expected_min: expectedTimingCount,
-      actual: (timings ?? []).length,
-    });
-  }
-  if ((timings ?? []).length > attemptedTimingPatrols.size) {
-    failures.push({
-      message: 'timings count above attempted writes',
-      expected_max: attemptedTimingPatrols.size,
       actual: (timings ?? []).length,
     });
   }
@@ -468,13 +487,13 @@ async function run() {
   const quizByPatrol = new Map((quizzes ?? []).map((row) => [row.patrol_id, row]));
   const timingByPatrol = new Map((timings ?? []).map((row) => [row.patrol_id, row]));
 
-  for (const patrolId of touchedPatrols) {
+  for (const [patrolId, scoreRow] of scoreByPatrol) {
     const expected = latestByPatrol.get(patrolId);
-    const scoreRow = scoreByPatrol.get(patrolId);
     const passageRow = passageByPatrol.get(patrolId);
+    const attempted = attemptedByPatrol.get(patrolId);
 
-    if (!scoreRow) {
-      failures.push({ message: 'missing station_scores row', patrol_id: patrolId });
+    if (!attempted) {
+      failures.push({ message: 'unexpected station_scores row', patrol_id: patrolId });
       continue;
     }
     if (!passageRow) {
@@ -482,9 +501,34 @@ async function run() {
       continue;
     }
 
-    if (expected) {
-      const scoreCreatedAt = new Date(scoreRow.client_created_at).getTime();
-      const passageCreatedAt = new Date(passageRow.client_created_at).getTime();
+    const scoreCreatedAt = new Date(scoreRow.client_created_at).getTime();
+    const passageCreatedAt = new Date(passageRow.client_created_at).getTime();
+    const attemptedPayload = attempted.attempts.get(scoreCreatedAt);
+
+    if (!attemptedPayload) {
+      failures.push({
+        message: 'score timestamp not in attempted payloads',
+        patrol_id: patrolId,
+        actual_ms: scoreCreatedAt,
+      });
+    } else if (scoreRow.points !== attemptedPayload.points) {
+      failures.push({
+        message: 'points mismatch for attempted payload',
+        patrol_id: patrolId,
+        expected_points: attemptedPayload.points,
+        actual_points: scoreRow.points,
+      });
+    }
+
+    if (!attempted.attempts.has(passageCreatedAt)) {
+      failures.push({
+        message: 'passage timestamp not in attempted payloads',
+        patrol_id: patrolId,
+        actual_ms: passageCreatedAt,
+      });
+    }
+
+    if (expected && !failedPatrols.has(patrolId)) {
       if (scoreRow.points !== expected.points) {
         failures.push({
           message: 'LWW points mismatch',
@@ -509,42 +553,74 @@ async function run() {
           actual_ms: passageCreatedAt,
         });
       }
+    }
 
-      const expectedQuiz = latestQuizByPatrol.get(patrolId);
-      if (expectedQuiz) {
-        const quizRow = quizByPatrol.get(patrolId);
-        if (!quizRow) {
-          failures.push({ message: 'expected quiz response missing', patrol_id: patrolId });
-        } else {
-          const quizCreatedAt = new Date(quizRow.client_created_at).getTime();
-          if (quizCreatedAt !== expectedQuiz.createdAtMs) {
-            failures.push({
-              message: 'quiz timestamp mismatch',
-              patrol_id: patrolId,
-              expected_ms: expectedQuiz.createdAtMs,
-              actual_ms: quizCreatedAt,
-            });
-          }
+    const expectedQuiz = latestQuizByPatrol.get(patrolId);
+    if (expectedQuiz) {
+      const quizRow = quizByPatrol.get(patrolId);
+      if (!quizRow) {
+        failures.push({ message: 'expected quiz response missing', patrol_id: patrolId });
+      } else {
+        const quizCreatedAt = new Date(quizRow.client_created_at).getTime();
+        const attemptedQuizTimes = attemptedQuizTimesByPatrol.get(patrolId);
+        if (!attemptedQuizTimes || !attemptedQuizTimes.has(quizCreatedAt)) {
+          failures.push({
+            message: 'quiz timestamp not in attempted payloads',
+            patrol_id: patrolId,
+            actual_ms: quizCreatedAt,
+          });
+        } else if (!failedQuizPatrols.has(patrolId) && quizCreatedAt !== expectedQuiz.createdAtMs) {
+          failures.push({
+            message: 'quiz timestamp mismatch',
+            patrol_id: patrolId,
+            expected_ms: expectedQuiz.createdAtMs,
+            actual_ms: quizCreatedAt,
+          });
         }
       }
+    }
 
-      const expectedTiming = latestTimingByPatrol.get(patrolId);
-      if (expectedTiming) {
-        const timingRow = timingByPatrol.get(patrolId);
-        if (!timingRow) {
-          failures.push({ message: 'expected timing missing', patrol_id: patrolId });
-        } else {
-          const timingCreatedAt = new Date(timingRow.client_created_at).getTime();
-          if (timingCreatedAt !== expectedTiming.createdAtMs) {
-            failures.push({
-              message: 'timing timestamp mismatch',
-              patrol_id: patrolId,
-              expected_ms: expectedTiming.createdAtMs,
-              actual_ms: timingCreatedAt,
-            });
-          }
+    const expectedTiming = latestTimingByPatrol.get(patrolId);
+    if (expectedTiming) {
+      const timingRow = timingByPatrol.get(patrolId);
+      if (!timingRow) {
+        failures.push({ message: 'expected timing missing', patrol_id: patrolId });
+      } else {
+        const timingCreatedAt = new Date(timingRow.client_created_at).getTime();
+        const attemptedTimingTimes = attemptedTimingTimesByPatrol.get(patrolId);
+        if (!attemptedTimingTimes || !attemptedTimingTimes.has(timingCreatedAt)) {
+          failures.push({
+            message: 'timing timestamp not in attempted payloads',
+            patrol_id: patrolId,
+            actual_ms: timingCreatedAt,
+          });
+        } else if (!failedTimingPatrols.has(patrolId) && timingCreatedAt !== expectedTiming.createdAtMs) {
+          failures.push({
+            message: 'timing timestamp mismatch',
+            patrol_id: patrolId,
+            expected_ms: expectedTiming.createdAtMs,
+            actual_ms: timingCreatedAt,
+          });
         }
       }
+    }
+  }
+
+  for (const patrolId of passageByPatrol.keys()) {
+    if (!scoreByPatrol.has(patrolId)) {
+      failures.push({ message: 'unexpected station_passages row', patrol_id: patrolId });
+    }
+  }
+
+  for (const patrolId of quizByPatrol.keys()) {
+    if (!attemptedQuizPatrols.has(patrolId)) {
+      failures.push({ message: 'unexpected station_quiz_responses row', patrol_id: patrolId });
+    }
+  }
+
+  for (const patrolId of timingByPatrol.keys()) {
+    if (!attemptedTimingPatrols.has(patrolId)) {
+      failures.push({ message: 'unexpected timings row', patrol_id: patrolId });
     }
   }
 

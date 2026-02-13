@@ -1484,9 +1484,21 @@ function StationApp({
       return;
     }
     initializeFormForPatrol(scannerPatrol);
+    if (stationCode === 'T' && scannerSource === 'summary') {
+      setSelectedSummaryCategory(null);
+    }
     pushAlert(`Hlídka ${scannerPatrol.team_name} je připravena k obsluze.`);
     setShowPatrolChoice(false);
-  }, [enableTicketQueue, handleAddTicket, initializeFormForPatrol, pushAlert, scannerPatrol]);
+  }, [
+    enableTicketQueue,
+    handleAddTicket,
+    initializeFormForPatrol,
+    pushAlert,
+    scannerPatrol,
+    scannerSource,
+    setSelectedSummaryCategory,
+    stationCode,
+  ]);
 
   const handleScoreOkToggle = useCallback(
     (stationId: string, ok: boolean) => {

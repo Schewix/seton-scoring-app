@@ -658,6 +658,23 @@ body {
   }
 }
 
+@media (min-width: 820px) and (max-width: 959px) {
+  .hero-inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .hero-meta {
+    width: auto;
+    max-width: none;
+    margin: 0;
+  }
+
+  .hero-alerts {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (min-width: 960px) {
   .hero-inner {
     grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
