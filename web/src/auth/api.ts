@@ -128,6 +128,67 @@ export async function refreshSessionRequest(refreshToken: string) {
 }
 
 export async function fetchManifest(_accessToken: string) {
-  logManifestWarningOnce('manifest-disabled', 'Manifest refresh is disabled; skipping fetch.', {});
-  return null as { manifest: StationManifest; device_salt: string } | null;
+  const accessToken = _accessToken?.trim();
+  if (!accessToken) {
+    logManifestWarningOnce('manifest-missing-token', 'Manifest refresh skipped (missing token).', {});
+    return null;
+  }
+
+  const url = `${BASE_URL}/auth/refresh`;
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  } catch (error) {
+    throw new ManifestFetchError('Failed to reach manifest endpoint.', {
+      url,
+      kind: 'network',
+    });
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    throw new ManifestFetchError('Unexpected manifest response type.', {
+      url,
+      status: response.status,
+      contentType,
+      kind: 'content-type',
+    });
+  }
+
+  let payload: { manifest?: StationManifest; device_salt?: string; error?: string } | null = null;
+  try {
+    payload = (await response.json()) as { manifest?: StationManifest; device_salt?: string; error?: string };
+  } catch (error) {
+    throw new ManifestFetchError('Failed to parse manifest response.', {
+      url,
+      status: response.status,
+      contentType,
+      kind: 'parse',
+    });
+  }
+
+  if (!response.ok) {
+    const message = payload?.error ?? 'Manifest refresh failed.';
+    throw new ManifestFetchError(message, {
+      url,
+      status: response.status,
+      contentType,
+      kind: 'http',
+    });
+  }
+
+  if (!payload?.manifest) {
+    throw new ManifestFetchError('Manifest payload missing.', {
+      url,
+      status: response.status,
+      contentType,
+      kind: 'parse',
+    });
+  }
+
+  return { manifest: payload.manifest, device_salt: payload.device_salt ?? '' };
 }

@@ -618,9 +618,37 @@
   padding: 0 24px 24px;
 }
 
+@media (max-width: 900px) {
+  .admin-header {
+    padding: 40px 16px 90px;
+  }
+
+  .admin-header-inner {
+    max-width: none;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 18px;
+  }
+
+  .admin-header-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-header-actions .admin-button {
+    width: 100%;
+  }
+
+  .admin-content {
+    max-width: none;
+  }
+}
+
 @media (max-width: 768px) {
   .admin-header {
-    padding: 36px 16px 80px;
+    padding: 32px 16px 72px;
   }
 
   .admin-content {
@@ -646,7 +674,7 @@
 @media (max-width: 640px) {
   .admin-header-inner {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
   }
 
   .admin-header h1 {
@@ -660,11 +688,14 @@
   .admin-header-actions {
     flex-direction: column;
     align-items: stretch;
+    gap: 10px;
   }
 
   .admin-button,
   .admin-header-actions .admin-button {
     width: 100%;
+    min-height: 44px;
+    font-size: 0.9rem;
   }
 
   .admin-card-actions {
