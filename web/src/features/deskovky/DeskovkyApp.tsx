@@ -584,6 +584,7 @@ function NewMatchPage({
   const [entries, setEntries] = useState<MatchEntry[]>(() => buildInitialMatchEntries());
   const [manualCode, setManualCode] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState<string | null>(null);
   const [activeSeat, setActiveSeat] = useState(1);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -897,6 +898,7 @@ function NewMatchPage({
     setEntries(buildInitialMatchEntries());
     setManualCode('');
     setScannerOpen(false);
+    setScannerError(null);
     setActiveSeat(1);
     setSubmitAttempted(false);
     setError(null);
@@ -1018,6 +1020,7 @@ function NewMatchPage({
             setMessage(`QR je z eventu ${parsed.eventSlug}, ale aktuálně je vybraný ${event.slug}.`);
           }
 
+          setScannerError(null);
           const added = await loadPlayer(parsed.shortCode, 'scan');
           if (added && AUTO_CLOSE_SCANNER_AFTER_SCAN) {
             setScannerOpen(false);
@@ -1030,6 +1033,23 @@ function NewMatchPage({
       })();
     },
     [event, loadPlayer],
+  );
+
+  const handleScannerError = useCallback(
+    (scanError: Error) => {
+      const raw = (scanError.message || '').toLowerCase();
+      const permissionDenied =
+        raw.includes('notallowederror') ||
+        raw.includes('permission') ||
+        raw.includes('denied') ||
+        raw.includes('insecure context');
+      const reason = permissionDenied
+        ? 'Přístup ke kameře byl zamítnut. Povol kameru v prohlížeči.'
+        : 'Skener nelze spustit. Zkontroluj kameru a oprávnění.';
+      setScannerError(reason);
+      showToast(reason);
+    },
+    [showToast],
   );
 
   const handleEntryChange = useCallback((seat: number, field: 'points' | 'placement', value: string) => {
@@ -1243,10 +1263,13 @@ function NewMatchPage({
             <button
               type="button"
               className="admin-button admin-button--secondary"
-              onClick={() => setScannerOpen((current) => !current)}
-              aria-label={scannerOpen ? 'Zavřít QR skener' : 'Spustit QR skener'}
+              onClick={() => {
+                setScannerError(null);
+                setScannerOpen(true);
+              }}
+              aria-label="Spustit QR skener"
             >
-              {scannerOpen ? 'Zavřít skener' : 'Spustit skener'}
+              Spustit skener
             </button>
             <div className="deskovky-manual-input">
               <input
@@ -1281,10 +1304,11 @@ function NewMatchPage({
                   onClick={() => setScannerOpen(false)}
                   aria-label="Zavřít QR skener"
                 >
-                  Zavřít skener
+                  Zavřít
                 </button>
               </header>
-              <QRScanner active={scannerOpen} onResult={handleQrResult} />
+              {scannerError ? <p className="admin-error deskovky-inline-error">{scannerError}</p> : null}
+              <QRScanner active={scannerOpen} onResult={handleQrResult} onError={handleScannerError} />
             </section>
           </div>
         ) : null}
