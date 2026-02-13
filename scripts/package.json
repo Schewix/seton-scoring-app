@@ -1,5 +1,6 @@
 {
-  "name": "seton-scripts",
+  "name": "zelena-liga-platform-scripts",
+  "description": "Utility skripty pro Zelenou ligu",
   "private": true,
   "type": "module",
   "version": "0.0.0",

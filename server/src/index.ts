@@ -3,10 +3,22 @@ import cors from 'cors';
 import authRouter, { manifestHandler } from './auth.js';
 import syncRouter from './sync.js';
 import adminRouter from './admin.js';
+import { env } from './env.js';
 
 const app = express();
 
-app.use(cors());
+const corsOrigin = env.CORS_ORIGIN?.trim();
+
+app.use(
+  cors(
+    corsOrigin
+      ? {
+          origin: corsOrigin,
+          credentials: true,
+        }
+      : undefined,
+  ),
+);
 app.use(express.json());
 
 app.get('/health', (_req, res) => {

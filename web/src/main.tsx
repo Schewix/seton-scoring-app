@@ -81,8 +81,8 @@ function upsertIconLink(config: IconLinkConfig) {
 }
 
 function applyBranding() {
-  if (document.title !== 'Zelena liga') {
-    document.title = 'Zelena liga';
+  if (document.title !== 'Zelená liga | zelenaliga.cz') {
+    document.title = 'Zelená liga | zelenaliga.cz';
   }
 
   ICON_LINKS.forEach(upsertIconLink);
@@ -103,7 +103,7 @@ const normalizedPath = pathname.replace(/\/$/, '') || '/';
 const isScoreboardPath = isScoreboardPathname(pathname);
 const isAdminPath = isAdminPathname(pathname);
 const isHomepagePath = normalizedPath === '/';
-const isSetonNamespace =
+const isScoringNamespace =
   normalizedPath === ROUTE_PREFIX ||
   normalizedPath.startsWith(`${ROUTE_PREFIX}/`) ||
   normalizedPath === LEGACY_ROUTE_PREFIX ||
@@ -150,7 +150,7 @@ if (isAdminPath) {
     .catch((error) => {
       console.error('Failed to load scoreboard view', error);
     });
-} else if (isHomepagePath && !isSetonNamespace) {
+} else if (isHomepagePath && !isScoringNamespace) {
   import('./homepage/Homepage')
     .then(({ default: Homepage }) => {
       render(<Homepage />);
@@ -158,7 +158,7 @@ if (isAdminPath) {
     .catch((error) => {
       console.error('Failed to load homepage', error);
     });
-} else if (isSetonNamespace || normalizedPath === ROUTE_PREFIX) {
+} else if (isScoringNamespace || normalizedPath === ROUTE_PREFIX) {
   import('./App')
     .then(({ default: App }) => {
       render(<App />);

@@ -1,4 +1,4 @@
-# Webový klient Seton Scoring App
+# Webový klient Zelená liga
 
 Tato složka obsahuje hlavní webovou aplikaci projektu – rozhraní pro rozhodčí na stanovištích i veřejný výsledkový přehled. Projekt využívá React, TypeScript, Vite a Supabase klienta. Build je PWA s podporou offline režimu a automatickou synchronizací dat.
 
@@ -131,7 +131,7 @@ Poznámky:
 
 ### Scoreboard na externím displeji (kiosk)
 
-1. Otevři `/setonuv-zavod/vysledky` nebo alias `/vysledky` (`?view=vysledky` přepne view i z homepage).
+1. Otevři `/aplikace/setonuv-zavod/vysledky` nebo alias `/vysledky` (`?view=vysledky` přepne view i z homepage).
 2. Zapni full screen / kiosk režim prohlížeče (Chrome: `--kiosk`, případně ručně F11).
 3. Aplikace si data sama obnovuje (výchozí interval 30 s). Interval upravíš v `web/src/scoreboard/ScoreboardApp.tsx` (`REFRESH_INTERVAL_MS`).
 

@@ -252,8 +252,8 @@ function resolveWebkitHaptics(): WebkitHapticsBridge | null {
   return (
     handlers.haptics ??
     handlers.Haptics ??
-    handlers.SetonHaptics ??
-    handlers.setonHaptics ??
+    handlers.ZelenaLigaHaptics ??
+    handlers.zelenaLigaHaptics ??
     null
   );
 }
@@ -262,14 +262,14 @@ function resolveAndroidHaptics(): AndroidHapticsBridge | null {
   const global = window as unknown as {
     AndroidHaptics?: AndroidHapticsBridge;
     androidHaptics?: AndroidHapticsBridge;
-    SetonHaptics?: AndroidHapticsBridge;
-    setonHaptics?: AndroidHapticsBridge;
+    ZelenaLigaHaptics?: AndroidHapticsBridge;
+    zelenaLigaHaptics?: AndroidHapticsBridge;
   };
   return (
     global.AndroidHaptics ??
     global.androidHaptics ??
-    global.SetonHaptics ??
-    global.setonHaptics ??
+    global.ZelenaLigaHaptics ??
+    global.zelenaLigaHaptics ??
     null
   );
 }

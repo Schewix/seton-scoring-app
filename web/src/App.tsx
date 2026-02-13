@@ -2467,9 +2467,9 @@ function StationApp({
 
   const handleScanResult = useCallback(
     async (text: string) => {
-      const match = text.match(/seton:\/\/p\/(.+)$/);
+      const match = text.match(/zelenaliga:\/\/p\/(.+)$/);
       if (!match) {
-        pushAlert('Neplatný QR kód. Očekávám seton://p/<code>');
+        pushAlert('Neplatný QR kód. Očekávám zelenaliga://p/<code>');
         void appendScanRecord(eventId, stationId, {
           code: text,
           scannedAt: new Date().toISOString(),
@@ -2968,10 +2968,10 @@ function StationApp({
               rel="noreferrer"
               aria-label="Zelená liga"
             >
-              <img src={zelenaLigaLogo} alt="Logo Setonův závod" />
+              <img src={zelenaLigaLogo} alt="Logo Setonův závod - aplikace" />
             </a>
             <div>
-              <h1>Setonův závod – stanoviště</h1>
+              <h1>Setonův závod - aplikace</h1>
               <p>
                 Tady spravuješ průběh závodu na svém stanovišti. Zapisuj výsledky hlídek, kontroluj průchody a nech aplikaci,
                 aby se o zbytek postarala. Když není signál, vše se uloží a po připojení se automaticky odešle.

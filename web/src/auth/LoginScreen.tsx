@@ -44,9 +44,9 @@ export default function LoginScreen({ requirePinOnly }: Props) {
   const loadingLabel = requirePinOnly ? 'Odemykám…' : 'Přihlašuji…';
 
   const formTitle = requirePinOnly ? 'Odemknutí stanoviště' : 'Přihlášení rozhodčího';
-  const heroTitle = requirePinOnly ? 'Setonův závod – Stanoviště' : 'Setonův závod – Rozhodčí';
+  const heroTitle = 'Setonův závod - aplikace';
   const heroSubtitle = requirePinOnly
-    ? 'Odemkni uložené stanoviště Setonova závodu a pokračuj i bez připojení.'
+    ? 'Odemkni uložené stanoviště aplikace Setonův závod a pokračuj i bez připojení.'
     : 'Záznam výsledků ze stanovišť závodu.';
   const heroItems = requirePinOnly
     ? [
@@ -115,7 +115,7 @@ export default function LoginScreen({ requirePinOnly }: Props) {
               </div>
             </div>
             <div className="login-hero-copy">
-              <span className="login-hero-eyebrow">Setonův závod</span>
+              <span className="login-hero-eyebrow">Setonův závod - aplikace</span>
               <h1>{heroTitle}</h1>
               <p>{heroSubtitle}</p>
             </div>

@@ -116,7 +116,7 @@ try {
       continue;
     }
 
-    const payload = `seton://p/${readableCode}`;
+    const payload = `zelenaliga://p/${readableCode}`;
     const baseSvg = await QRCode.toString(payload, {
       type: 'svg',
       errorCorrectionLevel: 'M',

@@ -1,37 +1,40 @@
-# Seton Scoring App
+# Zelená liga
 
-Seton Scoring App je monorepo pro zapisování výsledků stanovišť závodu Setonův závod. Současná generace projektu běží kompletně ve webovém prohlížeči; backend je postavený na Supabase a malé Express aplikaci, pomocné skripty řeší synchronizaci hlídek a generování QR kódů. Dřívější mobilní klient už není součástí repozitáře.
+`Zelená liga` je monorepo pro `Setonův závod - aplikace` (web rozhodčích na stanovištích), veřejný scoreboard výsledků, Supabase backend, import hlídek z Google Sheets a provozní utility (včetně QR kódů). Aplikace podporuje offline frontu (IndexedDB/localforage), Supabase Realtime a nasazení přes Vercel + GitHub Actions.
 
 ## Rychlý start
 
-1. **Node.js 20 + pnpm** – celý monorepo používá Node 20 (stejná verze jako v CI). Instalace se provádí vždy v cílovém balíčku (`pnpm -C web install`, `pnpm -C server install`).
-2. **Supabase** – lokální vývoj jede přes `supabase start`. Migrace jsou v [`supabase/migrations`](./supabase/migrations), eventové seedy v [`supabase/sql`](./supabase/sql).
-3. **Google Sheets** – hlídky se synchronizují přes Apps Script nebo Supabase Edge Function. Viz [Google Sheets složku](./google-sheets) a funkci [`sync-patrols`](./supabase/functions/sync-patrols).
-4. **Spuštění backendu** – Express API v [`server/`](./server) obsluhuje přihlášení a manifest stanoviště. Stačí vytvořit `.env` podle ukázky níže a spustit `pnpm -C server dev`.
-5. **Spuštění webu** – klient pro rozhodčí i výsledkový přehled je v [`web/`](./web). Po nastavení `.env.local` spusť `pnpm -C web dev`.
+1. **Node.js 20 + pnpm/npm**
+   - CI běží na Node 20.
+   - Instalace po složkách: `pnpm -C web install`, `pnpm -C server install`, `pnpm -C scripts install`.
+2. **Supabase**
+   - Lokálně: `supabase start`.
+   - Migrace: [`supabase/migrations`](./supabase/migrations).
+3. **Backend (Express)**
+   - Nastav `server/.env` podle ukázky a spusť `pnpm -C server dev`.
+4. **Web (React + Vite)**
+   - Nastav `web/.env.local` a spusť `pnpm -C web dev`.
 
-> Detailní postupy jsou popsány níže a v README jednotlivých složek.
-
-## Struktura repozitáře
+## Repo Overview
 
 | Složka | Popis |
 | --- | --- |
-| [`web/`](./web) | React + Vite aplikace pro rozhodčí a veřejný výsledkový přehled (PWA, offline fronta, Vitest testy). |
-| [`server/`](./server) | Express API zajišťující přihlášení rozhodčích, vydávání JWT tokenů a manifest stanoviště. |
-| [`supabase/migrations`](./supabase/migrations) | Supabase CLI migrace (schéma, pohledy, RPC, RLS). |
-| [`supabase/sql`](./supabase/sql) | Ruční/legacy SQL skripty a seedy konkrétních ročníků. |
-| [`supabase/functions/sync-patrols`](./supabase/functions/sync-patrols) | Edge Function, která nahrazuje Apps Script synchronizaci hlídek z Google Sheets. |
-| [`google-sheets/`](./google-sheets) | Google Apps Script a popis struktury sdílené tabulky pro kancelář. |
-| [`scripts/`](./scripts) | Utility (např. generátor QR kódů hlídek). |
-| [`docs/`](./docs) | Uživatelský manuál a doplňující podklady pro obsluhu stanovišť. |
-| [`notes/`](./notes) | Neformální poznámky a stav dlouhodobých úkolů. |
+| [`web/`](./web) | React + Vite aplikace: rozhodčí UI + scoreboard, PWA, offline queue, testy. |
+| [`server/`](./server) | Express API pro auth, session tokeny a manifest stanoviště. |
+| [`supabase/migrations`](./supabase/migrations) | Supabase CLI migrace (schema, RLS, pohledy, RPC). |
+| [`supabase/sql`](./supabase/sql) | Ruční SQL skripty a event seed data. |
+| [`supabase/functions/`](./supabase/functions) | Edge Functions (např. sync hlídek, submit záznamů). |
+| [`google-sheets/`](./google-sheets) | Popis Google Sheets šablony pro import hlídek. |
+| [`scripts/`](./scripts) | Utility skripty (např. generování QR kódů hlídek). |
+| [`docs/`](./docs) | Uživatelská a provozní dokumentace. |
 
 ## Backend (Express API)
 
-Mini-server v adresáři [`server/`](./server) ověřuje přihlášení rozhodčích, vydává krátkodobé access tokeny a spravuje refresh tokeny v tabulce `judge_sessions`. Ve výchozím stavu poskytuje dva endpointy:
+Server v [`server/`](./server) řeší:
 
-- `POST /auth/login` – očekává email a heslo rozhodčího, načte jeho přiřazení (`station_assignments`), vytvoří session a vrátí access i refresh token plus manifest stanoviště.
-- `GET /manifest` – ověří access token a vrátí aktuální manifest včetně přiřazených hlídek.
+- `POST /auth/login` (přihlášení rozhodčího + session + tokeny + manifest),
+- `GET /manifest` (aktualizace manifestu stanoviště),
+- admin endpointy pro kancelářní operace.
 
 Lokální spuštění:
 
@@ -41,41 +44,36 @@ pnpm install
 pnpm dev
 ```
 
-`.env` soubor vypadá takto:
+Ukázka `server/.env`:
 
 ```bash
+# Zelená liga backend
 SUPABASE_URL=https://<projekt>.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=<service role>
-JWT_SECRET=<tajný klíč pro access token>
-REFRESH_TOKEN_SECRET=<tajný klíč pro refresh token>
-# volitelné (sekundy)
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+JWT_SECRET=<tajny-klic-access-token>
+REFRESH_TOKEN_SECRET=<tajny-klic-refresh-token>
+
+# TTL (sekundy)
 ACCESS_TOKEN_TTL_SECONDS=900
 REFRESH_TOKEN_TTL_SECONDS=1209600
+
+# Volitelné: explicitní origin pro CORS (produkce)
+CORS_ORIGIN=https://zelenaliga.cz
+
+PORT=8787
 ```
 
-Hotový TypeScript build vytvoří `pnpm build`, produkční start zajišťuje `pnpm start`.
+## Web (React + Vite)
 
-## Nasazení serveru (Express)
+Web v [`web/`](./web) poskytuje:
 
-Server je stateless a lze ho nasadit jako jednoduchou Node.js službu nebo kontejner. Základní postup:
+- `Setonův závod - aplikace` na `/aplikace/setonuv-zavod`,
+- scoreboard k aplikaci na `/aplikace/setonuv-zavod/vysledky` (aliasy `/vysledky`, `/scoreboard`, `?view=vysledky`),
+- QR scan přes ZXing,
+- offline queue v IndexedDB/localforage,
+- realtime přehled výsledků přes Supabase.
 
-1. `pnpm -C server install && pnpm -C server build`
-2. Spuštění: `pnpm -C server start` (nebo `node dist/index.js`).
-3. Nastav produkční proměnné prostředí (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`).
-
-Pro provoz doporučujeme process manager (systemd/pm2) nebo container runtime; server sám o sobě nevyžaduje žádný stav.
-
-## Webová aplikace (React + Vite)
-
-Aplikace v [`web/`](./web) poskytuje dvě hlavní rozhraní – rozhraní rozhodčího na adrese `/setonuv-zavod` a veřejný výsledkový přehled na `/setonuv-zavod/vysledky` (aliasy `/vysledky`, `/scoreboard`, `?view=vysledky`). Mezi klíčové funkce patří:
-
-- skenování QR kódů hlídek (ZXing) a ruční zadávání kódů,
-- lokální fronta hlídek v IndexedDB (`localforage`) s automatickou synchronizací,
-- zápis bodů, čekacích dob, poznámek a času doběhu včetně výpočtu penalizací,
-- automatické vyhodnocení terčových odpovědí s editací správných odpovědí v admin režimu,
-- živý přehled posledních výsledků přes Supabase Realtime a export do XLSX.
-
-Instalace a spuštění:
+Lokální spuštění:
 
 ```bash
 cd web
@@ -83,69 +81,58 @@ pnpm install
 pnpm dev
 ```
 
-Do `.env.local` přidej minimálně tyto proměnné:
+Ukázka `web/.env.local`:
 
 ```bash
 VITE_SUPABASE_URL=https://<projekt>.supabase.co
-VITE_SUPABASE_ANON_KEY=<anon klíč>
-VITE_EVENT_ID=<UUID aktuální akce>
-VITE_STATION_ID=<UUID stanoviště>
-# volitelné
+VITE_SUPABASE_ANON_KEY=<anon-key>
+
+# Kontext aktivního závodu a stanoviště
+VITE_EVENT_ID=<uuid-eventu>
+VITE_STATION_ID=<uuid-stanoviste>
+
+# Auth backend (Express)
+VITE_AUTH_API_URL=https://zelenaliga.cz
+
+# Volitelné přepínače pro vývoj
+VITE_AUTH_BYPASS=1
 VITE_ADMIN_MODE=1
-VITE_AUTH_API_URL=https://scoring-backend.example.com
-VITE_AUTH_BYPASS=1  # jen pro lokální vývoj bez přihlášení
 ```
 
-Běžné skripty: `pnpm build`, `pnpm preview`, `pnpm lint`, `pnpm test` (Vitest scénáře pokrývají offline frontu i automatické hodnocení terče).
+## Security Notes
 
-## Sanity CMS + fotogalerie (Google Drive)
-
-Obsah homepage a článků je spravovaný přes Sanity. Tento repozitář obsahuje pouze klienta (`web/src/data/sanity.ts`); Sanity Studio je mimo repozitář a připojuje se přes `VITE_SANITY_*` proměnné.
-
-- **Gallery API** – Vercel funkce v `web/api/gallery` načítají fotky z Google Drive přes service account.
-
-### Google Drive service account
-
-1. V Google Cloud Console vytvoř Service Account a aktivuj pro projekt **Google Drive API (v3)**.
-2. Vygeneruj JSON klíč a hodnoty z něj zkopíruj do `.env`:
-   - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
-   - `GOOGLE_PRIVATE_KEY` (vkládej se `\\n` místo nových řádků).
-3. V Google Drive nasdílej root složku s fotkami na e-mail service accountu s rolí **Viewer**.
-4. Do Sanity alba vlož URL nebo ID podsložky – ID se automaticky uloží.
+- Nikdy necommituj `SUPABASE_SERVICE_ROLE_KEY`.
+- Všechny citlivé hodnoty drž v `.env*` a v produkci jako Vercel secrets.
+- `SUPABASE_SERVICE_ROLE_KEY`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET` musí být jen na server-side.
+- Klient (`web`) smí používat pouze `VITE_SUPABASE_ANON_KEY` a veřejné proměnné.
 
 ## Supabase & Google Sheets
 
-1. Schéma a pohledy jsou spravované přes Supabase migrace v [`supabase/migrations`](./supabase/migrations). Lokálně:
+1. Migrace spravuj přes `supabase db push` / `supabase db reset`.
+2. Import hlídek lze řešit přes:
+   - Apps Script/Sheets workflow popsaný v [`google-sheets/SHEET_TEMPLATE_INFO.md`](./google-sheets/SHEET_TEMPLATE_INFO.md),
+   - Supabase Edge Function `sync-patrols`.
+3. QR kódy hlídek generuje [`scripts/generate-qr-codes.mjs`](./scripts/generate-qr-codes.mjs).
 
-   ```bash
-   supabase start
-   supabase db reset
-   ```
-
-   Pro remote prostředí použij `supabase db push` a případně `supabase db seed`. Eventové seedy a ad-hoc skripty zůstávají v [`supabase/sql`](./supabase/sql). RLS politiky předpokládají, že JWT obsahuje `event_id` a `station_id` jako textové UUID.
-2. Hlídky lze synchronizovat dvěma způsoby:
-   - **Apps Script** [`google-sheets/AppsScript.gs`](./google-sheets/AppsScript.gs) – nastav `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE` a `EVENT_ID` v Script Properties; šablonu listů popisuje [`SHEET_TEMPLATE_INFO.md`](./google-sheets/SHEET_TEMPLATE_INFO.md).
-   - **Edge Function** [`sync-patrols`](./supabase/functions/sync-patrols) – publikuj jednotlivé listy jako CSV a jejich URL ulož do proměnné `SHEET_EXPORTS`. Funkci spouštěj cronem nebo ručně pomocí `supabase functions invoke`.
-3. Skript [`scripts/generate-qr-codes.mjs`](./scripts/generate-qr-codes.mjs) stáhne aktivní hlídky ze Supabase a vytvoří pro ně SVG i PDF s QR kódy. Spouští se příkazem:
-
-   ```bash
-   cd scripts
-   pnpm install
-   SUPABASE_URL=... \
-   SUPABASE_SERVICE_ROLE_KEY=... \
-   node generate-qr-codes.mjs <EVENT_ID> [output-dir]
-   ```
+Poznámka: názvy DB objektů (tabulky/pohledy/policies) zůstávají stabilní kvůli kompatibilitě migrací a nasazených klientů.
 
 ## CI/CD
 
-- [`deploy-vercel.yml`](./.github/workflows/deploy-vercel.yml) buildí `web/` a nasazuje ji na Vercel. Potřebné sekrety: `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_TOKEN`.
-- [`supabase.yml`](./.github/workflows/supabase.yml) spouští `supabase db push && supabase db seed`. Vyžaduje `SUPABASE_ACCESS_TOKEN` a `SUPABASE_DB_PASSWORD`.
+- GitHub workflow `deploy-vercel.yml`: build + deploy webu na Vercel.
+- GitHub workflow `supabase.yml`: nasazení migrací do Supabase.
 
-## Dokumentace
+### Deployment notes
 
-- [`README.md`](./README.md) – přehled repozitáře, infrastruktury a rychlý start.
-- [`web/README.md`](./web/README.md) – detailní popis webového klienta, testů a load/soak skriptů.
-- [`supabase/functions/sync-patrols/README.md`](./supabase/functions/sync-patrols/README.md) – provozní návod k Edge Function.
-- [`docs/`](./docs) – uživatelský manuál a postupy pro obsluhu stanovišť.
+- Node.js: **20**
+- Web build: `npm ci && npm run build` ve složce `web/`
+- Nutné Vercel secrets: `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_TOKEN`
+- Nutné runtime env proměnné: viz sekce backend/web výše
 
-Podrobnější poznámky a rozpracované nápady jsou v [`notes/`](./notes).
+## Renaming Checklist
+
+Po merge udělej ručně:
+
+1. GitHub repository rename (název + případně topics).
+2. Vercel project rename (a zkontrolovat propojení s GitHub repem).
+3. Aktualizovat domény/redirecty (`zelenaliga.cz`, custom domény).
+4. Zkontrolovat všechny env vars a secrets v CI/Vercelu/Supabase.

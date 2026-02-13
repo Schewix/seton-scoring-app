@@ -10,7 +10,7 @@ function configureLocalforage() {
     return;
   }
   localforage.config({
-    name: 'seton-web',
+    name: 'zelena-liga-scoring-web',
   });
   configured = true;
 }
@@ -24,7 +24,7 @@ export function getOutboxStore() {
   if (!outboxStore) {
     const storage = getLocalforage();
     outboxStore = storage.createInstance({
-      name: 'seton-web',
+      name: 'zelena-liga-scoring-web',
       storeName: 'outbox',
     });
   }

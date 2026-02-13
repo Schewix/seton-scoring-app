@@ -1,5 +1,6 @@
 {
-  "name": "web",
+  "name": "zelena-liga-scoring-web",
+  "description": "React + Vite klient pro Zelenou ligu",
   "private": true,
   "version": "0.0.0",
   "type": "module",

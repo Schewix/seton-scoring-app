@@ -1,6 +1,6 @@
 {
-  "name": "Setonův závod",
-  "short_name": "Setonův závod",
+  "name": "Setonův závod - aplikace",
+  "short_name": "Setonův závod - aplikace",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f2fbf4",

@@ -1,7 +1,7 @@
 import { getAccessToken } from './storage';
 import { env } from '../envVars';
 
-const WRAP_MARKER = '__setonAuthFetchWrapped';
+const WRAP_MARKER = '__zelenaLigaAuthFetchWrapped';
 
 function shouldWrapFetch(fetchFn: typeof fetch | undefined): fetchFn is typeof fetch {
   if (typeof fetchFn !== 'function') {

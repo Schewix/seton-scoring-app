@@ -10,6 +10,7 @@ const envSchema = z.object({
   REFRESH_TOKEN_SECRET: z.string().min(10),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(60 * 60 * 24 * 14),
+  CORS_ORIGIN: z.string().url().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

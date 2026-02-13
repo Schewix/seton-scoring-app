@@ -1,5 +1,6 @@
 {
-  "name": "seton-server",
+  "name": "zelena-liga-platform-server",
+  "description": "Express backend pro Zelenou ligu",
   "private": true,
   "type": "module",
   "version": "0.1.0",

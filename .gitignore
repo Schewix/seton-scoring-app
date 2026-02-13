@@ -7,6 +7,9 @@ build/
 test-results/
 .env
 .env.*
+!.env.example
+!server/.env.example
+!web/.env.example
 .expo-shared/
 *.tmp
 .DS_Store

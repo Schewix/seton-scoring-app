@@ -20,7 +20,7 @@ const COMPETITIONS: Competition[] = [
     name: 'Setonův závod',
     description: 'Týmový tábornický závod hlídek na stanovištích v přírodě.',
     href: '/souteze/setonuv-zavod',
-    ruleMatchers: ['pravidla-souteze', 'pravidla-stanovist', 'setonuv', 'stavba-stanu'],
+    ruleMatchers: ['pravidla-souteze', 'pravidla-stanovist', 'zelena-liga', 'stavba-stanu'],
   },
   {
     slug: 'draci-smycka',
@@ -109,7 +109,7 @@ const LEAGUE_EVENTS = [
   { key: 'pto-ob', label: 'PTO OB', name: 'Orientační běh' },
   { key: 'ds', label: 'DS', name: 'Dračí smyčka' },
   { key: 'kp', label: 'KP', name: 'Kosmův prostor' },
-  { key: 'seton', label: 'Seton', name: 'Setonův závod' },
+  { key: 'zls', label: 'Seton', name: 'Setonův závod' },
 ] as const;
 const LEAGUE_TOP_COUNT = 7;
 
@@ -507,7 +507,7 @@ const TROOPS: Troop[] = [
 
 const APPLICATION_LINKS = [
   {
-    label: 'Setonův závod – aplikace',
+    label: 'Setonův závod - aplikace',
     description: 'Hlavní rozhraní pro sběr bodů a správu stanovišť.',
     href: '/aplikace/setonuv-zavod',
   },

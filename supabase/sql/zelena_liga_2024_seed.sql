@@ -1,4 +1,4 @@
--- Seed data for Seton 2024 (generated from Seton_2024_vysledky_FIN.xlsx)
+-- Seed data for Zelená liga 2024 (generated from Zelena_liga_2024_vysledky_FIN.xlsx)
 -- Replace the EVENT_ID placeholder below with the actual event UUID before running.
 
 WITH params AS (

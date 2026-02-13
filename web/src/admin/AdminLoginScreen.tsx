@@ -83,7 +83,7 @@ export default function AdminLoginScreen() {
               </div>
             </div>
             <div className="login-hero-copy">
-              <span className="login-hero-eyebrow">Setonův závod</span>
+              <span className="login-hero-eyebrow">Setonův závod - aplikace</span>
               <h1>Administrace závodu</h1>
               <p>Správa závodu, stanovišť a výsledků.</p>
             </div>

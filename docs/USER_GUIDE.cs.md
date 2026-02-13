@@ -1,12 +1,13 @@
-# Uživatelský manuál – Seton Scoring App
+# Uživatelský manuál – Setonův závod - aplikace
 
 Tento dokument popisuje aktuální chování webové aplikace pro rozhodčí
-stanovišť Setonu a samostatný výsledkový přehled (scoreboard). Cílem je poskytnout
+stanovišť Setonova závodu a samostatný výsledkový přehled (scoreboard). Cílem je poskytnout
 praktický návod pro provoz na stanovišti i pro kancelář závodu.
 
 ## 1. Přístup a přihlášení
 
-1. Otevři `/setonuv-zavod` (nasazená instance může mít i vlastní doménu).
+1. Otevři `/aplikace/setonuv-zavod` (nasazená instance může mít i vlastní doménu;
+   kratší alias `/setonuv-zavod` je také podporovaný).
    Aplikace běží jako PWA a po prvním načtení funguje i bez připojení.
 2. Zadej e-mail a heslo rozhodčího. Přístupové údaje spravuje hlavní rozhodčí.
 3. Volitelně můžeš při přihlášení nastavit vlastní PIN (4–6 číslic). PIN se uloží
@@ -85,7 +86,7 @@ praktický návod pro provoz na stanovišti i pro kancelář závodu.
 
 ## 5. Výsledky (kancelář)
 
-1. Otevři `/setonuv-zavod/vysledky` (nebo přidej `?view=vysledky` za hlavní URL;
+1. Otevři `/aplikace/setonuv-zavod/vysledky` (nebo přidej `?view=vysledky` za hlavní URL;
    starší parametr `?view=scoreboard` nadále funguje).
 2. Stránka zobrazí název závodu, čas poslední aktualizace a tabulky pro každou
    kategorii (N/M/S/R × H/D). Zobrazeny jsou celkové body, body bez trestů a
@@ -118,4 +119,3 @@ praktický návod pro provoz na stanovišti i pro kancelář závodu.
   načíst znovu (F5) – uložené offline záznamy zůstanou zachovány.
 - Při zobrazení na tabletu lze aplikaci přidat na plochu. Prohlížeč pak běží v
   celoobrazovkovém režimu a používá uložený PIN.
-

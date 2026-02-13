@@ -72,7 +72,7 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin }: Pro
               <span className="auth-hero-caption">SPTO Brno</span>
             </div>
             <div className="auth-hero-copy">
-              <span className="auth-hero-eyebrow">Setonův závod</span>
+              <span className="auth-hero-eyebrow">Setonův závod - aplikace</span>
               <h1>Obnova přístupu</h1>
               <p>Dokonči změnu hesla a vrať se zpět ke správě stanoviště.</p>
             </div>

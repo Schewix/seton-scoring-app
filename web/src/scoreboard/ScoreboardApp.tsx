@@ -909,10 +909,10 @@ function ScoreboardApp() {
                 target="_blank"
                 rel="noreferrer"
               >
-                <img src={zelenaLigaLogo} alt="Logo Setonův závod" />
+                <img src={zelenaLigaLogo} alt="Logo Setonův závod - aplikace" />
               </a>
               <div>
-                <span className="scoreboard-hero-eyebrow">Setonův závod</span>
+                <span className="scoreboard-hero-eyebrow">Setonův závod - aplikace</span>
                 <h1>Výsledkový přehled</h1>
                 <p className="scoreboard-hero-description">
                   Živá tabulka výsledků Setonova závodu s automatickým obnovováním dat.

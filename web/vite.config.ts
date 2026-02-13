@@ -18,9 +18,9 @@ export default defineConfig({
         'apple-touch-icon.png',
       ],
       manifest: {
-        name: 'Setonův závod – Stanoviště',
-        short_name: 'Setonův závod',
-        description: 'Offline scoring aplikace pro rozhodčí Setonova závodu.',
+        name: 'Setonův závod - aplikace',
+        short_name: 'Setonův závod - aplikace',
+        description: 'Setonův závod - aplikace pro rozhodčí s offline režimem.',
         theme_color: '#0b5d44',
         background_color: '#0b5d44',
         display: 'standalone',
