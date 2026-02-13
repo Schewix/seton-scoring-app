@@ -596,7 +596,7 @@ per_player as (
     p.event_id,
     p.category_id,
     p.player_id,
-    max(p.primary_game_id) as primary_game_id,
+    p.primary_game_id,
     count(*)::int as games_counted,
     sum(p.game_rank)::numeric as overall_score,
     min(p.game_rank) filter (where p.is_primary) as primary_game_rank,
@@ -619,7 +619,7 @@ per_player as (
         p.game_id
     ) as game_breakdown
   from scoped p
-  group by p.event_id, p.category_id, p.player_id
+  group by p.event_id, p.category_id, p.player_id, p.primary_game_id
 ),
 scored as (
   select
