@@ -1,6 +1,7 @@
 import type { drive_v3 } from 'googleapis';
-import { fetchScriptItems, hasGalleryScript } from '../../api-lib/galleryScript.js';
-import { DRIVE_FIELDS, getDriveClient, getDriveListOptions } from '../../api-lib/googleDrive.js';
+import { fetchScriptItems, hasGalleryScript } from '../api-lib/galleryScript.js';
+import { getSupabaseAdminClient } from '../api-lib/content/supabaseAdmin.js';
+import { DRIVE_FIELDS, getDriveClient, getDriveListOptions } from '../api-lib/googleDrive.js';
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -23,8 +24,106 @@ function setCache<T>(key: string, value: T, ttlMs = CACHE_TTL_MS) {
   cache.set(key, { expiresAt: Date.now() + ttlMs, value });
 }
 
-function applyCacheHeaders(res: any) {
+function applyAlbumCacheHeaders(res: any) {
   res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=300');
+}
+
+function applyAlbumsCacheHeaders(res: any, bypassCache: boolean) {
+  if (bypassCache) {
+    res.setHeader('Cache-Control', 'no-store');
+    return;
+  }
+  res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=300');
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function normalizeForMatch(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function fetchAlbumOverrides(): Promise<Map<string, string>> {
+  try {
+    const supabase = getSupabaseAdminClient();
+    const { data, error } = await supabase.from('content_gallery_albums').select('folder_id,title');
+    if (error) {
+      console.error('[api/gallery] failed to load overrides', error);
+      return new Map();
+    }
+    return new Map((data ?? []).map((row: { folder_id: string; title: string }) => [row.folder_id, row.title]));
+  } catch (error) {
+    console.warn('[api/gallery] overrides unavailable', error);
+    return new Map();
+  }
+}
+
+async function listAllFolders(parentId: string): Promise<drive_v3.Schema$File[]> {
+  if (hasGalleryScript()) {
+    const items = await fetchScriptItems(parentId);
+    return items
+      .filter((item) => item.type === 'folder')
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        mimeType: FOLDER_MIME,
+      }));
+  }
+  const drive = getDriveClient();
+  const items: drive_v3.Schema$File[] = [];
+  let pageToken: string | undefined = undefined;
+  do {
+    const { data }: { data: drive_v3.Schema$FileList } = await drive.files.list({
+      q: `'${parentId}' in parents and (mimeType = '${FOLDER_MIME}' or mimeType = 'application/vnd.google-apps.shortcut') and trashed = false`,
+      fields: 'nextPageToken, files(id, name, createdTime, modifiedTime, mimeType, shortcutDetails)',
+      pageSize: 1000,
+      pageToken,
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true,
+      ...getDriveListOptions(),
+    });
+    for (const file of data.files ?? []) {
+      if (file.mimeType === FOLDER_MIME && file.id) {
+        items.push(file);
+        continue;
+      }
+      if (
+        file.mimeType === 'application/vnd.google-apps.shortcut' &&
+        file.shortcutDetails?.targetMimeType === FOLDER_MIME &&
+        file.shortcutDetails.targetId
+      ) {
+        items.push({
+          id: file.shortcutDetails.targetId,
+          name: file.name,
+          createdTime: file.createdTime,
+          modifiedTime: file.modifiedTime,
+          mimeType: FOLDER_MIME,
+        });
+      }
+    }
+    pageToken = data.nextPageToken ?? undefined;
+  } while (pageToken);
+  return items;
+}
+
+function sortYearLabel(value: string) {
+  const match = value.match(/\d{4}/);
+  if (match) {
+    return Number(match[0]);
+  }
+  return Number.NEGATIVE_INFINITY;
 }
 
 function toPageSize(raw: string | string[] | undefined) {
@@ -204,15 +303,119 @@ async function fetchScriptImages(folderIds: string[], includeSubfolders: boolean
   return images;
 }
 
-export default async function handler(req: any, res: any) {
-  applyCacheHeaders(res);
+async function handleAlbums(req: any, res: any) {
+  const bypassCache =
+    req.query?.nocache === '1' ||
+    req.query?.nocache === 'true' ||
+    req.query?.nocache === 'yes';
+  applyAlbumsCacheHeaders(res, bypassCache);
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  const folderId = typeof req.query.folderId === 'string' ? req.query.folderId : '';
-  if (!folderId) {
-    res.status(400).json({ error: 'Missing folderId query parameter.' });
+  const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+  if (!rootFolderId) {
+    res.status(500).json({ error: 'Missing GOOGLE_DRIVE_ROOT_FOLDER_ID environment variable.' });
     return;
   }
+
+  if (bypassCache) {
+    cache.delete('drive-albums');
+    cache.delete('drive-album-overrides');
+  } else {
+    const cached = getCache<any>('drive-albums');
+    if (cached !== null) {
+      res.status(200).json(cached);
+      return;
+    }
+  }
+
+  try {
+    let overrides: Map<string, string>;
+    if (!bypassCache) {
+      const cachedOverrides = getCache<Map<string, string>>('drive-album-overrides');
+      overrides = cachedOverrides ?? (await fetchAlbumOverrides());
+      if (!cachedOverrides) {
+        setCache('drive-album-overrides', overrides);
+      }
+    } else {
+      overrides = await fetchAlbumOverrides();
+    }
+
+    const allowlistRaw = process.env.GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST ?? '';
+    const allowlist = allowlistRaw
+      .split(/[\n,]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map(normalizeForMatch);
+    const yearFolders = await listAllFolders(rootFolderId);
+    const albums: Array<{
+      id: string;
+      title: string;
+      year: string;
+      slug: string;
+      folderId: string;
+      baseTitle?: string;
+    }> = [];
+
+    for (const yearFolder of yearFolders) {
+      if (!yearFolder.id) {
+        continue;
+      }
+      const yearName = yearFolder.name ?? 'Ostatní';
+      const albumFolders = await listAllFolders(yearFolder.id);
+      for (const folder of albumFolders) {
+        if (!folder.id || !folder.name) {
+          continue;
+        }
+        if (allowlist.length > 0) {
+          const normalizedName = normalizeForMatch(folder.name);
+          const isAllowed = allowlist.some((term) => normalizedName.includes(term));
+          if (!isAllowed) {
+            continue;
+          }
+        }
+        const baseTitle = folder.name;
+        const overrideTitle = folder.id ? overrides.get(folder.id) : undefined;
+        const title = overrideTitle && overrideTitle.trim().length > 0 ? overrideTitle.trim() : baseTitle;
+        const yearSlug = slugify(yearName);
+        const nameSlug = slugify(baseTitle);
+        const slug = yearSlug ? `${yearSlug}-${nameSlug}` : nameSlug;
+        albums.push({
+          id: folder.id,
+          title,
+          year: yearName,
+          slug,
+          folderId: folder.id,
+          baseTitle,
+        });
+      }
+    }
+
+    albums.sort((a, b) => {
+      const yearA = sortYearLabel(a.year);
+      const yearB = sortYearLabel(b.year);
+      if (yearA !== yearB) {
+        return yearB - yearA;
+      }
+      if (a.year !== b.year) {
+        return b.year.localeCompare(a.year, 'cs');
+      }
+      return a.title.localeCompare(b.title, 'cs');
+    });
+
+    const payload = { albums };
+    if (!bypassCache) {
+      setCache('drive-albums', payload);
+    }
+    res.status(200).json(payload);
+  } catch (error) {
+    console.error('[api/gallery] failed to load albums', error);
+    res.status(500).json({ error: 'Failed to load albums from Google Drive.' });
+  }
+}
+
+async function handleAlbum(req: any, res: any, folderId: string) {
+  applyAlbumCacheHeaders(res);
+  res.setHeader('Access-Control-Allow-Origin', '*');
 
   const pageToken = typeof req.query.pageToken === 'string' ? req.query.pageToken : undefined;
   const includeCount = req.query.includeCount === '1' || req.query.includeCount === 'true';
@@ -280,7 +483,15 @@ export default async function handler(req: any, res: any) {
     setCache(cacheKey, payload);
     res.status(200).json(payload);
   } catch (error) {
-    console.error('[api/gallery/album] failed', error);
+    console.error('[api/gallery] failed to load album', error);
     res.status(500).json({ error: 'Failed to load album from Google Drive.' });
   }
+}
+
+export default async function handler(req: any, res: any) {
+  const folderId = typeof req.query.folderId === 'string' ? req.query.folderId : '';
+  if (folderId) {
+    return handleAlbum(req, res, folderId);
+  }
+  return handleAlbums(req, res);
 }

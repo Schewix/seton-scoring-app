@@ -750,7 +750,7 @@ async function fetchAlbumPreview(folderId: string): Promise<GalleryPreview> {
     includeCount: '1',
     includeSubfolders: '1',
   });
-  const response = await fetch(`/api/gallery/album?${params.toString()}`);
+  const response = await fetch(`/api/gallery?${params.toString()}`);
   if (!response.ok) {
     throw new Error('Failed to load album preview.');
   }
@@ -1220,7 +1220,7 @@ function RedakcePage() {
     setAlbumTitleLoading(true);
     setAlbumTitleMessage(null);
     return Promise.all([
-      fetch('/api/gallery/albums?nocache=1')
+      fetch('/api/gallery?nocache=1')
         .then((response) => (response.ok ? response.json() : Promise.reject()))
         .then((data) => (data.albums ?? []) as DriveAlbum[]),
       fetch('/api/content/admin/albums', { credentials: 'include' })
@@ -1965,7 +1965,7 @@ function GalleryAlbumPage({
       pageSize: String(GALLERY_PAGE_SIZE),
       includeSubfolders: '1',
     });
-    fetch(`/api/gallery/album?${params.toString()}`)
+    fetch(`/api/gallery?${params.toString()}`)
       .then(async (response) => {
         if (!response.ok) {
           throw new Error('Failed to load album photos.');
@@ -2006,7 +2006,7 @@ function GalleryAlbumPage({
       includeSubfolders: '1',
     });
     try {
-      const response = await fetch(`/api/gallery/album?${params.toString()}`);
+      const response = await fetch(`/api/gallery?${params.toString()}`);
       if (!response.ok) {
         throw new Error('Failed to load more photos.');
       }
@@ -3101,7 +3101,7 @@ export default function ZelenaligaSite() {
   useEffect(() => {
     let active = true;
     setDriveAlbumsLoading(true);
-    fetch('/api/gallery/albums')
+    fetch('/api/gallery')
       .then(async (response) => {
         if (!response.ok) {
           throw new Error('Failed to load albums.');

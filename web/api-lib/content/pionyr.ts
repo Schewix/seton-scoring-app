@@ -349,7 +349,7 @@ async function fetchWebListItems(): Promise<WebArticleListItem[]> {
   normalizeDocumentUrls(doc, listUrl.toString());
 
   const items: WebArticleListItem[] = [];
-  doc.querySelectorAll('.reference-item').forEach((item) => {
+  doc.querySelectorAll<HTMLElement>('.reference-item').forEach((item) => {
     const link = item.querySelector('a');
     const href = link?.getAttribute('href');
     if (!href) return;
@@ -410,8 +410,10 @@ async function fetchWebDetailBySlug(slug: string): Promise<PionyrArticle | null>
   const perexNode = doc.querySelector('h3 + p');
   const excerpt = perexNode ? stripHtml(perexNode.innerHTML ?? perexNode.textContent ?? '') : listItem?.excerpt ?? '';
 
-  const imageNodes = Array.from(doc.querySelectorAll('.column-reference-img img'));
-  const imageUrls = imageNodes.map((img) => img.getAttribute('src')).filter(Boolean) as string[];
+  const imageNodes = Array.from(doc.querySelectorAll<HTMLImageElement>('.column-reference-img img'));
+  const imageUrls = imageNodes
+    .map((img) => img.getAttribute('src'))
+    .filter((src): src is string => Boolean(src));
   const imageAlts = imageNodes.map((img) => img.getAttribute('alt'));
 
   const bodyNodes: string[] = [];

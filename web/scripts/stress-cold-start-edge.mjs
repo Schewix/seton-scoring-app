@@ -195,16 +195,35 @@ const metrics = {
   windowAttempts: 0,
   windowSuccess: 0,
   windowFail: 0,
+  statusCounts: {},
+  windowStatusCounts: {},
 };
 
 const history = [];
 const coldStartDurations = [];
+
+function bumpStatus(counter, status) {
+  const key = String(status ?? 'unknown');
+  counter[key] = (counter[key] ?? 0) + 1;
+}
+
+function formatStatusCounts(counter) {
+  const entries = Object.entries(counter).filter(([, count]) => count > 0);
+  if (!entries.length) {
+    return '-';
+  }
+  return entries
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, count]) => `${key}:${count}`)
+    .join(' ');
+}
 
 function logMinuteMetrics() {
   const windowP50 = percentile(metrics.windowDurations, 50);
   const windowP95 = percentile(metrics.windowDurations, 95);
   const windowErrorRate = metrics.windowAttempts === 0 ? 0 : metrics.windowFail / metrics.windowAttempts;
   const totalErrorRate = metrics.attempts === 0 ? 0 : metrics.fail / metrics.attempts;
+  const windowStatusSummary = formatStatusCounts(metrics.windowStatusCounts);
 
   history.push({
     timestamp: new Date().toISOString(),
@@ -218,17 +237,20 @@ function logMinuteMetrics() {
     total_success: metrics.success,
     total_fail: metrics.fail,
     total_error_rate: totalErrorRate,
+    window_status_counts: { ...metrics.windowStatusCounts },
+    total_status_counts: { ...metrics.statusCounts },
   });
 
   console.log(
     `[stress-coldstart] +1m ok ${metrics.windowSuccess}/${metrics.windowAttempts} err ${(windowErrorRate * 100).toFixed(2)}% ` +
-      `p50 ${Math.round(windowP50)}ms p95 ${Math.round(windowP95)}ms`,
+      `p50 ${Math.round(windowP50)}ms p95 ${Math.round(windowP95)}ms status ${windowStatusSummary}`,
   );
 
   metrics.windowDurations = [];
   metrics.windowAttempts = 0;
   metrics.windowSuccess = 0;
   metrics.windowFail = 0;
+  metrics.windowStatusCounts = {};
 }
 
 async function runBurst(round) {
@@ -273,6 +295,10 @@ async function runBurst(round) {
         metrics.fail += 1;
         metrics.windowFail += 1;
       }
+
+      const statusKey = result.timedOut ? 'timeout' : result.simulated429 ? '429(sim)' : result.status;
+      bumpStatus(metrics.statusCounts, statusKey);
+      bumpStatus(metrics.windowStatusCounts, statusKey);
 
       if (index === 0) {
         coldStartDurations.push(result.duration);
@@ -348,6 +374,7 @@ async function run() {
     cold_max_ms: Math.round(coldMax),
     cold_overhead_ms: Math.round(Math.max(0, coldP50 - p50)),
     unique_success: successfulIds.size,
+    status_counts: { ...metrics.statusCounts },
   };
 
   const failures = [];
