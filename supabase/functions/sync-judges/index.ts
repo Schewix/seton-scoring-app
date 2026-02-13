@@ -1,6 +1,7 @@
 /// <reference path="../types.d.ts" />
 
-import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { parse } from 'https://deno.land/std@0.224.0/csv/mod.ts';
 
 
@@ -8,6 +9,10 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const EVENT_ID = Deno.env.get('SYNC_EVENT_ID') ?? Deno.env.get('EVENT_ID');
 const JUDGES_SHEET_URL = Deno.env.get('JUDGES_SHEET_URL');
+const BOARD_JUDGES_SHEET_URL = Deno.env.get('BOARD_JUDGES_SHEET_URL');
+const BOARD_JUDGES_SHEET_NAME = Deno.env.get('BOARD_JUDGES_SHEET_NAME') || 'deskovky';
+const BOARD_EVENT_ID = Deno.env.get('BOARD_EVENT_ID');
+const BOARD_EVENT_SLUG = Deno.env.get('BOARD_EVENT_SLUG');
 const SYNC_SECRET = Deno.env.get('SYNC_SECRET');
 
 if (!SUPABASE_URL) {
@@ -32,12 +37,19 @@ const CATEGORY_SET = new Set<string>(VALID_CATEGORIES);
 
 type JudgeRow = {
   stationCode: string;
-  firstName: string;
-  lastName: string;
   displayName: string;
   email: string;
   phone: string | null;
   allowedCategories: string[];
+};
+
+type BoardJudgeRow = {
+  gameNameRaw: string;
+  gameNameKey: string;
+  categoryNameRaw: string | null;
+  displayName: string;
+  email: string;
+  phone: string | null;
 };
 
 type SyncOptions = {
@@ -57,6 +69,26 @@ type AssignmentResult = 'created' | 'updated' | 'unchanged';
 type StationRecord = {
   id: string;
   code: string;
+};
+
+type BoardSetup = {
+  boardEventId: string;
+  gameIdByKey: Map<string, string>;
+  categoryIdByKey: Map<string, string>;
+};
+
+type BoardAssignmentResult = 'created' | 'unchanged';
+
+const BOARD_GAME_ALIASES: Record<string, string> = {
+  kriskros: 'kris kros',
+  kriskrosy: 'kris kros',
+  kris: 'kris kros',
+  tvc: 'tajna vyprava carodeju',
+  tajnavyprava: 'tajna vyprava carodeju',
+  tajnavypravacarodeju: 'tajna vyprava carodeju',
+  hop: 'hop',
+  milostnydopis: 'milostny dopis',
+  loveletter: 'milostny dopis',
 };
 
 function generatePassword(length = 12): string {
@@ -139,14 +171,44 @@ function normalizeHeaderKey(column: string): string {
     .replace(/^_+|_+$/g, '');
 }
 
+function normalizeLookupKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeBoardGameKey(value: string): string {
+  const key = normalizeLookupKey(value);
+  return BOARD_GAME_ALIASES[key] ?? key;
+}
+
 function findHeaderIndex(normalizedHeader: string[], ...candidates: string[]): number {
-  for (const candidate of candidates) {
-    const normalized = normalizeHeaderKey(candidate);
-    const idx = normalizedHeader.indexOf(normalized);
-    if (idx !== -1) {
-      return idx;
+  const normalizedCandidates = candidates
+    .map((candidate) => normalizeHeaderKey(candidate))
+    .filter((candidate) => candidate.length > 0);
+
+  for (const candidate of normalizedCandidates) {
+    const exactIdx = normalizedHeader.indexOf(candidate);
+    if (exactIdx !== -1) {
+      return exactIdx;
     }
   }
+
+  // Fallback for sheets where first data token leaked into header, e.g. "stanoviste_A".
+  for (const candidate of normalizedCandidates) {
+    const looseIdx = normalizedHeader.findIndex(
+      (column) => column.startsWith(`${candidate}_`) || column.endsWith(`_${candidate}`),
+    );
+    if (looseIdx !== -1) {
+      return looseIdx;
+    }
+  }
+
   return -1;
 }
 
@@ -190,8 +252,6 @@ function parseCsv(text: string): JudgeRow[] {
 
     result.push({
       stationCode,
-      firstName,
-      lastName,
       displayName: buildDisplayName(firstName, lastName),
       email,
       phone: phone || null,
@@ -202,9 +262,87 @@ function parseCsv(text: string): JudgeRow[] {
   return result;
 }
 
+function parseBoardCsv(text: string): BoardJudgeRow[] {
+  const rows = parse(text) as string[][];
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return [];
+  }
+
+  const [header, ...dataRows] = rows;
+  const normalizedHeader = header.map((column) => normalizeHeaderKey(column));
+
+  const idxGame = findHeaderIndex(normalizedHeader, 'deskovka', 'hra', 'game', 'board_game');
+  const idxFirst = findHeaderIndex(normalizedHeader, 'jmeno', 'jméno', 'first_name');
+  const idxLast = findHeaderIndex(normalizedHeader, 'prijmeni', 'příjmení', 'last_name');
+  const idxEmail = findHeaderIndex(normalizedHeader, 'email', 'e-mail');
+  const idxPhone = findHeaderIndex(normalizedHeader, 'telefon', 'phone');
+  const idxCategory = findHeaderIndex(normalizedHeader, 'kategorie', 'category');
+
+  if (idxGame === -1 || idxEmail === -1) {
+    throw new Error('Board sheet must contain columns "deskovka" and "email".');
+  }
+
+  const result: BoardJudgeRow[] = [];
+
+  for (const row of dataRows) {
+    if (!row || row.length === 0 || row.every((cell) => !cell || !cell.trim())) {
+      continue;
+    }
+
+    const gameNameRaw = normalizeCell(row[idxGame]);
+    const firstName = idxFirst !== -1 ? normalizeCell(row[idxFirst]) : '';
+    const lastName = idxLast !== -1 ? normalizeCell(row[idxLast]) : '';
+    const email = normalizeCell(row[idxEmail]).toLowerCase();
+    const phone = idxPhone !== -1 ? normalizeCell(row[idxPhone]) : '';
+    const categoryNameRaw = idxCategory !== -1 ? normalizeCell(row[idxCategory]) : '';
+    const displayName = buildDisplayName(firstName, lastName) || email;
+
+    if (!gameNameRaw || !email) {
+      continue;
+    }
+
+    result.push({
+      gameNameRaw,
+      gameNameKey: normalizeBoardGameKey(gameNameRaw),
+      categoryNameRaw: categoryNameRaw || null,
+      displayName,
+      email,
+      phone: phone || null,
+    });
+  }
+
+  return result;
+}
+
+function resolveBoardSheetUrl(): string | null {
+  if (BOARD_JUDGES_SHEET_URL) {
+    return BOARD_JUDGES_SHEET_URL;
+  }
+
+  try {
+    const base = new URL(JUDGES_SHEET_URL as string);
+    const sheetName = BOARD_JUDGES_SHEET_NAME || 'deskovky';
+    const docMatch = base.pathname.match(/\/spreadsheets\/d\/([^/]+)/i);
+    if (docMatch?.[1]) {
+      return `https://docs.google.com/spreadsheets/d/${docMatch[1]}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+    }
+
+    if (base.pathname.includes('/gviz/tq')) {
+      base.searchParams.set('tqx', 'out:csv');
+      base.searchParams.set('sheet', sheetName);
+      base.searchParams.delete('gid');
+      return base.toString();
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 async function ensureJudge(
   client: SupabaseClient,
-  row: JudgeRow,
+  row: Pick<JudgeRow, 'displayName' | 'email' | 'phone'>,
   options: SyncOptions,
 ): Promise<JudgeResult> {
   const lowerEmail = row.email.toLowerCase();
@@ -352,7 +490,7 @@ async function ensureAssignment(
 
 async function recordOnboardingEvent(
   client: SupabaseClient,
-  params: { judgeId: string; stationId: string; metadata: Record<string, unknown> },
+  params: { judgeId: string; stationId?: string | null; metadata: Record<string, unknown> },
   options: SyncOptions,
 ): Promise<void> {
   if (options.dryRun) {
@@ -360,7 +498,7 @@ async function recordOnboardingEvent(
   }
   const { error } = await client.from('judge_onboarding_events').insert({
     judge_id: params.judgeId,
-    station_id: params.stationId,
+    station_id: params.stationId ?? null,
     event_id: EVENT_ID,
     delivery_channel: 'email',
     metadata: params.metadata,
@@ -393,6 +531,111 @@ async function fetchStations(client: SupabaseClient): Promise<Map<string, Statio
   return map;
 }
 
+async function resolveBoardSetup(client: SupabaseClient): Promise<BoardSetup | null> {
+  let boardEventId = BOARD_EVENT_ID || '';
+
+  if (!boardEventId && BOARD_EVENT_SLUG) {
+    const { data: eventBySlug, error: slugError } = await client
+      .from('board_event')
+      .select('id')
+      .eq('slug', BOARD_EVENT_SLUG)
+      .maybeSingle();
+    if (slugError) {
+      throw new Error(`Failed to load board event by slug "${BOARD_EVENT_SLUG}": ${slugError.message}`);
+    }
+    boardEventId = eventBySlug?.id ?? '';
+  }
+
+  if (!boardEventId) {
+    const { data: eventBySetonId, error: setonError } = await client
+      .from('board_event')
+      .select('id')
+      .eq('id', EVENT_ID)
+      .maybeSingle();
+    if (setonError) {
+      throw new Error(`Failed to load board event by id "${EVENT_ID}": ${setonError.message}`);
+    }
+    boardEventId = eventBySetonId?.id ?? '';
+  }
+
+  if (!boardEventId) {
+    return null;
+  }
+
+  const [{ data: games, error: gamesError }, { data: categories, error: categoriesError }] = await Promise.all([
+    client.from('board_game').select('id, name').eq('event_id', boardEventId),
+    client.from('board_category').select('id, name').eq('event_id', boardEventId),
+  ]);
+
+  if (gamesError) {
+    throw new Error(`Failed to load board games for event ${boardEventId}: ${gamesError.message}`);
+  }
+  if (categoriesError) {
+    throw new Error(`Failed to load board categories for event ${boardEventId}: ${categoriesError.message}`);
+  }
+
+  const gameIdByKey = new Map<string, string>();
+  for (const game of games ?? []) {
+    if (!game?.id || !game?.name) {
+      continue;
+    }
+    gameIdByKey.set(normalizeBoardGameKey(String(game.name)), String(game.id));
+  }
+
+  const categoryIdByKey = new Map<string, string>();
+  for (const category of categories ?? []) {
+    if (!category?.id || !category?.name) {
+      continue;
+    }
+    categoryIdByKey.set(normalizeLookupKey(String(category.name)), String(category.id));
+  }
+
+  return {
+    boardEventId,
+    gameIdByKey,
+    categoryIdByKey,
+  };
+}
+
+async function ensureBoardAssignment(
+  client: SupabaseClient,
+  params: { boardEventId: string; judgeId: string; gameId: string; categoryId: string | null },
+  options: SyncOptions,
+): Promise<BoardAssignmentResult> {
+  let query = client
+    .from('board_judge_assignment')
+    .select('id')
+    .eq('event_id', params.boardEventId)
+    .eq('user_id', params.judgeId)
+    .eq('game_id', params.gameId);
+
+  query = params.categoryId ? query.eq('category_id', params.categoryId) : query.is('category_id', null);
+
+  const { data: existing, error } = await query.maybeSingle();
+  const errorCode = (error as { code?: string } | null)?.code;
+  if (error && errorCode !== 'PGRST116') {
+    throw new Error(`Failed to load board assignment for judge ${params.judgeId}: ${error.message}`);
+  }
+
+  if (existing?.id) {
+    return 'unchanged';
+  }
+
+  if (!options.dryRun) {
+    const { error: insertError } = await client.from('board_judge_assignment').insert({
+      event_id: params.boardEventId,
+      user_id: params.judgeId,
+      game_id: params.gameId,
+      category_id: params.categoryId,
+    });
+    if (insertError) {
+      throw new Error(`Failed to create board assignment for judge ${params.judgeId}: ${insertError.message}`);
+    }
+  }
+
+  return 'created';
+}
+
 async function downloadSheet(url: string): Promise<string> {
   const response = await fetch(url, { redirect: 'follow' });
   if (!response.ok) {
@@ -419,8 +662,11 @@ Deno.serve(async (req) => {
   const options: SyncOptions = { dryRun };
 
   try {
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
     const csvText = await downloadSheet(JUDGES_SHEET_URL);
     const rows = parseCsv(csvText);
+    const boardSheetUrl = resolveBoardSheetUrl();
+    let boardRows: BoardJudgeRow[] = [];
 
     const summary: {
       totalRows: number;
@@ -433,6 +679,11 @@ Deno.serve(async (req) => {
       dryRun: boolean;
       skipped: string[];
       errors: string[];
+      boardRows: number;
+      boardProcessed: number;
+      boardAssignmentsCreated: number;
+      boardSheetUrl: string | null;
+      boardEventId: string | null;
       generatedPasswords?: { email: string; password: string }[];
     } = {
       totalRows: rows.length,
@@ -445,15 +696,27 @@ Deno.serve(async (req) => {
       dryRun,
       skipped: [],
       errors: [],
+      boardRows: 0,
+      boardProcessed: 0,
+      boardAssignmentsCreated: 0,
+      boardSheetUrl,
+      boardEventId: null,
       generatedPasswords: includeOtps ? [] : undefined,
     };
 
-    if (rows.length === 0) {
-      return Response.json(summary);
+    if (boardSheetUrl) {
+      try {
+        const boardCsv = await downloadSheet(boardSheetUrl);
+        boardRows = parseBoardCsv(boardCsv);
+        summary.boardRows = boardRows.length;
+      } catch (error) {
+        summary.errors.push(
+          `Failed to load board judges sheet: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
 
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-    const stationMap = await fetchStations(supabase);
+    const stationMap = rows.length > 0 ? await fetchStations(supabase) : new Map<string, StationRecord>();
 
     for (const row of rows) {
       if (!row.email) {
@@ -520,6 +783,95 @@ Deno.serve(async (req) => {
         summary.errors.push(
           `Failed to sync judge ${row.email}: ${error instanceof Error ? error.message : String(error)}`,
         );
+      }
+    }
+
+    if (boardRows.length > 0) {
+      const boardSetup = await resolveBoardSetup(supabase);
+      if (!boardSetup) {
+        summary.errors.push(
+          'Board judges sheet provided, but no board_event found. Set BOARD_EVENT_ID or BOARD_EVENT_SLUG.',
+        );
+      } else {
+        summary.boardEventId = boardSetup.boardEventId;
+        const seenAssignments = new Set<string>();
+
+        for (const row of boardRows) {
+          try {
+            const judgeResult = await ensureJudge(supabase, row, options);
+            if (judgeResult.status === 'created') {
+              summary.createdJudges += 1;
+            } else if (judgeResult.status === 'updated') {
+              summary.updatedJudges += 1;
+            }
+
+            if (judgeResult.generatedPassword) {
+              summary.passwordsIssued += 1;
+              if (includeOtps && summary.generatedPasswords) {
+                summary.generatedPasswords.push({ email: row.email, password: judgeResult.generatedPassword });
+              }
+            }
+
+            const gameId = boardSetup.gameIdByKey.get(row.gameNameKey);
+            if (!gameId) {
+              summary.errors.push(`Unknown board game "${row.gameNameRaw}" for ${row.email}`);
+              continue;
+            }
+
+            let categoryId: string | null = null;
+            if (row.categoryNameRaw) {
+              categoryId = boardSetup.categoryIdByKey.get(normalizeLookupKey(row.categoryNameRaw)) ?? null;
+              if (!categoryId) {
+                summary.errors.push(`Unknown board category "${row.categoryNameRaw}" for ${row.email}`);
+                continue;
+              }
+            }
+
+            const dedupKey = `${judgeResult.id}|${gameId}|${categoryId ?? ''}`;
+            if (seenAssignments.has(dedupKey)) {
+              summary.skipped.push(`Duplicate board assignment skipped for ${row.email} (${row.gameNameRaw})`);
+              continue;
+            }
+            seenAssignments.add(dedupKey);
+
+            const boardAssignmentResult = await ensureBoardAssignment(
+              supabase,
+              {
+                boardEventId: boardSetup.boardEventId,
+                judgeId: judgeResult.id,
+                gameId,
+                categoryId,
+              },
+              options,
+            );
+
+            summary.boardProcessed += 1;
+            if (boardAssignmentResult === 'created') {
+              summary.boardAssignmentsCreated += 1;
+            }
+
+            if (judgeResult.status === 'created') {
+              await recordOnboardingEvent(
+                supabase,
+                {
+                  judgeId: judgeResult.id,
+                  stationId: null,
+                  metadata: {
+                    type: 'initial-password-issued',
+                    email: row.email,
+                    password: judgeResult.generatedPassword,
+                    source: 'deskovky',
+                  },
+                },
+                options,
+              );
+            }
+          } catch (error) {
+            summary.errors.push(
+              `Failed to sync board judge ${row.email}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
       }
     }
 

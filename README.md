@@ -138,6 +138,20 @@ Aktuální plánované kombinace her lze kdykoliv změnit v adminu:
    - `supabase db query < supabase/sql/deskovky_demo_seed.sql`
 3. Doplň přiřazení rozhodčího (UUID z `public.judges`) podle komentáře v seed souboru.
 
+### Import Hráčů Ze Setona + Los Partií
+
+Pokud chceš naplnit Deskovky automaticky podle hlídek v Setonovi (každý člen hlídky = 1 hráč), použij:
+
+- soubor [`supabase/sql/deskovky_from_seton_patrols.sql`](./supabase/sql/deskovky_from_seton_patrols.sql),
+- spusť ho v Supabase SQL Editoru (nebo přes `psql` proti cílové DB).
+
+Skript:
+- založí/aktualizuje `board_event`, kategorie, hry a bloky podle aktuálních pravidel,
+- vytvoří `board_player` + `board_badge` z `patrols.note`,
+- nalosuje partie do dočasné tabulky `tmp_deskovky_draw` (standardně 4 kola na blok).
+
+Konfigurace je na začátku souboru (`seton_event_id_override`, `v_vi_secondary_game`, `rounds_per_block`).
+
 ### Tisk Visaček (QR)
 
 1. Otevři `/aplikace/deskovky/admin`.

@@ -1,5 +1,8 @@
 declare module 'jsr:@supabase/supabase-js@2' {
   export * from 'npm:@supabase/supabase-js@2';
+  // Fallback typings for editors that do not resolve "npm:" specifiers.
+  export type SupabaseClient = any;
+  export function createClient(...args: any[]): SupabaseClient;
 }
 
 declare module 'https://deno.land/std@0.224.0/csv/mod.ts' {
