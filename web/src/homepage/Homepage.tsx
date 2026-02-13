@@ -99,7 +99,7 @@ const NAV_ITEMS = [
   { id: 'aktualni-poradi', label: 'Aktuální pořadí', href: '/aktualni-poradi' },
   { id: 'clanky', label: 'Články a novinky', href: '/clanky' },
   { id: 'fotogalerie', label: 'Fotogalerie', href: '/fotogalerie' },
-  { id: 'souteze', label: 'Soutěže', href: '/souteze' },
+  { id: 'souteze', label: 'Soutěže a aplikace', href: '/souteze' },
   { id: 'oddily', label: 'Oddíly SPTO', href: '/oddily' },
   { id: 'o-spto', label: 'O SPTO', href: '/o-spto' },
   { id: 'kontakty', label: 'Kontakty', href: '/kontakty' },
