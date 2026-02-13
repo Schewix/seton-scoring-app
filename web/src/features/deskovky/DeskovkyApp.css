@@ -318,6 +318,9 @@
   margin: 0;
   font-size: 0.85rem;
   color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .deskovky-toast {

@@ -791,6 +791,15 @@ function NewMatchPage({
   ]);
 
   const canSubmit = submitDisabledReason === null && !saving;
+  const mobileSubmitHelperText = useMemo(() => {
+    if (saving) {
+      return 'Ukládám zápas…';
+    }
+    if (!canSubmit) {
+      return submitAttempted ? submitDisabledReason : 'Doplň 4 hráče a výsledky pro odeslání.';
+    }
+    return 'Vše připraveno k odeslání.';
+  }, [canSubmit, saving, submitAttempted, submitDisabledReason]);
 
   useEffect(() => {
     if (!allowedCategoryIds.length) {
@@ -1379,37 +1388,37 @@ function NewMatchPage({
           })}
         </div>
 
-        <div className="admin-card-actions admin-card-actions--end deskovky-submit-row">
-          <button
-            type="button"
-            className="admin-button admin-button--primary"
-            onClick={() => void handleSubmit()}
-            disabled={!canSubmit}
-          >
-            {saving ? 'Ukládám…' : 'Odeslat zápas'}
-          </button>
-        </div>
+        {!isMobile ? (
+          <div className="admin-card-actions admin-card-actions--end deskovky-submit-row">
+            <button
+              type="button"
+              className="admin-button admin-button--primary"
+              onClick={() => void handleSubmit()}
+              disabled={!canSubmit}
+            >
+              {saving ? 'Ukládám…' : 'Odeslat zápas'}
+            </button>
+          </div>
+        ) : null}
 
         {message ? <p className="admin-success">{message}</p> : null}
         {error ? <p className="admin-error deskovky-form-error">{error}</p> : null}
 
-        <div className="deskovky-mobile-submitbar" role="region" aria-label="Odeslání zápasu">
-          {!canSubmit ? (
-            <p className="deskovky-mobile-submit-note">
-              {submitAttempted ? submitDisabledReason : 'Doplň 4 hráče a výsledky pro odeslání.'}
+        {isMobile ? (
+          <div className="deskovky-mobile-submitbar" role="region" aria-label="Odeslání zápasu">
+            <p className="deskovky-mobile-submit-note" title={mobileSubmitHelperText}>
+              {mobileSubmitHelperText}
             </p>
-          ) : (
-            <p className="deskovky-mobile-submit-note">Vše připraveno k odeslání.</p>
-          )}
-          <button
-            type="button"
-            className="admin-button admin-button--primary"
-            onClick={() => void handleSubmit()}
-            disabled={!canSubmit}
-          >
-            {saving ? 'Ukládám…' : 'Odeslat zápas'}
-          </button>
-        </div>
+            <button
+              type="button"
+              className="admin-button admin-button--primary"
+              onClick={() => void handleSubmit()}
+              disabled={!canSubmit}
+            >
+              {saving ? 'Ukládám…' : 'Odeslat zápas'}
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {toast ? (
