@@ -22,6 +22,10 @@
   gap: 22px;
 }
 
+.deskovky-shell .app-footer {
+  padding-top: 26px;
+}
+
 .deskovky-nav-card {
   padding: 16px;
 }
@@ -30,6 +34,10 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
+}
+
+.deskovky-nav-grid .admin-button {
+  white-space: nowrap;
 }
 
 .deskovky-toolbar {
@@ -64,6 +72,10 @@
   padding: 10px 12px;
   font-size: 0.95rem;
   background: var(--surface);
+}
+
+.deskovky-home-primary-action {
+  min-width: 164px;
 }
 
 .deskovky-kpi {
@@ -111,6 +123,10 @@
   margin: 0;
 }
 
+.deskovky-new-match-card {
+  position: relative;
+}
+
 .deskovky-new-match-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -135,6 +151,11 @@
   background: var(--surface);
 }
 
+.deskovky-inline-error,
+.deskovky-form-error {
+  margin: 0;
+}
+
 .deskovky-scanner-controls {
   display: flex;
   align-items: center;
@@ -155,37 +176,85 @@
   border: 1px solid var(--border);
   padding: 0 12px;
   font-size: 0.95rem;
-  min-width: 200px;
+  min-width: 220px;
 }
 
-.deskovky-scanner-panel .qr-scanner {
-  border-radius: 12px;
+.deskovky-scanner-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.deskovky-scanner-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(6, 20, 38, 0.56);
+}
+
+.deskovky-scanner-dialog {
+  position: relative;
+  width: min(680px, 94vw);
+  max-height: 84vh;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  box-shadow: 0 22px 44px rgba(6, 20, 38, 0.24);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.deskovky-scanner-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.deskovky-scanner-dialog-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.deskovky-scanner-dialog .qr-scanner {
+  border-radius: 14px;
   overflow: hidden;
   border: 1px solid var(--border);
-  background: #091b33;
+  background: #0d1f39;
 }
 
-.deskovky-scanner-panel .qr-scanner video {
+.deskovky-scanner-dialog .qr-scanner video {
   width: 100%;
-  max-height: 240px;
+  max-height: min(55vh, 390px);
   object-fit: cover;
   display: block;
 }
 
 .deskovky-slots-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .deskovky-slot-card {
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 14px;
+  padding: 12px;
   background: var(--surface);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+}
+
+.deskovky-slot-card--invalid {
+  border-color: #d8755e;
+  box-shadow: 0 0 0 1px rgba(216, 117, 94, 0.2);
 }
 
 .deskovky-slot-card header {
@@ -196,7 +265,7 @@
 }
 
 .deskovky-slot-card strong {
-  font-size: 1.1rem;
+  font-size: 1.04rem;
 }
 
 .deskovky-slot-card .ghost {
@@ -206,6 +275,64 @@
   min-height: 34px;
   padding: 0 10px;
   cursor: pointer;
+}
+
+.deskovky-slot-toggle {
+  display: none;
+}
+
+.deskovky-slot-mobile-head {
+  display: none;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.deskovky-slot-summary {
+  color: var(--text-2);
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deskovky-slot-error {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.deskovky-field-invalid {
+  border-color: #d8755e !important;
+  background: #fff8f6 !important;
+}
+
+.deskovky-submit-row {
+  margin-top: 2px;
+}
+
+.deskovky-mobile-submitbar {
+  display: none;
+}
+
+.deskovky-mobile-submit-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+
+.deskovky-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 80;
+  border-radius: 12px;
+  border: 1px solid #b9e6c8;
+  background: #e7f8ed;
+  color: #1f5f38;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
 }
 
 .deskovky-table-wrap {
@@ -234,7 +361,32 @@
 }
 
 .deskovky-table tbody tr:hover {
-  background: #fbfef8;
+  background: #f2f8ff;
+}
+
+.deskovky-standings-cards {
+  display: grid;
+  gap: 10px;
+}
+
+.deskovky-standings-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.deskovky-standings-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.deskovky-standings-card p {
+  margin: 0;
+  font-size: 0.9rem;
 }
 
 .deskovky-rules-links {
@@ -302,18 +454,238 @@
   color: var(--text-2);
 }
 
+@media (max-width: 1024px) {
+  .deskovky-slots-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .deskovky-scanner-dialog {
+    width: min(620px, 94vw);
+  }
+}
+
 @media (max-width: 640px) {
+  .deskovky-shell .admin-header {
+    padding: 22px 14px 58px;
+  }
+
+  .deskovky-shell .admin-header-inner {
+    gap: 12px;
+  }
+
+  .deskovky-shell .admin-content {
+    margin: -44px auto 24px;
+    padding: 0 14px;
+    gap: 14px;
+  }
+
+  .deskovky-shell .admin-card {
+    padding: 16px;
+    gap: 12px;
+    border-radius: 18px;
+  }
+
+  .deskovky-shell .app-footer {
+    padding-top: 14px;
+  }
+
+  .deskovky-nav-card {
+    padding: 10px 10px 8px;
+  }
+
+  .deskovky-nav-grid {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .deskovky-nav-grid .admin-button {
+    width: auto;
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 0 16px;
+  }
+
   .deskovky-toolbar {
     align-items: stretch;
+    gap: 10px;
+  }
+
+  .deskovky-toolbar--sticky-mobile {
+    position: sticky;
+    top: 8px;
+    z-index: 20;
   }
 
   .deskovky-toolbar-actions {
+    width: 100%;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .deskovky-home-toolbar .deskovky-toolbar-actions {
+    flex-direction: column-reverse;
+  }
+
+  .deskovky-home-primary-action {
     width: 100%;
   }
 
   .deskovky-event-select {
     min-width: 0;
     width: 100%;
+  }
+
+  .deskovky-assignment-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .deskovky-kpi {
+    min-width: 0;
+    width: 100%;
+    padding: 8px 10px;
+  }
+
+  .deskovky-new-match-card {
+    padding-bottom: 86px;
+  }
+
+  .deskovky-new-match-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .deskovky-scoring-hint {
+    padding: 10px 12px;
+  }
+
+  .deskovky-scanner-panel {
+    padding: 10px;
+    border-radius: 14px;
+    gap: 10px;
+  }
+
+  .deskovky-scanner-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .deskovky-manual-input {
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  .deskovky-manual-input input {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .deskovky-scanner-modal {
+    padding: 0;
+  }
+
+  .deskovky-scanner-modal--mobile .deskovky-scanner-dialog {
+    width: 100vw;
+    height: 100vh;
+    max-height: none;
+    border-radius: 0;
+    border: none;
+    padding: 12px;
+  }
+
+  .deskovky-scanner-modal--mobile .deskovky-scanner-dialog .qr-scanner video {
+    max-height: calc(100vh - 170px);
+  }
+
+  .deskovky-scanner-dialog-header {
+    align-items: flex-start;
+  }
+
+  .deskovky-scanner-dialog-header .admin-button {
+    min-width: 130px;
+  }
+
+  .deskovky-slots-grid--mobile {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .deskovky-slot-card {
+    padding: 0;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .deskovky-slot-card header {
+    display: none;
+  }
+
+  .deskovky-slot-toggle {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 11px 12px;
+    border: none;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .deskovky-slot-toggle span {
+    font-size: 0.8rem;
+    color: var(--text-2);
+  }
+
+  .deskovky-slot-toggle strong {
+    font-size: 1rem;
+  }
+
+  .deskovky-slot-card > div:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 12px 12px;
+  }
+
+  .deskovky-slot-mobile-head {
+    display: flex;
+  }
+
+  .deskovky-submit-row {
+    display: none;
+  }
+
+  .deskovky-mobile-submitbar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: sticky;
+    bottom: 8px;
+    z-index: 22;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: #ffffff;
+    padding: 10px;
+    box-shadow: 0 8px 22px rgba(7, 29, 54, 0.15);
+  }
+
+  .deskovky-mobile-submitbar .admin-button {
+    width: 100%;
+  }
+
+  .deskovky-toast {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    text-align: center;
   }
 
   .deskovky-table {

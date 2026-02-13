@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LoginScreen from '../../auth/LoginScreen';
 import ChangePasswordScreen from '../../auth/ChangePasswordScreen';
 import { useAuth } from '../../auth/context';
@@ -128,6 +128,32 @@ function getTodayStartIso(): string {
   const date = new Date();
   date.setHours(0, 0, 0, 0);
   return date.toISOString();
+}
+
+function useIsMobileBreakpoint(maxWidth = 640): boolean {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return window.matchMedia(`(max-width: ${maxWidth}px)`).matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const media = window.matchMedia(`(max-width: ${maxWidth}px)`);
+    const onChange = (event: MediaQueryListEvent) => {
+      setIsMobile(event.matches);
+    };
+    setIsMobile(media.matches);
+    media.addEventListener('change', onChange);
+    return () => {
+      media.removeEventListener('change', onChange);
+    };
+  }, [maxWidth]);
+
+  return isMobile;
 }
 
 function unique<T>(items: T[]): T[] {
@@ -463,7 +489,7 @@ function JudgeHomePage({
 
   return (
     <>
-      <section className="admin-card deskovky-toolbar">
+      <section className="admin-card deskovky-toolbar deskovky-home-toolbar">
         <div className="deskovky-toolbar-left">
           <h2>Rozhodčí panel</h2>
           <p className="admin-card-subtitle">Správa výsledků turnaje Deskové hry.</p>
@@ -482,7 +508,11 @@ function JudgeHomePage({
               ))}
             </select>
           </label>
-          <button type="button" className="admin-button admin-button--primary" onClick={() => onNavigate('new-match')}>
+          <button
+            type="button"
+            className="admin-button admin-button--primary deskovky-home-primary-action"
+            onClick={() => onNavigate('new-match')}
+          >
             Nový zápas
           </button>
         </div>
@@ -534,12 +564,15 @@ function NewMatchPage({
   context,
   selectedEventId,
   onSelectEventId,
+  isMobile,
 }: {
   judgeId: string;
   context: BoardJudgeContext;
   selectedEventId: string | null;
   onSelectEventId: (eventId: string) => void;
+  isMobile: boolean;
 }) {
+  const AUTO_CLOSE_SCANNER_AFTER_SCAN = true;
   const [setup, setSetup] = useState<EventSetup | null>(null);
   const [setupLoading, setSetupLoading] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
@@ -550,10 +583,17 @@ function NewMatchPage({
 
   const [entries, setEntries] = useState<MatchEntry[]>(() => buildInitialMatchEntries());
   const [manualCode, setManualCode] = useState('');
-  const [scanActive, setScanActive] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [activeSeat, setActiveSeat] = useState(1);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const toastTimerRef = useRef<number | null>(null);
+  const scanLockRef = useRef(false);
+  const slotRefs = useRef<Record<number, HTMLElement | null>>({});
+  const slotInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const event = useMemo(
     () => context.events.find((item) => item.id === selectedEventId) ?? null,
@@ -650,6 +690,107 @@ function NewMatchPage({
 
   const scoringType: BoardScoringType = selectedGame?.scoring_type ?? 'both';
   const scoringInputs = getScoringInputs(scoringType);
+  const seatValidation = useMemo(
+    () =>
+      entries.map((entry) => {
+        const errors: string[] = [];
+        let pointsMissing = false;
+        let placementMissing = false;
+
+        if (!entry.player) {
+          return {
+            seat: entry.seat,
+            missingPlayer: true,
+            pointsMissing: false,
+            placementMissing: false,
+            errors: ['Načti hráče.'],
+          };
+        }
+
+        const parsedPoints = parseNumeric(entry.points);
+        const parsedPlacement = parseNumeric(entry.placement);
+
+        if (scoringType === 'points' && parsedPoints === null) {
+          pointsMissing = true;
+          errors.push('Doplň body.');
+        }
+
+        if (scoringType === 'placement' && parsedPlacement === null) {
+          placementMissing = true;
+          errors.push('Doplň umístění.');
+        }
+
+        if (scoringType === 'both' && parsedPoints === null && parsedPlacement === null) {
+          pointsMissing = true;
+          placementMissing = true;
+          errors.push('Zadej body nebo umístění.');
+        }
+
+        return {
+          seat: entry.seat,
+          missingPlayer: false,
+          pointsMissing,
+          placementMissing,
+          errors,
+        };
+      }),
+    [entries, scoringType],
+  );
+  const seatValidationMap = useMemo(() => new Map(seatValidation.map((item) => [item.seat, item])), [seatValidation]);
+  const allSlotsFilled = useMemo(() => entries.every((entry) => entry.player !== null), [entries]);
+  const hasDuplicatePlayers = useMemo(() => {
+    const ids = entries
+      .map((entry) => entry.player?.id)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0);
+    return new Set(ids).size !== ids.length;
+  }, [entries]);
+
+  const roundError = useMemo(() => {
+    if (!roundNumber.trim()) {
+      return null;
+    }
+    const parsed = Number(roundNumber.trim());
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return 'Kolo musí být kladné celé číslo.';
+    }
+    return null;
+  }, [roundNumber]);
+
+  const submitDisabledReason = useMemo(() => {
+    if (!selectedEventId) {
+      return 'Vyber event.';
+    }
+    if (!selectedCategoryId) {
+      return 'Vyber kategorii.';
+    }
+    if (!selectedBlockId) {
+      return 'Vyber blok.';
+    }
+    if (hasDuplicatePlayers) {
+      return 'Hráč je v zápase zadaný vícekrát.';
+    }
+    if (!allSlotsFilled) {
+      return 'Načti 4 hráče do všech slotů.';
+    }
+    const invalidSeat = seatValidation.find((item) => item.errors.length > 0);
+    if (invalidSeat) {
+      return `Slot ${invalidSeat.seat}: ${invalidSeat.errors[0]}`;
+    }
+    if (roundError) {
+      return roundError;
+    }
+    return null;
+  }, [
+    allSlotsFilled,
+    hasDuplicatePlayers,
+    roundError,
+    seatValidation,
+    selectedBlockId,
+    selectedCategoryId,
+    selectedEventId,
+  ]);
+
+  const canSubmit = submitDisabledReason === null && !saving;
 
   useEffect(() => {
     if (!allowedCategoryIds.length) {
@@ -671,42 +812,99 @@ function NewMatchPage({
     }
   }, [visibleBlocks, selectedBlockId]);
 
+  useEffect(() => {
+    if (!isMobile) {
+      return;
+    }
+    const currentSeat = entries.find((entry) => entry.seat === activeSeat);
+    if (currentSeat && !currentSeat.player) {
+      return;
+    }
+    const nextEmpty = entries.find((entry) => !entry.player)?.seat;
+    if (nextEmpty) {
+      setActiveSeat(nextEmpty);
+    }
+  }, [activeSeat, entries, isMobile]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || !scannerOpen) {
+      return;
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [scannerOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
+  const showToast = useCallback((text: string) => {
+    setToast(text);
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 1600);
+  }, []);
+
+  const scrollToSeat = useCallback(
+    (seat: number) => {
+      if (!isMobile) {
+        return;
+      }
+      const slot = slotRefs.current[seat];
+      if (!slot) {
+        return;
+      }
+      slot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    },
+    [isMobile],
+  );
+
+  const focusSeatInput = useCallback(
+    (seat: number) => {
+      if (!isMobile) {
+        return;
+      }
+      const input = slotInputRefs.current[seat];
+      if (!input) {
+        return;
+      }
+      input.focus({ preventScroll: true });
+    },
+    [isMobile],
+  );
+
   const resetEntries = useCallback(() => {
     setEntries(buildInitialMatchEntries());
     setManualCode('');
+    setScannerOpen(false);
+    setActiveSeat(1);
+    setSubmitAttempted(false);
     setError(null);
     setMessage(null);
   }, []);
 
-  const addPlayerToSeat = useCallback((player: BoardPlayer) => {
-    setEntries((current) => {
-      if (current.some((entry) => entry.player?.id === player.id)) {
-        return current;
-      }
-      const nextSeatIndex = current.findIndex((entry) => entry.player === null);
-      if (nextSeatIndex < 0) {
-        return current;
-      }
-      const next = [...current];
-      next[nextSeatIndex] = {
-        ...next[nextSeatIndex],
-        player,
-      };
-      return next;
-    });
-  }, []);
-
   const loadPlayer = useCallback(
-    async (rawCode: string) => {
+    async (rawCode: string, source: 'manual' | 'scan' = 'manual') => {
       if (!selectedEventId) {
         setError('Nejdřív vyber event.');
-        return;
+        return false;
       }
 
       const shortCode = rawCode.trim().toUpperCase();
       if (!shortCode) {
         setError('Zadej kód hráče.');
-        return;
+        return false;
       }
 
       const { data, error: playerError } = await supabase
@@ -719,55 +917,107 @@ function NewMatchPage({
       if (playerError) {
         console.error('Failed to load board player', playerError);
         setError('Nepodařilo se načíst hráče.');
-        return;
+        return false;
       }
 
       if (!data) {
         setError(`Hráč s kódem ${shortCode} nebyl nalezen.`);
-        return;
+        return false;
       }
 
       const player = data as BoardPlayer;
       if (selectedCategoryId && player.category_id !== selectedCategoryId) {
         const categoryName = categoryMap.get(selectedCategoryId)?.name ?? 'vybrané kategorie';
         setError(`Hráč ${shortCode} nepatří do ${categoryName}.`);
-        return;
+        return false;
       }
 
-      if (entries.some((entry) => entry.player?.id === player.id)) {
+      let duplicate = false;
+      let full = false;
+      let addedSeat: number | null = null;
+      let nextSeat: number | null = null;
+
+      setEntries((current) => {
+        if (current.some((entry) => entry.player?.id === player.id)) {
+          duplicate = true;
+          return current;
+        }
+
+        const firstEmptyIndex = current.findIndex((entry) => entry.player === null);
+        if (firstEmptyIndex < 0) {
+          full = true;
+          return current;
+        }
+
+        const next = [...current];
+        next[firstEmptyIndex] = {
+          ...next[firstEmptyIndex],
+          player,
+        };
+        addedSeat = next[firstEmptyIndex].seat;
+        nextSeat = next.find((entry) => entry.player === null)?.seat ?? null;
+        return next;
+      });
+
+      if (duplicate) {
         setError(`Hráč ${shortCode} už je v zápase přidaný.`);
-        return;
+        return false;
       }
 
-      if (entries.every((entry) => entry.player !== null)) {
+      if (full || addedSeat === null) {
         setError('Všechny 4 sloty jsou obsazené.');
-        return;
+        return false;
       }
 
-      addPlayerToSeat(player);
+      const targetSeat = nextSeat ?? addedSeat;
+      setActiveSeat(targetSeat);
+      scrollToSeat(targetSeat);
+      window.setTimeout(() => focusSeatInput(targetSeat), 180);
+      setSubmitAttempted(false);
+      setManualCode('');
       setError(null);
-      setMessage(`Načten hráč ${player.short_code}.`);
+      setMessage(null);
+      if (source === 'scan') {
+        showToast('Hráč načten');
+      }
+      return true;
     },
-    [addPlayerToSeat, categoryMap, entries, selectedCategoryId, selectedEventId],
+    [categoryMap, focusSeatInput, scrollToSeat, selectedCategoryId, selectedEventId, showToast],
   );
 
   const handleManualAdd = useCallback(async () => {
-    await loadPlayer(manualCode);
+    await loadPlayer(manualCode, 'manual');
   }, [loadPlayer, manualCode]);
 
   const handleQrResult = useCallback(
     (raw: string) => {
-      const parsed = parseBoardQrPayload(raw);
-      if (!parsed) {
-        setError('QR kód není ve formátu Deskovek.');
+      if (scanLockRef.current) {
         return;
       }
+      scanLockRef.current = true;
 
-      if (parsed.eventSlug && event && slugify(event.slug) !== slugify(parsed.eventSlug)) {
-        setMessage(`QR je z eventu ${parsed.eventSlug}, ale aktuálně je vybraný ${event.slug}.`);
-      }
+      void (async () => {
+        try {
+          const parsed = parseBoardQrPayload(raw);
+          if (!parsed) {
+            setError('QR kód není ve formátu Deskovek.');
+            return;
+          }
 
-      void loadPlayer(parsed.shortCode);
+          if (parsed.eventSlug && event && slugify(event.slug) !== slugify(parsed.eventSlug)) {
+            setMessage(`QR je z eventu ${parsed.eventSlug}, ale aktuálně je vybraný ${event.slug}.`);
+          }
+
+          const added = await loadPlayer(parsed.shortCode, 'scan');
+          if (added && AUTO_CLOSE_SCANNER_AFTER_SCAN) {
+            setScannerOpen(false);
+          }
+        } finally {
+          window.setTimeout(() => {
+            scanLockRef.current = false;
+          }, 180);
+        }
+      })();
     },
     [event, loadPlayer],
   );
@@ -798,55 +1048,26 @@ function NewMatchPage({
           : entry,
       ),
     );
-  }, []);
+    setActiveSeat(seat);
+    setSubmitAttempted(false);
+    scrollToSeat(seat);
+  }, [scrollToSeat]);
 
   const handleSubmit = useCallback(async () => {
+    setSubmitAttempted(true);
     setError(null);
     setMessage(null);
 
-    if (!selectedEventId) {
-      setError('Vyber event.');
+    if (submitDisabledReason) {
+      setError(submitDisabledReason);
       return;
     }
-    if (!selectedCategoryId) {
-      setError('Vyber kategorii.');
+    if (!selectedEventId || !selectedCategoryId || !selectedBlockId) {
+      setError('Vyber event, kategorii a blok.');
       return;
-    }
-    if (!selectedBlockId) {
-      setError('Vyber blok.');
-      return;
-    }
-
-    const missingSlots = entries.filter((entry) => !entry.player);
-    if (missingSlots.length > 0) {
-      setError('Načti 4 hráče do všech slotů.');
-      return;
-    }
-
-    for (const entry of entries) {
-      const parsedPoints = parseNumeric(entry.points);
-      const parsedPlacement = parseNumeric(entry.placement);
-
-      if (scoringType === 'points' && parsedPoints === null) {
-        setError(`Slot ${entry.seat}: doplň body.`);
-        return;
-      }
-      if (scoringType === 'placement' && parsedPlacement === null) {
-        setError(`Slot ${entry.seat}: doplň umístění.`);
-        return;
-      }
-      if (scoringType === 'both' && parsedPoints === null && parsedPlacement === null) {
-        setError(`Slot ${entry.seat}: zadej body nebo umístění.`);
-        return;
-      }
     }
 
     const parsedRound = roundNumber.trim() ? Number(roundNumber.trim()) : null;
-    if (parsedRound !== null && (!Number.isInteger(parsedRound) || parsedRound <= 0)) {
-      setError('Kolo musí být kladné celé číslo.');
-      return;
-    }
-
     setSaving(true);
 
     const { data: insertedMatch, error: insertMatchError } = await supabase
@@ -894,12 +1115,26 @@ function NewMatchPage({
 
     setSaving(false);
     setMessage('Zápas byl úspěšně uložen.');
+    showToast('Zápas odeslán');
     setEntries(buildInitialMatchEntries());
+    setSubmitAttempted(false);
+    setActiveSeat(1);
+    setScannerOpen(false);
+    setError(null);
 
     if (parsedRound !== null) {
       setRoundNumber(String(parsedRound + 1));
     }
-  }, [entries, judgeId, roundNumber, scoringType, selectedBlockId, selectedCategoryId, selectedEventId]);
+  }, [
+    entries,
+    judgeId,
+    roundNumber,
+    selectedBlockId,
+    selectedCategoryId,
+    selectedEventId,
+    showToast,
+    submitDisabledReason,
+  ]);
 
   if (!selectedEventId) {
     return (
@@ -912,7 +1147,7 @@ function NewMatchPage({
 
   return (
     <>
-      <section className="admin-card">
+      <section className="admin-card deskovky-new-match-card">
         <header className="admin-card-header">
           <div>
             <h2>Nový zápas</h2>
@@ -998,9 +1233,10 @@ function NewMatchPage({
             <button
               type="button"
               className="admin-button admin-button--secondary"
-              onClick={() => setScanActive((current) => !current)}
+              onClick={() => setScannerOpen((current) => !current)}
+              aria-label={scannerOpen ? 'Zavřít QR skener' : 'Spustit QR skener'}
             >
-              {scanActive ? 'Vypnout QR skener' : 'Zapnout QR skener'}
+              {scannerOpen ? 'Zavřít skener' : 'Spustit skener'}
             </button>
             <div className="deskovky-manual-input">
               <input
@@ -1014,68 +1250,173 @@ function NewMatchPage({
               </button>
             </div>
           </div>
-          <QRScanner active={scanActive} onResult={handleQrResult} />
+          {error ? <p className="admin-error deskovky-inline-error">{error}</p> : null}
         </div>
 
-        <div className="deskovky-slots-grid">
+        {/* Scanner je modal: fullscreen na mobile, kompaktnější dialog na desktopu. */}
+        {scannerOpen ? (
+          <div className={`deskovky-scanner-modal ${isMobile ? 'deskovky-scanner-modal--mobile' : ''}`}>
+            <button
+              type="button"
+              className="deskovky-scanner-backdrop"
+              onClick={() => setScannerOpen(false)}
+              aria-label="Zavřít QR skener"
+            />
+            <section className="deskovky-scanner-dialog" role="dialog" aria-modal="true" aria-label="QR skener">
+              <header className="deskovky-scanner-dialog-header">
+                <h3>QR skener hráčů</h3>
+                <button
+                  type="button"
+                  className="admin-button admin-button--secondary"
+                  onClick={() => setScannerOpen(false)}
+                  aria-label="Zavřít QR skener"
+                >
+                  Zavřít skener
+                </button>
+              </header>
+              <QRScanner active={scannerOpen} onResult={handleQrResult} />
+            </section>
+          </div>
+        ) : null}
+
+        <div className={`deskovky-slots-grid ${isMobile ? 'deskovky-slots-grid--mobile' : ''}`}>
           {entries.map((entry) => {
             const code = entry.player?.short_code ?? 'Prázdný slot';
             const title = entry.player?.display_name || entry.player?.team_name || 'Nenačteno';
+            const validation = seatValidationMap.get(entry.seat);
+            const expanded = !isMobile || activeSeat === entry.seat;
+            const invalid = submitAttempted && Boolean(validation?.errors.length);
             return (
-              <article key={entry.seat} className="deskovky-slot-card">
-                <header>
-                  <span>Slot {entry.seat}</span>
-                  {entry.player ? (
-                    <button type="button" className="ghost" onClick={() => handleRemovePlayer(entry.seat)}>
-                      Odebrat
-                    </button>
+              <article
+                key={entry.seat}
+                className={`deskovky-slot-card ${invalid ? 'deskovky-slot-card--invalid' : ''}`}
+                ref={(node) => {
+                  slotRefs.current[entry.seat] = node;
+                }}
+              >
+                {/* Mobile: akordeon po slotech; desktop: všechny sloty otevřené ve 4 sloupcích. */}
+                {isMobile ? (
+                  <button
+                    type="button"
+                    className="deskovky-slot-toggle"
+                    onClick={() => setActiveSeat(entry.seat)}
+                    aria-expanded={expanded}
+                    aria-controls={`deskovky-slot-content-${entry.seat}`}
+                  >
+                    <span>Slot {entry.seat}</span>
+                    <strong>{code}</strong>
+                    <span className="deskovky-slot-summary">{title}</span>
+                  </button>
+                ) : (
+                  <header>
+                    <span>Slot {entry.seat}</span>
+                    {entry.player ? (
+                      <button type="button" className="ghost" onClick={() => handleRemovePlayer(entry.seat)}>
+                        Odebrat
+                      </button>
+                    ) : null}
+                  </header>
+                )}
+
+                <div id={`deskovky-slot-content-${entry.seat}`} hidden={!expanded}>
+                  {isMobile ? (
+                    <div className="deskovky-slot-mobile-head">
+                      <strong>{code}</strong>
+                      {entry.player ? (
+                        <button type="button" className="ghost" onClick={() => handleRemovePlayer(entry.seat)}>
+                          Odebrat
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <strong>{code}</strong>
+                  )}
+                  <p className="admin-card-subtitle">{title}</p>
+
+                  {scoringInputs.showPoints ? (
+                    <label className="admin-field">
+                      <span>Body</span>
+                      <input
+                        ref={(node) => {
+                          slotInputRefs.current[entry.seat] = node;
+                        }}
+                        type="number"
+                        step="0.5"
+                        value={entry.points}
+                        className={submitAttempted && validation?.pointsMissing ? 'deskovky-field-invalid' : ''}
+                        onChange={(eventTarget) => handleEntryChange(entry.seat, 'points', eventTarget.target.value)}
+                      />
+                    </label>
                   ) : null}
-                </header>
-                <strong>{code}</strong>
-                <p className="admin-card-subtitle">{title}</p>
 
-                {scoringInputs.showPoints ? (
-                  <label className="admin-field">
-                    <span>Body</span>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={entry.points}
-                      onChange={(eventTarget) =>
-                        handleEntryChange(entry.seat, 'points', eventTarget.target.value)
-                      }
-                    />
-                  </label>
-                ) : null}
+                  {scoringInputs.showPlacement ? (
+                    <label className="admin-field">
+                      <span>Umístění</span>
+                      <input
+                        ref={
+                          !scoringInputs.showPoints
+                            ? (node) => {
+                                slotInputRefs.current[entry.seat] = node;
+                              }
+                            : undefined
+                        }
+                        type="number"
+                        step="0.5"
+                        min="1"
+                        value={entry.placement}
+                        className={submitAttempted && validation?.placementMissing ? 'deskovky-field-invalid' : ''}
+                        onChange={(eventTarget) => handleEntryChange(entry.seat, 'placement', eventTarget.target.value)}
+                      />
+                    </label>
+                  ) : null}
 
-                {scoringInputs.showPlacement ? (
-                  <label className="admin-field">
-                    <span>Umístění</span>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="1"
-                      value={entry.placement}
-                      onChange={(eventTarget) =>
-                        handleEntryChange(entry.seat, 'placement', eventTarget.target.value)
-                      }
-                    />
-                  </label>
-                ) : null}
+                  {submitAttempted && validation?.errors.length ? (
+                    <p className="admin-error deskovky-slot-error">{validation.errors[0]}</p>
+                  ) : null}
+                </div>
               </article>
             );
           })}
         </div>
 
-        <div className="admin-card-actions admin-card-actions--end">
-          <button type="button" className="admin-button admin-button--primary" onClick={() => void handleSubmit()} disabled={saving}>
+        <div className="admin-card-actions admin-card-actions--end deskovky-submit-row">
+          <button
+            type="button"
+            className="admin-button admin-button--primary"
+            onClick={() => void handleSubmit()}
+            disabled={!canSubmit}
+          >
             {saving ? 'Ukládám…' : 'Odeslat zápas'}
           </button>
         </div>
 
         {message ? <p className="admin-success">{message}</p> : null}
-        {error ? <p className="admin-error">{error}</p> : null}
+        {error ? <p className="admin-error deskovky-form-error">{error}</p> : null}
+
+        <div className="deskovky-mobile-submitbar" role="region" aria-label="Odeslání zápasu">
+          {!canSubmit ? (
+            <p className="deskovky-mobile-submit-note">
+              {submitAttempted ? submitDisabledReason : 'Doplň 4 hráče a výsledky pro odeslání.'}
+            </p>
+          ) : (
+            <p className="deskovky-mobile-submit-note">Vše připraveno k odeslání.</p>
+          )}
+          <button
+            type="button"
+            className="admin-button admin-button--primary"
+            onClick={() => void handleSubmit()}
+            disabled={!canSubmit}
+          >
+            {saving ? 'Ukládám…' : 'Odeslat zápas'}
+          </button>
+        </div>
       </section>
+
+      {toast ? (
+        <div className="deskovky-toast" role="status" aria-live="polite">
+          {toast}
+        </div>
+      ) : null}
     </>
   );
 }
@@ -1084,10 +1425,12 @@ function StandingsPage({
   context,
   selectedEventId,
   onSelectEventId,
+  isMobile,
 }: {
   context: BoardJudgeContext;
   selectedEventId: string | null;
   onSelectEventId: (eventId: string) => void;
+  isMobile: boolean;
 }) {
   const [setup, setSetup] = useState<EventSetup | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
@@ -1237,7 +1580,7 @@ function StandingsPage({
 
   return (
     <>
-      <section className="admin-card deskovky-toolbar">
+      <section className="admin-card deskovky-toolbar deskovky-toolbar--sticky-mobile">
         <div className="deskovky-toolbar-left">
           <h2>Průběžné pořadí</h2>
           <p className="admin-card-subtitle">Přehled po hrách a celkové pořadí kategorie.</p>
@@ -1284,40 +1627,76 @@ function StandingsPage({
         {error ? <p className="admin-error">{error}</p> : null}
 
         {overallStandings.length ? (
-          <div className="deskovky-table-wrap">
-            <table className="deskovky-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Hráč</th>
-                  <th>Kód</th>
-                  <th>Součet umístění</th>
-                  <th>Hry</th>
-                </tr>
-              </thead>
-              <tbody>
-                {overallStandings.map((row) => {
-                  const player = playerMap.get(row.player_id);
-                  const label = player?.display_name || player?.team_name || row.player_id;
-                  const breakdown = (row.game_breakdown ?? [])
-                    .map((item) => {
-                      const gameName = item.game_name || gameMap.get(item.game_id)?.name || item.game_id;
-                      return `${item.is_primary ? '★ ' : ''}${gameName}: ${item.game_rank}`;
-                    })
-                    .join(' · ');
-                  return (
-                    <tr key={`overall-${row.player_id}`}>
-                      <td>{row.overall_rank}</td>
-                      <td>{label}</td>
-                      <td>{player?.short_code ?? '—'}</td>
-                      <td>{row.overall_score}</td>
-                      <td>{breakdown || '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          // Mobile používá karty místo široké tabulky kvůli čitelnosti bez horizontálního scrollu.
+          isMobile ? (
+            <div className="deskovky-standings-cards">
+              {overallStandings.map((row) => {
+                const player = playerMap.get(row.player_id);
+                const label = player?.display_name || player?.team_name || row.player_id;
+                const breakdown = (row.game_breakdown ?? [])
+                  .map((item) => {
+                    const gameName = item.game_name || gameMap.get(item.game_id)?.name || item.game_id;
+                    return `${item.is_primary ? '★ ' : ''}${gameName}: ${item.game_rank}`;
+                  })
+                  .join(' · ');
+                const totalGames = perGame.size || row.games_counted;
+                return (
+                  <article key={`overall-${row.player_id}`} className="deskovky-standings-card">
+                    <h3>
+                      {row.overall_rank}. {label}
+                    </h3>
+                    <p>
+                      <strong>Součet pořadí:</strong> {row.overall_score}
+                    </p>
+                    <p>
+                      <strong>Odehráno:</strong> {row.games_counted}/{totalGames}
+                    </p>
+                    <p>
+                      <strong>Kód:</strong> {player?.short_code ?? '—'}
+                    </p>
+                    <p>
+                      <strong>Hry:</strong> {breakdown || '—'}
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="deskovky-table-wrap">
+              <table className="deskovky-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Hráč</th>
+                    <th>Kód</th>
+                    <th>Součet umístění</th>
+                    <th>Hry</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overallStandings.map((row) => {
+                    const player = playerMap.get(row.player_id);
+                    const label = player?.display_name || player?.team_name || row.player_id;
+                    const breakdown = (row.game_breakdown ?? [])
+                      .map((item) => {
+                        const gameName = item.game_name || gameMap.get(item.game_id)?.name || item.game_id;
+                        return `${item.is_primary ? '★ ' : ''}${gameName}: ${item.game_rank}`;
+                      })
+                      .join(' · ');
+                    return (
+                      <tr key={`overall-${row.player_id}`}>
+                        <td>{row.overall_rank}</td>
+                        <td>{label}</td>
+                        <td>{player?.short_code ?? '—'}</td>
+                        <td>{row.overall_score}</td>
+                        <td>{breakdown || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
         ) : (
           <p className="admin-card-subtitle">Zatím nejsou k dispozici žádná data.</p>
         )}
@@ -1329,36 +1708,65 @@ function StandingsPage({
           <section key={gameId} className="admin-card">
             <h2>{game?.name ?? gameId}</h2>
             <p className="admin-card-subtitle">Typ bodování: {game?.scoring_type ?? '—'}</p>
-            <div className="deskovky-table-wrap">
-              <table className="deskovky-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Hráč</th>
-                    <th>Kód</th>
-                    <th>Body</th>
-                    <th>Průměr umístění</th>
-                    <th>Počet partií</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {standings.map((row) => {
-                    const player = playerMap.get(row.player_id);
-                    const label = player?.display_name || player?.team_name || row.player_id;
-                    return (
-                      <tr key={`${gameId}-${row.player_id}`}>
-                        <td>{row.game_rank}</td>
-                        <td>{label}</td>
-                        <td>{player?.short_code ?? '—'}</td>
-                        <td>{row.total_points ?? '—'}</td>
-                        <td>{row.avg_placement ?? '—'}</td>
-                        <td>{row.matches_played}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            // Stejná data, jiný layout: karty na mobile, tabulka na desktopu.
+            {isMobile ? (
+              <div className="deskovky-standings-cards">
+                {standings.map((row) => {
+                  const player = playerMap.get(row.player_id);
+                  const label = player?.display_name || player?.team_name || row.player_id;
+                  return (
+                    <article key={`${gameId}-${row.player_id}`} className="deskovky-standings-card">
+                      <h3>
+                        {row.game_rank}. {label}
+                      </h3>
+                      <p>
+                        <strong>Součet pořadí:</strong> {row.avg_placement ?? '—'}
+                      </p>
+                      <p>
+                        <strong>Odehráno:</strong> {row.matches_played}
+                      </p>
+                      <p>
+                        <strong>Body:</strong> {row.total_points ?? '—'}
+                      </p>
+                      <p>
+                        <strong>Kód:</strong> {player?.short_code ?? '—'}
+                      </p>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="deskovky-table-wrap">
+                <table className="deskovky-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Hráč</th>
+                      <th>Kód</th>
+                      <th>Body</th>
+                      <th>Průměr umístění</th>
+                      <th>Počet partií</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {standings.map((row) => {
+                      const player = playerMap.get(row.player_id);
+                      const label = player?.display_name || player?.team_name || row.player_id;
+                      return (
+                        <tr key={`${gameId}-${row.player_id}`}>
+                          <td>{row.game_rank}</td>
+                          <td>{label}</td>
+                          <td>{player?.short_code ?? '—'}</td>
+                          <td>{row.total_points ?? '—'}</td>
+                          <td>{row.avg_placement ?? '—'}</td>
+                          <td>{row.matches_played}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         );
       })}
@@ -2512,6 +2920,7 @@ function DeskovkyDashboard({
   auth: AuthenticatedState;
   logout: () => Promise<void>;
 }) {
+  const isMobile = useIsMobileBreakpoint(640);
   const [page, setPage] = useState<DeskovkyPage>(() => resolvePage(window.location.pathname));
   const [context, setContext] = useState<BoardJudgeContext | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2608,16 +3017,11 @@ function DeskovkyDashboard({
             <p className="admin-subtitle">{pageTitle}</p>
           </div>
           <div className="admin-header-actions">
-            <a
-              className="admin-button admin-button--secondary admin-button--pill"
-              href="/aplikace/setonuv-zavod"
-            >
-              Přepnout na Seton
-            </a>
             <button
               type="button"
               className="admin-button admin-button--secondary admin-button--pill"
               onClick={() => logout()}
+              aria-label={isMobile ? 'Odhlásit se z Deskovek' : undefined}
             >
               Odhlásit se
             </button>
@@ -2627,11 +3031,12 @@ function DeskovkyDashboard({
 
       <main className="admin-content">
         <section className="admin-card deskovky-nav-card">
-          <div className="deskovky-nav-grid">
+          <div className="deskovky-nav-grid" role="tablist" aria-label="Sekce Deskovek">
             <button
               type="button"
               className={`admin-button ${page === 'home' ? 'admin-button--primary' : 'admin-button--secondary'}`}
               onClick={() => navigate('home')}
+              aria-label="Přejít na Přehled"
             >
               Přehled
             </button>
@@ -2639,6 +3044,7 @@ function DeskovkyDashboard({
               type="button"
               className={`admin-button ${page === 'new-match' ? 'admin-button--primary' : 'admin-button--secondary'}`}
               onClick={() => navigate('new-match')}
+              aria-label="Přejít na Nový zápas"
             >
               Nový zápas
             </button>
@@ -2646,6 +3052,7 @@ function DeskovkyDashboard({
               type="button"
               className={`admin-button ${page === 'standings' ? 'admin-button--primary' : 'admin-button--secondary'}`}
               onClick={() => navigate('standings')}
+              aria-label="Přejít na Pořadí"
             >
               Pořadí
             </button>
@@ -2653,6 +3060,7 @@ function DeskovkyDashboard({
               type="button"
               className={`admin-button ${page === 'rules' ? 'admin-button--primary' : 'admin-button--secondary'}`}
               onClick={() => navigate('rules')}
+              aria-label="Přejít na Pravidla"
             >
               Pravidla
             </button>
@@ -2661,6 +3069,7 @@ function DeskovkyDashboard({
                 type="button"
                 className={`admin-button ${page === 'admin' ? 'admin-button--primary' : 'admin-button--secondary'}`}
                 onClick={() => navigate('admin')}
+                aria-label="Přejít na administraci"
               >
                 Admin
               </button>
@@ -2684,6 +3093,7 @@ function DeskovkyDashboard({
             context={context}
             selectedEventId={selectedEventId}
             onSelectEventId={setSelectedEventId}
+            isMobile={isMobile}
           />
         ) : null}
 
@@ -2692,6 +3102,7 @@ function DeskovkyDashboard({
             context={context}
             selectedEventId={selectedEventId}
             onSelectEventId={setSelectedEventId}
+            isMobile={isMobile}
           />
         ) : null}
 
