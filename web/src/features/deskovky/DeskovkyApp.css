@@ -450,6 +450,26 @@
   gap: 12px;
 }
 
+.deskovky-admin-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.deskovky-admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.deskovky-admin-pagination-status {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-2);
+}
+
 .deskovky-admin-sections-layout {
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
@@ -713,6 +733,11 @@
   }
 
   .deskovky-assignment-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .deskovky-admin-filters {
     grid-template-columns: 1fr;
     gap: 8px;
   }

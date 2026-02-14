@@ -1946,6 +1946,15 @@ function AdminPage({
   const [newAssignmentGameId, setNewAssignmentGameId] = useState('');
   const [newAssignmentCategoryId, setNewAssignmentCategoryId] = useState('');
 
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [playerCategoryFilter, setPlayerCategoryFilter] = useState('');
+  const [playerPage, setPlayerPage] = useState(1);
+  const [playerPageSize, setPlayerPageSize] = useState(50);
+  const [gameSearch, setGameSearch] = useState('');
+  const [gameScoringFilter, setGameScoringFilter] = useState<'all' | BoardScoringType>('all');
+  const [assignmentJudgeFilter, setAssignmentJudgeFilter] = useState('');
+  const [assignmentGameFilter, setAssignmentGameFilter] = useState('');
+
   const activeSectionLabel = useMemo(
     () => ADMIN_SECTION_ITEMS.find((item) => item.key === activeSection)?.label ?? 'Přehled',
     [activeSection],
@@ -2648,6 +2657,77 @@ function AdminPage({
     [assignments.length, blocks.length, categories.length, games.length, players.length],
   );
 
+  const filteredGames = useMemo(() => {
+    const term = gameSearch.trim().toLowerCase();
+    return games.filter((game) => {
+      if (gameScoringFilter !== 'all' && game.scoring_type !== gameScoringFilter) {
+        return false;
+      }
+      if (!term) {
+        return true;
+      }
+      return [game.name, game.notes ?? ''].join(' ').toLowerCase().includes(term);
+    });
+  }, [gameScoringFilter, gameSearch, games]);
+
+  const filteredPlayers = useMemo(() => {
+    const term = playerSearch.trim().toLowerCase();
+    return players.filter((player) => {
+      if (playerCategoryFilter && player.category_id !== playerCategoryFilter) {
+        return false;
+      }
+      if (!term) {
+        return true;
+      }
+      return [player.short_code, player.display_name ?? '', player.team_name ?? ''].join(' ').toLowerCase().includes(term);
+    });
+  }, [playerCategoryFilter, playerSearch, players]);
+
+  useEffect(() => {
+    setPlayerPage(1);
+  }, [playerCategoryFilter, playerPageSize, playerSearch, selectedEventId]);
+
+  const playerTotalPages = Math.max(1, Math.ceil(filteredPlayers.length / playerPageSize));
+  const safePlayerPage = Math.min(playerPage, playerTotalPages);
+
+  useEffect(() => {
+    if (playerPage !== safePlayerPage) {
+      setPlayerPage(safePlayerPage);
+    }
+  }, [playerPage, safePlayerPage]);
+
+  const pagedPlayers = useMemo(() => {
+    const start = (safePlayerPage - 1) * playerPageSize;
+    return filteredPlayers.slice(start, start + playerPageSize);
+  }, [filteredPlayers, playerPageSize, safePlayerPage]);
+
+  const assignmentJudgeOptions = useMemo(() => {
+    const values = new Set(assignments.map((assignment) => assignment.user_id));
+    return Array.from(values)
+      .map((userId) => {
+        const judge = judgesMap.get(userId);
+        return {
+          value: userId,
+          label: judge ? `${judge.display_name} (${judge.email})` : userId,
+        };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label, 'cs'));
+  }, [assignments, judgesMap]);
+
+  const filteredAssignments = useMemo(
+    () =>
+      assignments.filter((assignment) => {
+        if (assignmentJudgeFilter && assignment.user_id !== assignmentJudgeFilter) {
+          return false;
+        }
+        if (assignmentGameFilter && assignment.game_id !== assignmentGameFilter) {
+          return false;
+        }
+        return true;
+      }),
+    [assignmentGameFilter, assignmentJudgeFilter, assignments],
+  );
+
   return (
     <>
       <section className="admin-card">
@@ -2918,9 +2998,34 @@ function AdminPage({
                   Přidat hru
                 </button>
               </div>
+              <div className="deskovky-admin-filters">
+                <label className="admin-field">
+                  <span>Hledat hru</span>
+                  <input
+                    value={gameSearch}
+                    onChange={(eventTarget) => setGameSearch(eventTarget.target.value)}
+                    placeholder="Název nebo poznámka"
+                  />
+                </label>
+                <label className="admin-field">
+                  <span>Typ bodování</span>
+                  <select
+                    value={gameScoringFilter}
+                    onChange={(eventTarget) => setGameScoringFilter(eventTarget.target.value as 'all' | BoardScoringType)}
+                  >
+                    <option value="all">Všechny</option>
+                    <option value="points">points</option>
+                    <option value="placement">placement</option>
+                    <option value="both">both</option>
+                  </select>
+                </label>
+              </div>
+              <p className="admin-card-subtitle">
+                Zobrazeno {filteredGames.length} z {games.length} her.
+              </p>
               {isMobile ? (
                 <div className="deskovky-admin-mobile-list">
-                  {games.map((game) => (
+                  {filteredGames.map((game) => (
                     <article key={game.id} className="deskovky-admin-mobile-card">
                       <h3>{game.name}</h3>
                       <p className="deskovky-admin-mobile-meta">
@@ -2952,7 +3057,7 @@ function AdminPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {games.map((game) => (
+                      {filteredGames.map((game) => (
                         <tr key={game.id}>
                           <td>{game.name}</td>
                           <td>{game.scoring_type}</td>
@@ -3076,9 +3181,44 @@ function AdminPage({
                   Přejít na Import / export
                 </button>
               </div>
+              <div className="deskovky-admin-filters">
+                <label className="admin-field">
+                  <span>Hledat hráče</span>
+                  <input
+                    value={playerSearch}
+                    onChange={(eventTarget) => setPlayerSearch(eventTarget.target.value)}
+                    placeholder="Kód, jméno nebo tým"
+                  />
+                </label>
+                <label className="admin-field">
+                  <span>Kategorie</span>
+                  <select
+                    value={playerCategoryFilter}
+                    onChange={(eventTarget) => setPlayerCategoryFilter(eventTarget.target.value)}
+                  >
+                    <option value="">Všechny</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="admin-field">
+                  <span>Počet na stránku</span>
+                  <select
+                    value={String(playerPageSize)}
+                    onChange={(eventTarget) => setPlayerPageSize(Number(eventTarget.target.value))}
+                  >
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                </label>
+              </div>
               {isMobile ? (
                 <div className="deskovky-admin-mobile-list">
-                  {players.map((player) => (
+                  {pagedPlayers.map((player) => (
                     <article key={player.id} className="deskovky-admin-mobile-card">
                       <h3>{player.display_name || player.team_name || player.short_code}</h3>
                       <p className="deskovky-admin-mobile-meta">
@@ -3101,7 +3241,7 @@ function AdminPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {players.map((player) => (
+                      {pagedPlayers.map((player) => (
                         <tr key={player.id}>
                           <td>{player.short_code}</td>
                           <td>{player.display_name || player.team_name || '—'}</td>
@@ -3112,6 +3252,29 @@ function AdminPage({
                   </table>
                 </div>
               )}
+              <div className="deskovky-admin-pagination">
+                <p className="deskovky-admin-pagination-status">
+                  Zobrazeno {pagedPlayers.length} z {filteredPlayers.length} hráčů (strana {safePlayerPage}/{playerTotalPages}).
+                </p>
+                <div className="admin-card-actions">
+                  <button
+                    type="button"
+                    className="admin-button admin-button--secondary"
+                    onClick={() => setPlayerPage((current) => Math.max(1, current - 1))}
+                    disabled={safePlayerPage <= 1}
+                  >
+                    Předchozí
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-button admin-button--secondary"
+                    onClick={() => setPlayerPage((current) => Math.min(playerTotalPages, current + 1))}
+                    disabled={safePlayerPage >= playerTotalPages}
+                  >
+                    Další
+                  </button>
+                </div>
+              </div>
             </section>
           ) : null}
 
@@ -3178,10 +3341,40 @@ function AdminPage({
                   Přidat přiřazení
                 </button>
               </div>
+              <div className="deskovky-admin-filters">
+                <label className="admin-field">
+                  <span>Rozhodčí</span>
+                  <select
+                    value={assignmentJudgeFilter}
+                    onChange={(eventTarget) => setAssignmentJudgeFilter(eventTarget.target.value)}
+                  >
+                    <option value="">Všichni</option>
+                    {assignmentJudgeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="admin-field">
+                  <span>Hra</span>
+                  <select value={assignmentGameFilter} onChange={(eventTarget) => setAssignmentGameFilter(eventTarget.target.value)}>
+                    <option value="">Všechny</option>
+                    {games.map((game) => (
+                      <option key={game.id} value={game.id}>
+                        {game.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p className="admin-card-subtitle">
+                Zobrazeno {filteredAssignments.length} z {assignments.length} přiřazení.
+              </p>
 
               {isMobile ? (
                 <div className="deskovky-admin-mobile-list">
-                  {assignments.map((assignment) => {
+                  {filteredAssignments.map((assignment) => {
                     const judge = judgesMap.get(assignment.user_id);
                     return (
                       <article key={assignment.id} className="deskovky-admin-mobile-card">
@@ -3219,7 +3412,7 @@ function AdminPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {assignments.map((assignment) => {
+                      {filteredAssignments.map((assignment) => {
                         const judge = judgesMap.get(assignment.user_id);
                         return (
                           <tr key={assignment.id}>
