@@ -56,6 +56,37 @@ type CsvRow = {
   category: string;
 };
 
+type AdminSectionKey =
+  | 'overview'
+  | 'event'
+  | 'categories'
+  | 'games'
+  | 'blocks'
+  | 'players'
+  | 'judges'
+  | 'import-export';
+
+const ADMIN_SECTION_ITEMS: ReadonlyArray<{ key: AdminSectionKey; hash: string; label: string }> = [
+  { key: 'overview', hash: 'prehled', label: 'Přehled' },
+  { key: 'event', hash: 'event', label: 'Event' },
+  { key: 'categories', hash: 'kategorie', label: 'Kategorie' },
+  { key: 'games', hash: 'hry', label: 'Hry' },
+  { key: 'blocks', hash: 'bloky', label: 'Bloky' },
+  { key: 'players', hash: 'hraci', label: 'Hráči' },
+  { key: 'judges', hash: 'rozhodci', label: 'Rozhodčí' },
+  { key: 'import-export', hash: 'import-export', label: 'Import / export' },
+] as const;
+
+function resolveAdminSectionFromHash(hash: string): AdminSectionKey {
+  const normalized = hash.replace(/^#/, '').trim().toLowerCase();
+  const found = ADMIN_SECTION_ITEMS.find((item) => item.hash === normalized);
+  return found?.key ?? 'overview';
+}
+
+function adminSectionHash(section: AdminSectionKey): string {
+  return ADMIN_SECTION_ITEMS.find((item) => item.key === section)?.hash ?? 'prehled';
+}
+
 function normalizePath(pathname: string): string {
   const trimmed = pathname.replace(/\/+$/, '');
   return trimmed || '/';
@@ -1864,10 +1895,21 @@ function RulesPage() {
 function AdminPage({
   selectedEventId,
   onSelectEventId,
+  isMobile,
 }: {
   selectedEventId: string | null;
   onSelectEventId: (eventId: string) => void;
+  isMobile: boolean;
 }) {
+  const isTabletOrMobile = useIsMobileBreakpoint(1024);
+  const isCompactAdminNav = isMobile || isTabletOrMobile;
+  const [activeSection, setActiveSection] = useState<AdminSectionKey>(() => {
+    if (typeof window === 'undefined') {
+      return 'overview';
+    }
+    return resolveAdminSectionFromHash(window.location.hash);
+  });
+
   const [events, setEvents] = useState<BoardEvent[]>([]);
   const [categories, setCategories] = useState<BoardCategory[]>([]);
   const [games, setGames] = useState<BoardGame[]>([]);
@@ -1903,6 +1945,11 @@ function AdminPage({
   const [newAssignmentUserId, setNewAssignmentUserId] = useState('');
   const [newAssignmentGameId, setNewAssignmentGameId] = useState('');
   const [newAssignmentCategoryId, setNewAssignmentCategoryId] = useState('');
+
+  const activeSectionLabel = useMemo(
+    () => ADMIN_SECTION_ITEMS.find((item) => item.key === activeSection)?.label ?? 'Přehled',
+    [activeSection],
+  );
 
   const categoryMap = useMemo(
     () => new Map(categories.map((category) => [category.id, category])),
@@ -2062,6 +2109,24 @@ function AdminPage({
     () => events.find((event) => event.id === selectedEventId) ?? null,
     [events, selectedEventId],
   );
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setActiveSection(resolveAdminSectionFromHash(window.location.hash));
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+    };
+  }, []);
+
+  const navigateAdminSection = useCallback((nextSection: AdminSectionKey) => {
+    setActiveSection(nextSection);
+    const hash = adminSectionHash(nextSection);
+    const nextUrl = `${window.location.pathname}${window.location.search}#${hash}`;
+    window.history.replaceState(window.history.state, '', nextUrl);
+  }, []);
 
   useEffect(() => {
     if (!selectedEvent) {
@@ -2571,6 +2636,18 @@ function AdminPage({
     setMessage('Přiřazení bylo smazáno.');
   }, []);
 
+  const selectedEventLabel = selectedEvent?.name ?? 'Nevybraný event';
+  const sectionStats = useMemo(
+    () => [
+      { label: 'Kategorie', value: categories.length },
+      { label: 'Hry', value: games.length },
+      { label: 'Bloky', value: blocks.length },
+      { label: 'Hráči', value: players.length },
+      { label: 'Přiřazení', value: assignments.length },
+    ],
+    [assignments.length, blocks.length, categories.length, games.length, players.length],
+  );
+
   return (
     <>
       <section className="admin-card">
@@ -2580,19 +2657,7 @@ function AdminPage({
             <p className="admin-card-subtitle">Konfigurace eventu, hráčů, bloků a přiřazení rozhodčích.</p>
           </div>
           <div className="deskovky-toolbar-actions">
-            <label className="admin-field deskovky-event-select">
-              <span>Event</span>
-              <select
-                value={selectedEventId ?? ''}
-                onChange={(eventTarget) => onSelectEventId(eventTarget.target.value)}
-              >
-                {events.map((event) => (
-                  <option key={event.id} value={event.id}>
-                    {event.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <span className="deskovky-admin-current-section">Sekce: {activeSectionLabel}</span>
           </div>
         </header>
 
@@ -2601,375 +2666,511 @@ function AdminPage({
         {message ? <p className="admin-success">{message}</p> : null}
       </section>
 
-      <section className="admin-card">
-        <h2>Event</h2>
-        <div className="deskovky-admin-grid">
-          <label className="admin-field">
-            <span>Název</span>
-            <input value={eventName} onChange={(eventTarget) => setEventName(eventTarget.target.value)} />
-          </label>
-          <label className="admin-field">
-            <span>Slug</span>
-            <input value={eventSlug} onChange={(eventTarget) => setEventSlug(eventTarget.target.value)} />
-          </label>
-          <label className="admin-field">
-            <span>Začátek</span>
-            <input type="date" value={eventStartDate} onChange={(eventTarget) => setEventStartDate(eventTarget.target.value)} />
-          </label>
-          <label className="admin-field">
-            <span>Konec</span>
-            <input type="date" value={eventEndDate} onChange={(eventTarget) => setEventEndDate(eventTarget.target.value)} />
-          </label>
-        </div>
-        <div className="admin-card-actions">
-          <button type="button" className="admin-button admin-button--secondary" onClick={() => void handleCreateEvent()}>
-            Vytvořit event
-          </button>
-          <button type="button" className="admin-button admin-button--primary" onClick={() => void handleUpdateEvent()} disabled={!selectedEventId}>
-            Uložit event
-          </button>
-        </div>
-      </section>
-
-      <section className="admin-card">
-        <h2>Kategorie</h2>
-        <div className="deskovky-admin-grid">
-          <label className="admin-field">
-            <span>Název kategorie</span>
-            <input
-              value={newCategoryName}
-              onChange={(eventTarget) => setNewCategoryName(eventTarget.target.value)}
-              placeholder="Např. Kategorie I + II"
-            />
-          </label>
-          <label className="admin-field">
-            <span>Hlavní hra (tie-break)</span>
-            <select
-              value={newCategoryPrimaryGameId}
-              onChange={(eventTarget) => setNewCategoryPrimaryGameId(eventTarget.target.value)}
-              disabled={!games.length}
-            >
-              <option value="">Bez nastavení</option>
-              {games.map((game) => (
-                <option key={game.id} value={game.id}>
-                  {game.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="admin-card-actions">
-          <button type="button" className="admin-button admin-button--primary" onClick={() => void handleCreateCategory()}>
-            Přidat kategorii
-          </button>
-        </div>
-        <div className="deskovky-table-wrap">
-          <table className="deskovky-table">
-            <thead>
-              <tr>
-                <th>Kategorie</th>
-                <th>Hlavní hra</th>
-                <th>Akce</th>
-              </tr>
-            </thead>
-            <tbody>
-              {categories.map((category) => (
-                <tr key={category.id}>
-                  <td>{category.name}</td>
-                  <td>
-                    <select
-                      value={category.primary_game_id ?? ''}
-                      onChange={(eventTarget) =>
-                        void handleSetCategoryPrimaryGame(category.id, eventTarget.target.value)
-                      }
-                    >
-                      <option value="">Bez nastavení</option>
-                      {games.map((game) => (
-                        <option key={game.id} value={game.id}>
-                          {game.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <button type="button" className="ghost" onClick={() => void handleDeleteCategory(category.id)}>
-                      Smazat
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="admin-card">
-        <h2>Hry</h2>
-        <div className="deskovky-admin-grid">
-          <label className="admin-field">
-            <span>Název hry</span>
-            <input value={newGameName} onChange={(eventTarget) => setNewGameName(eventTarget.target.value)} />
-          </label>
-          <label className="admin-field">
-            <span>Typ bodování</span>
-            <select
-              value={newGameScoringType}
-              onChange={(eventTarget) => setNewGameScoringType(eventTarget.target.value as BoardScoringType)}
-            >
-              <option value="points">points</option>
-              <option value="placement">placement</option>
-              <option value="both">both</option>
-            </select>
-          </label>
-          <label className="admin-field">
-            <span>Směr bodů</span>
-            <select
-              value={newGamePointsOrder}
-              onChange={(eventTarget) => setNewGamePointsOrder(eventTarget.target.value as BoardPointsOrder)}
-              disabled={newGameScoringType === 'placement'}
-            >
-              <option value="desc">Vyšší body = lepší</option>
-              <option value="asc">Nižší body = lepší</option>
-            </select>
-          </label>
-          <label className="deskovky-checkbox">
-            <input
-              type="checkbox"
-              checked={newGameThreePlayerAdjustment}
-              onChange={(eventTarget) => setNewGameThreePlayerAdjustment(eventTarget.target.checked)}
-            />
-            <span>Zapnout 3‑hráčovou úpravu (0.75 bodů + 1/2.5/4 pořadí)</span>
-          </label>
-          <label className="admin-field deskovky-field-full">
-            <span>Poznámka</span>
-            <input value={newGameNotes} onChange={(eventTarget) => setNewGameNotes(eventTarget.target.value)} />
-          </label>
-        </div>
-        <div className="admin-card-actions">
-          <button type="button" className="admin-button admin-button--primary" onClick={() => void handleCreateGame()}>
-            Přidat hru
-          </button>
-        </div>
-        <div className="deskovky-chip-list">
-          {games.map((game) => (
-            <div key={game.id} className="deskovky-chip">
-              <span>
-                {game.name} · {game.scoring_type} · body {game.points_order === 'asc' ? '↑ lepší nižší' : '↑ lepší vyšší'}
-                {game.three_player_adjustment ? ' · 3P úprava' : ''}
-              </span>
-              <button type="button" className="ghost" onClick={() => void handleDeleteGame(game.id)}>
-                Smazat
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="admin-card">
-        <h2>Bloky</h2>
-        <div className="deskovky-admin-grid">
-          <label className="admin-field">
-            <span>Kategorie</span>
-            <select value={newBlockCategoryId} onChange={(eventTarget) => setNewBlockCategoryId(eventTarget.target.value)}>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-field">
-            <span>Hra</span>
-            <select value={newBlockGameId} onChange={(eventTarget) => setNewBlockGameId(eventTarget.target.value)}>
-              {games.map((game) => (
-                <option key={game.id} value={game.id}>
-                  {game.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-field">
-            <span>Číslo bloku</span>
-            <input type="number" min={1} value={newBlockNumber} onChange={(eventTarget) => setNewBlockNumber(eventTarget.target.value)} />
-          </label>
-        </div>
-        <div className="admin-card-actions">
-          <button type="button" className="admin-button admin-button--primary" onClick={() => void handleCreateBlock()}>
-            Přidat blok
-          </button>
-        </div>
-
-        <div className="deskovky-table-wrap">
-          <table className="deskovky-table">
-            <thead>
-              <tr>
-                <th>Blok</th>
-                <th>Kategorie</th>
-                <th>Hra</th>
-                <th>Akce</th>
-              </tr>
-            </thead>
-            <tbody>
-              {blocks.map((block) => (
-                <tr key={block.id}>
-                  <td>{block.block_number}</td>
-                  <td>{categoryMap.get(block.category_id)?.name ?? block.category_id}</td>
-                  <td>{gameMap.get(block.game_id)?.name ?? block.game_id}</td>
-                  <td>
-                    <button type="button" className="ghost" onClick={() => void handleDeleteBlock(block.id)}>
-                      Smazat
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="admin-card">
-        <h2>Hráči</h2>
-        <p className="admin-card-subtitle">CSV hlavička: short_code,team_name,display_name,category</p>
-        <label className="admin-field deskovky-field-full">
-          <span>CSV import</span>
-          <textarea value={csvInput} onChange={(eventTarget) => setCsvInput(eventTarget.target.value)} rows={8} />
-        </label>
-        <label className="deskovky-checkbox">
-          <input
-            type="checkbox"
-            checked={autoGenerateCodes}
-            onChange={(eventTarget) => setAutoGenerateCodes(eventTarget.target.checked)}
-          />
-          <span>Automaticky generovat short_code, pokud chybí</span>
-        </label>
-        <div className="admin-card-actions">
-          <button type="button" className="admin-button admin-button--primary" onClick={() => void handleImportPlayers()}>
-            Importovat CSV
-          </button>
-          <button type="button" className="admin-button admin-button--secondary" onClick={() => void handleExportBadges()}>
-            Export visaček (CSV)
-          </button>
-        </div>
-
-        <div className="deskovky-table-wrap">
-          <table className="deskovky-table">
-            <thead>
-              <tr>
-                <th>Kód</th>
-                <th>Jméno / tým</th>
-                <th>Kategorie</th>
-              </tr>
-            </thead>
-            <tbody>
-              {players.map((player) => (
-                <tr key={player.id}>
-                  <td>{player.short_code}</td>
-                  <td>{player.display_name || player.team_name || '—'}</td>
-                  <td>{categoryMap.get(player.category_id)?.name ?? player.category_id}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="admin-card">
-        <h2>Přiřazení rozhodčích</h2>
-        <div className="deskovky-admin-grid">
-          {judges.length ? (
-            <label className="admin-field">
-              <span>Rozhodčí</span>
+      <div className="deskovky-admin-sections-layout">
+        {isCompactAdminNav ? (
+          <section className="admin-card deskovky-admin-mobile-nav">
+            <label className="admin-field deskovky-event-select">
+              <span>Vyber sekci</span>
               <select
-                value={newAssignmentUserId}
-                onChange={(eventTarget) => setNewAssignmentUserId(eventTarget.target.value)}
+                value={activeSection}
+                onChange={(eventTarget) => navigateAdminSection(eventTarget.target.value as AdminSectionKey)}
               >
-                <option value="">Vyber rozhodčího</option>
-                {judges.map((judge) => (
-                  <option key={judge.id} value={judge.id}>
-                    {judge.display_name} ({judge.email})
+                {ADMIN_SECTION_ITEMS.map((item) => (
+                  <option key={item.key} value={item.key}>
+                    {item.label}
                   </option>
                 ))}
               </select>
             </label>
-          ) : (
-            <label className="admin-field">
-              <span>User ID rozhodčího (UUID)</span>
-              <input
-                value={newAssignmentUserId}
-                onChange={(eventTarget) => setNewAssignmentUserId(eventTarget.target.value)}
-                placeholder="uuid"
-              />
-            </label>
-          )}
-
-          <label className="admin-field">
-            <span>Hra</span>
-            <select value={newAssignmentGameId} onChange={(eventTarget) => setNewAssignmentGameId(eventTarget.target.value)}>
-              <option value="">Vyber hru</option>
-              {games.map((game) => (
-                <option key={game.id} value={game.id}>
-                  {game.name}
-                </option>
+          </section>
+        ) : (
+          <aside className="admin-card deskovky-admin-sidebar" aria-label="Sekce administrace">
+            <h3>Sekce</h3>
+            <div className="deskovky-admin-sidebar-nav">
+              {ADMIN_SECTION_ITEMS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`admin-button ${
+                    activeSection === item.key ? 'admin-button--primary' : 'admin-button--secondary'
+                  }`}
+                  onClick={() => navigateAdminSection(item.key)}
+                >
+                  {item.label}
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+          </aside>
+        )}
 
-          <label className="admin-field">
-            <span>Kategorie (volitelné)</span>
-            <select
-              value={newAssignmentCategoryId}
-              onChange={(eventTarget) => setNewAssignmentCategoryId(eventTarget.target.value)}
-            >
-              <option value="">Všechny</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <div className="deskovky-admin-section-panel">
+          {activeSection === 'overview' ? (
+            <section className="admin-card">
+              <h2>Přehled administrace</h2>
+              <p className="admin-card-subtitle">Aktivní event: {selectedEventLabel}</p>
+              <label className="admin-field deskovky-event-select">
+                <span>Aktivní event</span>
+                <select
+                  value={selectedEventId ?? ''}
+                  onChange={(eventTarget) => onSelectEventId(eventTarget.target.value)}
+                  aria-label="Aktivní event Deskovek"
+                >
+                  {!events.length ? <option value="">Bez dostupného eventu</option> : null}
+                  {events.map((event) => (
+                    <option key={event.id} value={event.id}>
+                      {event.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-        <div className="admin-card-actions">
-          <button type="button" className="admin-button admin-button--primary" onClick={() => void handleCreateAssignment()}>
-            Přidat přiřazení
-          </button>
-        </div>
+              <div className="deskovky-admin-overview-stats">
+                {sectionStats.map((item) => (
+                  <article key={item.label} className="deskovky-admin-overview-stat">
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                  </article>
+                ))}
+              </div>
 
-        <div className="deskovky-table-wrap">
-          <table className="deskovky-table">
-            <thead>
-              <tr>
-                <th>Rozhodčí</th>
-                <th>Hra</th>
-                <th>Kategorie</th>
-                <th>Akce</th>
-              </tr>
-            </thead>
-            <tbody>
-              {assignments.map((assignment) => {
-                const judge = judgesMap.get(assignment.user_id);
-                return (
-                  <tr key={assignment.id}>
-                    <td>{judge ? `${judge.display_name} (${judge.email})` : assignment.user_id}</td>
-                    <td>{gameMap.get(assignment.game_id)?.name ?? assignment.game_id}</td>
-                    <td>
-                      {assignment.category_id
-                        ? categoryMap.get(assignment.category_id)?.name ?? assignment.category_id
-                        : 'Všechny'}
-                    </td>
-                    <td>
-                      <button type="button" className="ghost" onClick={() => void handleDeleteAssignment(assignment.id)}>
-                        Smazat
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+              <div className="admin-card-actions">
+                <button type="button" className="admin-button admin-button--primary" onClick={() => navigateAdminSection('games')}>
+                  Přidat hru
+                </button>
+                <button
+                  type="button"
+                  className="admin-button admin-button--secondary"
+                  onClick={() => navigateAdminSection('import-export')}
+                >
+                  Import hráčů
+                </button>
+                <button type="button" className="admin-button admin-button--secondary" onClick={() => navigateAdminSection('judges')}>
+                  Přiřadit rozhodčí
+                </button>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === 'event' ? (
+            <section className="admin-card">
+              <h2>Event</h2>
+              <div className="deskovky-admin-grid">
+                <label className="admin-field">
+                  <span>Název</span>
+                  <input value={eventName} onChange={(eventTarget) => setEventName(eventTarget.target.value)} />
+                </label>
+                <label className="admin-field">
+                  <span>Slug</span>
+                  <input value={eventSlug} onChange={(eventTarget) => setEventSlug(eventTarget.target.value)} />
+                </label>
+                <label className="admin-field">
+                  <span>Začátek</span>
+                  <input
+                    type="date"
+                    value={eventStartDate}
+                    onChange={(eventTarget) => setEventStartDate(eventTarget.target.value)}
+                  />
+                </label>
+                <label className="admin-field">
+                  <span>Konec</span>
+                  <input
+                    type="date"
+                    value={eventEndDate}
+                    onChange={(eventTarget) => setEventEndDate(eventTarget.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="admin-card-actions">
+                <button type="button" className="admin-button admin-button--secondary" onClick={() => void handleCreateEvent()}>
+                  Vytvořit event
+                </button>
+                <button
+                  type="button"
+                  className="admin-button admin-button--primary"
+                  onClick={() => void handleUpdateEvent()}
+                  disabled={!selectedEventId}
+                >
+                  Uložit event
+                </button>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === 'categories' ? (
+            <section className="admin-card">
+              <h2>Kategorie</h2>
+              <div className="deskovky-admin-grid">
+                <label className="admin-field">
+                  <span>Název kategorie</span>
+                  <input
+                    value={newCategoryName}
+                    onChange={(eventTarget) => setNewCategoryName(eventTarget.target.value)}
+                    placeholder="Např. Kategorie I + II"
+                  />
+                </label>
+                <label className="admin-field">
+                  <span>Hlavní hra (tie-break)</span>
+                  <select
+                    value={newCategoryPrimaryGameId}
+                    onChange={(eventTarget) => setNewCategoryPrimaryGameId(eventTarget.target.value)}
+                    disabled={!games.length}
+                  >
+                    <option value="">Bez nastavení</option>
+                    {games.map((game) => (
+                      <option key={game.id} value={game.id}>
+                        {game.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="admin-card-actions">
+                <button type="button" className="admin-button admin-button--primary" onClick={() => void handleCreateCategory()}>
+                  Přidat kategorii
+                </button>
+              </div>
+              <div className="deskovky-table-wrap">
+                <table className="deskovky-table">
+                  <thead>
+                    <tr>
+                      <th>Kategorie</th>
+                      <th>Hlavní hra</th>
+                      <th>Akce</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {categories.map((category) => (
+                      <tr key={category.id}>
+                        <td>{category.name}</td>
+                        <td>
+                          <select
+                            value={category.primary_game_id ?? ''}
+                            onChange={(eventTarget) =>
+                              void handleSetCategoryPrimaryGame(category.id, eventTarget.target.value)
+                            }
+                          >
+                            <option value="">Bez nastavení</option>
+                            {games.map((game) => (
+                              <option key={game.id} value={game.id}>
+                                {game.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <button type="button" className="ghost" onClick={() => void handleDeleteCategory(category.id)}>
+                            Smazat
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === 'games' ? (
+            <section className="admin-card">
+              <h2>Hry</h2>
+              <div className="deskovky-admin-grid">
+                <label className="admin-field">
+                  <span>Název hry</span>
+                  <input value={newGameName} onChange={(eventTarget) => setNewGameName(eventTarget.target.value)} />
+                </label>
+                <label className="admin-field">
+                  <span>Typ bodování</span>
+                  <select
+                    value={newGameScoringType}
+                    onChange={(eventTarget) => setNewGameScoringType(eventTarget.target.value as BoardScoringType)}
+                  >
+                    <option value="points">points</option>
+                    <option value="placement">placement</option>
+                    <option value="both">both</option>
+                  </select>
+                </label>
+                <label className="admin-field">
+                  <span>Směr bodů</span>
+                  <select
+                    value={newGamePointsOrder}
+                    onChange={(eventTarget) => setNewGamePointsOrder(eventTarget.target.value as BoardPointsOrder)}
+                    disabled={newGameScoringType === 'placement'}
+                  >
+                    <option value="desc">Vyšší body = lepší</option>
+                    <option value="asc">Nižší body = lepší</option>
+                  </select>
+                </label>
+                <label className="deskovky-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={newGameThreePlayerAdjustment}
+                    onChange={(eventTarget) => setNewGameThreePlayerAdjustment(eventTarget.target.checked)}
+                  />
+                  <span>Zapnout 3‑hráčovou úpravu (0.75 bodů + 1/2.5/4 pořadí)</span>
+                </label>
+                <label className="admin-field deskovky-field-full">
+                  <span>Poznámka</span>
+                  <input value={newGameNotes} onChange={(eventTarget) => setNewGameNotes(eventTarget.target.value)} />
+                </label>
+              </div>
+              <div className="admin-card-actions">
+                <button type="button" className="admin-button admin-button--primary" onClick={() => void handleCreateGame()}>
+                  Přidat hru
+                </button>
+              </div>
+              <div className="deskovky-chip-list">
+                {games.map((game) => (
+                  <div key={game.id} className="deskovky-chip">
+                    <span>
+                      {game.name} · {game.scoring_type} · body {game.points_order === 'asc' ? '↑ lepší nižší' : '↑ lepší vyšší'}
+                      {game.three_player_adjustment ? ' · 3P úprava' : ''}
+                    </span>
+                    <button type="button" className="ghost" onClick={() => void handleDeleteGame(game.id)}>
+                      Smazat
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === 'blocks' ? (
+            <section className="admin-card">
+              <h2>Bloky</h2>
+              <div className="deskovky-admin-grid">
+                <label className="admin-field">
+                  <span>Kategorie</span>
+                  <select value={newBlockCategoryId} onChange={(eventTarget) => setNewBlockCategoryId(eventTarget.target.value)}>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="admin-field">
+                  <span>Hra</span>
+                  <select value={newBlockGameId} onChange={(eventTarget) => setNewBlockGameId(eventTarget.target.value)}>
+                    {games.map((game) => (
+                      <option key={game.id} value={game.id}>
+                        {game.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="admin-field">
+                  <span>Číslo bloku</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={newBlockNumber}
+                    onChange={(eventTarget) => setNewBlockNumber(eventTarget.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="admin-card-actions">
+                <button type="button" className="admin-button admin-button--primary" onClick={() => void handleCreateBlock()}>
+                  Přidat blok
+                </button>
+              </div>
+
+              <div className="deskovky-table-wrap">
+                <table className="deskovky-table">
+                  <thead>
+                    <tr>
+                      <th>Blok</th>
+                      <th>Kategorie</th>
+                      <th>Hra</th>
+                      <th>Akce</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {blocks.map((block) => (
+                      <tr key={block.id}>
+                        <td>{block.block_number}</td>
+                        <td>{categoryMap.get(block.category_id)?.name ?? block.category_id}</td>
+                        <td>{gameMap.get(block.game_id)?.name ?? block.game_id}</td>
+                        <td>
+                          <button type="button" className="ghost" onClick={() => void handleDeleteBlock(block.id)}>
+                            Smazat
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === 'players' ? (
+            <section className="admin-card">
+              <h2>Hráči</h2>
+              <p className="admin-card-subtitle">Správa hráčů načtených v aktivním eventu.</p>
+              <div className="admin-card-actions">
+                <button
+                  type="button"
+                  className="admin-button admin-button--secondary"
+                  onClick={() => navigateAdminSection('import-export')}
+                >
+                  Přejít na Import / export
+                </button>
+              </div>
+              <div className="deskovky-table-wrap">
+                <table className="deskovky-table">
+                  <thead>
+                    <tr>
+                      <th>Kód</th>
+                      <th>Jméno / tým</th>
+                      <th>Kategorie</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {players.map((player) => (
+                      <tr key={player.id}>
+                        <td>{player.short_code}</td>
+                        <td>{player.display_name || player.team_name || '—'}</td>
+                        <td>{categoryMap.get(player.category_id)?.name ?? player.category_id}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === 'judges' ? (
+            <section className="admin-card">
+              <h2>Přiřazení rozhodčích</h2>
+              <div className="deskovky-admin-grid">
+                {judges.length ? (
+                  <label className="admin-field">
+                    <span>Rozhodčí</span>
+                    <select
+                      value={newAssignmentUserId}
+                      onChange={(eventTarget) => setNewAssignmentUserId(eventTarget.target.value)}
+                    >
+                      <option value="">Vyber rozhodčího</option>
+                      {judges.map((judge) => (
+                        <option key={judge.id} value={judge.id}>
+                          {judge.display_name} ({judge.email})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <label className="admin-field">
+                    <span>User ID rozhodčího (UUID)</span>
+                    <input
+                      value={newAssignmentUserId}
+                      onChange={(eventTarget) => setNewAssignmentUserId(eventTarget.target.value)}
+                      placeholder="uuid"
+                    />
+                  </label>
+                )}
+
+                <label className="admin-field">
+                  <span>Hra</span>
+                  <select value={newAssignmentGameId} onChange={(eventTarget) => setNewAssignmentGameId(eventTarget.target.value)}>
+                    <option value="">Vyber hru</option>
+                    {games.map((game) => (
+                      <option key={game.id} value={game.id}>
+                        {game.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="admin-field">
+                  <span>Kategorie (volitelné)</span>
+                  <select
+                    value={newAssignmentCategoryId}
+                    onChange={(eventTarget) => setNewAssignmentCategoryId(eventTarget.target.value)}
+                  >
+                    <option value="">Všechny</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="admin-card-actions">
+                <button type="button" className="admin-button admin-button--primary" onClick={() => void handleCreateAssignment()}>
+                  Přidat přiřazení
+                </button>
+              </div>
+
+              <div className="deskovky-table-wrap">
+                <table className="deskovky-table">
+                  <thead>
+                    <tr>
+                      <th>Rozhodčí</th>
+                      <th>Hra</th>
+                      <th>Kategorie</th>
+                      <th>Akce</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {assignments.map((assignment) => {
+                      const judge = judgesMap.get(assignment.user_id);
+                      return (
+                        <tr key={assignment.id}>
+                          <td>{judge ? `${judge.display_name} (${judge.email})` : assignment.user_id}</td>
+                          <td>{gameMap.get(assignment.game_id)?.name ?? assignment.game_id}</td>
+                          <td>
+                            {assignment.category_id
+                              ? categoryMap.get(assignment.category_id)?.name ?? assignment.category_id
+                              : 'Všechny'}
+                          </td>
+                          <td>
+                            <button type="button" className="ghost" onClick={() => void handleDeleteAssignment(assignment.id)}>
+                              Smazat
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === 'import-export' ? (
+            <section className="admin-card">
+              <h2>Import / export hráčů</h2>
+              <p className="admin-card-subtitle">CSV hlavička: short_code,team_name,display_name,category</p>
+              <label className="admin-field deskovky-field-full">
+                <span>CSV import</span>
+                <textarea value={csvInput} onChange={(eventTarget) => setCsvInput(eventTarget.target.value)} rows={8} />
+              </label>
+              <label className="deskovky-checkbox">
+                <input
+                  type="checkbox"
+                  checked={autoGenerateCodes}
+                  onChange={(eventTarget) => setAutoGenerateCodes(eventTarget.target.checked)}
+                />
+                <span>Automaticky generovat short_code, pokud chybí</span>
+              </label>
+              <div className="admin-card-actions">
+                <button type="button" className="admin-button admin-button--primary" onClick={() => void handleImportPlayers()}>
+                  Importovat CSV
+                </button>
+                <button
+                  type="button"
+                  className="admin-button admin-button--secondary"
+                  onClick={() => void handleExportBadges()}
+                >
+                  Export visaček (CSV)
+                </button>
+              </div>
+            </section>
+          ) : null}
         </div>
-      </section>
+      </div>
     </>
   );
 }
@@ -3171,7 +3372,7 @@ function DeskovkyDashboard({
 
         {page === 'admin' ? (
           isAdmin ? (
-            <AdminPage selectedEventId={selectedEventId} onSelectEventId={setSelectedEventId} />
+            <AdminPage selectedEventId={selectedEventId} onSelectEventId={setSelectedEventId} isMobile={isMobile} />
           ) : (
             <section className="admin-card">
               <h2>Přístup zamítnut</h2>

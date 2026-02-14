@@ -450,6 +450,82 @@
   gap: 12px;
 }
 
+.deskovky-admin-sections-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.deskovky-admin-sidebar {
+  position: sticky;
+  top: 10px;
+  gap: 12px;
+}
+
+.deskovky-admin-sidebar h3 {
+  margin: 0;
+}
+
+.deskovky-admin-sidebar-nav {
+  display: grid;
+  gap: 8px;
+}
+
+.deskovky-admin-sidebar-nav .admin-button {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 42px;
+  padding-inline: 14px;
+}
+
+.deskovky-admin-mobile-nav {
+  padding: 14px 16px;
+}
+
+.deskovky-admin-section-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.deskovky-admin-current-section {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0 12px;
+}
+
+.deskovky-admin-overview-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.deskovky-admin-overview-stat {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.deskovky-admin-overview-stat span {
+  font-size: 0.82rem;
+  color: var(--text-2);
+}
+
+.deskovky-admin-overview-stat strong {
+  font-size: 1.25rem;
+}
+
 .deskovky-field-full {
   grid-column: 1 / -1;
 }
@@ -504,6 +580,14 @@
 }
 
 @media (max-width: 1024px) {
+  .deskovky-admin-sections-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .deskovky-admin-sidebar {
+    position: static;
+  }
+
   .deskovky-slots-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
