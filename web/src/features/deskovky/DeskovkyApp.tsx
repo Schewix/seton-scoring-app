@@ -2918,19 +2918,58 @@ function AdminPage({
                   Přidat hru
                 </button>
               </div>
-              <div className="deskovky-chip-list">
-                {games.map((game) => (
-                  <div key={game.id} className="deskovky-chip">
-                    <span>
-                      {game.name} · {game.scoring_type} · body {game.points_order === 'asc' ? '↑ lepší nižší' : '↑ lepší vyšší'}
-                      {game.three_player_adjustment ? ' · 3P úprava' : ''}
-                    </span>
-                    <button type="button" className="ghost" onClick={() => void handleDeleteGame(game.id)}>
-                      Smazat
-                    </button>
-                  </div>
-                ))}
-              </div>
+              {isMobile ? (
+                <div className="deskovky-admin-mobile-list">
+                  {games.map((game) => (
+                    <article key={game.id} className="deskovky-admin-mobile-card">
+                      <h3>{game.name}</h3>
+                      <p className="deskovky-admin-mobile-meta">
+                        {game.scoring_type} · {game.points_order === 'asc' ? 'nižší body lepší' : 'vyšší body lepší'}
+                      </p>
+                      <p className="deskovky-admin-mobile-meta">
+                        3P úprava: <strong>{game.three_player_adjustment ? 'Zapnuto' : 'Vypnuto'}</strong>
+                      </p>
+                      {game.notes ? <p className="deskovky-admin-mobile-note">{game.notes}</p> : null}
+                      <div className="deskovky-admin-mobile-card-actions">
+                        <button type="button" className="ghost" onClick={() => void handleDeleteGame(game.id)}>
+                          Smazat
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="deskovky-table-wrap">
+                  <table className="deskovky-table">
+                    <thead>
+                      <tr>
+                        <th>Hra</th>
+                        <th>Typ bodování</th>
+                        <th>Směr bodů</th>
+                        <th>3P úprava</th>
+                        <th>Poznámka</th>
+                        <th>Akce</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {games.map((game) => (
+                        <tr key={game.id}>
+                          <td>{game.name}</td>
+                          <td>{game.scoring_type}</td>
+                          <td>{game.points_order === 'asc' ? 'nižší body lepší' : 'vyšší body lepší'}</td>
+                          <td>{game.three_player_adjustment ? 'Ano' : 'Ne'}</td>
+                          <td>{game.notes || '—'}</td>
+                          <td>
+                            <button type="button" className="ghost" onClick={() => void handleDeleteGame(game.id)}>
+                              Smazat
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
           ) : null}
 
@@ -2974,32 +3013,53 @@ function AdminPage({
                 </button>
               </div>
 
-              <div className="deskovky-table-wrap">
-                <table className="deskovky-table">
-                  <thead>
-                    <tr>
-                      <th>Blok</th>
-                      <th>Kategorie</th>
-                      <th>Hra</th>
-                      <th>Akce</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {blocks.map((block) => (
-                      <tr key={block.id}>
-                        <td>{block.block_number}</td>
-                        <td>{categoryMap.get(block.category_id)?.name ?? block.category_id}</td>
-                        <td>{gameMap.get(block.game_id)?.name ?? block.game_id}</td>
-                        <td>
-                          <button type="button" className="ghost" onClick={() => void handleDeleteBlock(block.id)}>
-                            Smazat
-                          </button>
-                        </td>
+              {isMobile ? (
+                <div className="deskovky-admin-mobile-list">
+                  {blocks.map((block) => (
+                    <article key={block.id} className="deskovky-admin-mobile-card">
+                      <h3>Blok {block.block_number}</h3>
+                      <p className="deskovky-admin-mobile-meta">
+                        Kategorie: <strong>{categoryMap.get(block.category_id)?.name ?? block.category_id}</strong>
+                      </p>
+                      <p className="deskovky-admin-mobile-meta">
+                        Hra: <strong>{gameMap.get(block.game_id)?.name ?? block.game_id}</strong>
+                      </p>
+                      <div className="deskovky-admin-mobile-card-actions">
+                        <button type="button" className="ghost" onClick={() => void handleDeleteBlock(block.id)}>
+                          Smazat
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="deskovky-table-wrap">
+                  <table className="deskovky-table">
+                    <thead>
+                      <tr>
+                        <th>Blok</th>
+                        <th>Kategorie</th>
+                        <th>Hra</th>
+                        <th>Akce</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {blocks.map((block) => (
+                        <tr key={block.id}>
+                          <td>{block.block_number}</td>
+                          <td>{categoryMap.get(block.category_id)?.name ?? block.category_id}</td>
+                          <td>{gameMap.get(block.game_id)?.name ?? block.game_id}</td>
+                          <td>
+                            <button type="button" className="ghost" onClick={() => void handleDeleteBlock(block.id)}>
+                              Smazat
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
           ) : null}
 
@@ -3016,26 +3076,42 @@ function AdminPage({
                   Přejít na Import / export
                 </button>
               </div>
-              <div className="deskovky-table-wrap">
-                <table className="deskovky-table">
-                  <thead>
-                    <tr>
-                      <th>Kód</th>
-                      <th>Jméno / tým</th>
-                      <th>Kategorie</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {players.map((player) => (
-                      <tr key={player.id}>
-                        <td>{player.short_code}</td>
-                        <td>{player.display_name || player.team_name || '—'}</td>
-                        <td>{categoryMap.get(player.category_id)?.name ?? player.category_id}</td>
+              {isMobile ? (
+                <div className="deskovky-admin-mobile-list">
+                  {players.map((player) => (
+                    <article key={player.id} className="deskovky-admin-mobile-card">
+                      <h3>{player.display_name || player.team_name || player.short_code}</h3>
+                      <p className="deskovky-admin-mobile-meta">
+                        Kód: <strong>{player.short_code}</strong>
+                      </p>
+                      <p className="deskovky-admin-mobile-meta">
+                        Kategorie: <strong>{categoryMap.get(player.category_id)?.name ?? player.category_id}</strong>
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="deskovky-table-wrap">
+                  <table className="deskovky-table">
+                    <thead>
+                      <tr>
+                        <th>Kód</th>
+                        <th>Jméno / tým</th>
+                        <th>Kategorie</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {players.map((player) => (
+                        <tr key={player.id}>
+                          <td>{player.short_code}</td>
+                          <td>{player.display_name || player.team_name || '—'}</td>
+                          <td>{categoryMap.get(player.category_id)?.name ?? player.category_id}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
           ) : null}
 
@@ -3103,39 +3179,69 @@ function AdminPage({
                 </button>
               </div>
 
-              <div className="deskovky-table-wrap">
-                <table className="deskovky-table">
-                  <thead>
-                    <tr>
-                      <th>Rozhodčí</th>
-                      <th>Hra</th>
-                      <th>Kategorie</th>
-                      <th>Akce</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {assignments.map((assignment) => {
-                      const judge = judgesMap.get(assignment.user_id);
-                      return (
-                        <tr key={assignment.id}>
-                          <td>{judge ? `${judge.display_name} (${judge.email})` : assignment.user_id}</td>
-                          <td>{gameMap.get(assignment.game_id)?.name ?? assignment.game_id}</td>
-                          <td>
+              {isMobile ? (
+                <div className="deskovky-admin-mobile-list">
+                  {assignments.map((assignment) => {
+                    const judge = judgesMap.get(assignment.user_id);
+                    return (
+                      <article key={assignment.id} className="deskovky-admin-mobile-card">
+                        <h3>{judge ? judge.display_name : assignment.user_id}</h3>
+                        <p className="deskovky-admin-mobile-meta">{judge ? judge.email : 'Bez e-mailu v seznamu'}</p>
+                        <p className="deskovky-admin-mobile-meta">
+                          Hra: <strong>{gameMap.get(assignment.game_id)?.name ?? assignment.game_id}</strong>
+                        </p>
+                        <p className="deskovky-admin-mobile-meta">
+                          Kategorie:{' '}
+                          <strong>
                             {assignment.category_id
                               ? categoryMap.get(assignment.category_id)?.name ?? assignment.category_id
                               : 'Všechny'}
-                          </td>
-                          <td>
-                            <button type="button" className="ghost" onClick={() => void handleDeleteAssignment(assignment.id)}>
-                              Smazat
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          </strong>
+                        </p>
+                        <div className="deskovky-admin-mobile-card-actions">
+                          <button type="button" className="ghost" onClick={() => void handleDeleteAssignment(assignment.id)}>
+                            Smazat
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="deskovky-table-wrap">
+                  <table className="deskovky-table">
+                    <thead>
+                      <tr>
+                        <th>Rozhodčí</th>
+                        <th>Hra</th>
+                        <th>Kategorie</th>
+                        <th>Akce</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assignments.map((assignment) => {
+                        const judge = judgesMap.get(assignment.user_id);
+                        return (
+                          <tr key={assignment.id}>
+                            <td>{judge ? `${judge.display_name} (${judge.email})` : assignment.user_id}</td>
+                            <td>{gameMap.get(assignment.game_id)?.name ?? assignment.game_id}</td>
+                            <td>
+                              {assignment.category_id
+                                ? categoryMap.get(assignment.category_id)?.name ?? assignment.category_id
+                                : 'Všechny'}
+                            </td>
+                            <td>
+                              <button type="button" className="ghost" onClick={() => void handleDeleteAssignment(assignment.id)}>
+                                Smazat
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
           ) : null}
 

@@ -579,6 +579,45 @@
   color: var(--text-2);
 }
 
+.deskovky-admin-mobile-list {
+  display: grid;
+  gap: 10px;
+}
+
+.deskovky-admin-mobile-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.deskovky-admin-mobile-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.deskovky-admin-mobile-meta {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
+
+.deskovky-admin-mobile-note {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--text-2);
+}
+
+.deskovky-admin-mobile-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
 @media (max-width: 1024px) {
   .deskovky-admin-sections-layout {
     grid-template-columns: 1fr;
