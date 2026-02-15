@@ -686,6 +686,20 @@
   gap: 8px;
   font-size: 0.95rem;
   color: var(--text-2);
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.deskovky-checkbox input[type="checkbox"] {
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--zl-green);
+}
+
+.deskovky-checkbox input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--zl-green);
+  outline-offset: 2px;
 }
 
 .deskovky-admin-mobile-list {
@@ -1086,8 +1100,29 @@
   gap: 4px;
 }
 
+.admin-field span {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
 .deskovky-checkbox {
   gap: 6px;
+  margin: 4px 0;
+}
+
+/* Admin section spacing improvements */
+.deskovky-admin-section-panel > .admin-card {
+  padding: 20px;
+  gap: 14px;
+}
+
+.deskovky-admin-section-panel > .admin-card h2 {
+  margin: 0 0 8px 0;
+  font-size: 1.25rem;
+}
+
+.deskovky-admin-section-panel > .admin-card .admin-card-subtitle {
+  margin: 0;
 }
 
 /* Ensure buttons are keyboard accessible */
