@@ -50,10 +50,99 @@ async function hashPassword(password: string): Promise<string> {
   return encoded;
 }
 
-async function sendEmail(to: string, password: string): Promise<string> {
+async function sendEmail(to: string, password: string, displayName?: string): Promise<string> {
   const from = "Zelená liga <noreply@zelenaliga.cz>";
-  const replyTo = "info@zelenaliga.cz"; // kam půjdou případné odpovědi (můžeš změnit nebo smazat)
-  const subject = "Zelená liga — váš účet rozhodčího";
+  const replyTo = "info@zelenaliga.cz";
+  const subject = "Váš nový účet v Zelené lize";
+
+  // Build professional HTML using inline styles (email-compatible)
+  const preheader = "Váš nový účet v Zelené lize je připraven – nastavte si heslo";
+  
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333;">
+  <!-- Preheader (hidden) -->
+  <div style="display: none; max-height: 0; overflow: hidden;">
+    ${preheader}
+  </div>
+
+  <!-- Header gradient -->
+  <div style="background: linear-gradient(to right, #0b63b5, #084785); padding: 32px 20px; text-align: center;">
+    <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 600;">Zelená Liga</h1>
+    <p style="color: rgba(255,255,255,0.9); margin: 4px 0 0; font-size: 13px;">SPTO Brno</p>
+  </div>
+
+  <!-- Main content -->
+  <div style="max-width: 600px; margin: 0 auto; background: white; padding: 32px 24px;">
+    <p style="margin: 0 0 20px; font-size: 16px; color: #333; line-height: 1.5;">
+      Dobrý den <strong>${displayName ? displayName : 'rozhodčí'}</strong>,
+    </p>
+
+    <p style="margin: 0 0 20px; font-size: 16px; color: #333; line-height: 1.5;">
+      Byl/a jste přidán/a do systému Zelené ligy jako rozhodčí. Váš účet je nyní připraven k použití.
+    </p>
+
+    <!-- Account setup card -->
+    <div style="background: #f7fbff; border: 1px solid #d4e5f7; border-radius: 6px; padding: 16px; margin: 20px 0;">
+      <h3 style="color: #084785; margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;">Nastavení účtu</h3>
+      <p style="margin: 0 0 8px; font-size: 14px;">
+        Klikněte na tlačítko níže a nastavte si svůj přístupový kód (heslo):
+      </p>
+      <p style="margin: 12px 0 0; padding: 12px; background: #f5f5f5; border-radius: 4px; font-family: monospace; font-size: 12px;">
+        <strong>Dočasný přístupový kód:</strong><br>
+        <code style="font-size: 13px; font-weight: bold; word-break: break-all;">${password}</code>
+      </p>
+    </div>
+
+    <p style="margin: 20px 0; font-size: 14px; color: #666; line-height: 1.5;">
+      Jakmile nastavíte svůj účet, budete mít přístup ke všem akcím a modulům, na které jste přiřazeni:
+    </p>
+
+    <ul style="margin: 12px 0 20px; padding-left: 20px; font-size: 14px; color: #666; line-height: 1.6;">
+      <li>Deskové hry</li>
+      <li>Fotbal</li>
+      <li>Běh</li>
+      <li>Plavaní</li>
+      <li>A další sporty...</li>
+    </ul>
+
+    <!-- CTA Button -->
+    <div style="text-align: center; margin: 20px 0;">
+      <a href="https://zelenaliga.cz/aplikace" style="display: inline-block; background: #ffd700; color: black; padding: 14px 28px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 14px;">
+        Nastavit účet
+      </a>
+    </div>
+
+    <!-- Fallback link -->
+    <p style="margin: 0; font-size: 12px; color: #0b63b5; text-align: center;">
+      Pokud se vám tlačítko nezobrazilo,
+      <a href="https://zelenaliga.cz/aplikace" style="color: #0b63b5; text-decoration: underline;">
+        klikněte sem pro nastavení účtu
+      </a>
+    </p>
+
+    <hr style="margin: 20px 0; border: none; border-top: 1px solid #e8e8e8;">
+
+    <p style="margin: 20px 0 0; font-size: 14px; color: #666; line-height: 1.5;">
+      <strong>Potřebujete pomoc?</strong> V aplikaci najdete pravidla a pokyny pro rozhodčí v sekci <em>Dokumentace</em>. Máte-li technické dotazy, kontaktujte prosím info@zelenaliga.cz.
+    </p>
+  </div>
+
+  <!-- Footer -->
+  <div style="background: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999;">
+    <p style="margin: 0;">Zelená liga SPTO • Brno</p>
+    <p style="margin: 8px 0 0;">
+      <a href="mailto:info@zelenaliga.cz" style="color: #0b63b5; text-decoration: none;">info@zelenaliga.cz</a>
+    </p>
+  </div>
+</body>
+</html>
+  `;
 
   const text = [
     "Dobrý den,",
@@ -62,14 +151,6 @@ async function sendEmail(to: string, password: string): Promise<string> {
     "Po přihlášení budete vyzváni ke změně hesla.",
     "Děkujeme.",
   ].join("\n");
-
-  const html = `
-    <p>Dobrý den,</p>
-    <p>byl vám vytvořen účet rozhodčího. Přihlaste se prosím tímto dočasným heslem:</p>
-    <p style="font-size:18px"><b>${password}</b></p>
-    <p>Po přihlášení budete vyzváni ke změně hesla.</p>
-    <p>Děkujeme.</p>
-  `;
 
   const ac = new AbortController();
   const FETCH_TIMEOUT_MS = 1500; // keep requests snappy in cron
@@ -157,21 +238,24 @@ Deno.serve(async (req) => {
     forced_password_resets: 0,
   };
 
-  const candidates: (OnboardingEvent & { resolvedEmail: string; resolvedPassword: string; resolvedType: string })[] = [];
+  const candidates: (OnboardingEvent & { resolvedEmail: string; resolvedPassword: string; resolvedType: string; displayName?: string })[] = [];
   for (const row of (data as OnboardingEvent[] | null) ?? []) {
     const m = (row.metadata ?? {}) as Record<string, unknown>;
     if (m["type"] !== "initial-password-issued") { skipped.not_initial_type++; continue; }
     if (m["sent"] === true) { skipped.already_sent++; continue; }
 
-    // resolve email (from metadata or judges table)
+    // resolve email and display_name from judges table
     let email = typeof m["email"] === "string" ? String(m["email"]) : "";
-    if (!email && row.judge_id) {
+    let displayName: string | undefined;
+    
+    if (row.judge_id) {
       const { data: jrow } = await supabase
         .from("judges")
-        .select("email")
+        .select("email, display_name")
         .eq("id", row.judge_id)
         .maybeSingle();
       if (jrow?.email && typeof jrow.email === "string") email = jrow.email;
+      if (jrow?.display_name && typeof jrow.display_name === "string") displayName = jrow.display_name;
     }
     if (!email) { skipped.missing_email++; continue; }
 
@@ -204,7 +288,7 @@ Deno.serve(async (req) => {
       skipped.forced_password_resets++;
     }
 
-    candidates.push({ ...row, resolvedEmail: email, resolvedPassword: password, resolvedType });
+    candidates.push({ ...row, resolvedEmail: email, resolvedPassword: password, resolvedType, displayName });
   }
 
   type SendSummary = {
@@ -243,10 +327,11 @@ Deno.serve(async (req) => {
     const md = (ev.metadata ?? {}) as Record<string, unknown>;
     const email = (ev as any).resolvedEmail as string;
     const password = (ev as any).resolvedPassword as string;
+    const displayName = (ev as any).displayName as string | undefined;
 
     try {
       if (!dryRun) {
-        const messageId = await sendEmail(email, password);
+        const messageId = await sendEmail(email, password, displayName);
 
         // označíme jako odeslané (metadata.sent=true, metadata.sent_at=now)
         const { password: _pw, ...restMd } = md as Record<string, unknown>;
