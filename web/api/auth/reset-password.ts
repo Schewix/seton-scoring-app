@@ -25,10 +25,96 @@ function applyCors(res: any) {
   }
 }
 
-async function sendResetEmail(to: string, password: string): Promise<string> {
+async function sendResetEmail(to: string, password: string, displayName?: string): Promise<string> {
   const from = 'Zelená liga <noreply@zelenaliga.cz>';
   const replyTo = 'info@zelenaliga.cz';
-  const subject = 'Zelená liga — nové dočasné heslo';
+  const subject = 'Resetovat heslo';
+  
+  // Build professional HTML using inline styles (email-compatible)
+  const preheader = 'Resetujte své heslo pomocí tohoto odkazu';
+  
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333;">
+  <!-- Preheader (hidden) -->
+  <div style="display: none; max-height: 0; overflow: hidden;">
+    ${preheader}
+  </div>
+
+  <!-- Header gradient -->
+  <div style="background: linear-gradient(to right, #0b63b5, #084785); padding: 32px 20px; text-align: center;">
+    <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 600;">Zelená Liga</h1>
+    <p style="color: rgba(255,255,255,0.9); margin: 4px 0 0; font-size: 13px;">SPTO Brno</p>
+  </div>
+
+  <!-- Main content -->
+  <div style="max-width: 600px; margin: 0 auto; background: white; padding: 32px 24px;">
+    <p style="margin: 0 0 20px; font-size: 16px; color: #333; line-height: 1.5;">
+      Dobrý den ${displayName ? displayName : 'rozhodčí'},
+    </p>
+
+    <p style="margin: 0 0 20px; font-size: 16px; color: #333; line-height: 1.5;">
+      Obdrželi jste tento e-mail, protože jste požádali o resetování hesla do aplikace Zelené ligy. Pokud jste to nebyli vy, můžete bezpečně ignorovat tento e-mail.
+    </p>
+
+    <!-- Security info card -->
+    <div style="background: #f7fbff; border: 1px solid #d4e5f7; border-radius: 6px; padding: 16px; margin: 20px 0;">
+      <h3 style="color: #084785; margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;">Resetování hesla</h3>
+      <p style="margin: 0;">
+        <strong>Platnost odkazu:</strong> 60 minut
+      </p>
+      <p style="margin: 8px 0 0;">
+        <strong>Akce:</strong> Resetování hesla
+      </p>
+    </div>
+
+    <p style="margin: 20px 0; font-size: 14px; color: #666; line-height: 1.5; text-align: center;">
+      Klikněte na tlačítko níže pro resetování hesla:
+    </p>
+
+    <!-- CTA Button -->
+    <div style="text-align: center; margin: 20px 0;">
+      <a href="https://zelenaliga.cz/auth/reset-password" style="display: inline-block; background: #ffd700; color: black; padding: 14px 28px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 14px;">
+        Resetovat heslo
+      </a>
+    </div>
+
+    <!-- Fallback link -->
+    <p style="margin: 0; font-size: 12px; color: #0b63b5; text-align: center;">
+      Pokud se vám tlačítko nezobrazilo,
+      <a href="https://zelenaliga.cz/auth/reset-password" style="color: #0b63b5; text-decoration: underline;">
+        klikněte sem
+      </a>
+    </p>
+
+    <!-- Security notice -->
+    <div style="margin: 20px 0 0; padding: 12px; background: #f0f4ff; border: 1px solid #d4e5f7; border-radius: 4px; font-size: 12px; color: #555; line-height: 1.4;">
+      <strong style="color: #084785;">⚠️ Bezpečnostní tip:</strong> Pokud jste tento e-mail neodeslali, zkontrolujte si bezpečnost svého účtu. Nevěřte nikomu, kdo vám posílá odkazy na přihlášení e-mailem.
+    </div>
+
+    <hr style="margin: 20px 0; border: none; border-top: 1px solid #e8e8e8;">
+
+    <p style="margin: 20px 0 0; font-size: 12px; color: #999; line-height: 1.5;">
+      Máte-li problémy s přihlášením, kontaktujte prosím info@zelenaliga.cz.
+    </p>
+  </div>
+
+  <!-- Footer -->
+  <div style="background: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999;">
+    <p style="margin: 0;">Zelená liga SPTO • Brno</p>
+    <p style="margin: 8px 0 0;">
+      <a href="mailto:info@zelenaliga.cz" style="color: #0b63b5; text-decoration: none;">info@zelenaliga.cz</a>
+    </p>
+  </div>
+</body>
+</html>
+  `;
+
   const text = [
     'Dobrý den,',
     'zasíláme vám nové dočasné heslo k účtu rozhodčího.',
@@ -37,14 +123,6 @@ async function sendResetEmail(to: string, password: string): Promise<string> {
     'Pokud jste obnovu nevyžádali, kontaktujte prosím organizátory.',
     'Děkujeme.',
   ].join('\n');
-  const html = `
-    <p>Dobrý den,</p>
-    <p>zasíláme vám nové dočasné heslo k účtu rozhodčího:</p>
-    <p style="font-size:18px"><b>${password}</b></p>
-    <p>Po přihlášení budete vyzváni ke změně hesla.</p>
-    <p>Pokud jste obnovu nevyžádali, kontaktujte prosím organizátory.</p>
-    <p>Děkujeme.</p>
-  `;
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -93,7 +171,7 @@ export default async function handler(req: any, res: any) {
 
   const { data: judge, error: judgeError } = await supabase
     .from('judges')
-    .select('id, email, password_hash, must_change_password, password_rotated_at')
+    .select('id, email, display_name, password_hash, must_change_password, password_rotated_at')
     .ilike('email', normalizedEmail)
     .limit(1)
     .maybeSingle();
@@ -129,7 +207,8 @@ export default async function handler(req: any, res: any) {
 
   try {
     const targetEmail = judge.email && typeof judge.email === 'string' ? judge.email : normalizedEmail;
-    const messageId = await sendResetEmail(targetEmail, temporaryPassword);
+    const displayName = judge.display_name && typeof judge.display_name === 'string' ? judge.display_name : undefined;
+    const messageId = await sendResetEmail(targetEmail, temporaryPassword, displayName);
 
     const { data: assignment } = await supabase
       .from('judge_assignments')
