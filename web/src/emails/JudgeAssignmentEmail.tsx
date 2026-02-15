@@ -1,11 +1,11 @@
 /**
- * Judge Assignment Email Template
+ * Judge Onboarding Email Template
  * 
- * Sent when a judge is assigned to:
- * - A board event (Deskové hry module)
- * - Optionally to specific games and/or categories
+ * Sent when a judge's account is created in the Zelená Liga system.
+ * Allows the judge to set up their account and access all sports/modules
+ * they have been assigned to.
  * 
- * Subject: "Přístup pro rozhodčího – {eventName}"
+ * Subject: "Váš nový účet v Zelené lize"
  */
 
 import React from 'react';
@@ -13,23 +13,17 @@ import { EmailLayout, EmailButton, EmailCard } from './EmailLayout';
 
 export interface JudgeAssignmentEmailProps {
   judgeDisplayName: string;
-  eventName: string;
-  games?: string[];
-  categoryName?: string | null;
-  loginUrl: string;
+  setupUrl: string; // URL to set up account/password
+  tempPassword?: string; // Optional: temporary password if provided
 }
 
 export function JudgeAssignmentEmail({
   judgeDisplayName,
-  eventName,
-  games = [],
-  categoryName = null,
-  loginUrl,
+  setupUrl,
+  tempPassword,
 }: JudgeAssignmentEmailProps) {
-  // Build preheader: short summary of assignment
-  const preheader = categoryName
-    ? `Byl/a jsi přidán/a jako rozhodčí v ${eventName} (${categoryName})`
-    : `Byl/a jsi přidán/a jako rozhodčí v ${eventName}`;
+  // Build preheader: account creation message
+  const preheader = 'Váš nový účet v Zelené lize je připraven – nastavte si heslo';
 
   return (
     <EmailLayout preheader={preheader}>
@@ -48,22 +42,25 @@ export function JudgeAssignmentEmail({
         color: '#333333',
         lineHeight: '1.5',
       }}>
-        Byl/a jste přidán/a jako rozhodčí v systému Zelené ligy pro:
+        Byl/a jste přidán/a do systému Zelené ligy jako rozhodčí. Váš účet je nyní připraven k použití.
       </p>
 
-      {/* Event details card */}
-      <EmailCard title="Přiřazení">
+      {/* Account setup card */}
+      <EmailCard title="Nastavení účtu">
         <p style={{ margin: '0 0 8px' }}>
-          <strong>Akce:</strong> {eventName}
+          Klikněte na tlačítko níže a nastavte si svůj přístupový kód (heslo):
         </p>
-        {categoryName && (
-          <p style={{ margin: '0 0 8px' }}>
-            <strong>Kategorie:</strong> {categoryName}
-          </p>
-        )}
-        {games && games.length > 0 && (
-          <p style={{ margin: '0' }}>
-            <strong>Přiřazené hry:</strong> {games.join(', ')}
+        {tempPassword && (
+          <p style={{
+            margin: '12px 0 0',
+            padding: '12px',
+            backgroundColor: '#f5f5f5',
+            borderRadius: '4px',
+            fontFamily: 'monospace',
+            fontSize: '12px',
+          }}>
+            <strong>Dočasný přístupový kód:</strong><br />
+            <code style={{ fontSize: '13px', fontWeight: 'bold' }}>{tempPassword}</code>
           </p>
         )}
       </EmailCard>
@@ -74,13 +71,27 @@ export function JudgeAssignmentEmail({
         color: '#666666',
         lineHeight: '1.5',
       }}>
-        Přihlaste se do aplikace a podívejte se na svá přiřazení, budoucí zápasy a další informace:
+        Jakmile nastavíte svůj účet, budete mít přístup ke všem akcím a modulům, na které jste přiřazeni:
       </p>
+
+      <ul style={{
+        margin: '12px 0 20px',
+        paddingLeft: '20px',
+        fontSize: '14px',
+        color: '#666666',
+        lineHeight: '1.6',
+      }}>
+        <li>Deskové hry</li>
+        <li>Fotbal</li>
+        <li>Běh</li>
+        <li>Plavaní</li>
+        <li>A další sporty...</li>
+      </ul>
 
       {/* CTA Button */}
       <div style={{ textAlign: 'center' }}>
-        <EmailButton href={loginUrl}>
-          Otevřít aplikaci
+        <EmailButton href={setupUrl}>
+          Nastavit účet
         </EmailButton>
       </div>
 
@@ -93,10 +104,10 @@ export function JudgeAssignmentEmail({
       }}>
         Pokud se vám tlačítko nezobrazilo,{' '}
         <a 
-          href={loginUrl}
+          href={setupUrl}
           style={{ color: '#0b63b5', textDecoration: 'underline' }}
         >
-          klikněte sem pro přístup
+          klikněte sem pro nastavení účtu
         </a>
       </p>
 
@@ -112,7 +123,7 @@ export function JudgeAssignmentEmail({
         color: '#666666',
         lineHeight: '1.5',
       }}>
-        <strong>Potřebujete pomoc?</strong> V aplikaci najdete pravidla, pokyny pro rozhodčí a další informace v sekci <em>Pravidla</em>. Máte-li technické dotazy, kontaktujte prosím info@zelenaliga.cz.
+        <strong>Potřebujete pomoc?</strong> V aplikaci najdete pravidla a pokyny pro rozhodčí v sekci <em>Dokumentace</em>. Máte-li technické dotazy, kontaktujte prosím info@zelenaliga.cz.
       </p>
     </EmailLayout>
   );
@@ -124,17 +135,15 @@ export function JudgeAssignmentEmail({
  * Example usage:
  * const html = renderJudgeAssignmentEmail({
  *   judgeDisplayName: 'Jan Novotný',
- *   eventName: 'Zelená Liga 2026',
- *   games: ['Ubongo', 'Dominion'],
- *   categoryName: 'Kategorie III + IV',
- *   loginUrl: 'https://zelenaliga.cz/prihlaseni',
+ *   setupUrl: 'https://zelenaliga.cz/auth/setup-judge?token=abc123',
+ *   tempPassword: 'TempPass123!',
  * });
  * 
  * // Send with Resend:
  * await resend.emails.send({
  *   from: 'Zelená Liga <noreply@zelenaliga.cz>',
  *   to: judgeEmail,
- *   subject: `Přístup pro rozhodčího – Zelená Liga 2026`,
+ *   subject: 'Váš nový účet v Zelené lize',
  *   html,
  * });
  */
