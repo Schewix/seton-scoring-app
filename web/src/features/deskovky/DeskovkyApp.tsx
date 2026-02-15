@@ -66,6 +66,16 @@ type AdminSectionKey =
   | 'judges'
   | 'import-export';
 
+type AdminSectionHeaderConfig = {
+  description: string;
+  action?: {
+    label: string;
+    kind: 'primary' | 'secondary';
+    disabled?: boolean;
+    onClick: () => void;
+  };
+};
+
 const ADMIN_SECTION_ITEMS: ReadonlyArray<{ key: AdminSectionKey; hash: string; label: string }> = [
   { key: 'overview', hash: 'prehled', label: 'Přehled' },
   { key: 'event', hash: 'event', label: 'Event' },
@@ -2728,6 +2738,109 @@ function AdminPage({
     [assignmentGameFilter, assignmentJudgeFilter, assignments],
   );
 
+  const sectionHeaderConfig = useMemo<AdminSectionHeaderConfig>(() => {
+    switch (activeSection) {
+      case 'event':
+        return {
+          description: 'Nastavení názvu, slugu a termínu eventu.',
+          action: {
+            label: 'Uložit event',
+            kind: 'primary',
+            disabled: !selectedEventId,
+            onClick: () => {
+              void handleUpdateEvent();
+            },
+          },
+        };
+      case 'categories':
+        return {
+          description: 'Správa kategorií a hlavních her pro tie-break.',
+          action: {
+            label: 'Přidat kategorii',
+            kind: 'primary',
+            disabled: !selectedEventId,
+            onClick: () => {
+              void handleCreateCategory();
+            },
+          },
+        };
+      case 'games':
+        return {
+          description: 'Konfigurace her a jejich bodování.',
+          action: {
+            label: 'Přidat hru',
+            kind: 'primary',
+            disabled: !selectedEventId,
+            onClick: () => {
+              void handleCreateGame();
+            },
+          },
+        };
+      case 'blocks':
+        return {
+          description: 'Mapování kategorií na bloky a hry.',
+          action: {
+            label: 'Přidat blok',
+            kind: 'primary',
+            disabled: !selectedEventId,
+            onClick: () => {
+              void handleCreateBlock();
+            },
+          },
+        };
+      case 'players':
+        return {
+          description: 'Hráči aktivního eventu a jejich rozřazení do kategorií.',
+          action: {
+            label: 'Import / export',
+            kind: 'secondary',
+            onClick: () => {
+              navigateAdminSection('import-export');
+            },
+          },
+        };
+      case 'judges':
+        return {
+          description: 'Přiřazení rozhodčích na hry a kategorie.',
+          action: {
+            label: 'Přidat přiřazení',
+            kind: 'primary',
+            disabled: !selectedEventId,
+            onClick: () => {
+              void handleCreateAssignment();
+            },
+          },
+        };
+      case 'import-export':
+        return {
+          description: 'Import a export hráčů a visaček.',
+          action: {
+            label: 'Importovat CSV',
+            kind: 'primary',
+            disabled: !selectedEventId,
+            onClick: () => {
+              void handleImportPlayers();
+            },
+          },
+        };
+      default:
+        return {
+          description: `Rychlý přehled administrace pro event ${selectedEventLabel}.`,
+        };
+    }
+  }, [
+    activeSection,
+    handleCreateAssignment,
+    handleCreateBlock,
+    handleCreateCategory,
+    handleCreateGame,
+    handleImportPlayers,
+    handleUpdateEvent,
+    navigateAdminSection,
+    selectedEventId,
+    selectedEventLabel,
+  ]);
+
   return (
     <>
       <section className="admin-card">
@@ -2754,6 +2867,7 @@ function AdminPage({
               <select
                 value={activeSection}
                 onChange={(eventTarget) => navigateAdminSection(eventTarget.target.value as AdminSectionKey)}
+                aria-label="Výběr sekce administrace"
               >
                 {ADMIN_SECTION_ITEMS.map((item) => (
                   <option key={item.key} value={item.key}>
@@ -2766,7 +2880,7 @@ function AdminPage({
         ) : (
           <aside className="admin-card deskovky-admin-sidebar" aria-label="Sekce administrace">
             <h3>Sekce</h3>
-            <div className="deskovky-admin-sidebar-nav">
+            <nav className="deskovky-admin-sidebar-nav" role="navigation">
               {ADMIN_SECTION_ITEMS.map((item) => (
                 <button
                   key={item.key}
@@ -2775,15 +2889,140 @@ function AdminPage({
                     activeSection === item.key ? 'admin-button--primary' : 'admin-button--secondary'
                   }`}
                   onClick={() => navigateAdminSection(item.key)}
+                  aria-current={activeSection === item.key ? 'page' : undefined}
                 >
                   {item.label}
                 </button>
               ))}
-            </div>
+            </nav>
           </aside>
         )}
 
         <div className="deskovky-admin-section-panel">
+          <section className="admin-card deskovky-admin-section-sticky">
+            <header className="deskovky-admin-section-sticky-head">
+              <div>
+                <h3>{activeSectionLabel}</h3>
+                <p className="admin-card-subtitle">{sectionHeaderConfig.description}</p>
+              </div>
+              {sectionHeaderConfig.action ? (
+                <button
+                  type="button"
+                  className={`admin-button ${
+                    sectionHeaderConfig.action.kind === 'primary' ? 'admin-button--primary' : 'admin-button--secondary'
+                  }`}
+                  onClick={sectionHeaderConfig.action.onClick}
+                  disabled={sectionHeaderConfig.action.disabled}
+                >
+                  {sectionHeaderConfig.action.label}
+                </button>
+              ) : null}
+            </header>
+
+            {activeSection === 'games' ? (
+              <div className="deskovky-admin-filters deskovky-admin-filters--sticky">
+                <label className="admin-field">
+                  <span>Hledat hru</span>
+                  <input
+                    value={gameSearch}
+                    onChange={(eventTarget) => setGameSearch(eventTarget.target.value)}
+                    placeholder="Název nebo poznámka…"
+                    aria-label="Hledat hru podle názvu nebo poznámky"
+                  />
+                </label>
+                <label className="admin-field">
+                  <span>Typ bodování</span>
+                  <select
+                    value={gameScoringFilter}
+                    onChange={(eventTarget) => setGameScoringFilter(eventTarget.target.value as 'all' | BoardScoringType)}
+                    aria-label="Filtrovat hry podle typu bodování"
+                  >
+                    <option value="all">Všechny</option>
+                    <option value="points">points</option>
+                    <option value="placement">placement</option>
+                    <option value="both">both</option>
+                  </select>
+                </label>
+              </div>
+            ) : null}
+
+            {activeSection === 'players' ? (
+              <div className="deskovky-admin-filters deskovky-admin-filters--sticky">
+                <label className="admin-field">
+                  <span>Hledat hráče</span>
+                  <input
+                    value={playerSearch}
+                    onChange={(eventTarget) => setPlayerSearch(eventTarget.target.value)}
+                    placeholder="Kód, jméno nebo tým…"
+                    aria-label="Hledat hráče podle kódu, jména nebo týmu"
+                  />
+                </label>
+                <label className="admin-field">
+                  <span>Kategorie</span>
+                  <select
+                    value={playerCategoryFilter}
+                    onChange={(eventTarget) => setPlayerCategoryFilter(eventTarget.target.value)}
+                    aria-label="Filtrovat hráče podle kategorie"
+                  >
+                    <option value="">Všechny</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="admin-field">
+                  <span>Počet na stránku</span>
+                  <select
+                    value={String(playerPageSize)}
+                    onChange={(eventTarget) => setPlayerPageSize(Number(eventTarget.target.value))}
+                    aria-label="Počet hráčů na jednu stránku"
+                  >
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                </label>
+              </div>
+            ) : null}
+
+            {activeSection === 'judges' ? (
+              <div className="deskovky-admin-filters deskovky-admin-filters--sticky">
+                <label className="admin-field">
+                  <span>Rozhodčí</span>
+                  <select
+                    value={assignmentJudgeFilter}
+                    onChange={(eventTarget) => setAssignmentJudgeFilter(eventTarget.target.value)}
+                    aria-label="Filtrovat přiřazení podle rozhodčího"
+                  >
+                    <option value="">Všichni</option>
+                    {assignmentJudgeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="admin-field">
+                  <span>Hra</span>
+                  <select 
+                    value={assignmentGameFilter} 
+                    onChange={(eventTarget) => setAssignmentGameFilter(eventTarget.target.value)}
+                    aria-label="Filtrovat přiřazení podle hry"
+                  >
+                    <option value="">Všechny</option>
+                    {games.map((game) => (
+                      <option key={game.id} value={game.id}>
+                        {game.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : null}
+          </section>
+
           {activeSection === 'overview' ? (
             <section className="admin-card">
               <h2>Přehled administrace</h2>
@@ -2814,17 +3053,28 @@ function AdminPage({
               </div>
 
               <div className="admin-card-actions">
-                <button type="button" className="admin-button admin-button--primary" onClick={() => navigateAdminSection('games')}>
+                <button 
+                  type="button" 
+                  className="admin-button admin-button--primary" 
+                  onClick={() => navigateAdminSection('games')}
+                  aria-label="Přejít na sekci Přidat hru"
+                >
                   Přidat hru
                 </button>
                 <button
                   type="button"
                   className="admin-button admin-button--secondary"
                   onClick={() => navigateAdminSection('import-export')}
+                  aria-label="Přejít na sekci Import hráčů"
                 >
                   Import hráčů
                 </button>
-                <button type="button" className="admin-button admin-button--secondary" onClick={() => navigateAdminSection('judges')}>
+                <button 
+                  type="button" 
+                  className="admin-button admin-button--secondary" 
+                  onClick={() => navigateAdminSection('judges')}
+                  aria-label="Přejít na sekci Přiřadit rozhodčí"
+                >
                   Přiřadit rozhodčí
                 </button>
               </div>
@@ -2993,33 +3243,6 @@ function AdminPage({
                   <input value={newGameNotes} onChange={(eventTarget) => setNewGameNotes(eventTarget.target.value)} />
                 </label>
               </div>
-              <div className="admin-card-actions">
-                <button type="button" className="admin-button admin-button--primary" onClick={() => void handleCreateGame()}>
-                  Přidat hru
-                </button>
-              </div>
-              <div className="deskovky-admin-filters">
-                <label className="admin-field">
-                  <span>Hledat hru</span>
-                  <input
-                    value={gameSearch}
-                    onChange={(eventTarget) => setGameSearch(eventTarget.target.value)}
-                    placeholder="Název nebo poznámka"
-                  />
-                </label>
-                <label className="admin-field">
-                  <span>Typ bodování</span>
-                  <select
-                    value={gameScoringFilter}
-                    onChange={(eventTarget) => setGameScoringFilter(eventTarget.target.value as 'all' | BoardScoringType)}
-                  >
-                    <option value="all">Všechny</option>
-                    <option value="points">points</option>
-                    <option value="placement">placement</option>
-                    <option value="both">both</option>
-                  </select>
-                </label>
-              </div>
               <p className="admin-card-subtitle">
                 Zobrazeno {filteredGames.length} z {games.length} her.
               </p>
@@ -3172,50 +3395,6 @@ function AdminPage({
             <section className="admin-card">
               <h2>Hráči</h2>
               <p className="admin-card-subtitle">Správa hráčů načtených v aktivním eventu.</p>
-              <div className="admin-card-actions">
-                <button
-                  type="button"
-                  className="admin-button admin-button--secondary"
-                  onClick={() => navigateAdminSection('import-export')}
-                >
-                  Přejít na Import / export
-                </button>
-              </div>
-              <div className="deskovky-admin-filters">
-                <label className="admin-field">
-                  <span>Hledat hráče</span>
-                  <input
-                    value={playerSearch}
-                    onChange={(eventTarget) => setPlayerSearch(eventTarget.target.value)}
-                    placeholder="Kód, jméno nebo tým"
-                  />
-                </label>
-                <label className="admin-field">
-                  <span>Kategorie</span>
-                  <select
-                    value={playerCategoryFilter}
-                    onChange={(eventTarget) => setPlayerCategoryFilter(eventTarget.target.value)}
-                  >
-                    <option value="">Všechny</option>
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="admin-field">
-                  <span>Počet na stránku</span>
-                  <select
-                    value={String(playerPageSize)}
-                    onChange={(eventTarget) => setPlayerPageSize(Number(eventTarget.target.value))}
-                  >
-                    <option value="25">25</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                  </select>
-                </label>
-              </div>
               {isMobile ? (
                 <div className="deskovky-admin-mobile-list">
                   {pagedPlayers.map((player) => (
@@ -3262,6 +3441,7 @@ function AdminPage({
                     className="admin-button admin-button--secondary"
                     onClick={() => setPlayerPage((current) => Math.max(1, current - 1))}
                     disabled={safePlayerPage <= 1}
+                    aria-label={`Předchozí strana hráčů (strana ${Math.max(1, safePlayerPage - 1)})`}
                   >
                     Předchozí
                   </button>
@@ -3270,6 +3450,7 @@ function AdminPage({
                     className="admin-button admin-button--secondary"
                     onClick={() => setPlayerPage((current) => Math.min(playerTotalPages, current + 1))}
                     disabled={safePlayerPage >= playerTotalPages}
+                    aria-label={`Další strana hráčů (strana ${Math.min(playerTotalPages, safePlayerPage + 1)})`}
                   >
                     Další
                   </button>
@@ -3336,38 +3517,6 @@ function AdminPage({
                 </label>
               </div>
 
-              <div className="admin-card-actions">
-                <button type="button" className="admin-button admin-button--primary" onClick={() => void handleCreateAssignment()}>
-                  Přidat přiřazení
-                </button>
-              </div>
-              <div className="deskovky-admin-filters">
-                <label className="admin-field">
-                  <span>Rozhodčí</span>
-                  <select
-                    value={assignmentJudgeFilter}
-                    onChange={(eventTarget) => setAssignmentJudgeFilter(eventTarget.target.value)}
-                  >
-                    <option value="">Všichni</option>
-                    {assignmentJudgeOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="admin-field">
-                  <span>Hra</span>
-                  <select value={assignmentGameFilter} onChange={(eventTarget) => setAssignmentGameFilter(eventTarget.target.value)}>
-                    <option value="">Všechny</option>
-                    {games.map((game) => (
-                      <option key={game.id} value={game.id}>
-                        {game.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
               <p className="admin-card-subtitle">
                 Zobrazeno {filteredAssignments.length} z {assignments.length} přiřazení.
               </p>

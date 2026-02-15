@@ -454,6 +454,12 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
+  padding: 12px 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.deskovky-admin-filters--sticky {
+  margin-bottom: 12px;
 }
 
 .deskovky-admin-pagination {
@@ -462,12 +468,16 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
 }
 
 .deskovky-admin-pagination-status {
   margin: 0;
   font-size: 0.88rem;
   color: var(--text-2);
+  font-weight: 500;
 }
 
 .deskovky-admin-sections-layout {
@@ -479,33 +489,96 @@
 
 .deskovky-admin-sidebar {
   position: sticky;
-  top: 10px;
+  top: 18px;
   gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  height: fit-content;
 }
 
 .deskovky-admin-sidebar h3 {
-  margin: 0;
+  margin: 0 0 8px 0;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-2);
 }
 
 .deskovky-admin-sidebar-nav {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .deskovky-admin-sidebar-nav .admin-button {
   width: 100%;
   justify-content: flex-start;
-  min-height: 42px;
-  padding-inline: 14px;
+  min-height: 40px;
+  padding-inline: 12px;
+  font-size: 0.93rem;
 }
 
 .deskovky-admin-mobile-nav {
   padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.deskovky-admin-mobile-nav label {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.deskovky-admin-mobile-nav select {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  font-size: 0.95rem;
+  background: #ffffff;
+  background-image: linear-gradient(var(--surface), var(--surface)), 
+    url("data:image/svg+xml;charset=UTF-8,%3csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M1 1l5 5 5-5' stroke='%230B63B5' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px;
+  padding-right: 36px;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .deskovky-admin-section-panel {
   display: grid;
   gap: 12px;
+}
+
+.deskovky-admin-section-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--zl-green-50);
+}
+
+.deskovky-admin-section-sticky-head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.deskovky-admin-section-sticky-head > div {
+  width: 100%;
+}
+
+.deskovky-admin-section-sticky-head h3 {
+  margin: 0 0 4px 0;
+  font-size: 1.35rem;
+}
+
+.deskovky-admin-section-sticky-head .admin-button {
+  align-self: flex-start;
 }
 
 .deskovky-admin-current-section {
@@ -523,27 +596,32 @@
 
 .deskovky-admin-overview-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 8px 0;
 }
 
 .deskovky-admin-overview-stat {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface);
-  padding: 10px 12px;
+  padding: 14px 12px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
+  text-align: center;
 }
 
 .deskovky-admin-overview-stat span {
   font-size: 0.82rem;
   color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .deskovky-admin-overview-stat strong {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
+  color: var(--zl-green);
 }
 
 .deskovky-field-full {
@@ -601,41 +679,58 @@
 
 .deskovky-admin-mobile-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .deskovky-admin-mobile-card {
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--surface);
-  padding: 10px 12px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .deskovky-admin-mobile-card h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
 }
 
 .deskovky-admin-mobile-meta {
   margin: 0;
   color: var(--text-2);
   font-size: 0.88rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.deskovky-admin-mobile-meta strong {
+  font-weight: 600;
+  color: var(--text);
 }
 
 .deskovky-admin-mobile-note {
   margin: 0;
   font-size: 0.86rem;
   color: var(--text-2);
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
 }
 
 .deskovky-admin-mobile-card-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 2px;
+  margin-top: 4px;
+}
+
+.deskovky-admin-mobile-card-actions .ghost {
+  font-size: 0.88rem;
+  min-height: 36px;
 }
 
 @media (max-width: 1024px) {
@@ -740,6 +835,71 @@
   .deskovky-admin-filters {
     grid-template-columns: 1fr;
     gap: 8px;
+    padding: 10px 0 6px;
+  }
+
+  .deskovky-admin-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .deskovky-admin-sidebar {
+    position: static;
+    border: none;
+    background: transparent;
+    padding: 0;
+  }
+
+  .deskovky-admin-sidebar-nav {
+    display: none;
+  }
+
+  .deskovky-admin-mobile-nav {
+    margin-bottom: 4px;
+  }
+
+  .deskovky-admin-section-sticky {
+    margin-bottom: 8px;
+  }
+
+  .deskovky-admin-section-sticky-head {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .deskovky-admin-section-sticky-head > div {
+    flex: 1;
+  }
+
+  .deskovky-admin-section-sticky-head h3 {
+    font-size: 1.15rem;
+  }
+
+  .deskovky-admin-section-sticky-head .admin-button {
+    align-self: center;
+    min-height: 40px;
+    padding: 0 12px;
+    font-size: 0.88rem;
+  }
+
+  .deskovky-admin-overview-stats {
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 8px;
+  }
+
+  .deskovky-admin-overview-stat {
+    padding: 10px;
+    gap: 2px;
+  }
+
+  .deskovky-admin-overview-stat span {
+    font-size: 0.75rem;
+  }
+
+  .deskovky-admin-overview-stat strong {
+    font-size: 1.3rem;
   }
 
   .deskovky-kpi {
@@ -888,4 +1048,42 @@
   .deskovky-table {
     min-width: 520px;
   }
+}
+
+/* Accessibility enhancements */
+.deskovky-admin-sidebar-nav .admin-button:focus-visible,
+.deskovky-admin-mobile-nav select:focus-visible {
+  outline: 2px solid var(--zl-green);
+  outline-offset: 2px;
+}
+
+.admin-field input:focus-visible,
+.admin-field select:focus-visible,
+.admin-field textarea:focus-visible {
+  outline: 2px solid var(--zl-green);
+  outline-offset: 1px;
+  border-color: var(--zl-green);
+}
+
+.deskovky-admin-mobile-card-actions .ghost:focus-visible {
+  outline: 2px solid var(--zl-green);
+  outline-offset: 1px;
+}
+
+/* Reduce whitespace in form grids */
+.admin-field {
+  gap: 4px;
+}
+
+.deskovky-checkbox {
+  gap: 6px;
+}
+
+/* Ensure buttons are keyboard accessible */
+.deskovky-admin-sidebar-nav .admin-button {
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.deskovky-admin-sidebar-nav .admin-button:focus-visible {
+  transform: translateX(2px);
 }
