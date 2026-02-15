@@ -1,5 +1,7 @@
 /**
  * Email Integration Examples
+/**
+ * Email Integration Examples
  * 
  * Real-world examples showing how to use the email templates
  * in the Zelená Liga application

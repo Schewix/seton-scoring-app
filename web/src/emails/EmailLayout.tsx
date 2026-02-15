@@ -2,8 +2,8 @@
  * Shared email layout component for Zelená Liga
  * 
  * Color scheme:
- * - Primary blue: #0b63b5 (used in header gradient)
- * - Accent blue dark: #084785
+ * - Primary green: #0b8e3f (used in header gradient)
+ * - Accent green dark: #06642b
  * - Primary yellow: #ffd700 (CTAs)
  * - Light background: #f7fbff
  * 
@@ -52,10 +52,11 @@ export function EmailLayout({ children, preheader }: EmailLayoutProps) {
               <td align="center" style={{ paddingTop: '20px', paddingBottom: '20px' }}>
                 <table
                   width="100%"
-                  maxWidth="600"
                   cellPadding="0"
                   cellSpacing="0"
                   style={{
+                    width: '100%',
+                    maxWidth: '600px',
                     backgroundColor: '#ffffff',
                     borderRadius: '8px',
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
@@ -66,7 +67,7 @@ export function EmailLayout({ children, preheader }: EmailLayoutProps) {
                     <tr>
                       <td
                         style={{
-                          background: 'linear-gradient(135deg, #0b63b5 0%, #084785 100%)',
+                          background: 'linear-gradient(135deg, #0b8e3f 0%, #06642b 100%)',
                           padding: '32px 24px',
                           textAlign: 'center',
                           color: '#ffffff',
@@ -123,7 +124,7 @@ export function EmailLayout({ children, preheader }: EmailLayoutProps) {
                           Máte-li otázky, kontaktujte prosím organizátory na{' '}
                           <a 
                             href="mailto:info@zelenaliga.cz" 
-                            style={{ color: '#0b63b5', textDecoration: 'underline' }}
+                            style={{ color: '#0b8e3f', textDecoration: 'underline' }}
                           >
                             info@zelenaliga.cz
                           </a>
@@ -224,7 +225,7 @@ export function EmailCard({
               margin: '0 0 12px',
               fontSize: '14px',
               fontWeight: '600',
-              color: '#084785',
+              color: '#06642b',
               textTransform: 'uppercase',
               letterSpacing: '0.5px',
             }}>

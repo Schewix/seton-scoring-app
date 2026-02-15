@@ -17,6 +17,25 @@ Sends when a judge is assigned to an event, optionally with specific games and/o
 - `loginUrl` (string) - URL to the login page
 
 **Example:**
+# Email Template Integration Guide
+
+## Overview
+
+This guide explains how to integrate the new professional email templates into the existing email sending functions in the Zelená Liga application.
+
+## Templates Created
+
+### 1. **JudgeAssignmentEmail** (`web/src/emails/JudgeAssignmentEmail.tsx`)
+Sends when a judge is assigned to an event, optionally with specific games and/or categories.
+
+**Props:**
+- `judgeDisplayName` (string) - Judge's display name
+- `eventName` (string) - Event name  
+- `games` (string[]) - Optional: List of assigned games
+- `categoryName` (string | null) - Optional: Assigned category
+- `loginUrl` (string) - URL to the login page
+
+**Example:**
 ```typescript
 import { renderEmailToHtml } from '@/emails';
 import JudgeAssignmentEmail from '@/emails/JudgeAssignmentEmail';
@@ -268,8 +287,8 @@ All templates use the Zelená Liga color scheme:
 | Element | Color | Hex |
 |---------|-------|-----|
 | Primary Button | Yellow | `#ffd700` |
-| Link Color | Blue | `#0b63b5` |
-| Dark Text | Dark Blue | `#084785` |
+| Link Color | Green | `#0b8e3f` |
+| Dark Text | Dark Green | `#06642b` |
 | Card Background | Light Blue | `#f7fbff` |
 | Border | Light Border | `#d4e5f7` |
 | Footer Background | Light Gray | `#f9f9f9` |

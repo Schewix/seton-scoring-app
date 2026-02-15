@@ -33,6 +33,41 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
 ```
 
 ### 2. Send via Resend API
+# Email Templates - Quick Reference
+
+## Files & Structure
+
+```text
+web/src/emails/
+├── EmailLayout.tsx              # Base layout components
+├── JudgeAssignmentEmail.tsx     # Judge invitation email
+├── AuthLinkEmail.tsx            # Password reset / passwordless login
+├── render.ts                    # Rendering utilities
+├── index.ts                     # Main exports
+├── INTEGRATION_GUIDE.md         # Detailed integration guide
+└── QUICK_REFERENCE.md           # This file
+```
+
+## Quick Start
+
+### 1. Render an Email Template
+
+```typescript
+import { renderEmailToHtml } from '@/emails/render';
+import { JudgeAssignmentEmail } from '@/emails';
+
+const html = renderEmailToHtml(JudgeAssignmentEmail, {
+  judgeDisplayName: 'Jan Novotný',
+  eventName: 'Zelená Liga 2026',
+  games: ['Ubongo', 'Dominion'],
+  categoryName: 'Kategorie III + IV',
+  loginUrl: 'https://zelenaliga.cz/aplikace/deskove-hry',
+});
+
+// html is now a string ready to send via Resend
+```
+
+### 2. Send via Resend API
 
 ```typescript
 const response = await fetch('https://api.resend.com/emails', {
@@ -154,7 +189,7 @@ Use these in custom email templates:
 ### EmailLayout
 **Wrapper component with header, footer, preheader**
 
-```typescript
+```tsx
 <EmailLayout preheader="Preview text for email client">
   {/* Your email content */}
 </EmailLayout>
@@ -163,7 +198,7 @@ Use these in custom email templates:
 ### EmailButton
 **Yellow CTA button**
 
-```typescript
+```tsx
 <EmailButton href="https://example.com">
   Click Me
 </EmailButton>
@@ -172,7 +207,7 @@ Use these in custom email templates:
 ### EmailCard
 **Blue details card with title**
 
-```typescript
+```tsx
 <EmailCard title="Event Details">
   <p><strong>Event:</strong> Zelená Liga 2026</p>
   <p><strong>Category:</strong> Kategorie III</p>
@@ -199,9 +234,9 @@ Use these in custom email templates:
 
 ## Design Colors
 
-```
-Primary Blue:     #0b63b5  (links, headers)
-Dark Blue:        #084785  (text emphasis, card titles)
+```text
+Primary Green:     #0b8e3f  (links, headers)
+Dark Green:        #06642b  (text emphasis, card titles)
 CTA Yellow:       #ffd700  (buttons)
 Background:       #f7fbff  (card backgrounds)
 Border:           #d4e5f7  (dividers)

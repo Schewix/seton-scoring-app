@@ -176,7 +176,7 @@ export async function sendEmail(options: EmailOptions): Promise<{ id: string }> 
     replyTo = 'info@zelenaliga.cz',
   } = options;
 
-  const apiKey = process.env.RESEND_API_KEY || globalThis.Deno?.env?.get?.('RESEND_API_KEY');
+  const apiKey = process.env.RESEND_API_KEY || (globalThis as any).Deno?.env?.get?.('RESEND_API_KEY');
 
   if (!apiKey) {
     throw new Error('RESEND_API_KEY environment variable is not set');

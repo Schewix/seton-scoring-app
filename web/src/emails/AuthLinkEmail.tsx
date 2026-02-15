@@ -92,13 +92,13 @@ export function AuthLinkEmail({
       <p style={{
         margin: '0',
         fontSize: '12px',
-        color: '#0b63b5',
+        color: '#0b8e3f',
         textAlign: 'center',
       }}>
         Pokud se vám tlačítko nezobrazilo,{' '}
         <a 
           href={magicLink}
-          style={{ color: '#0b63b5', textDecoration: 'underline' }}
+          style={{ color: '#0b8e3f', textDecoration: 'underline' }}
         >
           klikněte sem
         </a>
@@ -115,7 +115,7 @@ export function AuthLinkEmail({
         color: '#555555',
         lineHeight: '1.4',
       }}>
-        <strong style={{ color: '#084785' }}>⚠️ Bezpečnostní tip:</strong> Pokud jste tento e-mail neodeslali, zkontrolujte si bezpečnost svého účtu. Nevěřte nikomu, kdo vám posílá odkazy na přihlášení e-mailem.
+        <strong style={{ color: '#06642b' }}>⚠️ Bezpečnostní tip:</strong> Pokud jste tento e-mail neodeslali, zkontrolujte si bezpečnost svého účtu. Nevěřte nikomu, kdo vám posílá odkazy na přihlášení e-mailem.
       </div>
 
       <hr style={{

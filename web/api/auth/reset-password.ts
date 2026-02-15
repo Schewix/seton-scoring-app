@@ -47,7 +47,7 @@ async function sendResetEmail(to: string, password: string, displayName?: string
   </div>
 
   <!-- Header gradient -->
-  <div style="background: linear-gradient(to right, #0b63b5, #084785); padding: 32px 20px; text-align: center;">
+  <div style="background: linear-gradient(to right, #0b8e3f, #06642b); padding: 32px 20px; text-align: center;">
     <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 600;">Zelená Liga</h1>
     <p style="color: rgba(255,255,255,0.9); margin: 4px 0 0; font-size: 13px;">SPTO Brno</p>
   </div>
@@ -63,8 +63,8 @@ async function sendResetEmail(to: string, password: string, displayName?: string
     </p>
 
     <!-- Security info card -->
-    <div style="background: #f7fbff; border: 1px solid #d4e5f7; border-radius: 6px; padding: 16px; margin: 20px 0;">
-      <h3 style="color: #084785; margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;">Resetování hesla</h3>
+    <div style="background: #eef9f0; border: 1px solid #cfe8d8; border-radius: 6px; padding: 16px; margin: 20px 0;">
+      <h3 style="color: #06642b; margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;">Resetování hesla</h3>
       <p style="margin: 0;">
         <strong>Platnost odkazu:</strong> 60 minut
       </p>
@@ -85,16 +85,16 @@ async function sendResetEmail(to: string, password: string, displayName?: string
     </div>
 
     <!-- Fallback link -->
-    <p style="margin: 0; font-size: 12px; color: #0b63b5; text-align: center;">
+    <p style="margin: 0; font-size: 12px; color: #0b8e3f; text-align: center;">
       Pokud se vám tlačítko nezobrazilo,
-      <a href="https://zelenaliga.cz/auth/reset-password" style="color: #0b63b5; text-decoration: underline;">
+      <a href="https://zelenaliga.cz/auth/reset-password" style="color: #0b8e3f; text-decoration: underline;">
         klikněte sem
       </a>
     </p>
 
     <!-- Security notice -->
-    <div style="margin: 20px 0 0; padding: 12px; background: #f0f4ff; border: 1px solid #d4e5f7; border-radius: 4px; font-size: 12px; color: #555; line-height: 1.4;">
-      <strong style="color: #084785;">⚠️ Bezpečnostní tip:</strong> Pokud jste tento e-mail neodeslali, zkontrolujte si bezpečnost svého účtu. Nevěřte nikomu, kdo vám posílá odkazy na přihlášení e-mailem.
+    <div style="margin: 20px 0 0; padding: 12px; background: #eef9f0; border: 1px solid #cfe8d8; border-radius: 4px; font-size: 12px; color: #555; line-height: 1.4;">
+      <strong style="color: #06642b;">⚠️ Bezpečnostní tip:</strong> Pokud jste tento e-mail neodeslali, zkontrolujte si bezpečnost svého účtu. Nevěřte nikomu, kdo vám posílá odkazy na přihlášení e-mailem.
     </div>
 
     <hr style="margin: 20px 0; border: none; border-top: 1px solid #e8e8e8;">
@@ -108,7 +108,7 @@ async function sendResetEmail(to: string, password: string, displayName?: string
   <div style="background: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999;">
     <p style="margin: 0;">Zelená liga SPTO • Brno</p>
     <p style="margin: 8px 0 0;">
-      <a href="mailto:info@zelenaliga.cz" style="color: #0b63b5; text-decoration: none;">info@zelenaliga.cz</a>
+      <a href="mailto:info@zelenaliga.cz" style="color: #0b8e3f; text-decoration: none;">info@zelenaliga.cz</a>
     </p>
   </div>
 </body>

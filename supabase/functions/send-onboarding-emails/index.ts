@@ -72,7 +72,7 @@ async function sendEmail(to: string, password: string, displayName?: string): Pr
   </div>
 
   <!-- Header gradient -->
-  <div style="background: linear-gradient(to right, #0b63b5, #084785); padding: 32px 20px; text-align: center;">
+  <div style="background: linear-gradient(to right, #0b8e3f, #06642b); padding: 32px 20px; text-align: center;">
     <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 600;">Zelená Liga</h1>
     <p style="color: rgba(255,255,255,0.9); margin: 4px 0 0; font-size: 13px;">SPTO Brno</p>
   </div>
@@ -88,8 +88,8 @@ async function sendEmail(to: string, password: string, displayName?: string): Pr
     </p>
 
     <!-- Account setup card -->
-    <div style="background: #f7fbff; border: 1px solid #d4e5f7; border-radius: 6px; padding: 16px; margin: 20px 0;">
-      <h3 style="color: #084785; margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;">Nastavení účtu</h3>
+    <div style="background: #eef9f0; border: 1px solid #cfe8d8; border-radius: 6px; padding: 16px; margin: 20px 0;">
+      <h3 style="color: #06642b; margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;">Nastavení účtu</h3>
       <p style="margin: 0 0 8px; font-size: 14px;">
         Klikněte na tlačítko níže a nastavte si svůj přístupový kód (heslo):
       </p>
@@ -119,9 +119,9 @@ async function sendEmail(to: string, password: string, displayName?: string): Pr
     </div>
 
     <!-- Fallback link -->
-    <p style="margin: 0; font-size: 12px; color: #0b63b5; text-align: center;">
+    <p style="margin: 0; font-size: 12px; color: #0b8e3f; text-align: center;">
       Pokud se vám tlačítko nezobrazilo,
-      <a href="https://zelenaliga.cz/aplikace" style="color: #0b63b5; text-decoration: underline;">
+      <a href="https://zelenaliga.cz/aplikace" style="color: #0b8e3f; text-decoration: underline;">
         klikněte sem pro nastavení účtu
       </a>
     </p>
@@ -137,7 +137,7 @@ async function sendEmail(to: string, password: string, displayName?: string): Pr
   <div style="background: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999;">
     <p style="margin: 0;">Zelená liga SPTO • Brno</p>
     <p style="margin: 8px 0 0;">
-      <a href="mailto:info@zelenaliga.cz" style="color: #0b63b5; text-decoration: none;">info@zelenaliga.cz</a>
+      <a href="mailto:info@zelenaliga.cz" style="color: #0b8e3f; text-decoration: none;">info@zelenaliga.cz</a>
     </p>
   </div>
 </body>

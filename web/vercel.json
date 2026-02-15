@@ -47,7 +47,8 @@
     },
     {
       "source": "/auth/reset-password",
-      "destination": "/api/auth/reset-password"
+      "destination": "/api/auth/reset-password",
+      "methods": ["POST"]
     },
     {
       "source": "/auth/(.*)",

@@ -99,13 +99,13 @@ export function JudgeAssignmentEmail({
       <p style={{
         margin: '0',
         fontSize: '12px',
-        color: '#0b63b5',
+        color: '#0b8e3f',
         textAlign: 'center',
       }}>
         Pokud se vám tlačítko nezobrazilo,{' '}
         <a 
           href={setupUrl}
-          style={{ color: '#0b63b5', textDecoration: 'underline' }}
+          style={{ color: '#0b8e3f', textDecoration: 'underline' }}
         >
           klikněte sem pro nastavení účtu
         </a>
