@@ -16,7 +16,7 @@ export {
   JudgeAssignmentEmail,
   renderJudgeAssignmentEmail,
   type JudgeAssignmentEmailProps,
-} from './JudgeAssignmentEmail';
+} from './JudgeOnboardingEmail';
 
 export {
   AuthLinkEmail,
