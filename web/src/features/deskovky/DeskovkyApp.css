@@ -386,31 +386,42 @@
 
 .deskovky-table-wrap {
   overflow-x: auto;
+  margin: 12px 0;
 }
 
 .deskovky-table {
   width: 100%;
   border-collapse: collapse;
   min-width: 620px;
+  font-size: 0.93rem;
 }
 
 .deskovky-table th,
 .deskovky-table td {
   text-align: left;
-  padding: 10px 12px;
-  border-bottom: 1px solid #e7efdf;
-  vertical-align: top;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
 }
 
 .deskovky-table thead th {
-  font-size: 0.82rem;
-  letter-spacing: 0.04em;
+  font-size: 0.80rem;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-muted);
+  font-weight: 600;
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.deskovky-table tbody tr {
+  transition: background-color 0.15s ease;
 }
 
 .deskovky-table tbody tr:hover {
-  background: #f2f8ff;
+  background: var(--zebra);
 }
 
 .deskovky-standings-cards {

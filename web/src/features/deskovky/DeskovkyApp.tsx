@@ -3243,8 +3243,13 @@ function AdminPage({
                   <input value={newGameNotes} onChange={(eventTarget) => setNewGameNotes(eventTarget.target.value)} />
                 </label>
               </div>
-              <p className="admin-card-subtitle">
-                Zobrazeno {filteredGames.length} z {games.length} her.
+              <div className="admin-card-actions">
+                <button type="button" className="admin-button admin-button--primary" onClick={() => void handleCreateGame()}>
+                  Přidat hru
+                </button>
+              </div>
+              <p className="deskovky-admin-pagination-status">
+                Zobrazeno <strong>{filteredGames.length}</strong> z <strong>{games.length}</strong> her{games.length > 0 ? '.' : '.'}
               </p>
               {isMobile ? (
                 <div className="deskovky-admin-mobile-list">
