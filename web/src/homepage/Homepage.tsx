@@ -5,7 +5,7 @@ import AppFooter from '../components/AppFooter';
 import logo from '../assets/znak_SPTO_transparent.png';
 import { fetchContentArticle, fetchContentArticles, type ContentArticle } from '../data/content';
 import { fetchHomepage, hasSanityConfig, type SanityHomepage } from '../data/sanity';
-import { fetchAlbumPreview, prefetchAlbumPreviews, type GalleryPreview } from '../utils/galleryCache';
+import { fetchAlbumPreview, type GalleryPreview } from '../utils/galleryCache';
 
 interface Competition {
   slug: string;
@@ -3108,13 +3108,8 @@ export default function ZelenaligaSite() {
         if (active) {
           const albums = data.albums ?? [];
           setDriveAlbums(albums);
-          // Prefetch only the top 3 most recent album previews
-          // (newer albums are typically at the start of the list)
-          // This keeps prefetch light while still preloading the most likely clicks
-          const topAlbumsToPreload = albums.slice(0, 3).map((album: DriveAlbum) => album.folderId);
-          if (topAlbumsToPreload.length > 0) {
-            prefetchAlbumPreviews(topAlbumsToPreload);
-          }
+          // Data will be loaded on-demand when user navigates to gallery
+          // Cache keeps data in memory for 5 minutes (see galleryCache.ts)
         }
       })
       .catch(() => {
