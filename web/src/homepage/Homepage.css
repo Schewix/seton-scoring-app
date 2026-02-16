@@ -651,8 +651,8 @@
 
 .homepage-league-card.is-compact {
   gap: 16px;
-  max-width: 880px;
-  margin-left: 0;
+  max-width: 1200px;
+  margin-left: auto;
   margin-right: auto;
 }
 
@@ -713,13 +713,13 @@
 .homepage-league-top {
   background: rgba(255, 255, 255, 0.7);
   border-radius: 18px;
-  padding: 20px;
+  padding: 32px;
   border: 1px solid rgba(4, 55, 44, 0.08);
 }
 
 .homepage-league-top h3 {
-  margin: 0 0 12px;
-  font-size: 1.2rem;
+  margin: 0 0 20px;
+  font-size: 1.3rem;
 }
 
 .homepage-league-top ol {
@@ -727,13 +727,19 @@
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 12px;
+  gap: 16px;
 }
 
 .homepage-league-top li {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(4, 55, 44, 0.06);
+}
+
+.homepage-league-top li:last-child {
+  border-bottom: none;
 }
 
 .homepage-league-top strong {
