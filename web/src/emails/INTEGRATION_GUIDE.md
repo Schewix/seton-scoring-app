@@ -7,9 +7,11 @@ This guide explains how to integrate the new professional email templates into t
 ## Templates Created
 
 ### 1. **JudgeAssignmentEmail** (`web/src/emails/JudgeAssignmentEmail.tsx`)
+
 Sends when a judge is assigned to an event, optionally with specific games and/or categories.
 
 **Props:**
+
 - `judgeDisplayName` (string) - Judge's display name
 - `eventName` (string) - Event name  
 - `games` (string[]) - Optional: List of assigned games
@@ -17,6 +19,7 @@ Sends when a judge is assigned to an event, optionally with specific games and/o
 - `loginUrl` (string) - URL to the login page
 
 **Example:**
+
 # Email Template Integration Guide
 
 ## Overview
@@ -26,9 +29,11 @@ This guide explains how to integrate the new professional email templates into t
 ## Templates Created
 
 ### 1. **JudgeAssignmentEmail** (`web/src/emails/JudgeAssignmentEmail.tsx`)
+
 Sends when a judge is assigned to an event, optionally with specific games and/or categories.
 
 **Props:**
+
 - `judgeDisplayName` (string) - Judge's display name
 - `eventName` (string) - Event name  
 - `games` (string[]) - Optional: List of assigned games
@@ -36,6 +41,7 @@ Sends when a judge is assigned to an event, optionally with specific games and/o
 - `loginUrl` (string) - URL to the login page
 
 **Example:**
+
 ```typescript
 import { renderEmailToHtml } from '@/emails';
 import JudgeAssignmentEmail from '@/emails/JudgeAssignmentEmail';
@@ -68,15 +74,18 @@ await fetch('https://api.resend.com/emails', {
 ---
 
 ### 2. **AuthLinkEmail** (`web/src/emails/AuthLinkEmail.tsx`)
+
 Sends for password reset and passwordless login flows.
 
 **Props:**
+
 - `recipientName` (string, optional) - Recipient's name
 - `magicLink` (string) - Authentication link
 - `expiresInMinutes` (number, default: 60) - Link expiration time
 - `isPasswordReset` (boolean, default: false) - Whether this is a reset or login
 
 **Example - Password Reset:**
+
 ```typescript
 import { renderEmailToHtml } from '@/emails';
 import AuthLinkEmail from '@/emails/AuthLinkEmail';
@@ -92,6 +101,7 @@ const html = renderEmailToHtml(AuthLinkEmail, {
 ```
 
 **Example - Passwordless Login:**
+
 ```typescript
 const html = renderEmailToHtml(AuthLinkEmail, {
   recipientName: 'Jan Novotný',
@@ -162,6 +172,7 @@ async function sendResetEmail(to: string, password: string, recipientName?: stri
 ```
 
 ⚠️ **Note:** This integration requires:
+
 1. Changing the temporary password flow to use a proper reset token + link instead of sending the password directly
 2. Updating the frontend to handle the reset token from the email link
 3. Storing the reset token in the database with expiration
@@ -233,12 +244,14 @@ async function sendOnboardingEmail(
 Converts a React email template component to an HTML string.
 
 **Features:**
+
 - Works in both Node.js (web/api) and Deno (supabase/functions) environments
 - Falls back to basic JSX serialization if ReactDOMServer unavailable
 - Handles inline styles, HTML attributes, and React props
 - Properly escapes content for security
 
 **Usage:**
+
 ```typescript
 import { renderEmailToHtml } from '@/emails/render';
 import JudgeAssignmentEmail from '@/emails/JudgeAssignmentEmail';
@@ -259,6 +272,7 @@ console.log(html); // HTML string ready to send
 Helper function to send emails via Resend API.
 
 **Usage:**
+
 ```typescript
 import { renderEmailToHtml, sendEmail } from '@/emails';
 import JudgeAssignmentEmail from '@/emails/JudgeAssignmentEmail';
@@ -294,6 +308,7 @@ All templates use the Zelená Liga color scheme:
 | Footer Background | Light Gray | `#f9f9f9` |
 
 All emails are:
+
 - ✅ Responsive (max-width: 600px)
 - ✅ Compatible with Gmail, Outlook, Apple Mail
 - ✅ Use nested tables for email client compatibility
@@ -308,18 +323,21 @@ All emails are:
 ### Local Testing
 
 **Option 1: Using Resend preview**
+
 ```bash
 # Get a free Resend sandbox URL to test emails
 # https://resend.com/emails (register and verify domain)
 ```
 
 **Option 2: Using email testing service**
+
 ```bash
 # Use Mailhog or MailCatcher for local testing
 # docker run -p 1025:1025 -p 8025:8025 mailhog/mailhog
 ```
 
 ### Rendering Test
+
 ```typescript
 import { renderEmailToHtml } from '@/emails';
 import JudgeAssignmentEmail from '@/emails/JudgeAssignmentEmail';

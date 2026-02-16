@@ -550,7 +550,7 @@
   padding: 8px 12px;
   font-size: 0.95rem;
   background: #ffffff;
-  background-image: linear-gradient(var(--surface), var(--surface)), 
+  background-image: linear-gradient(var(--surface), var(--surface)),
     url("data:image/svg+xml;charset=UTF-8,%3csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M1 1l5 5 5-5' stroke='%230B63B5' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3e%3c/svg%3e");
   background-repeat: no-repeat;
   background-position: right 12px center;
@@ -579,7 +579,7 @@
   align-items: flex-start;
 }
 
-.deskovky-admin-section-sticky-head > div {
+.deskovky-admin-section-sticky-head>div {
   width: 100%;
 }
 
@@ -894,7 +894,7 @@
     gap: 8px;
   }
 
-  .deskovky-admin-section-sticky-head > div {
+  .deskovky-admin-section-sticky-head>div {
     flex: 1;
   }
 
@@ -1030,7 +1030,7 @@
     font-size: 1rem;
   }
 
-  .deskovky-slot-card > div:not([hidden]) {
+  .deskovky-slot-card>div:not([hidden]) {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -1111,17 +1111,17 @@
 }
 
 /* Admin section spacing improvements */
-.deskovky-admin-section-panel > .admin-card {
+.deskovky-admin-section-panel>.admin-card {
   padding: 20px;
   gap: 14px;
 }
 
-.deskovky-admin-section-panel > .admin-card h2 {
+.deskovky-admin-section-panel>.admin-card h2 {
   margin: 0 0 8px 0;
   font-size: 1.25rem;
 }
 
-.deskovky-admin-section-panel > .admin-card .admin-card-subtitle {
+.deskovky-admin-section-panel>.admin-card .admin-card-subtitle {
   margin: 0;
 }
 

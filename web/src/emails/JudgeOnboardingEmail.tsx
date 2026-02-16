@@ -103,7 +103,7 @@ export function JudgeAssignmentEmail({
         textAlign: 'center',
       }}>
         Pokud se vám tlačítko nezobrazilo,{' '}
-        <a 
+        <a
           href={setupUrl}
           style={{ color: '#0b8e3f', textDecoration: 'underline' }}
         >
@@ -151,7 +151,7 @@ export function renderJudgeAssignmentEmail(props: JudgeAssignmentEmailProps): st
   // Note: This is a simplified render function for server-side use.
   // In a real scenario with React Email library, you'd use @react-email/render
   // For now, we serialize the component to HTML using JSX-to-string or renderToStaticMarkup
-  
+
   const ReactDOMServer = require('react-dom/server');
   return ReactDOMServer.renderToStaticMarkup(
     <JudgeAssignmentEmail {...props} />

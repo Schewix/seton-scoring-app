@@ -346,24 +346,24 @@ async function loadJudgeContext(judgeId: string): Promise<BoardJudgeContext> {
   const [eventsRes, gamesRes, categoriesRes] = await Promise.all([
     eventIds.length
       ? supabase
-          .from('board_event')
-          .select('id, slug, name, start_date, end_date, created_at')
-          .in('id', eventIds)
-          .order('start_date', { ascending: false, nullsFirst: false })
+        .from('board_event')
+        .select('id, slug, name, start_date, end_date, created_at')
+        .in('id', eventIds)
+        .order('start_date', { ascending: false, nullsFirst: false })
       : Promise.resolve({ data: [], error: null }),
     gameIds.length
       ? supabase
-          .from('board_game')
-          .select('id, event_id, name, scoring_type, points_order, three_player_adjustment, notes, created_at')
-          .in('id', gameIds)
-          .order('name', { ascending: true })
+        .from('board_game')
+        .select('id, event_id, name, scoring_type, points_order, three_player_adjustment, notes, created_at')
+        .in('id', gameIds)
+        .order('name', { ascending: true })
       : Promise.resolve({ data: [], error: null }),
     categoryIds.length
       ? supabase
-          .from('board_category')
-          .select('id, event_id, name, primary_game_id, created_at')
-          .in('id', categoryIds)
-          .order('name', { ascending: true })
+        .from('board_category')
+        .select('id, event_id, name, primary_game_id, created_at')
+        .in('id', categoryIds)
+        .order('name', { ascending: true })
       : Promise.resolve({ data: [], error: null }),
   ]);
 
@@ -1098,9 +1098,9 @@ function NewMatchPage({
       current.map((entry) =>
         entry.seat === seat
           ? {
-              ...entry,
-              [field]: value,
-            }
+            ...entry,
+            [field]: value,
+          }
           : entry,
       ),
     );
@@ -1111,11 +1111,11 @@ function NewMatchPage({
       current.map((entry) =>
         entry.seat === seat
           ? {
-              seat: entry.seat,
-              player: null,
-              points: '',
-              placement: '',
-            }
+            seat: entry.seat,
+            player: null,
+            points: '',
+            placement: '',
+          }
           : entry,
       ),
     );
@@ -1389,9 +1389,8 @@ function NewMatchPage({
                     <span className="deskovky-slot-toggle-meta">
                       <span>Slot {entry.seat}</span>
                       <span
-                        className={`deskovky-slot-status ${
-                          entry.player ? 'deskovky-slot-status--loaded' : 'deskovky-slot-status--missing'
-                        }`}
+                        className={`deskovky-slot-status ${entry.player ? 'deskovky-slot-status--loaded' : 'deskovky-slot-status--missing'
+                          }`}
                       >
                         {statusLabel}
                       </span>
@@ -1458,8 +1457,8 @@ function NewMatchPage({
                         ref={
                           !scoringInputs.showPoints
                             ? (node) => {
-                                slotInputRefs.current[entry.seat] = node;
-                              }
+                              slotInputRefs.current[entry.seat] = node;
+                            }
                             : undefined
                         }
                         type="number"
@@ -2267,12 +2266,12 @@ function AdminPage({
       current.map((event) =>
         event.id === selectedEventId
           ? {
-              ...event,
-              name,
-              slug,
-              start_date: eventStartDate || null,
-              end_date: eventEndDate || null,
-            }
+            ...event,
+            name,
+            slug,
+            start_date: eventStartDate || null,
+            end_date: eventEndDate || null,
+          }
           : event,
       ),
     );
@@ -2341,9 +2340,9 @@ function AdminPage({
       current.map((category) =>
         category.id === categoryId
           ? {
-              ...category,
-              primary_game_id: primaryGameId || null,
-            }
+            ...category,
+            primary_game_id: primaryGameId || null,
+          }
           : category,
       ),
     );
@@ -2885,9 +2884,8 @@ function AdminPage({
                 <button
                   key={item.key}
                   type="button"
-                  className={`admin-button ${
-                    activeSection === item.key ? 'admin-button--primary' : 'admin-button--secondary'
-                  }`}
+                  className={`admin-button ${activeSection === item.key ? 'admin-button--primary' : 'admin-button--secondary'
+                    }`}
                   onClick={() => navigateAdminSection(item.key)}
                   aria-current={activeSection === item.key ? 'page' : undefined}
                 >
@@ -2908,9 +2906,8 @@ function AdminPage({
               {sectionHeaderConfig.action ? (
                 <button
                   type="button"
-                  className={`admin-button ${
-                    sectionHeaderConfig.action.kind === 'primary' ? 'admin-button--primary' : 'admin-button--secondary'
-                  }`}
+                  className={`admin-button ${sectionHeaderConfig.action.kind === 'primary' ? 'admin-button--primary' : 'admin-button--secondary'
+                    }`}
                   onClick={sectionHeaderConfig.action.onClick}
                   disabled={sectionHeaderConfig.action.disabled}
                 >
@@ -3006,8 +3003,8 @@ function AdminPage({
                 </label>
                 <label className="admin-field">
                   <span>Hra</span>
-                  <select 
-                    value={assignmentGameFilter} 
+                  <select
+                    value={assignmentGameFilter}
                     onChange={(eventTarget) => setAssignmentGameFilter(eventTarget.target.value)}
                     aria-label="Filtrovat přiřazení podle hry"
                   >
@@ -3053,9 +3050,9 @@ function AdminPage({
               </div>
 
               <div className="admin-card-actions">
-                <button 
-                  type="button" 
-                  className="admin-button admin-button--primary" 
+                <button
+                  type="button"
+                  className="admin-button admin-button--primary"
                   onClick={() => navigateAdminSection('games')}
                   aria-label="Přejít na sekci Přidat hru"
                 >
@@ -3069,9 +3066,9 @@ function AdminPage({
                 >
                   Import hráčů
                 </button>
-                <button 
-                  type="button" 
-                  className="admin-button admin-button--secondary" 
+                <button
+                  type="button"
+                  className="admin-button admin-button--secondary"
                   onClick={() => navigateAdminSection('judges')}
                   aria-label="Přejít na sekci Přiřadit rozhodčí"
                 >

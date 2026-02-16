@@ -1,10 +1,11 @@
 /**
- * Email Integration Examples
+
+* Email Integration Examples
 /**
- * Email Integration Examples
- * 
- * Real-world examples showing how to use the email templates
- * in the Zelená Liga application
+* Email Integration Examples
+*
+* Real-world examples showing how to use the email templates
+* in the Zelená Liga application
  */
 
 // ============================================================================
@@ -30,7 +31,7 @@ async function exampleResetPasswordEmail(
   });
 
   // Send via Resend API
-  const response = await fetch('https://api.resend.com/emails', {
+  const response = await fetch('<https://api.resend.com/emails>', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
@@ -41,7 +42,7 @@ async function exampleResetPasswordEmail(
       to: email,
       subject: 'Resetovat heslo',
       html,
-      reply_to: 'info@zelenaliga.cz',
+      reply_to: '<info@zelenaliga.cz>',
     }),
   });
 
@@ -77,7 +78,7 @@ async function exampleJudgeAssignmentEmail(
   });
 
   // Send via Resend API
-  const response = await fetch('https://api.resend.com/emails', {
+  const response = await fetch('<https://api.resend.com/emails>', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${Deno.env.get('RESEND_API_KEY')}`,
@@ -88,7 +89,7 @@ async function exampleJudgeAssignmentEmail(
       to: judgeEmail,
       subject: `Přístup pro rozhodčího – ${eventName}`,
       html,
-      reply_to: 'info@zelenaliga.cz',
+      reply_to: '<info@zelenaliga.cz>',
     }),
   });
 
@@ -143,7 +144,7 @@ async function assignJudgeAndNotify(
   });
 
   // 3. Send email
-  const emailResponse = await fetch('https://api.resend.com/emails', {
+  const emailResponse = await fetch('<https://api.resend.com/emails>', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
@@ -154,7 +155,7 @@ async function assignJudgeAndNotify(
       to: judge.email,
       subject: `Přístup pro rozhodčího – ${eventName}`,
       html,
-      reply_to: 'info@zelenaliga.cz',
+      reply_to: '<info@zelenaliga.cz>',
     }),
   });
 
@@ -202,7 +203,7 @@ async function sendEmailWithRetry(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const response = await fetch('https://api.resend.com/emails', {
+      const response = await fetch('<https://api.resend.com/emails>', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
@@ -213,7 +214,7 @@ async function sendEmailWithRetry(
           to,
           subject,
           html,
-          reply_to: 'info@zelenaliga.cz',
+          reply_to: '<info@zelenaliga.cz>',
         }),
       });
 
@@ -244,7 +245,7 @@ async function sendEmailWithRetry(
 }
 
 // Usage with retry:
-// const html = renderEmailToHtml(JudgeAssignmentEmail, { /* ... */ });
+// const html = renderEmailToHtml(JudgeAssignmentEmail, { /*...*/ });
 // const messageId = await sendEmailWithRetry(judgeEmail, subject, html);
 
 // ============================================================================
@@ -262,7 +263,7 @@ async function exampleTestEmailRendering(): Promise<void> {
     eventName: 'Test Event 2026',
     games: ['Ubongo', 'Dominion', 'Azul'],
     categoryName: 'Kategorie III + IV',
-    loginUrl: 'https://zelenaliga.cz/aplikace/deskove-hry',
+    loginUrl: '<https://zelenaliga.cz/aplikace/deskove-hry>',
   });
 
   // Save to file

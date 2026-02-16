@@ -33,6 +33,7 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
 ```
 
 ### 2. Send via Resend API
+
 # Email Templates - Quick Reference
 
 ## Files & Structure
@@ -117,6 +118,7 @@ console.log(result.id);
 **When to use:** Judge assigned to an event ✉️
 
 **Props:**
+
 ```typescript
 {
   judgeDisplayName: string;           // Judge's name
@@ -128,6 +130,7 @@ console.log(result.id);
 ```
 
 **Example:**
+
 ```typescript
 import { renderEmailToHtml } from '@/emails/render';
 import { JudgeAssignmentEmail } from '@/emails';
@@ -148,6 +151,7 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
 **When to use:** Password reset or passwordless login 🔐
 
 **Props:**
+
 ```typescript
 {
   recipientName?: string;             // Optional: "Jana Součková"
@@ -158,6 +162,7 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
 ```
 
 **Password Reset Example:**
+
 ```typescript
 import { renderEmailToHtml } from '@/emails/render';
 import { AuthLinkEmail } from '@/emails';
@@ -171,6 +176,7 @@ const html = renderEmailToHtml(AuthLinkEmail, {
 ```
 
 **Passwordless Login Example:**
+
 ```typescript
 const html = renderEmailToHtml(AuthLinkEmail, {
   recipientName: 'Jan Novotný',
@@ -187,6 +193,7 @@ const html = renderEmailToHtml(AuthLinkEmail, {
 Use these in custom email templates:
 
 ### EmailLayout
+
 **Wrapper component with header, footer, preheader**
 
 ```tsx
@@ -196,6 +203,7 @@ Use these in custom email templates:
 ```
 
 ### EmailButton
+
 **Yellow CTA button**
 
 ```tsx
@@ -205,6 +213,7 @@ Use these in custom email templates:
 ```
 
 ### EmailCard
+
 **Blue details card with title**
 
 ```tsx
@@ -254,6 +263,7 @@ Footer BG:        #f9f9f9  (footer)
 ✅ Mobile clients (iOS Mail, Gmail app)
 
 All templates use:
+
 - Nested tables (email client compatibility)
 - Inline styles (no CSS classes)
 - Max-width: 600px (responsive)
@@ -265,6 +275,7 @@ All templates use:
 ## Common Tasks
 
 ### Preview Email in Browser
+
 ```typescript
 import fs from 'fs';
 import { renderEmailToHtml } from '@/emails/render';
@@ -283,6 +294,7 @@ fs.writeFileSync('./email-preview.html', html);
 ```
 
 ### Debug Email Rendering
+
 ```typescript
 import { renderEmailToHtml } from '@/emails/render';
 import { JudgeAssignmentEmail } from '@/emails';
@@ -297,6 +309,7 @@ try {
 ```
 
 ### Test Email Delivery
+
 ```typescript
 import { sendEmail, renderEmailToHtml } from '@/emails';
 import { JudgeAssignmentEmail } from '@/emails';
@@ -336,6 +349,7 @@ console.log('Email sent:', result.id);
 ## Next Steps
 
 See **INTEGRATION_GUIDE.md** for:
+
 - Detailed integration steps
 - Migration checklist
 - Testing procedures

@@ -69,9 +69,9 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
   └── EXAMPLES.md                  # Real-world code examples
   ```
 
-  ## 🚀 Quick Start
+## 🚀 Quick Start
 
-  ### 1. Render an Email
+### 1. Render an Email
 
   ```typescript
   import { renderEmailToHtml } from '@/emails/render';
@@ -86,7 +86,7 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
   });
   ```
 
-  ### 2. Send via Resend API
+### 2. Send via Resend API
 
   ```typescript
   const response = await fetch('https://api.resend.com/emails', {
@@ -108,19 +108,22 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
   console.log(`Email sent: ${id}`);
   ```
 
-  ## 📧 Available Templates
+## 📧 Available Templates
 
-  ### JudgeAssignmentEmail
+### JudgeAssignmentEmail
+
   Sent when a judge is assigned to an event with optional game/category information.
 
   **Props:**
-  - `judgeDisplayName` (string) - Judge's name
-  - `eventName` (string) - Event name
-  - `games?` (string[]) - Assigned games
-  - `categoryName?` (string | null) - Assigned category
-  - `loginUrl` (string) - Login/app link
+
+- `judgeDisplayName` (string) - Judge's name
+- `eventName` (string) - Event name
+- `games?` (string[]) - Assigned games
+- `categoryName?` (string | null) - Assigned category
+- `loginUrl` (string) - Login/app link
 
   **Example:**
+
   ```typescript
   <JudgeAssignmentEmail
     judgeDisplayName="Jan Novotný"
@@ -133,16 +136,19 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
 
   ---
 
-  ### AuthLinkEmail
+### AuthLinkEmail
+
   Used for password reset and passwordless login flows.
 
   **Props:**
-  - `recipientName?` (string) - Recipient's name
-  - `magicLink` (string) - Authentication link URL
-  - `expiresInMinutes?` (number) - Link expiration (default: 60)
-  - `isPasswordReset?` (boolean) - Whether this is password reset (default: false)
+
+- `recipientName?` (string) - Recipient's name
+- `magicLink` (string) - Authentication link URL
+- `expiresInMinutes?` (number) - Link expiration (default: 60)
+- `isPasswordReset?` (boolean) - Whether this is password reset (default: false)
 
   **Password Reset Example:**
+
   ```typescript
   <AuthLinkEmail
     recipientName="Jana Součková"
@@ -153,6 +159,7 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
   ```
 
   **Passwordless Login Example:**
+
   ```typescript
   <AuthLinkEmail
     recipientName="Jan Novotný"
@@ -162,7 +169,7 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
   />
   ```
 
-  ## 🎨 Design System
+## 🎨 Design System
 
   All emails use Zelená Liga branding:
 
@@ -175,17 +182,18 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
   | Border | Light Border | `#d4e5f7` |
   | Footer Background | Light Gray | `#f9f9f9` |
 
-  ## 🔧 Utilities
+## 🔧 Utilities
 
-  ### renderEmailToHtml(component, props)
+### renderEmailToHtml(component, props)
 
   Converts a React email component to an HTML string.
 
   **Features:**
-  - Works in Node.js and Deno
-  - Handles inline styles and HTML attributes
-  - Properly escapes content for security
-  - Falls back to basic JSX serialization if ReactDOMServer unavailable
+
+- Works in Node.js and Deno
+- Handles inline styles and HTML attributes
+- Properly escapes content for security
+- Falls back to basic JSX serialization if ReactDOMServer unavailable
 
   ```typescript
   import { renderEmailToHtml } from '@/emails/render';
@@ -200,7 +208,7 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
   });
   ```
 
-  ### sendEmail(options)
+### sendEmail(options)
 
   Helper function to send emails via Resend API.
 
@@ -218,11 +226,12 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
   console.log(result.id); // Message ID from Resend
   ```
 
-  ## 🛠️ Building Custom Templates
+## 🛠️ Building Custom Templates
 
   Use the provided components to build new templates:
 
-  ### EmailLayout
+### EmailLayout
+
   Main wrapper with header, footer, and preheader.
 
   ```tsx
@@ -231,7 +240,8 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
   </EmailLayout>
   ```
 
-  ### EmailButton
+### EmailButton
+
   Yellow CTA button.
 
   ```tsx
@@ -240,7 +250,8 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
   </EmailButton>
   ```
 
-  ### EmailCard
+### EmailCard
+
   Blue details card.
 
   ```tsx
@@ -249,7 +260,7 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
   </EmailCard>
   ```
 
-  ## 📍 Integration Points
+## 📍 Integration Points
 
   The email system is ready to integrate with:
 
@@ -261,6 +272,7 @@ const html = renderEmailToHtml(JudgeAssignmentEmail, {
      - Replace manual HTML with `JudgeAssignmentEmail`
      - Pass event/game/category data
 // Open file:///path/to/email-preview.html in browser
+
 ```
 
 ### Test Rendering
@@ -286,11 +298,13 @@ try {
 ## 🚀 Deployment
 
 1. **Install Dependencies** (if upgrading from basic React)
+
    ```bash
    npm install @react-email/components @react-email/render
    ```
 
 2. **Update Imports** (if switching to React Email library)
+
    ```typescript
    // Change from:
    import { renderEmailToHtml } from '@/emails/render';
@@ -300,6 +314,7 @@ try {
    ```
 
 3. **Environment Variables**
+
    ```
    RESEND_API_KEY=re_your_api_key
    APP_URL=https://zelenaliga.cz
@@ -323,6 +338,7 @@ Part of the Zelená Liga application. See LICENSE file.
 ## 💬 Support
 
 For questions about email templates, see:
+
 - QUICK_REFERENCE.md - Common tasks
 - INTEGRATION_GUIDE.md - Integration help
 - EXAMPLES.md - Code examples
