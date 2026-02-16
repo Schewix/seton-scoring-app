@@ -99,7 +99,7 @@ const NAV_ITEMS = [
   { id: 'aktualni-poradi', label: 'Aktuální pořadí', href: '/aktualni-poradi' },
   { id: 'clanky', label: 'Články a novinky', href: '/clanky' },
   { id: 'fotogalerie', label: 'Fotogalerie', href: '/fotogalerie' },
-  { id: 'souteze', label: 'Soutěže a aplikace', href: '/souteze' },
+  { id: 'souteze', label: 'Soutěže', href: '/souteze' },
   { id: 'oddily', label: 'Oddíly SPTO', href: '/oddily' },
   { id: 'o-spto', label: 'O SPTO', href: '/o-spto' },
   { id: 'kontakty', label: 'Kontakty', href: '/kontakty' },
@@ -867,47 +867,47 @@ function ArticlesIndexPage({
                           <span aria-hidden="true">SPTO</span>
                         )}
                       </div>
-                    <div className="homepage-article-body">
-                      <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <time
-                          dateTime={article.dateISO}
+                      <div className="homepage-article-body">
+                        <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <time
+                            dateTime={article.dateISO}
+                            style={{
+                              display: 'inline-flex',
+                              padding: '4px 10px',
+                              borderRadius: '999px',
+                              background: 'rgba(4, 55, 44, 0.08)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {article.dateLabel}
+                          </time>
+                        </div>
+                        <h3
                           style={{
-                            display: 'inline-flex',
-                            padding: '4px 10px',
-                            borderRadius: '999px',
-                            background: 'rgba(4, 55, 44, 0.08)',
-                            fontWeight: 600,
+                            display: '-webkit-box',
+                            WebkitBoxOrient: 'vertical',
+                            WebkitLineClamp: 2,
+                            overflow: 'hidden',
                           }}
                         >
-                          {article.dateLabel}
-                        </time>
+                          {article.title}
+                        </h3>
+                        <p
+                          style={{
+                            display: '-webkit-box',
+                            WebkitBoxOrient: 'vertical',
+                            WebkitLineClamp: 3,
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {article.excerpt}
+                        </p>
+                        <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          Číst článek <span aria-hidden="true">→</span>
+                        </a>
                       </div>
-                      <h3
-                        style={{
-                          display: '-webkit-box',
-                          WebkitBoxOrient: 'vertical',
-                          WebkitLineClamp: 2,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        {article.title}
-                      </h3>
-                      <p
-                        style={{
-                          display: '-webkit-box',
-                          WebkitBoxOrient: 'vertical',
-                          WebkitLineClamp: 3,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        {article.excerpt}
-                      </p>
-                      <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                        Číst článek <span aria-hidden="true">→</span>
-                      </a>
                     </div>
-                  </div>
-                </article>
+                  </article>
                 );
               })}
             </div>
@@ -2666,47 +2666,47 @@ function Homepage({
                           <span aria-hidden="true">SPTO</span>
                         )}
                       </div>
-                    <div className="homepage-article-body">
-                      <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <time
-                          dateTime={article.dateISO}
+                      <div className="homepage-article-body">
+                        <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <time
+                            dateTime={article.dateISO}
+                            style={{
+                              display: 'inline-flex',
+                              padding: '4px 10px',
+                              borderRadius: '999px',
+                              background: 'rgba(4, 55, 44, 0.08)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {article.dateLabel}
+                          </time>
+                        </div>
+                        <h3
                           style={{
-                            display: 'inline-flex',
-                            padding: '4px 10px',
-                            borderRadius: '999px',
-                            background: 'rgba(4, 55, 44, 0.08)',
-                            fontWeight: 600,
+                            display: '-webkit-box',
+                            WebkitBoxOrient: 'vertical',
+                            WebkitLineClamp: 2,
+                            overflow: 'hidden',
                           }}
                         >
-                          {article.dateLabel}
-                        </time>
+                          {article.title}
+                        </h3>
+                        <p
+                          style={{
+                            display: '-webkit-box',
+                            WebkitBoxOrient: 'vertical',
+                            WebkitLineClamp: 2,
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {article.excerpt}
+                        </p>
+                        <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          Číst článek <span aria-hidden="true">→</span>
+                        </a>
                       </div>
-                      <h3
-                        style={{
-                          display: '-webkit-box',
-                          WebkitBoxOrient: 'vertical',
-                          WebkitLineClamp: 2,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        {article.title}
-                      </h3>
-                      <p
-                        style={{
-                          display: '-webkit-box',
-                          WebkitBoxOrient: 'vertical',
-                          WebkitLineClamp: 2,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        {article.excerpt}
-                      </p>
-                      <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                        Číst článek <span aria-hidden="true">→</span>
-                      </a>
                     </div>
-                  </div>
-                </article>
+                  </article>
                 );
               })}
             </div>
