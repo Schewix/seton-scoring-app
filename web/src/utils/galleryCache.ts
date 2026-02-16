@@ -113,12 +113,14 @@ export function fetchAlbumPreview(folderId: string, signal?: AbortSignal): Promi
 
 /**
  * Prefetch multiple album previews in the background.
- * Returns immediately; requests happen asynchronously.
+ * Requests are fired in parallel with minimal delay for responsiveness.
+ * Low fetch priority to avoid blocking user interactions.
  */
 export function prefetchAlbumPreviews(folderIds: string[]): void {
-  // Stagger requests slightly to avoid overwhelming the server
   folderIds.forEach((folderId, index) => {
-    const delay = index * 100; // 100ms between requests
+    // Minimal delay: stagger first few requests to avoid thundering herd
+    // but allow most to start immediately in parallel
+    const delay = Math.min(index * 10, 50); // Max 50ms delay
     setTimeout(() => {
       fetchAlbumPreview(folderId).catch(() => {
         // Silently ignore errors during prefetch

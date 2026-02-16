@@ -3108,8 +3108,13 @@ export default function ZelenaligaSite() {
         if (active) {
           const albums = data.albums ?? [];
           setDriveAlbums(albums);
-          // Prefetch all album previews in the background (5-min cache)
-          prefetchAlbumPreviews(albums.map((album: DriveAlbum) => album.folderId));
+          // Prefetch only the top 3 most recent album previews
+          // (newer albums are typically at the start of the list)
+          // This keeps prefetch light while still preloading the most likely clicks
+          const topAlbumsToPreload = albums.slice(0, 3).map((album: DriveAlbum) => album.folderId);
+          if (topAlbumsToPreload.length > 0) {
+            prefetchAlbumPreviews(topAlbumsToPreload);
+          }
         }
       })
       .catch(() => {
