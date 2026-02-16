@@ -2727,15 +2727,15 @@ function Homepage({
                   .map((row, index) => (
                     <li
                       key={row.key}
-                      style={{ display: 'grid', gridTemplateColumns: '32px 1fr', gap: '12px', alignItems: 'center' }}
+                      style={{ display: 'grid', gridTemplateColumns: '32px 1fr auto', gap: '12px', alignItems: 'center' }}
                     >
                       <span className="homepage-league-rank" style={{ textAlign: 'right' }}>
                         {row.rank}.
                       </span>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <strong>{row.name}</strong>
-                        <span>{row.total === null ? '— bodů' : `${formatLeagueScore(row.total)} bodů`}</span>
-                      </div>
+                      <strong>{row.name}</strong>
+                      <span style={{ fontWeight: 600, color: '#0b8e3f' }}>
+                        {row.total === null ? '— bodů' : `${formatLeagueScore(row.total)} bodů`}
+                      </span>
                     </li>
                   ))}
               </ol>
