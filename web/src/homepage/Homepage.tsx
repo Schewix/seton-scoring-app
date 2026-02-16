@@ -5,6 +5,7 @@ import AppFooter from '../components/AppFooter';
 import logo from '../assets/znak_SPTO_transparent.png';
 import { fetchContentArticle, fetchContentArticles, type ContentArticle } from '../data/content';
 import { fetchHomepage, hasSanityConfig, type SanityHomepage } from '../data/sanity';
+import { fetchAlbumPreview, prefetchAlbumPreviews, type GalleryPreview } from '../utils/galleryCache';
 
 interface Competition {
   slug: string;
@@ -748,19 +749,9 @@ function mapContentArticle(article: ContentArticle): Article {
   };
 }
 
-async function fetchAlbumPreview(folderId: string): Promise<GalleryPreview> {
-  const params = new URLSearchParams({
-    folderId,
-    pageSize: '4',
-    includeCount: '1',
-    includeSubfolders: '1',
-  });
-  const response = await fetch(`/api/gallery?${params.toString()}`);
-  if (!response.ok) {
-    throw new Error('Failed to load album preview.');
-  }
-  return response.json();
-}
+// Gallery cache & prefetch is imported from utils/galleryCache.ts
+// fetchAlbumPreview() is used by GalleryAlbumCard components
+// prefetchAlbumPreviews() is called on HomePage mount to preload gallery data
 
 function NotFoundPage() {
   return (
@@ -3115,7 +3106,10 @@ export default function ZelenaligaSite() {
       })
       .then((data) => {
         if (active) {
-          setDriveAlbums(data.albums ?? []);
+          const albums = data.albums ?? [];
+          setDriveAlbums(albums);
+          // Prefetch all album previews in the background (5-min cache)
+          prefetchAlbumPreviews(albums.map((album: DriveAlbum) => album.folderId));
         }
       })
       .catch(() => {
