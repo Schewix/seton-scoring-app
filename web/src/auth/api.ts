@@ -97,7 +97,7 @@ export function changePasswordRequest(params: { email?: string; id?: string; new
 }
 
 export function requestPasswordReset(email: string) {
-  const url = `${BASE_URL}/auth/reset-password`;
+  const url = `${BASE_URL}/api/auth/reset-password`;
   return fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
