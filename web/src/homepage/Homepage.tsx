@@ -2719,7 +2719,7 @@ function Homepage({
             <span className="homepage-section-accent" aria-hidden="true" />
           </div>
           <div className="homepage-card homepage-league-card is-compact">
-            <div className="homepage-league-top" style={{ padding: '24px' }}>
+            <div className="homepage-league-top">
               <h3>Top {LEAGUE_TOP_COUNT} oddílů</h3>
               <ol>
                 {addCompetitionRanks(buildLeagueRows(leagueScores))

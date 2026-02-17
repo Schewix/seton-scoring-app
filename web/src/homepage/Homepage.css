@@ -651,8 +651,9 @@
 
 .homepage-league-card.is-compact {
   gap: 16px;
-  max-width: 1200px;
-  margin-left: auto;
+  width: 100%;
+  max-width: 880px;
+  margin-left: 0;
   margin-right: auto;
 }
 
@@ -664,7 +665,7 @@
 
 .homepage-league-card.is-compact .homepage-league-top,
 .homepage-league-card.is-compact .homepage-league-actions {
-  width: 100%;
+  width: 70%;
   max-width: 100%;
   margin: 0;
 }
@@ -672,7 +673,7 @@
 .homepage-league-card.is-compact .homepage-league-top {
   background: transparent;
   border: none;
-  padding: 0;
+  padding: 32px;
   border-radius: 0;
 }
 
