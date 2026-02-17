@@ -1633,7 +1633,7 @@
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
-.editor-form-grid > label {
+.editor-form-grid>label {
   min-width: 0;
 }
 
@@ -2165,7 +2165,7 @@
     background: rgba(255, 255, 255, 0.95);
   }
 
-  .homepage-league-row + .homepage-league-row {
+  .homepage-league-row+.homepage-league-row {
     margin-top: 12px;
   }
 
@@ -2173,14 +2173,14 @@
     display: none;
   }
 
-  .homepage-league-row > span {
+  .homepage-league-row>span {
     display: flex;
     justify-content: space-between;
     align-items: center;
     width: 100%;
   }
 
-  .homepage-league-row > span::before {
+  .homepage-league-row>span::before {
     content: attr(data-label);
     font-size: 0.65rem;
     letter-spacing: 0.12em;
@@ -2221,6 +2221,7 @@
   .homepage-pdf-title {
     text-align: center;
   }
+
   .gallery-album-grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 220px));
   }
