@@ -20,7 +20,8 @@ interface RawResult {
   total_seconds?: number | string | null;
   wait_seconds?: number | string | null;
   total_points: number | string | null;
-  points_no_T: number | string | null;
+  points_no_t?: number | string | null;
+  points_no_T?: number | string | null;
   pure_seconds: number | string | null;
   time_points?: number | string | null;
   station_points_breakdown?: Record<string, unknown> | null;
@@ -240,7 +241,7 @@ function normaliseResult(raw: RawResult): Result {
     totalSeconds: parseNumber(raw.total_seconds),
     waitSeconds: parseNumber(raw.wait_seconds, 0),
     totalPoints: parseNumber(raw.total_points),
-    pointsNoT: parseNumber(raw.points_no_T),
+    pointsNoT: parseNumber(raw.points_no_t ?? raw.points_no_T ?? null),
     pureSeconds: parseNumber(raw.pure_seconds),
     timePoints: parseNumber(raw.time_points),
     stationPointsBreakdown: parseStationPointsBreakdown(raw.station_points_breakdown ?? null),

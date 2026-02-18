@@ -170,10 +170,91 @@ function extractPatrolMembers(rawNote: string | null | undefined): string[] {
   if (!firstLine) {
     return [];
   }
-  return firstLine
+  const semicolonParts = firstLine
+    .split(/;|\|/g)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (semicolonParts.length > 1) {
+    return semicolonParts;
+  }
+  const commaParts = firstLine
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
+  if (commaParts.length > 1) {
+    return commaParts;
+  }
+  return [firstLine];
+}
+
+function parseTroopNumber(value: string): number | null {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return null;
+  }
+  const match = normalized.match(/^(\d{1,4})\s*\.?/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function compareTroopSheetOrder(a: string, b: string) {
+  const aNumber = parseTroopNumber(a);
+  const bNumber = parseTroopNumber(b);
+  if (aNumber !== null && bNumber !== null) {
+    if (aNumber !== bNumber) {
+      return aNumber - bNumber;
+    }
+    return a.localeCompare(b, 'cs', { sensitivity: 'base' });
+  }
+  if (aNumber !== null) {
+    return -1;
+  }
+  if (bNumber !== null) {
+    return 1;
+  }
+  return a.localeCompare(b, 'cs', { sensitivity: 'base' });
+}
+
+function isMixedTroopPlaceholder(value: string) {
+  return /^(?:sm[ií]s(?:en[áa]?|ene?)?|sm[ií]šen[áaýy]?\s+hl[ií]dka|mix(?:ed)?)$/i.test(value.trim());
+}
+
+function splitMixedTroopNames(rawTeamName: string | null | undefined): string[] {
+  const normalized = normalizeText(rawTeamName);
+  if (!normalized) {
+    return ['Bez oddílu'];
+  }
+
+  const hasMultipleNumberedTroops = (normalized.match(/\d+\s*\.?\s*PTO/gi) ?? []).length >= 2;
+  const splitPattern = hasMultipleNumberedTroops
+    ? /\s*(?:\+|\/|&|;|\|)\s*|\s+\ba\b\s+|\s+\band\b\s+|,\s*(?=\d+\s*\.?)/gi
+    : /\s*(?:\+|\/|&|;|\|)\s*|,\s*(?=\d+\s*\.?)/gi;
+  const parts = normalized
+    .split(splitPattern)
+    .map((part) =>
+      part
+        .replace(/^\(?\s*(?:sm[ií]šen[áaýy]?\s+hl[ií]dka|sm[ií]s(?:en[áa]?|ene?)?|mix(?:ed)?)\s*[:\-]?\s*/i, '')
+        .replace(/\s*\)?$/, '')
+        .trim(),
+    )
+    .filter((part) => Boolean(part) && !isMixedTroopPlaceholder(part));
+
+  if (!parts.length) {
+    return ['Bez oddílu'];
+  }
+
+  const seen = new Set<string>();
+  return parts.filter((part) => {
+    const key = part.toLocaleLowerCase('cs');
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 function toWorksheetBaseName(value: string, fallback: string) {
@@ -829,16 +910,18 @@ function AdminDashboard({
 
       const byTroop = new Map<string, PatrolNameCheckRow[]>();
       rows.forEach((row) => {
-        const troopName = normalizeText(row.team_name) || 'Bez oddílu';
-        if (!byTroop.has(troopName)) {
-          byTroop.set(troopName, []);
-        }
-        byTroop.get(troopName)!.push(row);
+        const troopNames = splitMixedTroopNames(row.team_name);
+        troopNames.forEach((troopName) => {
+          if (!byTroop.has(troopName)) {
+            byTroop.set(troopName, []);
+          }
+          byTroop.get(troopName)!.push(row);
+        });
       });
 
       const workbook = new ExcelJS.Workbook();
       const usedSheetNames = new Set<string>();
-      const sortedTroops = Array.from(byTroop.entries()).sort((a, b) => a[0].localeCompare(b[0], 'cs'));
+      const sortedTroops = Array.from(byTroop.entries()).sort((a, b) => compareTroopSheetOrder(a[0], b[0]));
 
       if (sortedTroops.length === 0) {
         const worksheet = workbook.addWorksheet('Kontrola jmen');
@@ -849,13 +932,21 @@ function AdminDashboard({
         const baseSheetName = toWorksheetBaseName(troopName, 'Bez oddílu');
         const sheetName = toUniqueWorksheetName(baseSheetName, usedSheetNames);
         const worksheet = workbook.addWorksheet(sheetName);
-        worksheet.addRow(['Číslo hlídky', 'Členové']);
-        patrols.forEach((patrol) => {
+        patrols.sort(comparePatrolOrder);
+        const memberLists = patrols.map((patrol) => extractPatrolMembers(patrol.note));
+        const memberColumnCount = Math.max(
+          1,
+          memberLists.reduce((max, members) => Math.max(max, members.length), 0),
+        );
+        const memberHeaders = Array.from({ length: memberColumnCount }, (_, index) => `Člen ${index + 1}`);
+        worksheet.addRow(['Číslo hlídky', ...memberHeaders]);
+        patrols.forEach((patrol, index) => {
           const code = parsePatrolCodeParts(patrol.patrol_code).normalizedCode || '—';
-          const members = extractPatrolMembers(patrol.note).join(', ') || '—';
-          worksheet.addRow([code, members]);
+          const members = memberLists[index];
+          const memberCells = Array.from({ length: memberColumnCount }, (_, memberIndex) => members[memberIndex] || '—');
+          worksheet.addRow([code, ...memberCells]);
         });
-        worksheet.columns = [{ width: 16 }, { width: 52 }];
+        worksheet.columns = [{ width: 16 }, ...Array.from({ length: memberColumnCount }, () => ({ width: 28 }))];
       });
 
       await downloadWorkbook(workbook, toExportFileName(eventState.name, 'kontrola-jmen'));
@@ -881,7 +972,8 @@ function AdminDashboard({
         disqualified: boolean | null;
         rank_in_bracket: number | string | null;
         total_points: number | string | null;
-        points_no_T: number | string | null;
+        points_no_t?: number | string | null;
+        points_no_T?: number | string | null;
       };
       type LeagueExportScoredRow = LeagueExportRow & {
         bracketKey: string;
@@ -896,7 +988,7 @@ function AdminDashboard({
 
       const { data, error } = await supabase
         .from('results_ranked')
-        .select('patrol_code, category, sex, disqualified, rank_in_bracket, total_points, points_no_T')
+        .select('patrol_code, category, sex, disqualified, rank_in_bracket, total_points, points_no_t')
         .eq('event_id', eventId);
 
       if (error) {
@@ -912,7 +1004,7 @@ function AdminDashboard({
           }
           const disqualifiedFlag = row.disqualified === true;
           const totalPoints = toNumeric(row.total_points);
-          const pointsNoT = toNumeric(row.points_no_T);
+          const pointsNoT = toNumeric(row.points_no_t ?? row.points_no_T ?? null);
           return {
             ...row,
             bracketKey,
@@ -1035,7 +1127,7 @@ function AdminDashboard({
               row.disqualified ? 'DSQ' : (toNumeric(row.rank_in_bracket) ?? ''),
               parsePatrolCodeParts(row.patrol_code).normalizedCode || '—',
               toNumeric(row.total_points) ?? '',
-              toNumeric(row.points_no_T) ?? '',
+              toNumeric(row.points_no_t ?? row.points_no_T ?? null) ?? '',
               row.zlPoints,
               row.zlBand ?? '',
               row.zlStatus,
@@ -1096,7 +1188,7 @@ function AdminDashboard({
               {eventState.scoringLocked ? ' · Závod ukončen' : ''}
             </p>
           </div>
-          <div className="admin-header-actions">
+          <div className="admin-header-actions admin-header-actions--centered-row">
             <a
               className="admin-button admin-button--secondary admin-button--pill"
               href="https://www.zelenaliga.cz/aplikace/setonuv-zavod/vysledky"

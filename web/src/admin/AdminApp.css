@@ -55,6 +55,11 @@
   flex-wrap: wrap;
 }
 
+.admin-header-actions--centered-row {
+  width: 100%;
+  justify-content: center;
+}
+
 .admin-button {
   display: inline-flex;
   align-items: center;
