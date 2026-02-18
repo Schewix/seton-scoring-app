@@ -1457,7 +1457,7 @@ function AdminDashboard({
         const sortedGaps = candidates.map((candidate) => candidate.gap).sort((a, b) => a - b);
         const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)] ?? 0;
         const minRequiredGap = Math.max(6, medianGap * 1.5);
-        if (strongest.gap < minRequiredGap) {
+        if (strongest.gap <= minRequiredGap) {
           return null;
         }
         let cutoffIndex = strongest.index + 1;
@@ -1475,8 +1475,10 @@ function AdminDashboard({
         return cutoffIndex;
       };
 
-      scoringPools.forEach((pool) => {
-        pool.sort(compareLeagueByPerformance);
+      const assignBandPoints = (
+        pool: LeagueExportScoredRow[],
+        applyPoints: (row: LeagueExportScoredRow, points: number) => void,
+      ) => {
         const rowsWithTotals = pool.filter((row) => toNumeric(row.total_points) !== null);
         const bestTotal = rowsWithTotals.length ? toNumeric(rowsWithTotals[0].total_points) : null;
         const worstTotal = rowsWithTotals.length
@@ -1501,13 +1503,28 @@ function AdminDashboard({
               }
             }
           }
-          row.zlPointsNoCutoff = ZL_BAND_POINTS[Math.max(0, Math.min(ZL_BAND_POINTS.length - 1, band - 1))];
-          row.zlPointsWithCutoff = row.zlPointsNoCutoff;
+          const points = ZL_BAND_POINTS[Math.max(0, Math.min(ZL_BAND_POINTS.length - 1, band - 1))];
+          applyPoints(row, points);
+        });
+      };
+
+      scoringPools.forEach((pool) => {
+        pool.sort(compareLeagueByPerformance);
+        pool.forEach((row) => {
           row.cutoffDropped = false;
+        });
+        assignBandPoints(pool, (row, points) => {
+          row.zlPointsNoCutoff = points;
+          row.zlPointsWithCutoff = points;
         });
 
         const cutoffIndex = findAutomaticCutoffIndex(pool);
         if (cutoffIndex !== null) {
+          const nonCutoffPool = pool.slice(0, cutoffIndex);
+          assignBandPoints(nonCutoffPool, (row, points) => {
+            row.zlPointsWithCutoff = points;
+            row.cutoffDropped = false;
+          });
           for (let index = cutoffIndex; index < pool.length; index += 1) {
             const row = pool[index];
             row.zlPointsWithCutoff = 1;
