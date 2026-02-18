@@ -5,7 +5,6 @@ import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
 import {
   ADMIN_ROUTE_PREFIX,
-  DESKOVKY_ADMIN_ROUTE,
   DESKOVKY_ROUTE_PREFIX,
   FORGOT_PASSWORD_ROUTE,
   ROUTE_PREFIX,
@@ -102,8 +101,9 @@ export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props
   const descriptionId = requirePinOnly ? 'login-description-pin' : 'login-description';
   const showResetHint =
     !requirePinOnly && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('reset') === '1';
-  const adminHref = isDeskovky ? DESKOVKY_ADMIN_ROUTE : ADMIN_ROUTE_PREFIX;
-  const adminLabel = isDeskovky ? 'Přihlášení pro admina Deskovek' : 'Přihlášení pro admina závodu';
+  const showAdminLoginShortcut = !isDeskovky;
+  const adminHref = ADMIN_ROUTE_PREFIX;
+  const adminLabel = 'Přihlášení pro admina závodu';
   const forgotNext = isDeskovky ? DESKOVKY_ROUTE_PREFIX : ROUTE_PREFIX;
   const forgotPasswordHref = `${FORGOT_PASSWORD_ROUTE}?next=${encodeURIComponent(forgotNext)}`;
 
@@ -169,12 +169,14 @@ export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props
                 </li>
               ))}
             </ul>
-            <a className="login-hero-button" href={adminHref} target="_blank" rel="noreferrer">
-              <span>{adminLabel}</span>
-              <span className="login-hero-button-icon" aria-hidden="true">
-                →
-              </span>
-            </a>
+            {showAdminLoginShortcut ? (
+              <a className="login-hero-button" href={adminHref} target="_blank" rel="noreferrer">
+                <span>{adminLabel}</span>
+                <span className="login-hero-button-icon" aria-hidden="true">
+                  →
+                </span>
+              </a>
+            ) : null}
           </section>
 
           <form
