@@ -5,7 +5,7 @@ import AppFooter from '../components/AppFooter';
 import logo from '../assets/znak_SPTO_transparent.png';
 import { fetchContentArticle, fetchContentArticles, type ContentArticle } from '../data/content';
 import { fetchHomepage, hasSanityConfig, type SanityHomepage } from '../data/sanity';
-import { fetchAlbumPreview, type GalleryPreview } from '../utils/galleryCache';
+import { fetchAlbumPreview, type GalleryPreview as CachedGalleryPreview } from '../utils/galleryCache';
 
 interface Competition {
   slug: string;
@@ -115,7 +115,7 @@ const LEAGUE_EVENTS = [
 const LEAGUE_TOP_COUNT = 7;
 
 type LeagueEvent = (typeof LEAGUE_EVENTS)[number]['key'];
-type LeagueScoresRecord = Record<string, Partial<Record<LeagueEvent, number>>>;
+type LeagueScoresRecord = Record<string, Partial<Record<LeagueEvent, number | null>>>;
 type LeagueScoreEntry = {
   troop_id: string;
   event_key: string;
@@ -322,9 +322,11 @@ type GalleryPhoto = {
   webContentLink: string | null;
 };
 
-type GalleryPreview = {
-  files: GalleryPhoto[];
-  totalCount: number | null;
+type GalleryPhotoLike = {
+  name: string;
+  thumbnailLink?: string | null;
+  fullImageUrl?: string | null;
+  webContentLink?: string | null;
 };
 
 // TODO: Napojit na API / Supabase pro reálné pořadí Zelené ligy.
@@ -687,7 +689,7 @@ function getArticleThumbUrl(url: string, size: number) {
   return toProxyImageUrl(url, size);
 }
 
-function getPhotoThumbUrl(photo: GalleryPhoto | undefined | null, size: number) {
+function getPhotoThumbUrl(photo: GalleryPhotoLike | undefined | null, size: number) {
   if (!photo) {
     return '';
   }
@@ -698,7 +700,7 @@ function getPhotoThumbUrl(photo: GalleryPhoto | undefined | null, size: number) 
   return fallback ? toProxyImageUrl(fallback, size) : '';
 }
 
-function buildPhotoSrcSet(photo: GalleryPhoto | undefined | null, sizes: number[]) {
+function buildPhotoSrcSet(photo: GalleryPhotoLike | undefined | null, sizes: number[]) {
   const entries = sizes
     .map((size) => {
       const url = getPhotoThumbUrl(photo, size);
@@ -1784,7 +1786,7 @@ function RedakcePage() {
 }
 
 function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
-  const [preview, setPreview] = useState<GalleryPreview | null>(null);
+  const [preview, setPreview] = useState<CachedGalleryPreview | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -1854,7 +1856,7 @@ function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
             const thumbSrcSet = buildPhotoSrcSet(photo, [120, 180, 240, 360]);
             return thumbUrl ? (
               <img
-                key={photo.fileId}
+                key={photo.id}
                 src={thumbUrl}
                 srcSet={thumbSrcSet || undefined}
                 sizes="(max-width: 700px) 20vw, 72px"
