@@ -29,6 +29,7 @@ import AdminLoginScreen from './AdminLoginScreen';
 const API_BASE_URL = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
 const BRACKET_EXPORT_ORDER = ['NH', 'ND', 'MH', 'MD', 'SH', 'SD', 'RH', 'RD'] as const;
 const BRACKET_EXPORT_ORDER_INDEX = new Map(BRACKET_EXPORT_ORDER.map((value, index) => [value, index] as const));
+const ZL_BAND_POINTS = [16, 12, 9, 6, 4, 2, 1] as const;
 
 type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 
@@ -95,6 +96,15 @@ function toNumeric(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function splitIntoSevenBands(total: number): number[] {
+  if (!Number.isFinite(total) || total <= 0) {
+    return Array.from({ length: 7 }, () => 0);
+  }
+  const base = Math.floor(total / 7);
+  const remainder = total % 7;
+  return Array.from({ length: 7 }, (_, index) => base + (index < remainder ? 1 : 0));
 }
 
 function toBracketKey(category: string | null | undefined, sex: string | null | undefined): string | null {
@@ -873,6 +883,16 @@ function AdminDashboard({
         total_points: number | string | null;
         points_no_T: number | string | null;
       };
+      type LeagueExportScoredRow = LeagueExportRow & {
+        bracketKey: string;
+        rankNumeric: number | null;
+        disqualifiedFlag: boolean;
+        droppedFlag: boolean;
+        zlGroupKey: string;
+        zlBand: number | null;
+        zlPoints: number;
+        zlStatus: 'OK' | 'VYPUŠTĚNO' | 'DSQ';
+      };
 
       const { data, error } = await supabase
         .from('results_ranked')
@@ -884,21 +904,117 @@ function AdminDashboard({
       }
 
       const rows = (data ?? []) as LeagueExportRow[];
-      const grouped = new Map<string, LeagueExportRow[]>();
-      BRACKET_EXPORT_ORDER.forEach((key) => grouped.set(key, []));
+      const scoredRows: LeagueExportScoredRow[] = rows
+        .map((row) => {
+          const bracketKey = toBracketKey(row.category, row.sex);
+          if (!bracketKey) {
+            return null;
+          }
+          const disqualifiedFlag = row.disqualified === true;
+          const totalPoints = toNumeric(row.total_points);
+          const pointsNoT = toNumeric(row.points_no_T);
+          return {
+            ...row,
+            bracketKey,
+            rankNumeric: toNumeric(row.rank_in_bracket),
+            disqualifiedFlag,
+            droppedFlag: !disqualifiedFlag && totalPoints === null && pointsNoT === null,
+            zlGroupKey: bracketKey,
+            zlBand: null,
+            zlPoints: 0,
+            zlStatus: 'OK',
+          };
+        })
+        .filter((row): row is LeagueExportScoredRow => Boolean(row));
 
-      rows.forEach((row) => {
-        const bracketKey = toBracketKey(row.category, row.sex);
-        if (!bracketKey) {
+      const mergeByCategory = new Map<string, boolean>();
+      ['N', 'M', 'S', 'R'].forEach((category) => {
+        const boysKey = `${category}H`;
+        const girlsKey = `${category}D`;
+        const boysCount = scoredRows.filter(
+          (row) => row.bracketKey === boysKey && !row.disqualifiedFlag && !row.droppedFlag,
+        ).length;
+        const girlsCount = scoredRows.filter(
+          (row) => row.bracketKey === girlsKey && !row.disqualifiedFlag && !row.droppedFlag,
+        ).length;
+        mergeByCategory.set(category, boysCount > 0 && girlsCount > 0 && (boysCount < 7 || girlsCount < 7));
+      });
+
+      scoredRows.forEach((row) => {
+        const category = row.bracketKey.slice(0, 1);
+        if (mergeByCategory.get(category)) {
+          row.zlGroupKey = `${category}*`;
+        }
+      });
+
+      const scoringPools = new Map<string, LeagueExportScoredRow[]>();
+      scoredRows.forEach((row) => {
+        if (row.disqualifiedFlag || row.droppedFlag) {
           return;
         }
-        grouped.get(bracketKey)?.push(row);
+        if (!scoringPools.has(row.zlGroupKey)) {
+          scoringPools.set(row.zlGroupKey, []);
+        }
+        scoringPools.get(row.zlGroupKey)!.push(row);
+      });
+
+      scoringPools.forEach((pool) => {
+        pool.sort((a, b) => {
+          const rankA = a.rankNumeric ?? Number.MAX_SAFE_INTEGER;
+          const rankB = b.rankNumeric ?? Number.MAX_SAFE_INTEGER;
+          if (rankA !== rankB) {
+            return rankA - rankB;
+          }
+          return comparePatrolOrder(a, b);
+        });
+
+        const bandSizes = splitIntoSevenBands(pool.length);
+        let offset = 0;
+        bandSizes.forEach((size, bandIndex) => {
+          for (let i = 0; i < size; i += 1) {
+            const row = pool[offset + i];
+            if (!row) {
+              continue;
+            }
+            row.zlBand = bandIndex + 1;
+            row.zlPoints = ZL_BAND_POINTS[bandIndex];
+            row.zlStatus = 'OK';
+          }
+          offset += size;
+        });
+      });
+
+      scoredRows.forEach((row) => {
+        if (row.disqualifiedFlag) {
+          row.zlPoints = 0;
+          row.zlBand = null;
+          row.zlStatus = 'DSQ';
+          return;
+        }
+        if (row.droppedFlag) {
+          row.zlPoints = 1;
+          row.zlBand = 7;
+          row.zlStatus = 'VYPUŠTĚNO';
+          return;
+        }
+        if (row.zlBand === null) {
+          row.zlBand = 7;
+          row.zlPoints = 1;
+          row.zlStatus = 'OK';
+        }
+      });
+
+      const grouped = new Map<string, LeagueExportScoredRow[]>();
+      BRACKET_EXPORT_ORDER.forEach((key) => grouped.set(key, []));
+
+      scoredRows.forEach((row) => {
+        grouped.get(row.bracketKey)?.push(row);
       });
 
       grouped.forEach((items) => {
         items.sort((a, b) => {
-          const rankA = toNumeric(a.rank_in_bracket) ?? Number.MAX_SAFE_INTEGER;
-          const rankB = toNumeric(b.rank_in_bracket) ?? Number.MAX_SAFE_INTEGER;
+          const rankA = a.rankNumeric ?? Number.MAX_SAFE_INTEGER;
+          const rankB = b.rankNumeric ?? Number.MAX_SAFE_INTEGER;
           if (rankA !== rankB) {
             return rankA - rankB;
           }
@@ -909,10 +1025,10 @@ function AdminDashboard({
       const workbook = new ExcelJS.Workbook();
       BRACKET_EXPORT_ORDER.forEach((bracketKey) => {
         const worksheet = workbook.addWorksheet(bracketKey);
-        worksheet.addRow(['Pořadí', 'Číslo hlídky', 'Body celkem', 'Body bez času']);
+        worksheet.addRow(['Pořadí', 'Číslo hlídky', 'Body celkem', 'Body bez času', 'Body ZL', 'Pásmo ZL', 'Stav ZL']);
         const bracketRows = grouped.get(bracketKey) ?? [];
         if (bracketRows.length === 0) {
-          worksheet.addRow(['—', '—', '', '']);
+          worksheet.addRow(['—', '—', '', '', '', '', '']);
         } else {
           bracketRows.forEach((row) => {
             worksheet.addRow([
@@ -920,10 +1036,13 @@ function AdminDashboard({
               parsePatrolCodeParts(row.patrol_code).normalizedCode || '—',
               toNumeric(row.total_points) ?? '',
               toNumeric(row.points_no_T) ?? '',
+              row.zlPoints,
+              row.zlBand ?? '',
+              row.zlStatus,
             ]);
           });
         }
-        worksheet.columns = [{ width: 10 }, { width: 16 }, { width: 14 }, { width: 16 }];
+        worksheet.columns = [{ width: 10 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 10 }, { width: 10 }, { width: 14 }];
       });
 
       await downloadWorkbook(workbook, toExportFileName(eventState.name, 'body-zelena-liga'));
