@@ -1456,7 +1456,7 @@ function AdminDashboard({
         const strongest = candidates[0];
         const sortedGaps = candidates.map((candidate) => candidate.gap).sort((a, b) => a - b);
         const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)] ?? 0;
-        const minRequiredGap = Math.max(6, medianGap * 1.5);
+        const minRequiredGap = Math.max(9, medianGap * 1.5);
         if (strongest.gap <= minRequiredGap) {
           return null;
         }
