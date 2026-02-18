@@ -2685,6 +2685,7 @@ textarea {
 }
 
 .auth-hero {
+  --auth-hero-watermark: none;
   position: relative;
   height: 100%;
   display: flex;
@@ -2711,34 +2712,55 @@ textarea {
 .auth-hero::after {
   content: '';
   position: absolute;
-  width: 70%;
+  width: min(660px, 105%);
   aspect-ratio: 1 / 1;
-  left: 18%;
-  bottom: -6%;
-  background: url('../assets/znak_SPTO_transparent.png') no-repeat center / contain;
-  opacity: 0.1;
-  filter: blur(4px);
+  right: -34%;
+  bottom: -30%;
+  left: auto;
+  background: var(--auth-hero-watermark) no-repeat center / contain;
+  opacity: 0.92;
+  filter: none;
   pointer-events: none;
   z-index: 0;
 }
 
 .auth-hero-brand {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   gap: 16px;
-  align-items: flex-start;
 }
 
 .auth-hero-logo {
-  width: auto;
-  height: 56px;
+  width: 58px;
+  height: 58px;
   display: grid;
   place-items: center;
 }
 
 .auth-hero-logo img {
-  height: 100%;
-  width: auto;
+  width: 100%;
+  height: auto;
+}
+
+.auth-hero-brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.auth-hero-brand-name {
+  font-size: 1.55rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.auth-hero-brand-subtitle {
+  font-size: 1.12rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.87);
 }
 
 .auth-hero-copy {
@@ -3186,9 +3208,7 @@ textarea {
   }
 
   .auth-hero::after {
-    width: 90%;
-    left: 5%;
-    bottom: -14%;
+    display: none;
   }
 
   .auth-hero-secondary {
@@ -3212,6 +3232,23 @@ textarea {
 
   .auth-layout {
     padding: clamp(48px, 12vw, 64px) clamp(16px, 6vw, 24px);
+  }
+
+  .auth-hero-brand {
+    gap: 12px;
+  }
+
+  .auth-hero-logo {
+    width: 52px;
+    height: 52px;
+  }
+
+  .auth-hero-brand-name {
+    font-size: 1.3rem;
+  }
+
+  .auth-hero-brand-subtitle {
+    font-size: 1rem;
   }
 
   .auth-hero-secondary {

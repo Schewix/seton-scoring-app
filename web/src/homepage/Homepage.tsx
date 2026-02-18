@@ -811,6 +811,56 @@ function InfoPage({
   );
 }
 
+function ArticleSkeletonGrid({ count = 4 }: { count?: number }) {
+  return (
+    <div className="homepage-article-grid homepage-skeleton-grid" aria-hidden="true">
+      {Array.from({ length: count }).map((_, index) => (
+        <article key={`article-skeleton-${index}`} className="homepage-article-card homepage-article-card--skeleton">
+          <div className="homepage-article-row">
+            <div className="homepage-article-thumb homepage-skeleton-block" />
+            <div className="homepage-article-body">
+              <div className="homepage-article-meta">
+                <span className="homepage-skeleton-chip" />
+              </div>
+              <div className="homepage-skeleton-line homepage-skeleton-line--title" />
+              <div className="homepage-skeleton-line homepage-skeleton-line--text" />
+              <div className="homepage-skeleton-line homepage-skeleton-line--text short" />
+              <div className="homepage-skeleton-line homepage-skeleton-line--link" />
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function GallerySkeletonGrid({ count = 8 }: { count?: number }) {
+  return (
+    <section className="gallery-year-section gallery-year-section--skeleton">
+      <div className="gallery-year-header" aria-hidden="true">
+        <div className="homepage-skeleton-line homepage-skeleton-line--year" />
+      </div>
+      <div className="gallery-album-grid homepage-skeleton-grid" aria-hidden="true">
+        {Array.from({ length: count }).map((_, index) => (
+          <div key={`gallery-skeleton-${index}`} className="gallery-album-card gallery-album-card--skeleton">
+            <div className="gallery-album-cover homepage-skeleton-block" />
+            <div className="gallery-album-body">
+              <div className="homepage-skeleton-line homepage-skeleton-line--album-title" />
+              <div className="homepage-skeleton-line homepage-skeleton-line--album-count" />
+            </div>
+            <div className="gallery-album-thumbs">
+              <div className="homepage-skeleton-block gallery-skeleton-thumb" />
+              <div className="homepage-skeleton-block gallery-skeleton-thumb" />
+              <div className="homepage-skeleton-block gallery-skeleton-thumb" />
+              <div className="homepage-skeleton-block gallery-skeleton-thumb" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ArticlesIndexPage({
   articles,
   articlesLoading,
@@ -827,9 +877,12 @@ function ArticlesIndexPage({
             <span className="homepage-section-accent" aria-hidden="true" />
           </div>
           {articlesLoading ? (
-            <div className="homepage-card">
-              <p style={{ margin: 0 }}>Načítám články z redakce…</p>
-            </div>
+            <>
+              <p className="homepage-skeleton-status" role="status">
+                Načítám články z redakce…
+              </p>
+              <ArticleSkeletonGrid count={6} />
+            </>
           ) : articles.length > 0 ? (
             <div className="homepage-article-grid">
               {articles.map((article) => {
@@ -1896,7 +1949,12 @@ function GalleryOverviewPage({ albums, loading }: { albums: DriveAlbum[]; loadin
       <main className="homepage-main homepage-single gallery-page" aria-labelledby="gallery-heading">
         <h1 id="gallery-heading">Fotogalerie</h1>
         {loading ? (
-          <div className="homepage-card">Načítám alba…</div>
+          <>
+            <p className="homepage-skeleton-status" role="status">
+              Načítám alba…
+            </p>
+            <GallerySkeletonGrid />
+          </>
         ) : null}
         {!loading && albums.length === 0 ? (
           <div className="homepage-card">Zatím nejsou publikovaná žádná alba.</div>
@@ -2663,9 +2721,12 @@ function Homepage({
             <span className="homepage-section-accent" aria-hidden="true" />
           </div>
           {articlesLoading ? (
-            <div className="homepage-card" style={{ maxWidth: '720px' }}>
-              <p style={{ margin: 0 }}>Načítám články z redakce…</p>
-            </div>
+            <>
+              <p className="homepage-skeleton-status" role="status">
+                Načítám články z redakce…
+              </p>
+              <ArticleSkeletonGrid />
+            </>
           ) : homepageArticles.length > 0 ? (
             <div className="homepage-article-grid">
               {homepageArticles.map((article) => {
@@ -3062,6 +3123,10 @@ export default function ZelenaligaSite() {
   const [driveAlbumsLoading, setDriveAlbumsLoading] = useState(false);
   const path = window.location.pathname.replace(/\/$/, '') || '/';
   const segments = path.split('/').filter(Boolean);
+  const slug = segments[0] ?? '';
+  const shouldLoadArticles = path === '/' || slug === 'clanky';
+  const shouldLoadLeague = path === '/' || slug === 'aktualni-poradi' || slug === 'zelena-liga';
+  const shouldLoadGallery = slug === 'fotogalerie';
 
   useEffect(() => {
     if (!hasSanityConfig()) {
@@ -3081,6 +3146,10 @@ export default function ZelenaligaSite() {
   }, []);
 
   useEffect(() => {
+    if (!shouldLoadArticles) {
+      setArticlesLoading(false);
+      return;
+    }
     let active = true;
     setArticlesLoading(true);
     fetchContentArticles()
@@ -3103,9 +3172,12 @@ export default function ZelenaligaSite() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [shouldLoadArticles]);
 
   useEffect(() => {
+    if (!shouldLoadLeague) {
+      return;
+    }
     let active = true;
     fetch('/api/content/league')
       .then((response) => (response.ok ? response.json() : Promise.reject()))
@@ -3124,9 +3196,13 @@ export default function ZelenaligaSite() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [shouldLoadLeague]);
 
   useEffect(() => {
+    if (!shouldLoadGallery) {
+      setDriveAlbumsLoading(false);
+      return;
+    }
     let active = true;
     setDriveAlbumsLoading(true);
     fetch('/api/gallery')
@@ -3157,7 +3233,7 @@ export default function ZelenaligaSite() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [shouldLoadGallery]);
 
   if (path === '/') {
     return (

@@ -3,6 +3,7 @@ import { changePasswordRequest } from './api';
 import { useAuth } from './context';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
+import type { CSSProperties } from 'react';
 
 interface Props {
   email: string;
@@ -72,12 +73,15 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin, varia
         'Okamžité přihlášení po úspěšné změně',
         'Podpora PINu pro zamčené stanoviště',
       ];
+  const heroStyle = {
+    '--auth-hero-watermark': `url(${zelenaLigaLogo})`,
+  } as CSSProperties;
 
   return (
     <div className={`auth-shell ${isDeskovky ? 'auth-shell--deskovky' : ''}`.trim()}>
       <div className="auth-shell-content">
         <div className="auth-layout">
-          <div className={`auth-hero ${isDeskovky ? 'auth-hero--deskovky' : ''}`.trim()}>
+          <div className={`auth-hero ${isDeskovky ? 'auth-hero--deskovky' : ''}`.trim()} style={heroStyle}>
             <div className="auth-hero-brand">
               <a
                 className="auth-hero-logo"
@@ -87,7 +91,10 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin, varia
               >
                 <img src={zelenaLigaLogo} alt="Logo SPTO Brno" />
               </a>
-              <span className="auth-hero-caption">SPTO Brno</span>
+              <div className="auth-hero-brand-text">
+                <span className="auth-hero-brand-name">SPTO BRNO</span>
+                <span className="auth-hero-brand-subtitle">Součást Pionýra</span>
+              </div>
             </div>
             <div className="auth-hero-copy">
               <span className="auth-hero-eyebrow">{heroEyebrow}</span>

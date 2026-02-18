@@ -47,6 +47,7 @@ function parseAnswerLetters(value?: string | null) {
 }
 
 const WAIT_MINUTES_MAX = 600;
+const LAST_SCORES_LIMIT = 200;
 
 function formatWaitMinutesValue(totalMinutes: number) {
   const clamped = Math.max(0, Math.min(WAIT_MINUTES_MAX, Math.round(totalMinutes)));
@@ -119,6 +120,7 @@ export function LastScoresList({
   onQueueScoreUpdate,
 }: LastScoresListProps) {
   const [rows, setRows] = useState<ScoreRow[]>([]);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hidden, setHidden] = useState(true);
@@ -171,11 +173,18 @@ export function LastScoresList({
         .eq('event_id', eventId)
         .eq('station_id', stationId)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(LAST_SCORES_LIMIT);
+
+      const countQuery = supabase
+        .from('station_scores')
+        .select('id', { count: 'exact', head: true })
+        .eq('event_id', eventId)
+        .eq('station_id', stationId);
 
       if (isTargetStation) {
-        const [scoresRes, quizRes] = await Promise.all([
+        const [scoresRes, countRes, quizRes] = await Promise.all([
           scoresQuery,
+          countQuery,
           supabase
             .from('station_quiz_responses')
             .select('patrol_id, correct_count, answers, updated_at')
@@ -187,8 +196,13 @@ export function LastScoresList({
 
         if (scoresRes.error || quizRes.error) {
           console.error('Nepodařilo se načíst poslední záznamy', scoresRes.error, quizRes.error);
+          setTotalCount(null);
           return;
         }
+        if (countRes.error) {
+          console.error('Nepodařilo se načíst celkový počet záznamů', countRes.error);
+        }
+        setTotalCount(typeof countRes.count === 'number' ? countRes.count : (scoresRes.data ?? []).length);
 
         const quizMap = new Map<string, ScoreRow['quiz']>();
         ((quizRes.data ?? []) as QuizRowRecord[]).forEach((item) => {
@@ -209,13 +223,18 @@ export function LastScoresList({
         return;
       }
 
-      const scoresRes = await scoresQuery;
+      const [scoresRes, countRes] = await Promise.all([scoresQuery, countQuery]);
       setLoading(false);
 
       if (scoresRes.error) {
         console.error('Nepodařilo se načíst poslední záznamy', scoresRes.error);
+        setTotalCount(null);
         return;
       }
+      if (countRes.error) {
+        console.error('Nepodařilo se načíst celkový počet záznamů', countRes.error);
+      }
+      setTotalCount(typeof countRes.count === 'number' ? countRes.count : (scoresRes.data ?? []).length);
 
       const baseRows = mapScoreRows((scoresRes.data ?? []) as ScoreRowRecord[]);
       const waitMap = await loadWaits(baseRows.map((row) => row.patrol_id));
@@ -371,7 +390,9 @@ export function LastScoresList({
     setEditingId(null);
   };
 
-  const countLabel = loading ? '…' : rows.length;
+  const visibleCount = rows.length;
+  const countLabel = loading ? '…' : totalCount ?? visibleCount;
+  const hasOlderRecords = typeof totalCount === 'number' && totalCount > visibleCount;
 
   return (
     <section className="card">
@@ -393,6 +414,11 @@ export function LastScoresList({
           </button>
         </div>
       </header>
+      {hasOlderRecords ? (
+        <p className="card-subtitle">
+          Zobrazeno {visibleCount} nejnovějších záznamů z celkových {totalCount}.
+        </p>
+      ) : null}
       {hidden ? (
         <p>Poslední záznamy jsou skryté.</p>
       ) : (
