@@ -436,6 +436,10 @@
   box-shadow: inset 4px 0 0 var(--zl-yellow);
 }
 
+.scoreboard-table tbody tr.scoreboard-row-disqualified {
+  box-shadow: inset 4px 0 0 #f04438;
+}
+
 .scoreboard-table tbody td {
   padding: 14px 12px 14px 0;
   font-size: 0.98rem;
@@ -450,6 +454,11 @@
   width: 52px;
   text-align: center;
   padding-left: 8px;
+}
+
+.scoreboard-table tbody td.scoreboard-rank-dsq {
+  color: #b42318;
+  letter-spacing: 0.06em;
 }
 
 .scoreboard-table--compact tbody td {

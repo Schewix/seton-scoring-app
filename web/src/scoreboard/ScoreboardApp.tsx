@@ -13,6 +13,7 @@ interface RawResult {
   team_name: string;
   category: string;
   sex: string;
+  disqualified?: boolean | null;
   patrol_members?: string | null;
   start_time?: string | null;
   finish_time?: string | null;
@@ -37,6 +38,7 @@ interface Result {
   teamName: string;
   category: string;
   sex: string;
+  disqualified: boolean;
   patrolMembers: string | null;
   startTime: string | null;
   finishTime: string | null;
@@ -231,6 +233,7 @@ function normaliseResult(raw: RawResult): Result {
     teamName: raw.team_name,
     category: raw.category,
     sex: raw.sex,
+    disqualified: raw.disqualified === true,
     patrolMembers: normaliseText(raw.patrol_members ?? null),
     startTime: normaliseText(raw.start_time ?? null),
     finishTime: normaliseText(raw.finish_time ?? null),
@@ -242,6 +245,16 @@ function normaliseResult(raw: RawResult): Result {
     timePoints: parseNumber(raw.time_points),
     stationPointsBreakdown: parseStationPointsBreakdown(raw.station_points_breakdown ?? null),
   };
+}
+
+function formatRankValue(isDisqualified: boolean, rank: number) {
+  if (isDisqualified) {
+    return 'DSQ';
+  }
+  if (!Number.isFinite(rank) || rank <= 0) {
+    return '—';
+  }
+  return String(rank);
 }
 
 function normaliseRankedResult(raw: RawRankedResult): RankedResult {
@@ -800,7 +813,7 @@ function ScoreboardApp() {
           [
             '#',
             'Hlídka',
-            'Tým',
+            'Oddíl',
             ...memberHeaders,
             'Čas startu',
             'Čas doběhu',
@@ -817,7 +830,7 @@ function ScoreboardApp() {
             const memberCells = formatMemberColumns(row.patrolMembers, maxMemberCount);
             const stationCells = formatStationColumns(row.stationPointsBreakdown, sheetStationCodes);
             return [
-              displayRank,
+              formatRankValue(row.disqualified, displayRank),
               formatPatrolNumber(row.patrolCode, fallbackCode),
               row.teamName,
               ...memberCells,
@@ -1003,8 +1016,18 @@ function ScoreboardApp() {
                               const members = parsePatrolMembers(row.patrolMembers);
                               const isExpanded = expandedPatrolId === row.patrolId;
                               return (
-                                <tr key={row.patrolId} className={isExpanded ? 'scoreboard-row-expanded' : undefined}>
-                                  <td>{displayRank}</td>
+                                <tr
+                                  key={row.patrolId}
+                                  className={[
+                                    isExpanded ? 'scoreboard-row-expanded' : '',
+                                    row.disqualified ? 'scoreboard-row-disqualified' : '',
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' ') || undefined}
+                                >
+                                  <td className={row.disqualified ? 'scoreboard-rank-dsq' : undefined}>
+                                    {formatRankValue(row.disqualified, displayRank)}
+                                  </td>
                                   <td className="scoreboard-team">
                                     <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
                                     <button

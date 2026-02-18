@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import ExcelJS from 'exceljs';
 import './AdminApp.css';
 import { useAuth } from '../auth/context';
 import LoginScreen from '../auth/LoginScreen';
@@ -26,6 +27,8 @@ import { normalisePatrolCode } from '../components/PatrolCodeInput';
 import AdminLoginScreen from './AdminLoginScreen';
 
 const API_BASE_URL = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
+const BRACKET_EXPORT_ORDER = ['NH', 'ND', 'MH', 'MD', 'SH', 'SD', 'RH', 'RD'] as const;
+const BRACKET_EXPORT_ORDER_INDEX = new Map(BRACKET_EXPORT_ORDER.map((value, index) => [value, index] as const));
 
 type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 
@@ -77,6 +80,140 @@ type MissingDialogState = {
 
 function normalizeText(value: string | null | undefined): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function toNumeric(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function toBracketKey(category: string | null | undefined, sex: string | null | undefined): string | null {
+  const normalizedCategory = normalizeText(category).toUpperCase();
+  const normalizedSex = normalizeText(sex).toUpperCase();
+  if (!normalizedCategory || !normalizedSex) {
+    return null;
+  }
+  const key = `${normalizedCategory}${normalizedSex}`;
+  return BRACKET_EXPORT_ORDER_INDEX.has(key as (typeof BRACKET_EXPORT_ORDER)[number]) ? key : null;
+}
+
+function parsePatrolCodeParts(code: string | null | undefined) {
+  const normalizedCode = normalizeText(code).toUpperCase();
+  if (!normalizedCode) {
+    return { normalizedCode: '', bracketKey: null as string | null, numericPart: null as number | null };
+  }
+  const match = normalizedCode.match(/^([NMSR])([HD])[- ]?(\d{1,3})$/);
+  if (!match) {
+    return { normalizedCode, bracketKey: null as string | null, numericPart: null as number | null };
+  }
+  return {
+    normalizedCode,
+    bracketKey: `${match[1]}${match[2]}`,
+    numericPart: Number.parseInt(match[3], 10),
+  };
+}
+
+function comparePatrolOrder(
+  a: { patrol_code: string | null; category?: string | null; sex?: string | null },
+  b: { patrol_code: string | null; category?: string | null; sex?: string | null },
+) {
+  const aCode = parsePatrolCodeParts(a.patrol_code);
+  const bCode = parsePatrolCodeParts(b.patrol_code);
+  const aBracket = toBracketKey(a.category, a.sex) ?? aCode.bracketKey;
+  const bBracket = toBracketKey(b.category, b.sex) ?? bCode.bracketKey;
+  const aBracketOrder = aBracket ? (BRACKET_EXPORT_ORDER_INDEX.get(aBracket as (typeof BRACKET_EXPORT_ORDER)[number]) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+  const bBracketOrder = bBracket ? (BRACKET_EXPORT_ORDER_INDEX.get(bBracket as (typeof BRACKET_EXPORT_ORDER)[number]) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+  if (aBracketOrder !== bBracketOrder) {
+    return aBracketOrder - bBracketOrder;
+  }
+  if (aCode.numericPart !== null && bCode.numericPart !== null && aCode.numericPart !== bCode.numericPart) {
+    return aCode.numericPart - bCode.numericPart;
+  }
+  if (aCode.numericPart === null && bCode.numericPart !== null) {
+    return 1;
+  }
+  if (aCode.numericPart !== null && bCode.numericPart === null) {
+    return -1;
+  }
+  return aCode.normalizedCode.localeCompare(bCode.normalizedCode, 'cs');
+}
+
+function extractPatrolMembers(rawNote: string | null | undefined): string[] {
+  const normalizedNote = normalizeText(rawNote);
+  if (!normalizedNote) {
+    return [];
+  }
+  const firstLine = normalizedNote
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (!firstLine) {
+    return [];
+  }
+  return firstLine
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function toWorksheetBaseName(value: string, fallback: string) {
+  const normalized = normalizeText(value).replace(/[\\/*?:[\]]+/g, ' ').replace(/\s+/g, ' ');
+  const cleaned = normalized.trim();
+  if (!cleaned) {
+    return fallback;
+  }
+  return cleaned.slice(0, 31);
+}
+
+function toUniqueWorksheetName(baseName: string, usedNames: Set<string>) {
+  const fallback = baseName || 'List';
+  let candidate = fallback;
+  let index = 2;
+  while (usedNames.has(candidate)) {
+    const suffix = ` (${index})`;
+    const trimmedBase = fallback.slice(0, Math.max(1, 31 - suffix.length)).trimEnd();
+    candidate = `${trimmedBase}${suffix}`;
+    index += 1;
+  }
+  usedNames.add(candidate);
+  return candidate;
+}
+
+function toExportFileName(eventName: string | null | undefined, exportLabel: string) {
+  const safeEventName = normalizeText(eventName)
+    .replace(/[\\/?%*:|"<>]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/ /g, '-');
+  const safeLabel = exportLabel
+    .trim()
+    .replace(/[\\/?%*:|"<>]/g, ' ')
+    .replace(/\s+/g, '-');
+  const timestamp = new Date().toISOString().replace(/[:T]/g, '-').split('.')[0];
+  return `${safeEventName || 'seton'}-${safeLabel || 'export'}-${timestamp}.xlsx`;
+}
+
+async function downloadWorkbook(workbook: ExcelJS.Workbook, fileName: string) {
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function buildPatrolCodeVariants(raw: string) {
@@ -153,6 +290,8 @@ function AdminDashboard({
   const [disqualifySaving, setDisqualifySaving] = useState(false);
   const [disqualifyError, setDisqualifyError] = useState<string | null>(null);
   const [disqualifySuccess, setDisqualifySuccess] = useState<string | null>(null);
+  const [exportingNames, setExportingNames] = useState(false);
+  const [exportingLeague, setExportingLeague] = useState(false);
 
   useEffect(() => {
     setEventState({ name: manifest.event.name, scoringLocked: manifest.event.scoringLocked });
@@ -649,6 +788,153 @@ function AdminDashboard({
     setRefreshing(false);
   }, [loadAnswers, loadStationStats, loadEventState, refreshManifest]);
 
+  const handleExportNameCheck = useCallback(async () => {
+    if (exportingNames) {
+      return;
+    }
+
+    setExportingNames(true);
+    try {
+      type PatrolNameCheckRow = {
+        patrol_code: string | null;
+        team_name: string | null;
+        category: string | null;
+        sex: string | null;
+        note: string | null;
+        active: boolean | null;
+      };
+
+      const { data, error } = await supabase
+        .from('patrols')
+        .select('patrol_code, team_name, category, sex, note, active')
+        .eq('event_id', eventId)
+        .eq('active', true);
+
+      if (error) {
+        throw error;
+      }
+
+      const rows = ((data ?? []) as PatrolNameCheckRow[]).filter((row) => row.active !== false);
+      rows.sort(comparePatrolOrder);
+
+      const byTroop = new Map<string, PatrolNameCheckRow[]>();
+      rows.forEach((row) => {
+        const troopName = normalizeText(row.team_name) || 'Bez oddílu';
+        if (!byTroop.has(troopName)) {
+          byTroop.set(troopName, []);
+        }
+        byTroop.get(troopName)!.push(row);
+      });
+
+      const workbook = new ExcelJS.Workbook();
+      const usedSheetNames = new Set<string>();
+      const sortedTroops = Array.from(byTroop.entries()).sort((a, b) => a[0].localeCompare(b[0], 'cs'));
+
+      if (sortedTroops.length === 0) {
+        const worksheet = workbook.addWorksheet('Kontrola jmen');
+        worksheet.addRow(['Žádná hlídka pro export']);
+      }
+
+      sortedTroops.forEach(([troopName, patrols]) => {
+        const baseSheetName = toWorksheetBaseName(troopName, 'Bez oddílu');
+        const sheetName = toUniqueWorksheetName(baseSheetName, usedSheetNames);
+        const worksheet = workbook.addWorksheet(sheetName);
+        worksheet.addRow(['Číslo hlídky', 'Členové']);
+        patrols.forEach((patrol) => {
+          const code = parsePatrolCodeParts(patrol.patrol_code).normalizedCode || '—';
+          const members = extractPatrolMembers(patrol.note).join(', ') || '—';
+          worksheet.addRow([code, members]);
+        });
+        worksheet.columns = [{ width: 16 }, { width: 52 }];
+      });
+
+      await downloadWorkbook(workbook, toExportFileName(eventState.name, 'kontrola-jmen'));
+    } catch (error) {
+      console.error('Failed to export name check workbook', error);
+      window.alert('Export kontroly jmen selhal.');
+    } finally {
+      setExportingNames(false);
+    }
+  }, [eventId, eventState.name, exportingNames]);
+
+  const handleExportLeaguePoints = useCallback(async () => {
+    if (exportingLeague) {
+      return;
+    }
+
+    setExportingLeague(true);
+    try {
+      type LeagueExportRow = {
+        patrol_code: string | null;
+        category: string | null;
+        sex: string | null;
+        disqualified: boolean | null;
+        rank_in_bracket: number | string | null;
+        total_points: number | string | null;
+        points_no_T: number | string | null;
+      };
+
+      const { data, error } = await supabase
+        .from('results_ranked')
+        .select('patrol_code, category, sex, disqualified, rank_in_bracket, total_points, points_no_T')
+        .eq('event_id', eventId);
+
+      if (error) {
+        throw error;
+      }
+
+      const rows = (data ?? []) as LeagueExportRow[];
+      const grouped = new Map<string, LeagueExportRow[]>();
+      BRACKET_EXPORT_ORDER.forEach((key) => grouped.set(key, []));
+
+      rows.forEach((row) => {
+        const bracketKey = toBracketKey(row.category, row.sex);
+        if (!bracketKey) {
+          return;
+        }
+        grouped.get(bracketKey)?.push(row);
+      });
+
+      grouped.forEach((items) => {
+        items.sort((a, b) => {
+          const rankA = toNumeric(a.rank_in_bracket) ?? Number.MAX_SAFE_INTEGER;
+          const rankB = toNumeric(b.rank_in_bracket) ?? Number.MAX_SAFE_INTEGER;
+          if (rankA !== rankB) {
+            return rankA - rankB;
+          }
+          return comparePatrolOrder(a, b);
+        });
+      });
+
+      const workbook = new ExcelJS.Workbook();
+      BRACKET_EXPORT_ORDER.forEach((bracketKey) => {
+        const worksheet = workbook.addWorksheet(bracketKey);
+        worksheet.addRow(['Pořadí', 'Číslo hlídky', 'Body celkem', 'Body bez času']);
+        const bracketRows = grouped.get(bracketKey) ?? [];
+        if (bracketRows.length === 0) {
+          worksheet.addRow(['—', '—', '', '']);
+        } else {
+          bracketRows.forEach((row) => {
+            worksheet.addRow([
+              row.disqualified ? 'DSQ' : (toNumeric(row.rank_in_bracket) ?? ''),
+              parsePatrolCodeParts(row.patrol_code).normalizedCode || '—',
+              toNumeric(row.total_points) ?? '',
+              toNumeric(row.points_no_T) ?? '',
+            ]);
+          });
+        }
+        worksheet.columns = [{ width: 10 }, { width: 16 }, { width: 14 }, { width: 16 }];
+      });
+
+      await downloadWorkbook(workbook, toExportFileName(eventState.name, 'body-zelena-liga'));
+    } catch (error) {
+      console.error('Failed to export league points workbook', error);
+      window.alert('Export bodů pro Zelenou ligu selhal.');
+    } finally {
+      setExportingLeague(false);
+    }
+  }, [eventId, eventState.name, exportingLeague]);
+
   if (!isCalcStation) {
     return (
       <div className="admin-shell">
@@ -707,6 +993,22 @@ function AdminDashboard({
               disabled={refreshing}
             >
               {refreshing ? 'Obnovuji…' : 'Obnovit data'}
+            </button>
+            <button
+              type="button"
+              className="admin-button admin-button--secondary admin-button--pill"
+              onClick={handleExportNameCheck}
+              disabled={exportingNames}
+            >
+              {exportingNames ? 'Exportuji…' : 'Export kontrola jmen'}
+            </button>
+            <button
+              type="button"
+              className="admin-button admin-button--secondary admin-button--pill"
+              onClick={handleExportLeaguePoints}
+              disabled={exportingLeague}
+            >
+              {exportingLeague ? 'Exportuji…' : 'Export body ZL'}
             </button>
             <button
               type="button"
