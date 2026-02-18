@@ -204,6 +204,11 @@
   color: #e94e1b;
 }
 
+.login-alert--info {
+  background: rgba(4, 55, 44, 0.1);
+  color: #04372c;
+}
+
 .login-alert-icon {
   display: inline-flex;
   align-items: center;
@@ -215,6 +220,10 @@
   color: #ffffff;
   font-size: 0.8rem;
   font-weight: 700;
+}
+
+.login-alert--info .login-alert-icon {
+  background: #04372c;
 }
 
 .login-field-group {

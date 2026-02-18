@@ -121,6 +121,11 @@ const forgotPasswordPathnames = new Set([
   LEGACY_FORGOT_PASSWORD_ROUTE_ALT,
   '/zapomenute-heslo',
 ]);
+const resetPasswordPathnames = new Set([
+  '/auth/reset-password',
+  '/auth/recovery',
+  '/reset-password',
+]);
 
 function render(element: React.ReactNode) {
   root.render(
@@ -158,6 +163,18 @@ if (isAdminPath) {
     })
     .catch((error) => {
       console.error('Failed to load forgot password view', error);
+    });
+} else if (resetPasswordPathnames.has(normalizedPath)) {
+  const target = `${ROUTE_PREFIX}?reset=1`;
+  if (`${normalizedPath}${window.location.search}` !== target) {
+    window.history.replaceState(window.history.state, '', target);
+  }
+  import('./App')
+    .then(({ default: App }) => {
+      render(<App />);
+    })
+    .catch((error) => {
+      console.error('Failed to load scoring app', error);
     });
 } else if ((view && scoreboardViews.has(view)) || isScoreboardPath) {
   import('./scoreboard/ScoreboardApp')

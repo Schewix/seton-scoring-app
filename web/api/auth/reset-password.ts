@@ -12,6 +12,8 @@ for (const name of REQUIRED_ENV_VARS) {
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const RESEND_API_KEY = process.env.RESEND_API_KEY!;
+const RESET_PASSWORD_LOGIN_URL =
+  process.env.RESET_PASSWORD_LOGIN_URL ?? 'https://zelenaliga.cz/aplikace/setonuv-zavod?reset=1';
 
 const corsHeaders = {
   'access-control-allow-origin': '*',
@@ -28,10 +30,10 @@ function applyCors(res: any) {
 async function sendResetEmail(to: string, password: string, displayName?: string): Promise<string> {
   const from = 'Zelená liga <noreply@zelenaliga.cz>';
   const replyTo = 'info@zelenaliga.cz';
-  const subject = 'Resetovat heslo';
+  const subject = 'Dočasné heslo do aplikace Zelená liga';
   
   // Build professional HTML using inline styles (email-compatible)
-  const preheader = 'Resetujte své heslo pomocí tohoto odkazu';
+  const preheader = 'V e-mailu najdete dočasné heslo a odkaz na přihlášení';
   
   const html = `
 <!DOCTYPE html>
@@ -64,30 +66,30 @@ async function sendResetEmail(to: string, password: string, displayName?: string
 
     <!-- Security info card -->
     <div style="background: #eef9f0; border: 1px solid #cfe8d8; border-radius: 6px; padding: 16px; margin: 20px 0;">
-      <h3 style="color: #06642b; margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;">Resetování hesla</h3>
+      <h3 style="color: #06642b; margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;">Dočasné přihlašovací údaje</h3>
       <p style="margin: 0;">
-        <strong>Platnost odkazu:</strong> 60 minut
+        <strong>Dočasné heslo:</strong>
       </p>
-      <p style="margin: 8px 0 0;">
-        <strong>Akce:</strong> Resetování hesla
+      <p style="margin: 8px 0 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 18px; letter-spacing: 0.06em; color: #04372c;">
+        ${password}
       </p>
     </div>
 
     <p style="margin: 20px 0; font-size: 14px; color: #666; line-height: 1.5; text-align: center;">
-      Klikněte na tlačítko níže pro resetování hesla:
+      Klikněte na tlačítko níže, přihlaste se tímto dočasným heslem a aplikace vás vyzve k nastavení nového hesla:
     </p>
 
     <!-- CTA Button -->
     <div style="text-align: center; margin: 20px 0;">
-      <a href="https://zelenaliga.cz/auth/reset-password" style="display: inline-block; background: #ffd700; color: black; padding: 14px 28px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 14px;">
-        Resetovat heslo
+      <a href="${RESET_PASSWORD_LOGIN_URL}" style="display: inline-block; background: #ffd700; color: black; padding: 14px 28px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 14px;">
+        Otevřít přihlášení
       </a>
     </div>
 
     <!-- Fallback link -->
     <p style="margin: 0; font-size: 12px; color: #0b8e3f; text-align: center;">
       Pokud se vám tlačítko nezobrazilo,
-      <a href="https://zelenaliga.cz/auth/reset-password" style="color: #0b8e3f; text-decoration: underline;">
+      <a href="${RESET_PASSWORD_LOGIN_URL}" style="color: #0b8e3f; text-decoration: underline;">
         klikněte sem
       </a>
     </p>
@@ -119,6 +121,7 @@ async function sendResetEmail(to: string, password: string, displayName?: string
     'Dobrý den,',
     'zasíláme vám nové dočasné heslo k účtu rozhodčího.',
     `Dočasné heslo: ${password}`,
+    `Přihlášení: ${RESET_PASSWORD_LOGIN_URL}`,
     'Po přihlášení budete vyzváni ke změně hesla.',
     'Pokud jste obnovu nevyžádali, kontaktujte prosím organizátory.',
     'Děkujeme.',

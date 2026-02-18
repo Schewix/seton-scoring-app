@@ -100,6 +100,8 @@ export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props
       ? 'Přihlašovací údaje získáš od hlavního rozhodčího turnaje.'
       : 'Přihlašovací údaje získáš od hlavního rozhodčího.';
   const descriptionId = requirePinOnly ? 'login-description-pin' : 'login-description';
+  const showResetHint =
+    !requirePinOnly && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('reset') === '1';
   const adminHref = isDeskovky ? DESKOVKY_ADMIN_ROUTE : ADMIN_ROUTE_PREFIX;
   const adminLabel = isDeskovky ? 'Přihlášení pro admina Deskovek' : 'Přihlášení pro admina závodu';
   const forgotNext = isDeskovky ? DESKOVKY_ROUTE_PREFIX : ROUTE_PREFIX;
@@ -191,6 +193,12 @@ export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props
             <p id={descriptionId} className="login-card-description">
               {descriptionText}
             </p>
+            {showResetHint ? (
+              <div className="login-alert login-alert--info" role="status">
+                <span className="login-alert-icon" aria-hidden="true">i</span>
+                <span>Použij dočasné heslo z e-mailu. Po přihlášení nastavíš nové heslo.</span>
+              </div>
+            ) : null}
             {error ? (
               <div className="login-alert login-alert--error" role="alert">
                 <span className="login-alert-icon" aria-hidden="true">!</span>
