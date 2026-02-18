@@ -1312,7 +1312,7 @@ function AdminDashboard({
             const displayRank = name.length === 1
               ? (row.disqualified ? 'DSQ' : String(index + 1))
               : (row.disqualified ? 'DSQ' : (toNumeric(row.rank_in_bracket) ?? ''));
-            worksheet.addRow([
+            const worksheetRow = worksheet.addRow([
               displayRank,
               parsePatrolCodeParts(row.patrol_code).normalizedCode || '—',
               toNumeric(row.total_points) ?? '',
@@ -1320,6 +1320,20 @@ function AdminDashboard({
               row.zlPointsNoCutoff,
               row.zlPointsWithCutoff,
             ]);
+            if (!row.disqualifiedFlag && !row.droppedFlag) {
+              const noCutoffCell = worksheetRow.getCell(5);
+              noCutoffCell.font = {
+                ...(noCutoffCell.font ?? {}),
+                bold: true,
+              };
+            }
+            if (!row.disqualifiedFlag && !row.cutoffDropped) {
+              const withCutoffCell = worksheetRow.getCell(6);
+              withCutoffCell.font = {
+                ...(withCutoffCell.font ?? {}),
+                bold: true,
+              };
+            }
           });
           const cutoffStartIndex = rows.findIndex((row) => row.cutoffDropped && !row.disqualifiedFlag);
           if (cutoffStartIndex > 0) {
