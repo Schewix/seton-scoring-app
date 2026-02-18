@@ -98,15 +98,6 @@ function toNumeric(value: unknown): number | null {
   return null;
 }
 
-function splitIntoSevenBands(total: number): number[] {
-  if (!Number.isFinite(total) || total <= 0) {
-    return Array.from({ length: 7 }, () => 0);
-  }
-  const base = Math.floor(total / 7);
-  const remainder = total % 7;
-  return Array.from({ length: 7 }, (_, index) => base + (index < remainder ? 1 : 0));
-}
-
 function toBracketKey(category: string | null | undefined, sex: string | null | undefined): string | null {
   const normalizedCategory = normalizeText(category).toUpperCase();
   const normalizedSex = normalizeText(sex).toUpperCase();
@@ -198,6 +189,44 @@ function parseTroopNumber(value: string): number | null {
   }
   const parsed = Number.parseInt(match[1], 10);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function troopNameQualityScore(value: string, troopNumber: number) {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return -1;
+  }
+  const withoutNumber = normalized.replace(new RegExp(`^${troopNumber}\\s*\\.?\\s*`, 'i'), '').trim();
+  if (!withoutNumber) {
+    return 0;
+  }
+  if (/^PTO$/i.test(withoutNumber)) {
+    return 1;
+  }
+  if (/^PTO\b/i.test(withoutNumber)) {
+    return 10 + withoutNumber.length;
+  }
+  return 5 + withoutNumber.length;
+}
+
+function pickCanonicalTroopName(troopNumber: number, candidates: readonly string[]) {
+  let bestName = '';
+  let bestScore = -1;
+  candidates.forEach((candidate) => {
+    const normalizedCandidate = normalizeText(candidate);
+    if (!normalizedCandidate) {
+      return;
+    }
+    const score = troopNameQualityScore(normalizedCandidate, troopNumber);
+    if (score > bestScore || (score === bestScore && normalizedCandidate.length > bestName.length)) {
+      bestName = normalizedCandidate;
+      bestScore = score;
+    }
+  });
+  if (bestScore <= 0 || !bestName) {
+    return `${troopNumber}. PTO`;
+  }
+  return bestName;
 }
 
 function compareTroopSheetOrder(a: string, b: string) {
@@ -908,10 +937,41 @@ function AdminDashboard({
       const rows = ((data ?? []) as PatrolNameCheckRow[]).filter((row) => row.active !== false);
       rows.sort(comparePatrolOrder);
 
+      const troopNamesByNumber = new Map<number, Set<string>>();
+      rows.forEach((row) => {
+        splitMixedTroopNames(row.team_name).forEach((troopName) => {
+          const troopNumber = parseTroopNumber(troopName);
+          if (troopNumber === null) {
+            return;
+          }
+          if (!troopNamesByNumber.has(troopNumber)) {
+            troopNamesByNumber.set(troopNumber, new Set<string>());
+          }
+          troopNamesByNumber.get(troopNumber)!.add(troopName);
+        });
+      });
+
+      const canonicalTroopNameByNumber = new Map<number, string>();
+      troopNamesByNumber.forEach((nameSet, troopNumber) => {
+        canonicalTroopNameByNumber.set(troopNumber, pickCanonicalTroopName(troopNumber, Array.from(nameSet)));
+      });
+
       const byTroop = new Map<string, PatrolNameCheckRow[]>();
       rows.forEach((row) => {
-        const troopNames = splitMixedTroopNames(row.team_name);
-        troopNames.forEach((troopName) => {
+        const canonicalTroops = splitMixedTroopNames(row.team_name).map((troopName) => {
+          const troopNumber = parseTroopNumber(troopName);
+          if (troopNumber === null) {
+            return troopName;
+          }
+          return canonicalTroopNameByNumber.get(troopNumber) ?? `${troopNumber}. PTO`;
+        });
+        const seenTroops = new Set<string>();
+        canonicalTroops.forEach((troopName) => {
+          const key = troopName.toLocaleLowerCase('cs');
+          if (seenTroops.has(key)) {
+            return;
+          }
+          seenTroops.add(key);
           if (!byTroop.has(troopName)) {
             byTroop.set(troopName, []);
           }
@@ -974,6 +1034,7 @@ function AdminDashboard({
         total_points: number | string | null;
         points_no_t?: number | string | null;
         points_no_T?: number | string | null;
+        pure_seconds?: number | string | null;
       };
       type LeagueExportScoredRow = LeagueExportRow & {
         bracketKey: string;
@@ -988,7 +1049,7 @@ function AdminDashboard({
 
       const { data, error } = await supabase
         .from('results_ranked')
-        .select('patrol_code, category, sex, disqualified, rank_in_bracket, total_points, points_no_t')
+        .select('patrol_code, category, sex, disqualified, rank_in_bracket, total_points, points_no_t, pure_seconds')
         .eq('event_id', eventId);
 
       if (error) {
@@ -1019,6 +1080,31 @@ function AdminDashboard({
         })
         .filter((row): row is LeagueExportScoredRow => Boolean(row));
 
+      const compareLeagueByPerformance = (a: LeagueExportScoredRow, b: LeagueExportScoredRow) => {
+        const aTotal = toNumeric(a.total_points) ?? Number.NEGATIVE_INFINITY;
+        const bTotal = toNumeric(b.total_points) ?? Number.NEGATIVE_INFINITY;
+        if (aTotal !== bTotal) {
+          return bTotal - aTotal;
+        }
+        const aNoTime = toNumeric(a.points_no_t ?? a.points_no_T ?? null) ?? Number.NEGATIVE_INFINITY;
+        const bNoTime = toNumeric(b.points_no_t ?? b.points_no_T ?? null) ?? Number.NEGATIVE_INFINITY;
+        if (aNoTime !== bNoTime) {
+          return bNoTime - aNoTime;
+        }
+        const aPureSeconds = toNumeric(a.pure_seconds);
+        const bPureSeconds = toNumeric(b.pure_seconds);
+        if (aPureSeconds !== null && bPureSeconds !== null && aPureSeconds !== bPureSeconds) {
+          return aPureSeconds - bPureSeconds;
+        }
+        if (aPureSeconds === null && bPureSeconds !== null) {
+          return 1;
+        }
+        if (aPureSeconds !== null && bPureSeconds === null) {
+          return -1;
+        }
+        return comparePatrolOrder(a, b);
+      };
+
       const mergeByCategory = new Map<string, boolean>();
       ['N', 'M', 'S', 'R'].forEach((category) => {
         const boysKey = `${category}H`;
@@ -1029,7 +1115,8 @@ function AdminDashboard({
         const girlsCount = scoredRows.filter(
           (row) => row.bracketKey === girlsKey && !row.disqualifiedFlag && !row.droppedFlag,
         ).length;
-        mergeByCategory.set(category, boysCount > 0 && girlsCount > 0 && (boysCount < 7 || girlsCount < 7));
+        const totalCount = boysCount + girlsCount;
+        mergeByCategory.set(category, totalCount > 0 && (boysCount < 7 || girlsCount < 7));
       });
 
       scoredRows.forEach((row) => {
@@ -1051,35 +1138,41 @@ function AdminDashboard({
       });
 
       scoringPools.forEach((pool) => {
-        pool.sort((a, b) => {
-          const rankA = a.rankNumeric ?? Number.MAX_SAFE_INTEGER;
-          const rankB = b.rankNumeric ?? Number.MAX_SAFE_INTEGER;
-          if (rankA !== rankB) {
-            return rankA - rankB;
-          }
-          return comparePatrolOrder(a, b);
-        });
+        pool.sort(compareLeagueByPerformance);
+        const rowsWithTotals = pool.filter((row) => toNumeric(row.total_points) !== null);
+        const bestTotal = rowsWithTotals.length ? toNumeric(rowsWithTotals[0].total_points) : null;
+        const worstTotal = rowsWithTotals.length
+          ? toNumeric(rowsWithTotals[rowsWithTotals.length - 1].total_points)
+          : null;
+        const step = bestTotal !== null && worstTotal !== null ? (bestTotal - worstTotal) / 7 : null;
+        const epsilon = 1e-9;
 
-        const bandSizes = splitIntoSevenBands(pool.length);
-        let offset = 0;
-        bandSizes.forEach((size, bandIndex) => {
-          for (let i = 0; i < size; i += 1) {
-            const row = pool[offset + i];
-            if (!row) {
-              continue;
+        pool.forEach((row) => {
+          const total = toNumeric(row.total_points);
+          let band = 7;
+          if (total !== null && bestTotal !== null && step !== null) {
+            if (step <= epsilon) {
+              band = 1;
+            } else {
+              const distanceFromBest = bestTotal - total;
+              for (let candidateBand = 1; candidateBand <= 6; candidateBand += 1) {
+                if (distanceFromBest <= step * candidateBand + epsilon) {
+                  band = candidateBand;
+                  break;
+                }
+              }
             }
-            row.zlBand = bandIndex + 1;
-            row.zlPoints = ZL_BAND_POINTS[bandIndex];
-            row.zlStatus = 'OK';
           }
-          offset += size;
+          row.zlBand = band;
+          row.zlPoints = ZL_BAND_POINTS[Math.max(0, Math.min(ZL_BAND_POINTS.length - 1, band - 1))];
+          row.zlStatus = 'OK';
         });
       });
 
       scoredRows.forEach((row) => {
         if (row.disqualifiedFlag) {
-          row.zlPoints = 0;
-          row.zlBand = null;
+          row.zlPoints = 1;
+          row.zlBand = 7;
           row.zlStatus = 'DSQ';
           return;
         }
@@ -1104,14 +1197,7 @@ function AdminDashboard({
       });
 
       grouped.forEach((items) => {
-        items.sort((a, b) => {
-          const rankA = a.rankNumeric ?? Number.MAX_SAFE_INTEGER;
-          const rankB = b.rankNumeric ?? Number.MAX_SAFE_INTEGER;
-          if (rankA !== rankB) {
-            return rankA - rankB;
-          }
-          return comparePatrolOrder(a, b);
-        });
+        items.sort(compareLeagueByPerformance);
       });
 
       const workbook = new ExcelJS.Workbook();
