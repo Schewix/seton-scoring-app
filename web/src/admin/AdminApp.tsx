@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import ExcelJS from 'exceljs';
 import './AdminApp.css';
 import { useAuth } from '../auth/context';
@@ -18,6 +18,7 @@ import {
 import { env } from '../envVars';
 import {
   createStationCategoryRecord,
+  getStationAllowedBaseCategories,
   getAllowedStationCategories,
   STATION_PASSAGE_CATEGORIES,
   StationCategoryKey,
@@ -29,7 +30,57 @@ import AdminLoginScreen from './AdminLoginScreen';
 const API_BASE_URL = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
 const BRACKET_EXPORT_ORDER = ['NH', 'ND', 'MH', 'MD', 'SH', 'SD', 'RH', 'RD'] as const;
 const BRACKET_EXPORT_ORDER_INDEX = new Map(BRACKET_EXPORT_ORDER.map((value, index) => [value, index] as const));
+const BASE_CATEGORY_ORDER = ['N', 'M', 'S', 'R'] as const;
 const ZL_BAND_POINTS = [16, 12, 9, 6, 4, 2, 1] as const;
+
+type PtoTroopRegistryEntry = {
+  canonicalName: string;
+  numbers: number[];
+  aliases?: string[];
+};
+
+const PTO_TROOP_REGISTRY: ReadonlyArray<PtoTroopRegistryEntry> = [
+  { canonicalName: '2. PTO Poutníci', numbers: [2], aliases: ['PTO Poutníci', 'Poutníci'] },
+  { canonicalName: '6. PTO Nibowaka', numbers: [6], aliases: ['PTO Nibowaka', 'Nibowaka'] },
+  { canonicalName: '8. PTO Mustangové', numbers: [8], aliases: ['PTO Mustangové', 'Mustangové'] },
+  { canonicalName: '10. PTO Severka', numbers: [10], aliases: ['10 PTO Severka'] },
+  { canonicalName: '11. PTO Iktomi', numbers: [11], aliases: ['PTO Iktomi', 'Iktomi'] },
+  { canonicalName: '15. PTO Vatra', numbers: [15], aliases: ['PTO Vatra', 'Vatra'] },
+  { canonicalName: '21. PTO Hády', numbers: [21], aliases: ['PTO Hády', 'Hady'] },
+  {
+    canonicalName: 'ZS PCV',
+    numbers: [24, 25, 26, 27],
+    aliases: [
+      'ZS PCV',
+      'ZSPCV',
+      '24. PTO života v přírodě',
+      '25. PTO Ochrany přírody',
+      '26. PTO Kulturní historie',
+      '27. PTO Lesní moudrosti',
+      'života v přírodě',
+      'ochrany přírody',
+      'kulturní historie',
+      'lesní moudrosti',
+    ],
+  },
+  { canonicalName: '32. PTO Severka', numbers: [32], aliases: ['32 PTO Severka'] },
+  { canonicalName: '34. PTO Tulák', numbers: [34], aliases: ['PTO Tulák', 'Tulák'] },
+  { canonicalName: '41. PTO Dráčata', numbers: [41], aliases: ['PTO Dráčata', 'Dracata'] },
+  { canonicalName: '48. PTO Stezka', numbers: [48], aliases: ['PTO Stezka', 'Stezka'] },
+  { canonicalName: '61. PTO Tuhas', numbers: [61], aliases: ['PTO Tuhas', 'Tuhas'] },
+  { canonicalName: '63. PTO Phoenix', numbers: [63], aliases: ['PTO Phoenix', 'Phoenix'] },
+  { canonicalName: '64. PTO Lorien', numbers: [64], aliases: ['PTO Lorien', 'Lorien'] },
+  { canonicalName: '66. PTO Brabrouci', numbers: [66], aliases: ['PTO Brabrouci', 'Brabrouci'] },
+  { canonicalName: '99. PTO Kamzíci', numbers: [99], aliases: ['PTO Kamzíci', 'Kamzici'] },
+  { canonicalName: '111. PTO Vinohrady', numbers: [111], aliases: ['PTO Vinohrady', 'Vinohrady'] },
+  { canonicalName: '172. PTO Pegas', numbers: [172], aliases: ['PTO Pegas', 'Pegas'] },
+  { canonicalName: '176. PTO Vlčata', numbers: [176], aliases: ['PTO Vlčata', 'Vlcata'] },
+  {
+    canonicalName: 'PTO Žabky Jedovnice',
+    numbers: [],
+    aliases: ['PTO Žabky Jedovnice', 'Žabky Jedovnice', 'Zabky Jedovnice', 'Žabky'],
+  },
+];
 
 type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 
@@ -354,6 +405,232 @@ function buildPatrolCodeVariants(raw: string) {
   return noPad === pad ? [noPad] : [noPad, pad];
 }
 
+function parsePatrolMembersForExport(rawMembers: string | null | undefined): string[] {
+  const normalized = normalizeText(rawMembers);
+  if (!normalized) {
+    return [];
+  }
+
+  const semicolonParts = normalized
+    .split(/;|\r?\n/g)
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (semicolonParts.length > 1) {
+    return semicolonParts;
+  }
+
+  const commaParts = normalized
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (commaParts.length > 1) {
+    return commaParts;
+  }
+
+  return [normalized];
+}
+
+function formatSecondsForExport(seconds: number | null): string {
+  if (seconds === null) {
+    return '—';
+  }
+  const safeSeconds = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const remainingSeconds = safeSeconds % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+  }
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function formatDateTimeForExport(value: string | null | undefined): string {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return '—';
+  }
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    return '—';
+  }
+  return parsed.toLocaleString('cs-CZ');
+}
+
+function stripDiacritics(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function normalizeTroopLookupKey(value: string): string {
+  return stripDiacritics(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+const PTO_TROOP_BY_NUMBER = new Map<number, string>();
+const ptoTroopAliasCandidates = new Map<string, Set<string>>();
+
+PTO_TROOP_REGISTRY.forEach((entry) => {
+  entry.numbers.forEach((number) => {
+    PTO_TROOP_BY_NUMBER.set(number, entry.canonicalName);
+  });
+
+  const aliases = [entry.canonicalName, ...(entry.aliases ?? [])];
+  aliases.forEach((alias) => {
+    const normalizedAlias = normalizeTroopLookupKey(alias);
+    if (!normalizedAlias) {
+      return;
+    }
+    if (!ptoTroopAliasCandidates.has(normalizedAlias)) {
+      ptoTroopAliasCandidates.set(normalizedAlias, new Set<string>());
+    }
+    ptoTroopAliasCandidates.get(normalizedAlias)!.add(entry.canonicalName);
+  });
+});
+
+const PTO_TROOP_ALIAS_ENTRIES: Array<{ alias: string; canonicalName: string }> = [];
+ptoTroopAliasCandidates.forEach((canonicalNames, alias) => {
+  if (canonicalNames.size !== 1) {
+    return;
+  }
+  const [canonicalName] = Array.from(canonicalNames);
+  PTO_TROOP_ALIAS_ENTRIES.push({ alias, canonicalName });
+});
+PTO_TROOP_ALIAS_ENTRIES.sort((a, b) => b.alias.length - a.alias.length || a.alias.localeCompare(b.alias, 'cs'));
+
+function extractPtoTroopsFromText(value: string | null | undefined): string[] {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return [];
+  }
+
+  const found = new Set<string>();
+
+  const numberMatches = normalized.match(/\b\d{1,3}\b/g) ?? [];
+  numberMatches.forEach((rawNumber) => {
+    const parsed = Number.parseInt(rawNumber, 10);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+    const canonicalName = PTO_TROOP_BY_NUMBER.get(parsed);
+    if (canonicalName) {
+      found.add(canonicalName);
+    }
+  });
+
+  const lookupSource = normalizeTroopLookupKey(normalized);
+  if (lookupSource) {
+    PTO_TROOP_ALIAS_ENTRIES.forEach(({ alias, canonicalName }) => {
+      if (lookupSource.includes(alias)) {
+        found.add(canonicalName);
+      }
+    });
+  }
+
+  return Array.from(found);
+}
+
+function extractPtoTroopsFromPatrol(
+  teamName: string | null | undefined,
+  members: readonly string[],
+): string[] {
+  const found = new Map<string, string>();
+  const addTroopsFromText = (rawText: string | null | undefined) => {
+    extractPtoTroopsFromText(rawText).forEach((troopName) => {
+      const key = troopName.toLocaleLowerCase('cs');
+      if (!found.has(key)) {
+        found.set(key, troopName);
+      }
+    });
+  };
+
+  splitMixedTroopNames(teamName).forEach((part) => addTroopsFromText(part));
+  addTroopsFromText(teamName);
+  members.forEach((member) => addTroopsFromText(member));
+
+  return Array.from(found.values()).sort(compareTroopSheetOrder);
+}
+
+function normalizeSheetNameKey(value: string): string | null {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return null;
+  }
+  const compact = normalized.toUpperCase().replace(/\s+/g, '');
+  if (/^[NMSR][HD]$/.test(compact)) {
+    return compact;
+  }
+  if (/^[NMSR]$/.test(compact)) {
+    return compact;
+  }
+  return null;
+}
+
+function normalizeHeaderKey(value: string): string {
+  return stripDiacritics(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function excelCellValueToText(value: ExcelJS.CellValue | undefined): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value).trim();
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => {
+        const text = (part as { text?: unknown }).text;
+        return typeof text === 'string' ? text : '';
+      })
+      .join('')
+      .trim();
+  }
+
+  const record = value as Record<string, unknown>;
+  const richText = record.richText;
+  if (Array.isArray(richText)) {
+    const merged = richText
+      .map((part) => {
+        const text = (part as { text?: unknown }).text;
+        return typeof text === 'string' ? text : '';
+      })
+      .join('')
+      .trim();
+    if (merged) {
+      return merged;
+    }
+  }
+
+  const text = record.text;
+  if (typeof text === 'string') {
+    return text.trim();
+  }
+
+  const result = record.result;
+  if (typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean') {
+    return String(result).trim();
+  }
+
+  return '';
+}
+
+function excelCellValueToNumber(value: ExcelJS.CellValue | undefined): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  const text = excelCellValueToText(value);
+  if (!text) {
+    return null;
+  }
+  return toNumeric(text.replace(/\s+/g, '').replace(',', '.'));
+}
+
 function createEmptyAnswers(): AnswersFormState {
   return { N: '', M: '', S: '', R: '' };
 }
@@ -412,6 +689,10 @@ function AdminDashboard({
   const [disqualifySuccess, setDisqualifySuccess] = useState<string | null>(null);
   const [exportingNames, setExportingNames] = useState(false);
   const [exportingLeague, setExportingLeague] = useState(false);
+  const [leagueImportFile, setLeagueImportFile] = useState<File | null>(null);
+  const [processingLeagueImport, setProcessingLeagueImport] = useState(false);
+  const [leagueImportError, setLeagueImportError] = useState<string | null>(null);
+  const [leagueImportSuccess, setLeagueImportSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     setEventState({ name: manifest.event.name, scoringLocked: manifest.event.scoringLocked });
@@ -1366,6 +1647,584 @@ function AdminDashboard({
     }
   }, [eventId, eventState.name, exportingLeague]);
 
+  const handleLeagueImportFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const [selectedFile] = Array.from(event.target.files ?? []);
+    setLeagueImportFile(selectedFile ?? null);
+    setLeagueImportError(null);
+    setLeagueImportSuccess(null);
+  }, []);
+
+  const handleBuildResultsWithLeaguePoints = useCallback(async () => {
+    if (!leagueImportFile || processingLeagueImport) {
+      return;
+    }
+
+    setProcessingLeagueImport(true);
+    setLeagueImportError(null);
+    setLeagueImportSuccess(null);
+
+    try {
+      type ImportedLeagueSourceRow = {
+        patrol_id: string;
+        patrol_code: string | null;
+        team_name: string | null;
+        category: string | null;
+        sex: string | null;
+        patrol_members: string | null;
+        disqualified: boolean | null;
+        rank_in_bracket: number | string | null;
+        total_points: number | string | null;
+        points_no_t?: number | string | null;
+        points_no_T?: number | string | null;
+        pure_seconds?: number | string | null;
+        start_time?: string | null;
+        finish_time?: string | null;
+        total_seconds?: number | string | null;
+        wait_seconds?: number | string | null;
+        station_points_breakdown?: Record<string, unknown> | null;
+      };
+
+      type ScoredExportRow = {
+        patrolId: string;
+        patrolCode: string;
+        teamName: string;
+        category: string;
+        sex: string;
+        bracketKey: string;
+        disqualified: boolean;
+        rankInBracket: number | null;
+        totalPoints: number | null;
+        pointsNoTime: number | null;
+        pureSeconds: number | null;
+        startTime: string | null;
+        finishTime: string | null;
+        totalSeconds: number | null;
+        waitSeconds: number | null;
+        stationPointsBreakdown: Record<string, number>;
+        members: string[];
+        zlPoints: number;
+      };
+
+      type TroopContribution = {
+        patrolCode: string;
+        points: number;
+        sourcePoints: number;
+      };
+
+      const importWorkbook = new ExcelJS.Workbook();
+      await importWorkbook.xlsx.load(await leagueImportFile.arrayBuffer());
+
+      const importedPointsByPatrol = new Map<string, number>();
+      const mergedCategorySheets = new Set<string>();
+      const duplicateCodeConflicts: string[] = [];
+      const unsupportedSheets: string[] = [];
+
+      importWorkbook.worksheets.forEach((worksheet) => {
+        const sheetKey = normalizeSheetNameKey(worksheet.name);
+        if (!sheetKey) {
+          unsupportedSheets.push(worksheet.name);
+          return;
+        }
+
+        if (sheetKey.length === 1) {
+          mergedCategorySheets.add(sheetKey);
+        }
+
+        const headerRow = worksheet.getRow(1);
+        const headerByColumn = new Map<number, string>();
+        headerRow.eachCell({ includeEmpty: false }, (cell, columnNumber) => {
+          const rawHeader = excelCellValueToText(cell.value);
+          if (!rawHeader) {
+            return;
+          }
+          headerByColumn.set(columnNumber, normalizeHeaderKey(rawHeader));
+        });
+
+        let patrolCodeColumn: number | null = null;
+        let zlPointsColumn: number | null = null;
+        let zlPointsFallbackColumn: number | null = null;
+
+        headerByColumn.forEach((headerKey, columnNumber) => {
+          if (headerKey.includes('cislohlidky') || headerKey === 'hlidka') {
+            patrolCodeColumn = columnNumber;
+            return;
+          }
+
+          if (headerKey === 'bodyzlscutoff') {
+            zlPointsColumn = columnNumber;
+            return;
+          }
+
+          if (headerKey === 'bodyzlbezcutoff') {
+            zlPointsFallbackColumn = columnNumber;
+            return;
+          }
+
+          if (headerKey.includes('bodyzl') && zlPointsFallbackColumn === null) {
+            zlPointsFallbackColumn = columnNumber;
+          }
+        });
+
+        const pointsColumn = zlPointsColumn ?? zlPointsFallbackColumn;
+        if (patrolCodeColumn === null || pointsColumn === null) {
+          return;
+        }
+
+        for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+          const row = worksheet.getRow(rowNumber);
+          const patrolCell = row.getCell(patrolCodeColumn);
+          const pointsCell = row.getCell(pointsColumn);
+          const patrolCode = normalisePatrolCode(excelCellValueToText(patrolCell.value));
+          const points = excelCellValueToNumber(pointsCell.value);
+
+          if (!patrolCode || points === null) {
+            continue;
+          }
+
+          const previous = importedPointsByPatrol.get(patrolCode);
+          if (previous !== undefined && Math.abs(previous - points) > 1e-9) {
+            duplicateCodeConflicts.push(patrolCode);
+            continue;
+          }
+          importedPointsByPatrol.set(patrolCode, points);
+        }
+      });
+
+      if (!importedPointsByPatrol.size) {
+        throw new Error('V nahraném XLSX nebyly nalezeny sloupce s hlídkami a body ZL.');
+      }
+
+      if (duplicateCodeConflicts.length) {
+        throw new Error(
+          `Hlídky mají v nahraném XLSX více různých hodnot body ZL: ${duplicateCodeConflicts
+            .slice(0, 8)
+            .join(', ')}`,
+        );
+      }
+
+      const [resultsResponse, stationsResponse] = await Promise.all([
+        supabase
+          .from('results_ranked')
+          .select(
+            'patrol_id, patrol_code, team_name, category, sex, patrol_members, disqualified, rank_in_bracket, total_points, points_no_t, pure_seconds, start_time, finish_time, total_seconds, wait_seconds, station_points_breakdown',
+          )
+          .eq('event_id', eventId),
+        supabase
+          .from('stations')
+          .select('code')
+          .eq('event_id', eventId)
+          .order('code', { ascending: true }),
+      ]);
+
+      if (resultsResponse.error) {
+        throw resultsResponse.error;
+      }
+      if (stationsResponse.error) {
+        throw stationsResponse.error;
+      }
+
+      const rawRows = (resultsResponse.data ?? []) as ImportedLeagueSourceRow[];
+      const rows: Omit<ScoredExportRow, 'zlPoints'>[] = rawRows
+        .map((row) => {
+          const bracketKey = toBracketKey(row.category, row.sex);
+          if (!bracketKey) {
+            return null;
+          }
+          const normalizedPatrolCode = normalisePatrolCode(normalizeText(row.patrol_code));
+          const stationPointsBreakdown: Record<string, number> = {};
+          const rawStationPoints = row.station_points_breakdown;
+          if (rawStationPoints && typeof rawStationPoints === 'object' && !Array.isArray(rawStationPoints)) {
+            Object.entries(rawStationPoints).forEach(([stationCode, value]) => {
+              const normalizedStationCode = normalizeText(stationCode)?.toUpperCase();
+              const numericValue = toNumeric(value);
+              if (!normalizedStationCode || numericValue === null) {
+                return;
+              }
+              stationPointsBreakdown[normalizedStationCode] = numericValue;
+            });
+          }
+          return {
+            patrolId: row.patrol_id,
+            patrolCode: normalizedPatrolCode || '',
+            teamName: normalizeText(row.team_name),
+            category: normalizeText(row.category)?.toUpperCase() ?? '',
+            sex: normalizeText(row.sex)?.toUpperCase() ?? '',
+            bracketKey,
+            disqualified: row.disqualified === true,
+            rankInBracket: toNumeric(row.rank_in_bracket),
+            totalPoints: toNumeric(row.total_points),
+            pointsNoTime: toNumeric(row.points_no_t ?? row.points_no_T ?? null),
+            pureSeconds: toNumeric(row.pure_seconds),
+            startTime: normalizeText(row.start_time),
+            finishTime: normalizeText(row.finish_time),
+            totalSeconds: toNumeric(row.total_seconds),
+            waitSeconds: toNumeric(row.wait_seconds),
+            stationPointsBreakdown,
+            members: parsePatrolMembersForExport(row.patrol_members),
+          };
+        })
+        .filter((row): row is Omit<ScoredExportRow, 'zlPoints'> => Boolean(row));
+
+      if (!rows.length) {
+        throw new Error('Výsledky závodu nejsou k dispozici.');
+      }
+
+      const compareRowsForResultsExport = (
+        a: Omit<ScoredExportRow, 'zlPoints'>,
+        b: Omit<ScoredExportRow, 'zlPoints'>,
+      ) => {
+        if (a.disqualified && b.disqualified) {
+          return comparePatrolOrder(
+            { patrol_code: a.patrolCode, category: a.category, sex: a.sex },
+            { patrol_code: b.patrolCode, category: b.category, sex: b.sex },
+          );
+        }
+        if (a.disqualified !== b.disqualified) {
+          return a.disqualified ? 1 : -1;
+        }
+
+        const aHasPoints = a.totalPoints !== null || a.pointsNoTime !== null;
+        const bHasPoints = b.totalPoints !== null || b.pointsNoTime !== null;
+        if (aHasPoints !== bHasPoints) {
+          return aHasPoints ? -1 : 1;
+        }
+
+        const aRank = a.rankInBracket ?? Number.POSITIVE_INFINITY;
+        const bRank = b.rankInBracket ?? Number.POSITIVE_INFINITY;
+        if (aRank !== bRank) {
+          return aRank - bRank;
+        }
+
+        const aTotalPoints = a.totalPoints ?? Number.NEGATIVE_INFINITY;
+        const bTotalPoints = b.totalPoints ?? Number.NEGATIVE_INFINITY;
+        if (aTotalPoints !== bTotalPoints) {
+          return bTotalPoints - aTotalPoints;
+        }
+
+        const aPointsNoTime = a.pointsNoTime ?? Number.NEGATIVE_INFINITY;
+        const bPointsNoTime = b.pointsNoTime ?? Number.NEGATIVE_INFINITY;
+        if (aPointsNoTime !== bPointsNoTime) {
+          return bPointsNoTime - aPointsNoTime;
+        }
+
+        const aPureSeconds = a.pureSeconds ?? Number.POSITIVE_INFINITY;
+        const bPureSeconds = b.pureSeconds ?? Number.POSITIVE_INFINITY;
+        if (aPureSeconds !== bPureSeconds) {
+          return aPureSeconds - bPureSeconds;
+        }
+
+        return comparePatrolOrder(
+          { patrol_code: a.patrolCode, category: a.category, sex: a.sex },
+          { patrol_code: b.patrolCode, category: b.category, sex: b.sex },
+        );
+      };
+
+      const missingInUploaded: string[] = [];
+      const usedImportedCodes = new Set<string>();
+
+      const scoredRows: ScoredExportRow[] = rows.map((row) => {
+        const candidateCodes = new Set<string>();
+        buildPatrolCodeVariants(row.patrolCode).forEach((variant) => candidateCodes.add(variant));
+        if (row.patrolCode) {
+          candidateCodes.add(row.patrolCode);
+        }
+
+        let matchedCode: string | null = null;
+        let points: number | null = null;
+        candidateCodes.forEach((candidate) => {
+          if (matchedCode !== null) {
+            return;
+          }
+          if (importedPointsByPatrol.has(candidate)) {
+            matchedCode = candidate;
+            points = importedPointsByPatrol.get(candidate) ?? null;
+          }
+        });
+
+        if (matchedCode === null || points === null) {
+          missingInUploaded.push(row.patrolCode || `${row.bracketKey}-${row.rankInBracket ?? '?'}`);
+          return {
+            ...row,
+            zlPoints: 0,
+          };
+        }
+
+        usedImportedCodes.add(matchedCode);
+        return {
+          ...row,
+          zlPoints: points,
+        };
+      });
+
+      if (missingInUploaded.length) {
+        throw new Error(
+          `V nahraném XLSX chybí body ZL pro hlídky: ${Array.from(new Set(missingInUploaded))
+            .slice(0, 10)
+            .join(', ')}`,
+        );
+      }
+
+      const unknownImportedCodes = Array.from(importedPointsByPatrol.keys()).filter((code) => !usedImportedCodes.has(code));
+      if (unknownImportedCodes.length) {
+        throw new Error(
+          `V nahraném XLSX jsou hlídky, které nejsou ve výsledcích závodu: ${unknownImportedCodes
+            .slice(0, 10)
+            .join(', ')}`,
+        );
+      }
+
+      const groupedByBracket = new Map<string, ScoredExportRow[]>();
+      BRACKET_EXPORT_ORDER.forEach((bracketKey) => groupedByBracket.set(bracketKey, []));
+      scoredRows.forEach((row) => {
+        groupedByBracket.get(row.bracketKey)?.push(row);
+      });
+      groupedByBracket.forEach((groupRows) => {
+        groupRows.sort(compareRowsForResultsExport);
+      });
+
+      const allStationCodes = Array.from(
+        new Set(
+          ((stationsResponse.data ?? []) as Array<{ code: string | null }>)
+            .map((row) => normalizeText(row.code)?.toUpperCase() ?? '')
+            .filter(Boolean)
+            .concat(
+              scoredRows.flatMap((row) => Object.keys(row.stationPointsBreakdown)),
+            ),
+        ),
+      ).sort((a, b) => a.localeCompare(b, 'cs'));
+
+      const maxMemberCount = Math.max(1, scoredRows.reduce((max, row) => Math.max(max, row.members.length), 0));
+      const memberHeaders = Array.from({ length: maxMemberCount }, (_, index) => `Člen ${index + 1}`);
+
+      const workbook = new ExcelJS.Workbook();
+
+      const pickStationCodesForSheet = (category: CategoryKey, sheetRows: ScoredExportRow[]) => {
+        const allowedFromStations = allStationCodes.filter((code) => {
+          const allowedCategories = getStationAllowedBaseCategories(code);
+          return allowedCategories.includes(category);
+        });
+        if (allowedFromStations.length > 0) {
+          return allowedFromStations;
+        }
+
+        const fallbackSet = new Set<string>();
+        sheetRows.forEach((row) => {
+          Object.keys(row.stationPointsBreakdown).forEach((code) => {
+            const allowedCategories = getStationAllowedBaseCategories(code);
+            if (allowedCategories.includes(category)) {
+              fallbackSet.add(code);
+            }
+          });
+        });
+        if (fallbackSet.size > 0) {
+          return Array.from(fallbackSet).sort((a, b) => a.localeCompare(b, 'cs'));
+        }
+        return allStationCodes;
+      };
+
+      const addResultsSheet = (sheetName: string, category: CategoryKey, sheetRows: ScoredExportRow[]) => {
+        const worksheet = workbook.addWorksheet(sheetName);
+        const stationCodes = pickStationCodesForSheet(category, sheetRows);
+        const stationHeaders = stationCodes.map((code) => `Body ${code}`);
+
+        worksheet.addRow([
+          '#',
+          'Hlídka',
+          'Oddíl',
+          ...memberHeaders,
+          'Čas startu',
+          'Čas doběhu',
+          'Celkový čas na trati',
+          'Čekání',
+          'Čas na trati bez čekání',
+          ...stationHeaders,
+          'Body celkem',
+          'Body bez času',
+          'Body ZL',
+        ]);
+
+        if (!sheetRows.length) {
+          worksheet.addRow([
+            '—',
+            '—',
+            'Žádné výsledky v této kategorii.',
+            ...Array.from({ length: maxMemberCount }, () => '—'),
+            '—',
+            '—',
+            '—',
+            '—',
+            '—',
+            ...Array.from({ length: stationCodes.length }, () => '—'),
+            '',
+            '',
+            '',
+          ]);
+        } else {
+          sheetRows.forEach((row, index) => {
+            const fallbackCode = `${row.bracketKey}-${index + 1}`;
+            const memberCells = Array.from({ length: maxMemberCount }, (_, memberIndex) => row.members[memberIndex] || '—');
+            const stationCells = stationCodes.map((code) => {
+              const value = row.stationPointsBreakdown[code];
+              return typeof value === 'number' ? value : '-';
+            });
+
+            worksheet.addRow([
+              row.disqualified ? 'DSQ' : String(index + 1),
+              row.patrolCode || fallbackCode,
+              row.teamName || '—',
+              ...memberCells,
+              formatDateTimeForExport(row.startTime),
+              formatDateTimeForExport(row.finishTime),
+              formatSecondsForExport(row.totalSeconds),
+              formatSecondsForExport(row.waitSeconds),
+              formatSecondsForExport(row.pureSeconds),
+              ...stationCells,
+              row.totalPoints ?? '',
+              row.pointsNoTime ?? '',
+              row.zlPoints,
+            ]);
+          });
+        }
+      };
+
+      BRACKET_EXPORT_ORDER.forEach((bracketKey) => {
+        const category = bracketKey.slice(0, 1) as CategoryKey;
+        addResultsSheet(bracketKey, category, groupedByBracket.get(bracketKey) ?? []);
+      });
+
+      const orderedMergedCategories = BASE_CATEGORY_ORDER.filter((category) => mergedCategorySheets.has(category));
+      orderedMergedCategories.forEach((category) => {
+        const mergedRows = [
+          ...(groupedByBracket.get(`${category}H`) ?? []),
+          ...(groupedByBracket.get(`${category}D`) ?? []),
+        ];
+        mergedRows.sort(compareRowsForResultsExport);
+        addResultsSheet(category, category, mergedRows);
+      });
+
+      const contributionsByTroop = new Map<string, TroopContribution[]>();
+      scoredRows.forEach((row) => {
+        const uniqueTroops = extractPtoTroopsFromPatrol(row.teamName, row.members);
+
+        if (!uniqueTroops.length) {
+          return;
+        }
+
+        const share = row.zlPoints / uniqueTroops.length;
+        uniqueTroops.forEach((troopName) => {
+          if (!contributionsByTroop.has(troopName)) {
+            contributionsByTroop.set(troopName, []);
+          }
+          contributionsByTroop.get(troopName)!.push({
+            patrolCode: row.patrolCode,
+            points: share,
+            sourcePoints: row.zlPoints,
+          });
+        });
+      });
+
+      const zlWorksheet = workbook.addWorksheet('ZL');
+      zlWorksheet.addRow([
+        'Pořadí',
+        'Oddíl',
+        'Body ZL (max 4 hlídky)',
+        'Započtené hlídky',
+        'Další hlídky',
+      ]);
+
+      if (!contributionsByTroop.size) {
+        zlWorksheet.addRow(['—', 'Žádný oddíl PTO', '', '', '']);
+      } else {
+        const sortedTroopScores = Array.from(contributionsByTroop.entries())
+          .map(([troopName, contributions]) => {
+            const sortedContributions = [...contributions].sort((a, b) => {
+              if (a.points !== b.points) {
+                return b.points - a.points;
+              }
+              if (a.sourcePoints !== b.sourcePoints) {
+                return b.sourcePoints - a.sourcePoints;
+              }
+              return comparePatrolOrder(
+                { patrol_code: a.patrolCode },
+                { patrol_code: b.patrolCode },
+              );
+            });
+            const countedContributions = sortedContributions.slice(0, 4);
+            const remainingContributions = sortedContributions.slice(4);
+            const totalPoints = countedContributions.reduce((sum, item) => sum + item.points, 0);
+            return {
+              troopName,
+              totalPoints,
+              countedContributions,
+              remainingContributions,
+            };
+          })
+          .sort((a, b) => {
+            if (a.totalPoints !== b.totalPoints) {
+              return b.totalPoints - a.totalPoints;
+            }
+            return compareTroopSheetOrder(a.troopName, b.troopName);
+          });
+
+        sortedTroopScores.forEach((row, index) => {
+          const formatContribution = (item: TroopContribution) => `${item.patrolCode} (${item.points.toFixed(2)})`;
+          zlWorksheet.addRow([
+            index + 1,
+            row.troopName,
+            Number(row.totalPoints.toFixed(2)),
+            row.countedContributions.map(formatContribution).join(', ') || '—',
+            row.remainingContributions.map(formatContribution).join(', ') || '—',
+          ]);
+        });
+      }
+
+      workbook.worksheets.forEach((worksheet) => {
+        if (worksheet.name === 'ZL') {
+          worksheet.columns = [
+            { width: 10 },
+            { width: 28 },
+            { width: 22 },
+            { width: 52 },
+            { width: 52 },
+          ];
+          return;
+        }
+
+        const stationHeaderCount = Math.max(0, worksheet.getRow(1).cellCount - (11 + maxMemberCount));
+        worksheet.columns = [
+          { width: 8 },
+          { width: 14 },
+          { width: 28 },
+          ...Array.from({ length: maxMemberCount }, () => ({ width: 24 })),
+          { width: 18 },
+          { width: 18 },
+          { width: 20 },
+          { width: 14 },
+          { width: 22 },
+          ...Array.from({ length: stationHeaderCount }, () => ({ width: 10 })),
+          { width: 14 },
+          { width: 16 },
+          { width: 12 },
+        ];
+      });
+
+      await downloadWorkbook(workbook, toExportFileName(eventState.name, 'vysledky-zl-body'));
+
+      const unsupportedSheetsHint = unsupportedSheets.length
+        ? ` Nepodporované listy byly přeskočeny: ${unsupportedSheets.slice(0, 4).join(', ')}.`
+        : '';
+      setLeagueImportSuccess(`Export byl vytvořen ze souboru ${leagueImportFile.name}.${unsupportedSheetsHint}`);
+    } catch (error) {
+      console.error('Failed to build results workbook with imported ZL points', error);
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'Nepodařilo se zpracovat nahraný XLSX soubor.';
+      setLeagueImportError(message);
+    } finally {
+      setProcessingLeagueImport(false);
+    }
+  }, [eventId, eventState.name, leagueImportFile, processingLeagueImport]);
+
   if (!isCalcStation) {
     return (
       <div className="admin-shell">
@@ -1750,6 +2609,43 @@ function AdminDashboard({
               </table>
             </div>
           ) : null}
+        </section>
+
+        <section className="admin-card admin-card--with-divider">
+          <header className="admin-card-header">
+            <div>
+              <h2>Import body ZL do výsledků</h2>
+              <p className="admin-card-subtitle">
+                Nahraj upravený XLSX export bodů ZL. Vygeneruje se export výsledků s body ZL a souhrn oddílů.
+              </p>
+            </div>
+          </header>
+          <div className="admin-import-zl-form">
+            <label className="admin-field" htmlFor="admin-zl-import-file">
+              <span>Soubor XLSX (Export body ZL)</span>
+              <input
+                id="admin-zl-import-file"
+                type="file"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={handleLeagueImportFileChange}
+              />
+            </label>
+            <button
+              type="button"
+              className="admin-button admin-button--secondary"
+              onClick={handleBuildResultsWithLeaguePoints}
+              disabled={!leagueImportFile || processingLeagueImport}
+            >
+              {processingLeagueImport ? 'Zpracovávám…' : 'Vytvořit výsledky + ZL'}
+            </button>
+          </div>
+          {leagueImportFile ? (
+            <p className="admin-notice">
+              Vybraný soubor: <strong>{leagueImportFile.name}</strong>
+            </p>
+          ) : null}
+          {leagueImportError ? <p className="admin-error">{leagueImportError}</p> : null}
+          {leagueImportSuccess ? <p className="admin-success">{leagueImportSuccess}</p> : null}
         </section>
         {missingDialog ? (
           <div

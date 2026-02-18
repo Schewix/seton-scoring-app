@@ -206,6 +206,13 @@
   align-items: flex-end;
 }
 
+.admin-import-zl-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
 .admin-field {
   flex: 1 1 220px;
   display: flex;
@@ -228,6 +235,11 @@
   background: var(--surface);
   outline: 2px solid transparent;
   outline-offset: 2px;
+}
+
+.admin-field input[type='file'] {
+  padding: 10px 12px;
+  background: #ffffff;
 }
 
 .admin-field input:focus {
@@ -713,6 +725,11 @@
   }
 
   .admin-disqualify-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-import-zl-form {
     flex-direction: column;
     align-items: stretch;
   }

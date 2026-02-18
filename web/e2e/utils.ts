@@ -12,7 +12,8 @@ function base64UrlEncode(value: string) {
 export function createTestJwt(payload: Record<string, unknown>) {
   const { jwtSecret } = ensureTestSupabaseEnv();
   if (jwtSecret) {
-    return jwt.sign(payload, jwtSecret, { expiresIn: 60 * 60 });
+    // Keep bypass token long-lived because Playwright can reuse an existing dev server.
+    return jwt.sign(payload, jwtSecret, { expiresIn: '30d' });
   }
 
   const header = { alg: 'none', typ: 'JWT' };
