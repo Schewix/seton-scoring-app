@@ -7,6 +7,12 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const EVENT_ID = Deno.env.get("SYNC_EVENT_ID") ?? Deno.env.get("EVENT_ID");
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const SYNC_SECRET = Deno.env.get("SYNC_SECRET"); // volitelné – stejné jako u sync-judges
+const ONBOARDING_LOGIN_URL =
+  Deno.env.get("ONBOARDING_LOGIN_URL") ?? "https://zelenaliga.cz/aplikace/setonuv-zavod?reset=1";
+const TRANSACTIONAL_FROM =
+  Deno.env.get("TRANSACTIONAL_FROM_EMAIL") ?? "Zelená liga <info@zelenaliga.cz>";
+const TRANSACTIONAL_REPLY_TO =
+  Deno.env.get("TRANSACTIONAL_REPLY_TO") ?? "info@zelenaliga.cz";
 
 if (!SUPABASE_URL) throw new Error("Missing SUPABASE_URL");
 if (!SERVICE_ROLE_KEY) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
@@ -36,6 +42,15 @@ function toBase64(buf: ArrayBuffer): string {
   return btoa(binary);
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iterations = 210_000;
@@ -51,12 +66,14 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 async function sendEmail(to: string, password: string, displayName?: string): Promise<string> {
-  const from = "Zelená liga <noreply@zelenaliga.cz>";
-  const replyTo = "info@zelenaliga.cz";
-  const subject = "Váš nový účet v Zelené lize";
+  const from = TRANSACTIONAL_FROM;
+  const replyTo = TRANSACTIONAL_REPLY_TO;
+  const subject = "Dočasné heslo do aplikace Zelená liga";
 
-  // Build professional HTML using inline styles (email-compatible)
-  const preheader = "Váš nový účet v Zelené lize je připraven – nastavte si heslo";
+  const preheader = "V e-mailu najdete dočasné heslo a odkaz na přihlášení";
+  const safeDisplayName = escapeHtml(displayName?.trim() || "rozhodčí");
+  const safePassword = escapeHtml(password);
+  const safeLoginUrl = escapeHtml(ONBOARDING_LOGIN_URL);
   
   const html = `
 <!DOCTYPE html>
@@ -80,56 +97,47 @@ async function sendEmail(to: string, password: string, displayName?: string): Pr
   <!-- Main content -->
   <div style="max-width: 600px; margin: 0 auto; background: white; padding: 32px 24px;">
     <p style="margin: 0 0 20px; font-size: 16px; color: #333; line-height: 1.5;">
-      Dobrý den <strong>${displayName ? displayName : 'rozhodčí'}</strong>,
+      Dobrý den <strong>${safeDisplayName}</strong>,
     </p>
 
     <p style="margin: 0 0 20px; font-size: 16px; color: #333; line-height: 1.5;">
-      Byl/a jste přidán/a do systému Zelené ligy jako rozhodčí. Váš účet je nyní připraven k použití.
+      Byl vám vytvořen účet rozhodčího v systému Zelená liga.
     </p>
 
     <!-- Account setup card -->
     <div style="background: #eef9f0; border: 1px solid #cfe8d8; border-radius: 6px; padding: 16px; margin: 20px 0;">
-      <h3 style="color: #06642b; margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;">Nastavení účtu</h3>
-      <p style="margin: 0 0 8px; font-size: 14px;">
-        Klikněte na tlačítko níže a nastavte si svůj přístupový kód (heslo):
+      <h3 style="color: #06642b; margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;">Dočasné přihlašovací údaje</h3>
+      <p style="margin: 0;">
+        <strong>Dočasné heslo:</strong>
       </p>
-      <p style="margin: 12px 0 0; padding: 12px; background: #f5f5f5; border-radius: 4px; font-family: monospace; font-size: 12px;">
-        <strong>Dočasný přístupový kód:</strong><br>
-        <code style="font-size: 13px; font-weight: bold; word-break: break-all;">${password}</code>
+      <p style="margin: 8px 0 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 18px; letter-spacing: 0.06em; color: #04372c;">
+        ${safePassword}
       </p>
     </div>
 
-    <p style="margin: 20px 0; font-size: 14px; color: #666; line-height: 1.5;">
-      Jakmile nastavíte svůj účet, budete mít přístup ke všem akcím a modulům, na které jste přiřazeni:
+    <p style="margin: 20px 0; font-size: 14px; color: #666; line-height: 1.5; text-align: center;">
+      Klikněte na tlačítko níže, přihlaste se tímto dočasným heslem a aplikace vás vyzve k nastavení nového hesla:
     </p>
-
-    <ul style="margin: 12px 0 20px; padding-left: 20px; font-size: 14px; color: #666; line-height: 1.6;">
-      <li>Deskové hry</li>
-      <li>Fotbal</li>
-      <li>Běh</li>
-      <li>Plavaní</li>
-      <li>A další sporty...</li>
-    </ul>
 
     <!-- CTA Button -->
     <div style="text-align: center; margin: 20px 0;">
-      <a href="https://zelenaliga.cz/aplikace" style="display: inline-block; background: #ffd700; color: black; padding: 14px 28px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 14px;">
-        Nastavit účet
+      <a href="${safeLoginUrl}" style="display: inline-block; background: #ffd700; color: black; padding: 14px 28px; border-radius: 4px; text-decoration: none; font-weight: 600; font-size: 14px;">
+        Otevřít přihlášení
       </a>
     </div>
 
     <!-- Fallback link -->
     <p style="margin: 0; font-size: 12px; color: #0b8e3f; text-align: center;">
       Pokud se vám tlačítko nezobrazilo,
-      <a href="https://zelenaliga.cz/aplikace" style="color: #0b8e3f; text-decoration: underline;">
-        klikněte sem pro nastavení účtu
+      <a href="${safeLoginUrl}" style="color: #0b8e3f; text-decoration: underline;">
+        klikněte sem
       </a>
     </p>
 
     <hr style="margin: 20px 0; border: none; border-top: 1px solid #e8e8e8;">
 
     <p style="margin: 20px 0 0; font-size: 14px; color: #666; line-height: 1.5;">
-      <strong>Potřebujete pomoc?</strong> V aplikaci najdete pravidla a pokyny pro rozhodčí v sekci <em>Dokumentace</em>. Máte-li technické dotazy, kontaktujte prosím info@zelenaliga.cz.
+      Máte-li technické dotazy, kontaktujte prosím info@zelenaliga.cz.
     </p>
   </div>
 
@@ -146,8 +154,9 @@ async function sendEmail(to: string, password: string, displayName?: string): Pr
 
   const text = [
     "Dobrý den,",
-    "byl vám vytvořen účet rozhodčího v systému Zelená liga.",
+    "byl vám vytvořen účet rozhodčího.",
     `Dočasné heslo: ${password}`,
+    `Přihlášení: ${ONBOARDING_LOGIN_URL}`,
     "Po přihlášení budete vyzváni ke změně hesla.",
     "Děkujeme.",
   ].join("\n");

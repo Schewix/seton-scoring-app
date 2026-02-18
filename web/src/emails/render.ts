@@ -172,7 +172,7 @@ export async function sendEmail(options: EmailOptions): Promise<{ id: string }> 
     to,
     subject,
     html,
-    from = 'Zelená Liga <noreply@zelenaliga.cz>',
+    from = 'Zelená Liga <info@zelenaliga.cz>',
     replyTo = 'info@zelenaliga.cz',
   } = options;
 

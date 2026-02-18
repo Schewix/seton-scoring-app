@@ -14,6 +14,10 @@ const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const RESEND_API_KEY = process.env.RESEND_API_KEY!;
 const RESET_PASSWORD_LOGIN_URL =
   process.env.RESET_PASSWORD_LOGIN_URL ?? 'https://zelenaliga.cz/aplikace/setonuv-zavod?reset=1';
+const TRANSACTIONAL_FROM_EMAIL =
+  process.env.TRANSACTIONAL_FROM_EMAIL ?? 'Zelená liga <info@zelenaliga.cz>';
+const TRANSACTIONAL_REPLY_TO =
+  process.env.TRANSACTIONAL_REPLY_TO ?? 'info@zelenaliga.cz';
 
 const corsHeaders = {
   'access-control-allow-origin': '*',
@@ -28,8 +32,8 @@ function applyCors(res: any) {
 }
 
 async function sendResetEmail(to: string, password: string, displayName?: string): Promise<string> {
-  const from = 'Zelená liga <noreply@zelenaliga.cz>';
-  const replyTo = 'info@zelenaliga.cz';
+  const from = TRANSACTIONAL_FROM_EMAIL;
+  const replyTo = TRANSACTIONAL_REPLY_TO;
   const subject = 'Dočasné heslo do aplikace Zelená liga';
   
   // Build professional HTML using inline styles (email-compatible)
