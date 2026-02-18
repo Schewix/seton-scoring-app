@@ -107,7 +107,7 @@ const NAV_ITEMS = [
 ];
 
 const LEAGUE_EVENTS = [
-  { key: 'pto-ob', label: 'PTO OB', name: 'Orientační běh' },
+  { key: 'pto-ob', label: 'PTOB', name: 'Orientační běh' },
   { key: 'ds', label: 'DS', name: 'Dračí smyčka' },
   { key: 'kp', label: 'KP', name: 'Kosmův prostor' },
   { key: 'zls', label: 'Seton', name: 'Setonův závod' },
@@ -824,9 +824,6 @@ function ArticlesIndexPage({
             <h1 id="articles-heading">Články ze soutěží</h1>
             <span className="homepage-section-accent" aria-hidden="true" />
           </div>
-          <p className="homepage-lead">
-            {articlesLoading ? 'Načítám články z redakce…' : 'Reportáže a novinky z posledních akcí.'}
-          </p>
           {articlesLoading ? (
             <div className="homepage-card">
               <p style={{ margin: 0 }}>Načítám články z redakce…</p>
@@ -946,7 +943,6 @@ function TroopsPage() {
     <SiteShell>
       <main className="homepage-main homepage-single troops-page" aria-labelledby="troops-heading">
         <h1 id="troops-heading">Oddíly SPTO</h1>
-        <p className="homepage-lead">Seznam oddílů zapojených do pionýrského tábornictví.</p>
         <div className="homepage-card">
           <div className="troops-grid">
             {TROOPS.map((troop) => {
@@ -972,9 +968,6 @@ function TroopsPage() {
             })}
           </div>
         </div>
-        <a className="homepage-back-link" href="/">
-          Zpět na hlavní stránku
-        </a>
       </main>
     </SiteShell>
   );
@@ -1027,7 +1020,6 @@ function ContactsPage() {
     <SiteShell>
       <main className="homepage-main homepage-single contacts-page" aria-labelledby="contacts-heading">
         <h1 id="contacts-heading">Kontakty</h1>
-        <p className="homepage-lead">Rádi poradíme s činností oddílů i s organizací soutěží.</p>
         <div className="homepage-card">
           <div className="contacts-grid">
             {CONTACTS.map((contact) => (
@@ -1064,9 +1056,6 @@ function ContactsPage() {
             </a>
           </div>
         </div>
-        <a className="homepage-back-link" href="/">
-          Zpět na hlavní stránku
-        </a>
       </main>
     </SiteShell>
   );
@@ -1904,7 +1893,6 @@ function GalleryOverviewPage({ albums, loading }: { albums: DriveAlbum[]; loadin
     <SiteShell>
       <main className="homepage-main homepage-single gallery-page" aria-labelledby="gallery-heading">
         <h1 id="gallery-heading">Fotogalerie</h1>
-        <p className="homepage-lead">Veřejná galerie akcí SPTO s fotkami uloženými na Google Drive.</p>
         {loading ? (
           <div className="homepage-card">Načítám alba…</div>
         ) : null}
@@ -2781,7 +2769,6 @@ function CompetitionsPage() {
     <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="competitions-heading">
         <h1 id="competitions-heading">Soutěže SPTO</h1>
-        <p className="homepage-lead">Přehled závodů Zelené ligy a souvisejících aplikací.</p>
         <div className="homepage-card">
           <div className="homepage-souteze-grid">
             <div className="homepage-souteze-block">
@@ -2811,9 +2798,6 @@ function CompetitionsPage() {
             </div>
           </div>
         </div>
-        <a className="homepage-back-link" href="/">
-          Zpět na hlavní stránku
-        </a>
       </main>
     </SiteShell>
   );
@@ -2853,7 +2837,6 @@ function LeagueStandingsPage({ leagueScores }: { leagueScores: LeagueScoresRecor
     <SiteShell>
       <main className="homepage-main homepage-single homepage-league-page" aria-labelledby="league-heading">
         <h1 id="league-heading">Aktuální pořadí</h1>
-        <p className="homepage-lead">Body oddílů v jednotlivých soutěžích a celkový součet.</p>
         <div className="homepage-card homepage-league-table-card">
           {!hasAnyScores ? (
             <p className="homepage-league-note">Body doplníme po napojení na tabulku s aktuálním pořadím.</p>
@@ -2903,9 +2886,6 @@ function LeagueStandingsPage({ leagueScores }: { leagueScores: LeagueScoresRecor
             <p>Sem vložíme Google tabulku s historickým pořadím. Pošli prosím embed link.</p>
           )}
         </div>
-        <a className="homepage-back-link" href="/">
-          Zpět na hlavní stránku
-        </a>
       </main>
     </SiteShell>
   );
@@ -2958,8 +2938,7 @@ function AboutSptoPage() {
   return (
     <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="about-spto-heading">
-        <h1 id="about-spto-heading">O SPTO</h1>
-        <p className="homepage-lead">Historie, založení a zásady fungování Sdružení pionýrských tábornických oddílů.</p>
+        <h1 id="about-spto-heading">O SPTO</h1> 
 
         <div className="homepage-card">
           <div className="homepage-about-grid">
@@ -3019,10 +2998,6 @@ function AboutSptoPage() {
             <p>Soubor zásad se nepodařilo načíst. Zkus prosím obnovit stránku.</p>
           )}
         </div>
-
-        <a className="homepage-back-link" href="/">
-          Zpět na hlavní stránku
-        </a>
       </main>
     </SiteShell>
   );
