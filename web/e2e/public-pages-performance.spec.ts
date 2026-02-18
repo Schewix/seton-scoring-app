@@ -109,6 +109,12 @@ async function mockPublicApis(page: Page) {
     if (url.pathname !== '/api/gallery') {
       return route.continue();
     }
+    if (url.searchParams.get('years') === '1' || url.searchParams.get('years') === 'true') {
+      return fulfillJson(route, { years: ['2026'] });
+    }
+    if (url.searchParams.has('year')) {
+      return fulfillJson(route, { albums: [MOCK_ALBUM] });
+    }
     const folderId = url.searchParams.get('folderId') ?? url.searchParams.get('folder');
     if (folderId) {
       return fulfillJson(route, {

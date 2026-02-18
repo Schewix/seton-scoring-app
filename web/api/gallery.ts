@@ -36,6 +36,19 @@ function applyAlbumsCacheHeaders(res: any, bypassCache: boolean) {
   res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=300');
 }
 
+function clearAlbumsCache() {
+  for (const key of cache.keys()) {
+    if (
+      key === 'drive-album-overrides' ||
+      key === 'drive-album-years' ||
+      key === 'drive-albums' ||
+      key.startsWith('drive-albums:')
+    ) {
+      cache.delete(key);
+    }
+  }
+}
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -308,6 +321,9 @@ async function handleAlbums(req: any, res: any) {
     req.query?.nocache === '1' ||
     req.query?.nocache === 'true' ||
     req.query?.nocache === 'yes';
+  const yearFilter = typeof req.query?.year === 'string' ? req.query.year.trim() : '';
+  const yearsOnly = req.query?.years === '1' || req.query?.years === 'true';
+  const cacheKey = yearsOnly ? 'drive-album-years' : `drive-albums:${yearFilter || 'all'}`;
   applyAlbumsCacheHeaders(res, bypassCache);
   res.setHeader('Access-Control-Allow-Origin', '*');
 
@@ -318,10 +334,9 @@ async function handleAlbums(req: any, res: any) {
   }
 
   if (bypassCache) {
-    cache.delete('drive-albums');
-    cache.delete('drive-album-overrides');
+    clearAlbumsCache();
   } else {
-    const cached = getCache<any>('drive-albums');
+    const cached = getCache<any>(cacheKey);
     if (cached !== null) {
       res.status(200).json(cached);
       return;
@@ -329,6 +344,26 @@ async function handleAlbums(req: any, res: any) {
   }
 
   try {
+    const yearFolders = await listAllFolders(rootFolderId);
+    if (yearsOnly) {
+      const years = yearFolders
+        .map((folder) => folder.name ?? 'Ostatní')
+        .sort((a, b) => {
+          const yearA = sortYearLabel(a);
+          const yearB = sortYearLabel(b);
+          if (yearA !== yearB) {
+            return yearB - yearA;
+          }
+          return b.localeCompare(a, 'cs');
+        });
+      const payload = { years };
+      if (!bypassCache) {
+        setCache(cacheKey, payload);
+      }
+      res.status(200).json(payload);
+      return;
+    }
+
     let overrides: Map<string, string>;
     if (!bypassCache) {
       const cachedOverrides = getCache<Map<string, string>>('drive-album-overrides');
@@ -346,7 +381,9 @@ async function handleAlbums(req: any, res: any) {
       .map((item) => item.trim())
       .filter(Boolean)
       .map(normalizeForMatch);
-    const yearFolders = await listAllFolders(rootFolderId);
+    const scopedYearFolders = yearFilter
+      ? yearFolders.filter((folder) => (folder.name ?? 'Ostatní') === yearFilter)
+      : yearFolders;
     const albums: Array<{
       id: string;
       title: string;
@@ -356,7 +393,7 @@ async function handleAlbums(req: any, res: any) {
       baseTitle?: string;
     }> = [];
 
-    for (const yearFolder of yearFolders) {
+    for (const yearFolder of scopedYearFolders) {
       if (!yearFolder.id) {
         continue;
       }
@@ -404,7 +441,7 @@ async function handleAlbums(req: any, res: any) {
 
     const payload = { albums };
     if (!bypassCache) {
-      setCache('drive-albums', payload);
+      setCache(cacheKey, payload);
     }
     res.status(200).json(payload);
   } catch (error) {

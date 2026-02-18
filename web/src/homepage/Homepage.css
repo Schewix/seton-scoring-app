@@ -2014,6 +2014,39 @@
   margin-top: 32px;
 }
 
+.gallery-year-tabs {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gallery-year-tab {
+  border-radius: 999px;
+  border: 1px solid rgba(4, 55, 44, 0.2);
+  background: rgba(255, 255, 255, 0.9);
+  color: #04372c;
+  padding: 7px 14px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  box-shadow: none;
+}
+
+.gallery-year-tab:hover,
+.gallery-year-tab:focus-visible {
+  transform: none;
+  background: rgba(255, 204, 51, 0.2);
+  border-color: rgba(255, 204, 51, 0.8);
+  box-shadow: none;
+}
+
+.gallery-year-tab.is-active {
+  background: rgba(255, 204, 51, 0.35);
+  border-color: #ffcc33;
+}
+
 .gallery-year-section--skeleton {
   margin-top: 16px;
 }

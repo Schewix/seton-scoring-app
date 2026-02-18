@@ -1930,7 +1930,19 @@ function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
   );
 }
 
-function GalleryOverviewPage({ albums, loading }: { albums: DriveAlbum[]; loading: boolean }) {
+function GalleryOverviewPage({
+  albums,
+  loading,
+  years,
+  selectedYear,
+  onSelectYear,
+}: {
+  albums: DriveAlbum[];
+  loading: boolean;
+  years: string[];
+  selectedYear: string | null;
+  onSelectYear: (year: string) => void;
+}) {
   const grouped = useMemo(() => {
     const groups = new Map<string, DriveAlbum[]>();
     albums.forEach((album) => {
@@ -1948,6 +1960,24 @@ function GalleryOverviewPage({ albums, loading }: { albums: DriveAlbum[]; loadin
     <SiteShell>
       <main className="homepage-main homepage-single gallery-page" aria-labelledby="gallery-heading">
         <h1 id="gallery-heading">Fotogalerie</h1>
+        {years.length > 0 ? (
+          <div className="gallery-year-tabs" role="tablist" aria-label="Výběr roku fotogalerie">
+            {years.map((year) => {
+              const isActive = selectedYear === year;
+              return (
+                <button
+                  key={year}
+                  type="button"
+                  className={`gallery-year-tab${isActive ? ' is-active' : ''}`}
+                  onClick={() => onSelectYear(year)}
+                  aria-pressed={isActive}
+                >
+                  {year}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         {loading ? (
           <>
             <p className="homepage-skeleton-status" role="status">
@@ -3120,6 +3150,8 @@ export default function ZelenaligaSite() {
   const [articlesLoading, setArticlesLoading] = useState(false);
   const [leagueScores, setLeagueScores] = useState<LeagueScoresRecord>(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
   const [driveAlbums, setDriveAlbums] = useState<DriveAlbum[]>([]);
+  const [galleryYears, setGalleryYears] = useState<string[]>([]);
+  const [selectedGalleryYear, setSelectedGalleryYear] = useState<string | null>(null);
   const [driveAlbumsLoading, setDriveAlbumsLoading] = useState(false);
   const path = window.location.pathname.replace(/\/$/, '') || '/';
   const segments = path.split('/').filter(Boolean);
@@ -3127,6 +3159,7 @@ export default function ZelenaligaSite() {
   const shouldLoadArticles = path === '/' || slug === 'clanky';
   const shouldLoadLeague = path === '/' || slug === 'aktualni-poradi' || slug === 'zelena-liga';
   const shouldLoadGallery = slug === 'fotogalerie';
+  const isGalleryOverviewRoute = shouldLoadGallery && segments.length === 1;
 
   useEffect(() => {
     if (!hasSanityConfig()) {
@@ -3199,13 +3232,59 @@ export default function ZelenaligaSite() {
   }, [shouldLoadLeague]);
 
   useEffect(() => {
-    if (!shouldLoadGallery) {
-      setDriveAlbumsLoading(false);
+    if (!isGalleryOverviewRoute) {
+      setGalleryYears([]);
+      setSelectedGalleryYear(null);
       return;
     }
     let active = true;
     setDriveAlbumsLoading(true);
-    fetch('/api/gallery')
+    fetch('/api/gallery?years=1')
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data) => {
+        if (!active) {
+          return;
+        }
+        const years = Array.isArray(data.years)
+          ? data.years.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
+          : [];
+        setGalleryYears(years);
+        setSelectedGalleryYear((current) => (current && years.includes(current) ? current : years[0] ?? null));
+        if (years.length === 0) {
+          setDriveAlbums([]);
+          setDriveAlbumsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setGalleryYears([]);
+          setSelectedGalleryYear(null);
+          setDriveAlbums([]);
+          setDriveAlbumsLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [isGalleryOverviewRoute]);
+
+  useEffect(() => {
+    if (!shouldLoadGallery) {
+      setDriveAlbumsLoading(false);
+      return;
+    }
+    const endpoint = isGalleryOverviewRoute
+      ? selectedGalleryYear
+        ? `/api/gallery?year=${encodeURIComponent(selectedGalleryYear)}`
+        : ''
+      : '/api/gallery';
+    if (!endpoint) {
+      setDriveAlbums([]);
+      return;
+    }
+    let active = true;
+    setDriveAlbumsLoading(true);
+    fetch(endpoint)
       .then(async (response) => {
         if (!response.ok) {
           throw new Error('Failed to load albums.');
@@ -3233,7 +3312,7 @@ export default function ZelenaligaSite() {
     return () => {
       active = false;
     };
-  }, [shouldLoadGallery]);
+  }, [isGalleryOverviewRoute, selectedGalleryYear, shouldLoadGallery]);
 
   if (path === '/') {
     return (
@@ -3291,7 +3370,15 @@ export default function ZelenaligaSite() {
         const albumSlug = segments[segments.length - 1];
         return <GalleryAlbumPage slug={albumSlug} albums={driveAlbums} loading={driveAlbumsLoading} />;
       }
-      return <GalleryOverviewPage albums={driveAlbums} loading={driveAlbumsLoading} />;
+      return (
+        <GalleryOverviewPage
+          albums={driveAlbums}
+          loading={driveAlbumsLoading}
+          years={galleryYears}
+          selectedYear={selectedGalleryYear}
+          onSelectYear={setSelectedGalleryYear}
+        />
+      );
     }
 
     if (slug === 'o-spto' || slug === 'historie') {
