@@ -1911,7 +1911,7 @@ function GalleryAlbumCard({ album }: { album: DriveAlbum }) {
             const thumbSrcSet = buildPhotoSrcSet(photo, [120, 180, 240, 360]);
             return thumbUrl ? (
               <img
-                key={photo.id}
+                key={photo.fileId}
                 src={thumbUrl}
                 srcSet={thumbSrcSet || undefined}
                 sizes="(max-width: 700px) 20vw, 72px"
