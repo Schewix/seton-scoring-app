@@ -148,6 +148,18 @@ function toPageSize(raw: string | string[] | undefined) {
   return Math.min(Math.max(Math.round(parsed), 1), 100);
 }
 
+function toAlbumsLimit(raw: string | string[] | undefined) {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.min(Math.max(Math.round(parsed), 1), 200);
+}
+
 async function fetchAlbumFiles({
   folderIds,
   pageToken,
@@ -323,7 +335,10 @@ async function handleAlbums(req: any, res: any) {
     req.query?.nocache === 'yes';
   const yearFilter = typeof req.query?.year === 'string' ? req.query.year.trim() : '';
   const yearsOnly = req.query?.years === '1' || req.query?.years === 'true';
-  const cacheKey = yearsOnly ? 'drive-album-years' : `drive-albums:${yearFilter || 'all'}`;
+  const albumsLimit = toAlbumsLimit(req.query?.limit);
+  const cacheKey = yearsOnly
+    ? 'drive-album-years'
+    : `drive-albums:${yearFilter || 'all'}:${albumsLimit ?? 'all'}`;
   applyAlbumsCacheHeaders(res, bypassCache);
   res.setHeader('Access-Control-Allow-Origin', '*');
 
@@ -439,7 +454,7 @@ async function handleAlbums(req: any, res: any) {
       return a.title.localeCompare(b.title, 'cs');
     });
 
-    const payload = { albums };
+    const payload = { albums: albumsLimit ? albums.slice(0, albumsLimit) : albums };
     if (!bypassCache) {
       setCache(cacheKey, payload);
     }

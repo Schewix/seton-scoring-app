@@ -7,6 +7,9 @@ import { fetchContentArticle, fetchContentArticles, type ContentArticle } from '
 import { fetchHomepage, hasSanityConfig, type SanityHomepage } from '../data/sanity';
 import { fetchAlbumPreview, type GalleryPreview as CachedGalleryPreview } from '../utils/galleryCache';
 
+const HOMEPAGE_GALLERY_PREFETCH_LIMIT = 3;
+const HOMEPAGE_GALLERY_PREFETCH_DELAY_MS = 900;
+
 interface Competition {
   slug: string;
   name: string;
@@ -751,9 +754,8 @@ function mapContentArticle(article: ContentArticle): Article {
   };
 }
 
-// Gallery cache & prefetch is imported from utils/galleryCache.ts
+// Gallery cache helpers are imported from utils/galleryCache.ts
 // fetchAlbumPreview() is used by GalleryAlbumCard components
-// prefetchAlbumPreviews() is called on HomePage mount to preload gallery data
 
 function NotFoundPage() {
   return (
@@ -3313,6 +3315,77 @@ export default function ZelenaligaSite() {
       active = false;
     };
   }, [isGalleryOverviewRoute, selectedGalleryYear, shouldLoadGallery]);
+
+  useEffect(() => {
+    if (path !== '/') {
+      return;
+    }
+    let active = true;
+    const prefetchTimers: number[] = [];
+    let startTimer: number | null = null;
+    let idleCallbackId: number | null = null;
+    const browserWindow = window as Window & {
+      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+
+    const startPrefetch = () => {
+      fetch(`/api/gallery?limit=${HOMEPAGE_GALLERY_PREFETCH_LIMIT}`)
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then((data) => {
+          if (!active) {
+            return;
+          }
+          const albums = Array.isArray(data.albums) ? (data.albums as DriveAlbum[]) : [];
+          albums
+            .slice(0, HOMEPAGE_GALLERY_PREFETCH_LIMIT)
+            .forEach((album, index) => {
+              if (!album?.folderId) {
+                return;
+              }
+              const timer = window.setTimeout(() => {
+                if (!active) {
+                  return;
+                }
+                fetchAlbumPreview(album.folderId).catch(() => undefined);
+              }, index * HOMEPAGE_GALLERY_PREFETCH_DELAY_MS);
+              prefetchTimers.push(timer);
+            });
+        })
+        .catch(() => undefined);
+    };
+
+    const schedulePrefetchAfterLoad = () => {
+      if (!active) {
+        return;
+      }
+      if (browserWindow.requestIdleCallback) {
+        idleCallbackId = browserWindow.requestIdleCallback(() => {
+          startTimer = window.setTimeout(startPrefetch, 200);
+        }, { timeout: 2000 });
+        return;
+      }
+      startTimer = window.setTimeout(startPrefetch, 400);
+    };
+
+    if (document.readyState === 'complete') {
+      schedulePrefetchAfterLoad();
+    } else {
+      window.addEventListener('load', schedulePrefetchAfterLoad, { once: true });
+    }
+
+    return () => {
+      active = false;
+      window.removeEventListener('load', schedulePrefetchAfterLoad);
+      if (startTimer !== null) {
+        window.clearTimeout(startTimer);
+      }
+      if (idleCallbackId !== null && browserWindow.cancelIdleCallback) {
+        browserWindow.cancelIdleCallback(idleCallbackId);
+      }
+      prefetchTimers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [path]);
 
   if (path === '/') {
     return (
