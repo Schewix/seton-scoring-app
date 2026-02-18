@@ -2685,7 +2685,6 @@ textarea {
 }
 
 .auth-hero {
-  --auth-hero-watermark: none;
   position: relative;
   height: 100%;
   display: flex;
@@ -2707,21 +2706,6 @@ textarea {
 .auth-hero > * {
   position: relative;
   z-index: 1;
-}
-
-.auth-hero::after {
-  content: '';
-  position: absolute;
-  width: min(660px, 105%);
-  aspect-ratio: 1 / 1;
-  right: -34%;
-  bottom: -30%;
-  left: auto;
-  background: var(--auth-hero-watermark) no-repeat center / contain;
-  opacity: 0.92;
-  filter: none;
-  pointer-events: none;
-  z-index: 0;
 }
 
 .auth-hero-brand {
@@ -3205,10 +3189,6 @@ textarea {
 
   .auth-hero {
     padding: clamp(36px, 10vw, 44px) clamp(20px, 7vw, 32px);
-  }
-
-  .auth-hero::after {
-    display: none;
   }
 
   .auth-hero-secondary {

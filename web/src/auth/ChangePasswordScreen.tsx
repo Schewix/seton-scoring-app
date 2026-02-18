@@ -3,7 +3,6 @@ import { changePasswordRequest } from './api';
 import { useAuth } from './context';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
-import type { CSSProperties } from 'react';
 
 interface Props {
   email: string;
@@ -73,15 +72,11 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin, varia
         'Okamžité přihlášení po úspěšné změně',
         'Podpora PINu pro zamčené stanoviště',
       ];
-  const heroStyle = {
-    '--auth-hero-watermark': `url(${zelenaLigaLogo})`,
-  } as CSSProperties;
-
   return (
     <div className={`auth-shell ${isDeskovky ? 'auth-shell--deskovky' : ''}`.trim()}>
       <div className="auth-shell-content">
         <div className="auth-layout">
-          <div className={`auth-hero ${isDeskovky ? 'auth-hero--deskovky' : ''}`.trim()} style={heroStyle}>
+          <div className={`auth-hero ${isDeskovky ? 'auth-hero--deskovky' : ''}`.trim()}>
             <div className="auth-hero-brand">
               <a
                 className="auth-hero-logo"
