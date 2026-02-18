@@ -1042,9 +1042,9 @@ function AdminDashboard({
         disqualifiedFlag: boolean;
         droppedFlag: boolean;
         zlGroupKey: string;
-        zlBand: number | null;
-        zlPoints: number;
-        zlStatus: 'OK' | 'VYPUŠTĚNO' | 'DSQ';
+        zlPointsNoCutoff: number;
+        zlPointsWithCutoff: number;
+        cutoffDropped: boolean;
       };
 
       const { data, error } = await supabase
@@ -1073,9 +1073,9 @@ function AdminDashboard({
             disqualifiedFlag,
             droppedFlag: !disqualifiedFlag && totalPoints === null && pointsNoT === null,
             zlGroupKey: bracketKey,
-            zlBand: null,
-            zlPoints: 0,
-            zlStatus: 'OK',
+            zlPointsNoCutoff: 0,
+            zlPointsWithCutoff: 0,
+            cutoffDropped: false,
           };
         })
         .filter((row): row is LeagueExportScoredRow => Boolean(row));
@@ -1137,6 +1137,53 @@ function AdminDashboard({
         scoringPools.get(row.zlGroupKey)!.push(row);
       });
 
+      const findAutomaticCutoffIndex = (pool: LeagueExportScoredRow[]) => {
+        if (pool.length < 5) {
+          return null;
+        }
+        const totals = pool.map((row) => toNumeric(row.total_points));
+        const candidates: Array<{ index: number; gap: number; weighted: number }> = [];
+        const startIndex = Math.floor((pool.length - 1) / 2);
+        for (let index = startIndex; index < pool.length - 1; index += 1) {
+          const currentTotal = totals[index];
+          const nextTotal = totals[index + 1];
+          if (currentTotal === null || nextTotal === null) {
+            continue;
+          }
+          const gap = currentTotal - nextTotal;
+          if (gap <= 0) {
+            continue;
+          }
+          const tailCount = pool.length - (index + 1);
+          const weighted = gap * Math.log(tailCount + 1.5);
+          candidates.push({ index, gap, weighted });
+        }
+        if (!candidates.length) {
+          return null;
+        }
+        candidates.sort((a, b) => b.weighted - a.weighted || b.gap - a.gap || a.index - b.index);
+        const strongest = candidates[0];
+        const sortedGaps = candidates.map((candidate) => candidate.gap).sort((a, b) => a - b);
+        const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)] ?? 0;
+        const minRequiredGap = Math.max(6, medianGap * 1.5);
+        if (strongest.gap < minRequiredGap) {
+          return null;
+        }
+        let cutoffIndex = strongest.index + 1;
+        while (cutoffIndex < pool.length) {
+          const previousTotal = totals[cutoffIndex - 1];
+          const currentTotal = totals[cutoffIndex];
+          if (previousTotal === null || currentTotal === null || previousTotal !== currentTotal) {
+            break;
+          }
+          cutoffIndex += 1;
+        }
+        if (cutoffIndex >= pool.length || cutoffIndex < 3) {
+          return null;
+        }
+        return cutoffIndex;
+      };
+
       scoringPools.forEach((pool) => {
         pool.sort(compareLeagueByPerformance);
         const rowsWithTotals = pool.filter((row) => toNumeric(row.total_points) !== null);
@@ -1163,29 +1210,39 @@ function AdminDashboard({
               }
             }
           }
-          row.zlBand = band;
-          row.zlPoints = ZL_BAND_POINTS[Math.max(0, Math.min(ZL_BAND_POINTS.length - 1, band - 1))];
-          row.zlStatus = 'OK';
+          row.zlPointsNoCutoff = ZL_BAND_POINTS[Math.max(0, Math.min(ZL_BAND_POINTS.length - 1, band - 1))];
+          row.zlPointsWithCutoff = row.zlPointsNoCutoff;
+          row.cutoffDropped = false;
         });
+
+        const cutoffIndex = findAutomaticCutoffIndex(pool);
+        if (cutoffIndex !== null) {
+          for (let index = cutoffIndex; index < pool.length; index += 1) {
+            const row = pool[index];
+            row.zlPointsWithCutoff = 1;
+            row.cutoffDropped = true;
+          }
+        }
       });
 
       scoredRows.forEach((row) => {
         if (row.disqualifiedFlag) {
-          row.zlPoints = 1;
-          row.zlBand = 7;
-          row.zlStatus = 'DSQ';
+          row.zlPointsNoCutoff = 0;
+          row.zlPointsWithCutoff = 0;
+          row.cutoffDropped = false;
           return;
         }
         if (row.droppedFlag) {
-          row.zlPoints = 1;
-          row.zlBand = 7;
-          row.zlStatus = 'VYPUŠTĚNO';
+          row.zlPointsNoCutoff = 1;
+          row.zlPointsWithCutoff = 1;
+          row.cutoffDropped = true;
           return;
         }
-        if (row.zlBand === null) {
-          row.zlBand = 7;
-          row.zlPoints = 1;
-          row.zlStatus = 'OK';
+        if (row.zlPointsNoCutoff <= 0) {
+          row.zlPointsNoCutoff = 1;
+        }
+        if (row.zlPointsWithCutoff <= 0) {
+          row.zlPointsWithCutoff = row.zlPointsNoCutoff;
         }
       });
 
@@ -1203,10 +1260,17 @@ function AdminDashboard({
       const workbook = new ExcelJS.Workbook();
       BRACKET_EXPORT_ORDER.forEach((bracketKey) => {
         const worksheet = workbook.addWorksheet(bracketKey);
-        worksheet.addRow(['Pořadí', 'Číslo hlídky', 'Body celkem', 'Body bez času', 'Body ZL', 'Pásmo ZL', 'Stav ZL']);
+        worksheet.addRow([
+          'Pořadí',
+          'Číslo hlídky',
+          'Body celkem',
+          'Body bez času',
+          'Body ZL bez cut-off',
+          'Body ZL s cut-off',
+        ]);
         const bracketRows = grouped.get(bracketKey) ?? [];
         if (bracketRows.length === 0) {
-          worksheet.addRow(['—', '—', '', '', '', '', '']);
+          worksheet.addRow(['—', '—', '', '', '', '']);
         } else {
           bracketRows.forEach((row) => {
             worksheet.addRow([
@@ -1214,13 +1278,19 @@ function AdminDashboard({
               parsePatrolCodeParts(row.patrol_code).normalizedCode || '—',
               toNumeric(row.total_points) ?? '',
               toNumeric(row.points_no_t ?? row.points_no_T ?? null) ?? '',
-              row.zlPoints,
-              row.zlBand ?? '',
-              row.zlStatus,
+              row.zlPointsNoCutoff,
+              row.zlPointsWithCutoff,
             ]);
           });
         }
-        worksheet.columns = [{ width: 10 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 10 }, { width: 10 }, { width: 14 }];
+        worksheet.columns = [
+          { width: 10 },
+          { width: 16 },
+          { width: 14 },
+          { width: 16 },
+          { width: 18 },
+          { width: 16 },
+        ];
       });
 
       await downloadWorkbook(workbook, toExportFileName(eventState.name, 'body-zelena-liga'));
