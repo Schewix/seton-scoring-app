@@ -107,6 +107,55 @@
   z-index: 20;
 }
 
+.homepage-nav.is-compact {
+  width: auto;
+  max-width: none;
+  margin: 0 0 40px auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  z-index: 28;
+}
+
+.homepage-nav.is-compact .homepage-nav-bar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.homepage-nav.is-compact .homepage-nav-title {
+  display: none;
+}
+
+.homepage-nav.is-compact .homepage-nav-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  margin-top: 0;
+  padding: 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(4, 55, 44, 0.16);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 20px 34px rgba(4, 55, 44, 0.16);
+}
+
+.homepage-nav.is-compact .homepage-nav-panel.is-open {
+  display: block;
+}
+
+.homepage-nav.is-desktop-compact {
+  width: 100%;
+  max-width: var(--homepage-max-width);
+  margin: 0 0 48px;
+}
+
+.homepage-nav.is-desktop-compact .homepage-nav-panel {
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
 .homepage-carousel {
   width: 100%;
   max-width: var(--homepage-max-width);
@@ -352,17 +401,37 @@
 
 @media (max-width: 900px) {
   .homepage-nav {
-    border-radius: 24px;
-    padding: 14px 16px;
+    width: auto;
+    max-width: none;
+    margin: 0 0 32px auto;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    z-index: 28;
   }
 
   .homepage-nav-bar {
     display: flex;
+    justify-content: flex-end;
+  }
+
+  .homepage-nav-title {
+    display: none;
   }
 
   .homepage-nav-panel {
     display: none;
-    margin-top: 12px;
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    margin-top: 0;
+    width: min(320px, calc(100vw - 24px));
+    padding: 12px;
+    border-radius: 20px;
+    border: 1px solid rgba(4, 55, 44, 0.16);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 20px 34px rgba(4, 55, 44, 0.16);
   }
 
   .homepage-nav-panel.is-open {
@@ -1447,6 +1516,11 @@
 .homepage-back-link:focus-visible {
   background: rgba(4, 55, 44, 0.2);
   transform: translateX(-2px);
+}
+
+.homepage-back-link--inline {
+  align-self: center;
+  width: fit-content;
 }
 
 .homepage-article-cover {

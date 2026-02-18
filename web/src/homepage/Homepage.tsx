@@ -175,7 +175,7 @@ const HISTORICAL_LEAGUE_EMBED_URL =
 
 const HEADER_SUBTITLE = 'Soutěže, oddíly a informace na jednom místě.';
 const HEADER_LEAD =
-  'Aktuality z akcí SPTO, fotogalerie a přehled soutěží na jednom místě. Podívej se, co se právě děje v Zelené lize.';
+  'Aktuality z akcí SPTO, fotogalerie a přehled soutěží na jednom místě. Podívej se, co se právě děje v SPTO.';
 
 const SPTO_HISTORY_HIGHLIGHTS = [
   'Tábornické oddíly se v Brně začaly sdružovat v roce 1964.',
@@ -1005,7 +1005,7 @@ function TroopDetailPage({ troop }: { troop: Troop }) {
             </div>
           ) : null}
         </div>
-        <a className="homepage-back-link" href="/oddily">
+        <a className="homepage-back-link homepage-back-link--inline" href="/oddily">
           Zpět na seznam oddílů
         </a>
       </main>
@@ -2119,7 +2119,7 @@ function GalleryAlbumPage({
             Načíst další fotky
           </button>
         ) : null}
-        <a className="homepage-back-link" href="/fotogalerie">
+        <a className="homepage-back-link homepage-back-link--inline" href="/fotogalerie">
           Zpět na fotogalerii
         </a>
       </main>
@@ -2378,12 +2378,57 @@ function SiteHeader({
   lead?: string;
 }) {
   const [navOpen, setNavOpen] = useState(false);
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 901px)').matches : true,
+  );
+  const [isDesktopCompact, setIsDesktopCompact] = useState(false);
   const navPanelId = 'homepage-nav-panel';
+  const useCompactNav = !isDesktopViewport || isDesktopCompact;
+  const isNavPanelOpen = useCompactNav ? navOpen : true;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const mediaQuery = window.matchMedia('(min-width: 901px)');
+    const handleViewportChange = (event: MediaQueryListEvent) => {
+      setIsDesktopViewport(event.matches);
+    };
+    setIsDesktopViewport(mediaQuery.matches);
+    mediaQuery.addEventListener('change', handleViewportChange);
+    return () => {
+      mediaQuery.removeEventListener('change', handleViewportChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isDesktopViewport) {
+      setIsDesktopCompact(false);
+      return;
+    }
+    const handleScroll = () => {
+      setIsDesktopCompact(window.scrollY > 140);
+    };
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [isDesktopViewport]);
+
+  useEffect(() => {
+    if (!useCompactNav) {
+      setNavOpen(false);
+    }
+  }, [useCompactNav]);
+
   const handleNavToggle = () => {
     setNavOpen((prev) => !prev);
   };
   const handleNavLinkClick = () => {
-    setNavOpen(false);
+    if (useCompactNav) {
+      setNavOpen(false);
+    }
   };
 
   return (
@@ -2402,13 +2447,16 @@ function SiteHeader({
         </div>
       </header>
 
-      <nav className="homepage-nav" aria-label="Hlavní navigace">
+      <nav
+        className={`homepage-nav${useCompactNav ? ' is-compact' : ''}${isDesktopCompact ? ' is-desktop-compact' : ''}`}
+        aria-label="Hlavní navigace"
+      >
         <div className="homepage-nav-bar">
           <span className="homepage-nav-title">Navigace</span>
           <button
-            className={`homepage-nav-toggle${navOpen ? ' is-open' : ''}`}
+            className={`homepage-nav-toggle${isNavPanelOpen ? ' is-open' : ''}`}
             type="button"
-            aria-expanded={navOpen}
+            aria-expanded={isNavPanelOpen}
             aria-controls={navPanelId}
             onClick={handleNavToggle}
           >
@@ -2420,7 +2468,7 @@ function SiteHeader({
             </span>
           </button>
         </div>
-        <div className={`homepage-nav-panel${navOpen ? ' is-open' : ''}`} id={navPanelId}>
+        <div className={`homepage-nav-panel${isNavPanelOpen ? ' is-open' : ''}`} id={navPanelId}>
           <div className="homepage-nav-inner">
             {NAV_ITEMS.map((item) => {
               const isActive = activeSection === item.id;
