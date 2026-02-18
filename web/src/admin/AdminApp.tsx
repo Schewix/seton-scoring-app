@@ -572,6 +572,13 @@ function normalizeHeaderKey(value: string): string {
   return stripDiacritics(value).toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function getObjectProperty(value: unknown, key: string): unknown {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+  return (value as { [property: string]: unknown })[key];
+}
+
 function excelCellValueToText(value: ExcelJS.CellValue | undefined): string {
   if (value === null || value === undefined) {
     return '';
@@ -592,8 +599,7 @@ function excelCellValueToText(value: ExcelJS.CellValue | undefined): string {
       .trim();
   }
 
-  const record = value as Record<string, unknown>;
-  const richText = record.richText;
+  const richText = getObjectProperty(value, 'richText');
   if (Array.isArray(richText)) {
     const merged = richText
       .map((part) => {
@@ -607,12 +613,12 @@ function excelCellValueToText(value: ExcelJS.CellValue | undefined): string {
     }
   }
 
-  const text = record.text;
+  const text = getObjectProperty(value, 'text');
   if (typeof text === 'string') {
     return text.trim();
   }
 
-  const result = record.result;
+  const result = getObjectProperty(value, 'result');
   if (typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean') {
     return String(result).trim();
   }
@@ -1841,46 +1847,45 @@ function AdminDashboard({
       }
 
       const rawRows = (resultsResponse.data ?? []) as ImportedLeagueSourceRow[];
-      const rows: Omit<ScoredExportRow, 'zlPoints'>[] = rawRows
-        .map((row) => {
-          const bracketKey = toBracketKey(row.category, row.sex);
-          if (!bracketKey) {
-            return null;
-          }
-          const normalizedPatrolCode = normalisePatrolCode(normalizeText(row.patrol_code));
-          const stationPointsBreakdown: Record<string, number> = {};
-          const rawStationPoints = row.station_points_breakdown;
-          if (rawStationPoints && typeof rawStationPoints === 'object' && !Array.isArray(rawStationPoints)) {
-            Object.entries(rawStationPoints).forEach(([stationCode, value]) => {
-              const normalizedStationCode = normalizeText(stationCode)?.toUpperCase();
-              const numericValue = toNumeric(value);
-              if (!normalizedStationCode || numericValue === null) {
-                return;
-              }
-              stationPointsBreakdown[normalizedStationCode] = numericValue;
-            });
-          }
-          return {
-            patrolId: row.patrol_id,
-            patrolCode: normalizedPatrolCode || '',
-            teamName: normalizeText(row.team_name),
-            category: normalizeText(row.category)?.toUpperCase() ?? '',
-            sex: normalizeText(row.sex)?.toUpperCase() ?? '',
-            bracketKey,
-            disqualified: row.disqualified === true,
-            rankInBracket: toNumeric(row.rank_in_bracket),
-            totalPoints: toNumeric(row.total_points),
-            pointsNoTime: toNumeric(row.points_no_t ?? row.points_no_T ?? null),
-            pureSeconds: toNumeric(row.pure_seconds),
-            startTime: normalizeText(row.start_time),
-            finishTime: normalizeText(row.finish_time),
-            totalSeconds: toNumeric(row.total_seconds),
-            waitSeconds: toNumeric(row.wait_seconds),
-            stationPointsBreakdown,
-            members: parsePatrolMembersForExport(row.patrol_members),
-          };
-        })
-        .filter((row): row is Omit<ScoredExportRow, 'zlPoints'> => Boolean(row));
+      const rows: Omit<ScoredExportRow, 'zlPoints'>[] = [];
+      rawRows.forEach((row) => {
+        const bracketKey = toBracketKey(row.category, row.sex);
+        if (!bracketKey) {
+          return;
+        }
+        const normalizedPatrolCode = normalisePatrolCode(normalizeText(row.patrol_code));
+        const stationPointsBreakdown: Record<string, number> = {};
+        const rawStationPoints = row.station_points_breakdown;
+        if (rawStationPoints && typeof rawStationPoints === 'object' && !Array.isArray(rawStationPoints)) {
+          Object.entries(rawStationPoints).forEach(([stationCode, value]) => {
+            const normalizedStationCode = normalizeText(stationCode)?.toUpperCase();
+            const numericValue = toNumeric(value);
+            if (!normalizedStationCode || numericValue === null) {
+              return;
+            }
+            stationPointsBreakdown[normalizedStationCode] = numericValue;
+          });
+        }
+        rows.push({
+          patrolId: row.patrol_id,
+          patrolCode: normalizedPatrolCode || '',
+          teamName: normalizeText(row.team_name),
+          category: normalizeText(row.category)?.toUpperCase() ?? '',
+          sex: normalizeText(row.sex)?.toUpperCase() ?? '',
+          bracketKey,
+          disqualified: row.disqualified === true,
+          rankInBracket: toNumeric(row.rank_in_bracket),
+          totalPoints: toNumeric(row.total_points),
+          pointsNoTime: toNumeric(row.points_no_t ?? row.points_no_T ?? null),
+          pureSeconds: toNumeric(row.pure_seconds),
+          startTime: normalizeText(row.start_time),
+          finishTime: normalizeText(row.finish_time),
+          totalSeconds: toNumeric(row.total_seconds),
+          waitSeconds: toNumeric(row.wait_seconds),
+          stationPointsBreakdown,
+          members: parsePatrolMembersForExport(row.patrol_members),
+        });
+      });
 
       if (!rows.length) {
         throw new Error('Výsledky závodu nejsou k dispozici.');
