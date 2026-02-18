@@ -2124,16 +2124,20 @@ function AdminDashboard({
       });
 
       const zlWorksheet = workbook.addWorksheet('ZL');
+      const participationPoints = 10;
+      const setonCoefficient = 2.0;
       zlWorksheet.addRow([
         'Pořadí',
         'Oddíl',
         'Body ZL (max 4 hlídky)',
+        'Body za účast',
+        'Koeficient',
+        'Body ZL celkem',
         'Započtené hlídky',
-        'Další hlídky',
       ]);
 
       if (!contributionsByTroop.size) {
-        zlWorksheet.addRow(['—', 'Žádný oddíl PTO', '', '', '']);
+        zlWorksheet.addRow(['—', 'Žádný oddíl PTO', '', '', '', '', '']);
       } else {
         const sortedTroopScores = Array.from(contributionsByTroop.entries())
           .map(([troopName, contributions]) => {
@@ -2150,13 +2154,15 @@ function AdminDashboard({
               );
             });
             const countedContributions = sortedContributions.slice(0, 4);
-            const remainingContributions = sortedContributions.slice(4);
-            const totalPoints = countedContributions.reduce((sum, item) => sum + item.points, 0);
+            const performancePoints = countedContributions.reduce((sum, item) => sum + item.points, 0);
+            const totalPoints = (performancePoints + participationPoints) * setonCoefficient;
             return {
               troopName,
+              performancePoints,
+              participationPoints,
+              setonCoefficient,
               totalPoints,
               countedContributions,
-              remainingContributions,
             };
           })
           .sort((a, b) => {
@@ -2171,9 +2177,11 @@ function AdminDashboard({
           zlWorksheet.addRow([
             index + 1,
             row.troopName,
+            Number(row.performancePoints.toFixed(2)),
+            row.participationPoints,
+            row.setonCoefficient,
             Number(row.totalPoints.toFixed(2)),
             row.countedContributions.map(formatContribution).join(', ') || '—',
-            row.remainingContributions.map(formatContribution).join(', ') || '—',
           ]);
         });
       }
@@ -2183,9 +2191,11 @@ function AdminDashboard({
           worksheet.columns = [
             { width: 10 },
             { width: 28 },
-            { width: 22 },
-            { width: 52 },
-            { width: 52 },
+            { width: 21 },
+            { width: 14 },
+            { width: 12 },
+            { width: 16 },
+            { width: 64 },
           ];
           return;
         }
