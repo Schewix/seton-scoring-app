@@ -2715,42 +2715,47 @@ function Homepage({
 
         <section className="homepage-section" id="zelenaliga" aria-labelledby="zelenaliga-heading">
           <div className="homepage-section-header homepage-section-header--left">
-            <h2 id="zelenaliga-heading">Zelená liga</h2>
+            <h2 id="zelenaliga-heading">Aktuální pořadí</h2>
             <span className="homepage-section-accent" aria-hidden="true" />
           </div>
-          <div className="homepage-card homepage-league-card is-compact">
-            <div className="homepage-league-top">
-              <h3>Top {LEAGUE_TOP_COUNT} oddílů</h3>
-              <ol>
-                {addCompetitionRanks(buildLeagueRows(leagueScores))
-                  .slice(0, LEAGUE_TOP_COUNT)
-                  .map((row, index) => (
-                    <li
-                      key={row.key}
-                      style={{ display: 'grid', gridTemplateColumns: '32px 1fr auto', gap: '12px', alignItems: 'center' }}
+          <div className="homepage-card" style={{ maxWidth: '880px' }}>
+            <h3>Top {LEAGUE_TOP_COUNT} oddílů</h3>
+            <ol className="homepage-about-list">
+              {addCompetitionRanks(buildLeagueRows(leagueScores))
+                .slice(0, LEAGUE_TOP_COUNT)
+                .map((row) => (
+                  <li
+                    key={row.key} // Added padding and bottom border for better readability
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '32px 2fr 1fr',
+                      gap: '16px',
+                      alignItems: 'center',
+                      padding: '12px 0',
+                      borderBottom: '1px solid rgba(4, 55, 44, 0.1)',
+                    }}
+                  >
+                    <span style={{ textAlign: 'right', fontSize: '1.1rem' }}>{row.rank}.</span>
+                    <strong style={{ fontSize: '1.1rem' }}>{row.name}</strong>
+                    <span
+                      style={{ fontSize: '1.1rem', fontWeight: 600, color: '#0b8e3f', justifySelf: 'end' }}
                     >
-                      <span className="homepage-league-rank" style={{ textAlign: 'right' }}>
-                        {row.rank}.
-                      </span>
-                      <strong>{row.name}</strong>
-                      <span style={{ fontWeight: 600, color: '#0b8e3f' }}>
-                        {row.total === null ? '— bodů' : `${formatLeagueScore(row.total)} bodů`}
-                      </span>
-                    </li>
-                  ))}
-              </ol>
-            </div>
-            <div className="homepage-league-actions">
-              <a className="homepage-cta secondary" href="/aktualni-poradi">
-                Zobrazit celé pořadí
-              </a>
-            </div>
+                      {row.total === null ? '— bodů' : `${formatLeagueScore(row.total)} bodů`}
+                    </span>
+                  </li>
+                ))}
+            </ol>
+          </div>
+          <div className="homepage-section-cta">
+            <a className="homepage-cta secondary" href="/aktualni-poradi">
+              Zobrazit celé pořadí
+            </a>
           </div>
         </section>
 
         <section className="homepage-section" id="o-spto" aria-labelledby="o-spto-heading">
           <div className="homepage-section-header homepage-section-header--left">
-            <h2 id="o-spto-heading">O SPTO</h2>
+            <h2 id="o-spto-heading">Z historie</h2>
             <span className="homepage-section-accent" aria-hidden="true" />
           </div>
           <div className="homepage-card" style={{ maxWidth: '880px' }}>
@@ -2759,7 +2764,9 @@ function Homepage({
                 <li key={item}>{item}</li>
               ))}
             </ul>
-            <a className="homepage-inline-link" href="/o-spto">
+          </div>
+          <div className="homepage-section-cta">
+            <a className="homepage-cta secondary" href="/o-spto">
               Více o SPTO
             </a>
           </div>
