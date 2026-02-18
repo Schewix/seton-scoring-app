@@ -483,6 +483,12 @@ function createFallbackPatrolCode(category: string, sex: string, rank: number) {
 }
 
 function ScoreboardApp() {
+  const autoExportRequested = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return new URLSearchParams(window.location.search).get('autoExport') === '1';
+  }, []);
   const [ranked, setRanked] = useState<RankedResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -495,6 +501,7 @@ function ScoreboardApp() {
   const [stationCodes, setStationCodes] = useState<string[]>([]);
   const [expandedPatrolId, setExpandedPatrolId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [autoExportHandled, setAutoExportHandled] = useState(false);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -894,6 +901,21 @@ function ScoreboardApp() {
       setExporting(false);
     }
   }, [eventName, exporting, groupedRanked, stationCodes]);
+
+  useEffect(() => {
+    if (!autoExportRequested || autoExportHandled || loading || refreshing || exporting) {
+      return;
+    }
+    if (!groupedRanked.length) {
+      setAutoExportHandled(true);
+      return;
+    }
+    void handleExport().finally(() => {
+      if (isMountedRef.current) {
+        setAutoExportHandled(true);
+      }
+    });
+  }, [autoExportHandled, autoExportRequested, exporting, groupedRanked.length, handleExport, loading, refreshing]);
 
   const eventLabel = eventName || 'Název závodu není k dispozici';
   const lastUpdatedLabel = lastUpdatedAt

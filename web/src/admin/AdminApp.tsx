@@ -1403,6 +1403,14 @@ function AdminDashboard({
             >
               Otevřít výsledky
             </a>
+            <a
+              className="admin-button admin-button--secondary admin-button--pill"
+              href="https://www.zelenaliga.cz/aplikace/setonuv-zavod/vysledky?autoExport=1"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Export výsledky
+            </a>
             <button
               type="button"
               className="admin-button admin-button--secondary admin-button--pill"
