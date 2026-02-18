@@ -1105,6 +1105,16 @@ function AdminDashboard({
         return comparePatrolOrder(a, b);
       };
 
+      const compareLeagueForExport = (a: LeagueExportScoredRow, b: LeagueExportScoredRow) => {
+        if (a.disqualifiedFlag && b.disqualifiedFlag) {
+          return comparePatrolOrder(a, b);
+        }
+        if (a.disqualifiedFlag !== b.disqualifiedFlag) {
+          return a.disqualifiedFlag ? 1 : -1;
+        }
+        return compareLeagueByPerformance(a, b);
+      };
+
       const mergeByCategory = new Map<string, boolean>();
       ['N', 'M', 'S', 'R'].forEach((category) => {
         const boysKey = `${category}H`;
@@ -1246,20 +1256,47 @@ function AdminDashboard({
         }
       });
 
-      const grouped = new Map<string, LeagueExportScoredRow[]>();
-      BRACKET_EXPORT_ORDER.forEach((key) => grouped.set(key, []));
+      const groupedByBracket = new Map<string, LeagueExportScoredRow[]>();
+      BRACKET_EXPORT_ORDER.forEach((key) => groupedByBracket.set(key, []));
+      const groupedByMergedCategory = new Map<string, LeagueExportScoredRow[]>();
 
       scoredRows.forEach((row) => {
-        grouped.get(row.bracketKey)?.push(row);
+        const category = row.bracketKey.slice(0, 1);
+        if (mergeByCategory.get(category)) {
+          if (!groupedByMergedCategory.has(category)) {
+            groupedByMergedCategory.set(category, []);
+          }
+          groupedByMergedCategory.get(category)!.push(row);
+          return;
+        }
+        groupedByBracket.get(row.bracketKey)?.push(row);
       });
 
-      grouped.forEach((items) => {
-        items.sort(compareLeagueByPerformance);
+      groupedByBracket.forEach((items) => {
+        items.sort(compareLeagueForExport);
+      });
+      groupedByMergedCategory.forEach((items) => {
+        items.sort(compareLeagueForExport);
+      });
+
+      const exportSheets: Array<{ name: string; rows: LeagueExportScoredRow[] }> = [];
+      (['N', 'M', 'S', 'R'] as const).forEach((category) => {
+        if (mergeByCategory.get(category)) {
+          exportSheets.push({
+            name: category,
+            rows: groupedByMergedCategory.get(category) ?? [],
+          });
+          return;
+        }
+        const boysKey = `${category}H`;
+        const girlsKey = `${category}D`;
+        exportSheets.push({ name: boysKey, rows: groupedByBracket.get(boysKey) ?? [] });
+        exportSheets.push({ name: girlsKey, rows: groupedByBracket.get(girlsKey) ?? [] });
       });
 
       const workbook = new ExcelJS.Workbook();
-      BRACKET_EXPORT_ORDER.forEach((bracketKey) => {
-        const worksheet = workbook.addWorksheet(bracketKey);
+      exportSheets.forEach(({ name, rows }) => {
+        const worksheet = workbook.addWorksheet(name);
         worksheet.addRow([
           'Pořadí',
           'Číslo hlídky',
@@ -1268,13 +1305,15 @@ function AdminDashboard({
           'Body ZL bez cut-off',
           'Body ZL s cut-off',
         ]);
-        const bracketRows = grouped.get(bracketKey) ?? [];
-        if (bracketRows.length === 0) {
+        if (rows.length === 0) {
           worksheet.addRow(['—', '—', '', '', '', '']);
         } else {
-          bracketRows.forEach((row) => {
+          rows.forEach((row, index) => {
+            const displayRank = name.length === 1
+              ? (row.disqualified ? 'DSQ' : String(index + 1))
+              : (row.disqualified ? 'DSQ' : (toNumeric(row.rank_in_bracket) ?? ''));
             worksheet.addRow([
-              row.disqualified ? 'DSQ' : (toNumeric(row.rank_in_bracket) ?? ''),
+              displayRank,
               parsePatrolCodeParts(row.patrol_code).normalizedCode || '—',
               toNumeric(row.total_points) ?? '',
               toNumeric(row.points_no_t ?? row.points_no_T ?? null) ?? '',
@@ -1282,6 +1321,17 @@ function AdminDashboard({
               row.zlPointsWithCutoff,
             ]);
           });
+          const cutoffStartIndex = rows.findIndex((row) => row.cutoffDropped && !row.disqualifiedFlag);
+          if (cutoffStartIndex > 0) {
+            const cutoffRow = worksheet.getRow(cutoffStartIndex + 2);
+            [5, 6].forEach((column) => {
+              const cell = cutoffRow.getCell(column);
+              cell.border = {
+                ...cell.border,
+                top: { style: 'thick', color: { argb: 'FFE53935' } },
+              };
+            });
+          }
         }
         worksheet.columns = [
           { width: 10 },
