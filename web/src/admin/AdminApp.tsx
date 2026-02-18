@@ -700,12 +700,6 @@ function AdminDashboard({
             >
               Otevřít výsledky
             </a>
-            <a
-              className="admin-button admin-button--secondary admin-button--pill"
-              href="/aplikace/deskovky"
-            >
-              Otevřít Deskovky
-            </a>
             <button
               type="button"
               className="admin-button admin-button--secondary admin-button--pill"
