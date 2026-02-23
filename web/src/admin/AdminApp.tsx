@@ -32,6 +32,10 @@ const BRACKET_EXPORT_ORDER = ['NH', 'ND', 'MH', 'MD', 'SH', 'SD', 'RH', 'RD'] as
 const BRACKET_EXPORT_ORDER_INDEX = new Map(BRACKET_EXPORT_ORDER.map((value, index) => [value, index] as const));
 const BASE_CATEGORY_ORDER = ['N', 'M', 'S', 'R'] as const;
 const ZL_BAND_POINTS = [16, 12, 9, 6, 4, 2, 1] as const;
+const ZL_GAUSS_CENTER_INDEX = 2;
+const ZL_GAUSS_SIGMA = 1.35;
+const ZL_GAUSS_RATIO_PENALTY_WEIGHT = 0.35;
+const ZL_GAUSS_DROPPED_PENALTY_WEIGHT = 0.08;
 
 type PtoTroopRegistryEntry = {
   canonicalName: string;
@@ -1331,7 +1335,9 @@ function AdminDashboard({
         zlGroupKey: string;
         zlPointsNoCutoff: number;
         zlPointsWithCutoff: number;
+        zlPointsGaussWithCutoff: number;
         cutoffDropped: boolean;
+        gaussCutoffDropped: boolean;
       };
 
       const { data, error } = await supabase
@@ -1362,7 +1368,9 @@ function AdminDashboard({
             zlGroupKey: bracketKey,
             zlPointsNoCutoff: 0,
             zlPointsWithCutoff: 0,
+            zlPointsGaussWithCutoff: 0,
             cutoffDropped: false,
+            gaussCutoffDropped: false,
           };
         })
         .filter((row): row is LeagueExportScoredRow => Boolean(row));
@@ -1434,12 +1442,20 @@ function AdminDashboard({
         scoringPools.get(row.zlGroupKey)!.push(row);
       });
 
-      const findAutomaticCutoffIndex = (pool: LeagueExportScoredRow[]) => {
+      type AutomaticCutoffCandidate = {
+        index: number;
+        gap: number;
+        weighted: number;
+        cutoffIndex: number;
+      };
+
+      const collectAutomaticCutoffCandidates = (pool: LeagueExportScoredRow[]) => {
         if (pool.length < 5) {
-          return null;
+          return [] as AutomaticCutoffCandidate[];
         }
+
         const totals = pool.map((row) => toNumeric(row.total_points));
-        const candidates: Array<{ index: number; gap: number; weighted: number }> = [];
+        const baseCandidates: Array<{ index: number; gap: number; weighted: number }> = [];
         const startIndex = Math.floor((pool.length - 1) / 2);
         for (let index = startIndex; index < pool.length - 1; index += 1) {
           const currentTotal = totals[index];
@@ -1453,32 +1469,42 @@ function AdminDashboard({
           }
           const tailCount = pool.length - (index + 1);
           const weighted = gap * Math.log(tailCount + 1.5);
-          candidates.push({ index, gap, weighted });
+          baseCandidates.push({ index, gap, weighted });
         }
-        if (!candidates.length) {
-          return null;
+        if (!baseCandidates.length) {
+          return [] as AutomaticCutoffCandidate[];
         }
-        candidates.sort((a, b) => b.weighted - a.weighted || b.gap - a.gap || a.index - b.index);
-        const strongest = candidates[0];
-        const sortedGaps = candidates.map((candidate) => candidate.gap).sort((a, b) => a - b);
+
+        const sortedGaps = baseCandidates.map((candidate) => candidate.gap).sort((a, b) => a - b);
         const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)] ?? 0;
         const minRequiredGap = Math.max(9, medianGap * 2);
-        if (strongest.gap <= minRequiredGap) {
-          return null;
-        }
-        let cutoffIndex = strongest.index + 1;
-        while (cutoffIndex < pool.length) {
-          const previousTotal = totals[cutoffIndex - 1];
-          const currentTotal = totals[cutoffIndex];
-          if (previousTotal === null || currentTotal === null || previousTotal !== currentTotal) {
-            break;
-          }
-          cutoffIndex += 1;
-        }
-        if (cutoffIndex >= pool.length || cutoffIndex < 3) {
-          return null;
-        }
-        return cutoffIndex;
+
+        const selectedCandidates = baseCandidates
+          .filter((candidate) => candidate.gap > minRequiredGap)
+          .map((candidate) => {
+            let cutoffIndex = candidate.index + 1;
+            while (cutoffIndex < pool.length) {
+              const previousTotal = totals[cutoffIndex - 1];
+              const currentTotal = totals[cutoffIndex];
+              if (previousTotal === null || currentTotal === null || previousTotal !== currentTotal) {
+                break;
+              }
+              cutoffIndex += 1;
+            }
+            return {
+              ...candidate,
+              cutoffIndex,
+            };
+          })
+          .filter((candidate) => candidate.cutoffIndex < pool.length && candidate.cutoffIndex >= 3)
+          .sort((a, b) => b.weighted - a.weighted || b.gap - a.gap || a.index - b.index);
+
+        return selectedCandidates;
+      };
+
+      const findAutomaticCutoffIndex = (pool: LeagueExportScoredRow[]) => {
+        const candidates = collectAutomaticCutoffCandidates(pool);
+        return candidates.length ? candidates[0].cutoffIndex : null;
       };
 
       const assignBandPoints = (
@@ -1514,10 +1540,71 @@ function AdminDashboard({
         });
       };
 
+      const gaussTargetShares = (() => {
+        const weights = ZL_BAND_POINTS.map((_, index) => {
+          const distance = index - ZL_GAUSS_CENTER_INDEX;
+          return Math.exp(-(distance * distance) / (2 * ZL_GAUSS_SIGMA * ZL_GAUSS_SIGMA));
+        });
+        const weightSum = weights.reduce((sum, value) => sum + value, 0) || 1;
+        return weights.map((value) => value / weightSum);
+      })();
+
+      const evaluateGaussCutoff = (pool: LeagueExportScoredRow[], cutoffIndex: number | null) => {
+        const evaluatedPool = cutoffIndex === null ? pool : pool.slice(0, cutoffIndex);
+        if (!evaluatedPool.length) {
+          return {
+            totalScore: Number.POSITIVE_INFINITY,
+            distributionError: Number.POSITIVE_INFINITY,
+            ratioPenalty: Number.POSITIVE_INFINITY,
+            droppedPenalty: Number.POSITIVE_INFINITY,
+          };
+        }
+
+        const pointsByRow = new Map<LeagueExportScoredRow, number>();
+        assignBandPoints(evaluatedPool, (row, points) => {
+          pointsByRow.set(row, points);
+        });
+
+        const bandCounts = ZL_BAND_POINTS.map(() => 0);
+        evaluatedPool.forEach((row) => {
+          const points = pointsByRow.get(row) ?? 1;
+          const bandIndex = ZL_BAND_POINTS.findIndex((value) => value === points);
+          const safeIndex = bandIndex >= 0 ? bandIndex : ZL_BAND_POINTS.length - 1;
+          bandCounts[safeIndex] += 1;
+        });
+
+        const distributionError = bandCounts.reduce((sum, count, index) => {
+          const actualShare = count / evaluatedPool.length;
+          const delta = actualShare - gaussTargetShares[index];
+          return sum + delta * delta;
+        }, 0);
+
+        const bestTotal = toNumeric(evaluatedPool[0].total_points);
+        const worstTotal = toNumeric(evaluatedPool[evaluatedPool.length - 1].total_points);
+        const ratioPenalty = bestTotal !== null && worstTotal !== null && bestTotal > 0
+          ? Math.max(0, 1 - Math.max(0, Math.min(1, worstTotal / bestTotal)))
+          : 0;
+
+        const droppedCount = cutoffIndex === null ? 0 : Math.max(0, pool.length - cutoffIndex);
+        const droppedPenalty = pool.length ? droppedCount / pool.length : 0;
+
+        const totalScore = distributionError
+          + ratioPenalty * ZL_GAUSS_RATIO_PENALTY_WEIGHT
+          + droppedPenalty * ZL_GAUSS_DROPPED_PENALTY_WEIGHT;
+
+        return {
+          totalScore,
+          distributionError,
+          ratioPenalty,
+          droppedPenalty,
+        };
+      };
+
       scoringPools.forEach((pool) => {
         pool.sort(compareLeagueByPerformance);
         pool.forEach((row) => {
           row.cutoffDropped = false;
+          row.gaussCutoffDropped = false;
         });
         assignBandPoints(pool, (row, points) => {
           row.zlPointsNoCutoff = points;
@@ -1537,19 +1624,65 @@ function AdminDashboard({
             row.cutoffDropped = true;
           }
         }
+
+        const gaussCutoffCandidates = Array.from(
+          new Set(collectAutomaticCutoffCandidates(pool).map((candidate) => candidate.cutoffIndex)),
+        ).sort((a, b) => a - b);
+
+        let bestGaussCutoffIndex: number | null = null;
+        let bestGaussEvaluation = evaluateGaussCutoff(pool, null);
+        gaussCutoffCandidates.forEach((candidateCutoffIndex) => {
+          const candidateEvaluation = evaluateGaussCutoff(pool, candidateCutoffIndex);
+          const hasBetterScore = candidateEvaluation.totalScore < bestGaussEvaluation.totalScore - 1e-9;
+          const hasEqualScore = Math.abs(candidateEvaluation.totalScore - bestGaussEvaluation.totalScore) <= 1e-9;
+          const winsByTieBreak = hasEqualScore && (
+            candidateEvaluation.distributionError < bestGaussEvaluation.distributionError - 1e-9
+            || (
+              Math.abs(candidateEvaluation.distributionError - bestGaussEvaluation.distributionError) <= 1e-9
+              && (
+                candidateEvaluation.ratioPenalty < bestGaussEvaluation.ratioPenalty - 1e-9
+                || (
+                  Math.abs(candidateEvaluation.ratioPenalty - bestGaussEvaluation.ratioPenalty) <= 1e-9
+                  && candidateEvaluation.droppedPenalty < bestGaussEvaluation.droppedPenalty - 1e-9
+                )
+              )
+            )
+          );
+          if (hasBetterScore || winsByTieBreak) {
+            bestGaussEvaluation = candidateEvaluation;
+            bestGaussCutoffIndex = candidateCutoffIndex;
+          }
+        });
+
+        const gaussScoredPool = bestGaussCutoffIndex === null ? pool : pool.slice(0, bestGaussCutoffIndex);
+        assignBandPoints(gaussScoredPool, (row, points) => {
+          row.zlPointsGaussWithCutoff = points;
+          row.gaussCutoffDropped = false;
+        });
+        if (bestGaussCutoffIndex !== null) {
+          for (let index = bestGaussCutoffIndex; index < pool.length; index += 1) {
+            const row = pool[index];
+            row.zlPointsGaussWithCutoff = 1;
+            row.gaussCutoffDropped = true;
+          }
+        }
       });
 
       scoredRows.forEach((row) => {
         if (row.disqualifiedFlag) {
           row.zlPointsNoCutoff = 0;
           row.zlPointsWithCutoff = 0;
+          row.zlPointsGaussWithCutoff = 0;
           row.cutoffDropped = false;
+          row.gaussCutoffDropped = false;
           return;
         }
         if (row.droppedFlag) {
           row.zlPointsNoCutoff = 1;
           row.zlPointsWithCutoff = 1;
+          row.zlPointsGaussWithCutoff = 1;
           row.cutoffDropped = true;
+          row.gaussCutoffDropped = true;
           return;
         }
         if (row.zlPointsNoCutoff <= 0) {
@@ -1557,6 +1690,12 @@ function AdminDashboard({
         }
         if (row.zlPointsWithCutoff <= 0) {
           row.zlPointsWithCutoff = row.zlPointsNoCutoff;
+        }
+        if (row.zlPointsGaussWithCutoff <= 0) {
+          row.zlPointsGaussWithCutoff = row.zlPointsWithCutoff;
+        }
+        if (row.gaussCutoffDropped !== true) {
+          row.gaussCutoffDropped = false;
         }
       });
 
@@ -1608,9 +1747,10 @@ function AdminDashboard({
           'Body bez času',
           'Body ZL bez cut-off',
           'Body ZL s cut-off',
+          'Body ZL gauss s cut-off',
         ]);
         if (rows.length === 0) {
-          worksheet.addRow(['—', '—', '', '', '', '']);
+          worksheet.addRow(['—', '—', '', '', '', '', '']);
         } else {
           rows.forEach((row, index) => {
             const displayRank = name.length === 1
@@ -1623,6 +1763,7 @@ function AdminDashboard({
               toNumeric(row.points_no_t ?? row.points_no_T ?? null) ?? '',
               row.zlPointsNoCutoff,
               row.zlPointsWithCutoff,
+              row.zlPointsGaussWithCutoff,
             ]);
             if (!row.disqualifiedFlag && !row.droppedFlag) {
               const noCutoffCell = worksheetRow.getCell(5);
@@ -1638,6 +1779,13 @@ function AdminDashboard({
                 bold: true,
               };
             }
+            if (!row.disqualifiedFlag && !row.gaussCutoffDropped) {
+              const gaussWithCutoffCell = worksheetRow.getCell(7);
+              gaussWithCutoffCell.font = {
+                ...(gaussWithCutoffCell.font ?? {}),
+                bold: true,
+              };
+            }
           });
           const cutoffStartIndex = rows.findIndex((row) => row.cutoffDropped && !row.disqualifiedFlag);
           if (cutoffStartIndex > 0) {
@@ -1650,6 +1798,15 @@ function AdminDashboard({
               };
             });
           }
+          const gaussCutoffStartIndex = rows.findIndex((row) => row.gaussCutoffDropped && !row.disqualifiedFlag);
+          if (gaussCutoffStartIndex > 0) {
+            const gaussCutoffRow = worksheet.getRow(gaussCutoffStartIndex + 2);
+            const cell = gaussCutoffRow.getCell(7);
+            cell.border = {
+              ...cell.border,
+              top: { style: 'thick', color: { argb: 'FFE53935' } },
+            };
+          }
         }
         worksheet.columns = [
           { width: 10 },
@@ -1658,6 +1815,7 @@ function AdminDashboard({
           { width: 16 },
           { width: 18 },
           { width: 16 },
+          { width: 22 },
         ];
       });
 
