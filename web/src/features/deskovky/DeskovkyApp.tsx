@@ -2110,6 +2110,10 @@ function AssignedTableMatchesPage({
         .sort((a, b) => a.label.localeCompare(b.label, 'cs')),
     [blockMap, categoryMap, gameMap, stationMatches],
   );
+  const selectedStationOption = useMemo(
+    () => stationOptions.find((option) => option.key === selectedStationKey) ?? stationOptions[0] ?? null,
+    [selectedStationKey, stationOptions],
+  );
 
   useEffect(() => {
     if (!stationOptions.length) {
@@ -2286,16 +2290,10 @@ function AssignedTableMatchesPage({
       {!loading && stationOptions.length ? (
         <>
           <div className="deskovky-admin-grid">
-            <label className="admin-field">
+            <div className="admin-field">
               <span>Stůl</span>
-              <select value={selectedStationKey} onChange={(eventTarget) => setSelectedStationKey(eventTarget.target.value)}>
-                {stationOptions.map((option) => (
-                  <option key={option.key} value={option.key}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <p className="admin-card-subtitle">{selectedStationOption?.label ?? '—'}</p>
+            </div>
             <label className="admin-field">
               <span>Kolo</span>
               <div className="admin-card-actions">
