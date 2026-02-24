@@ -927,12 +927,10 @@ function JudgeHomePage({
   judgeId,
   context,
   selectedEventId,
-  onNavigate,
 }: {
   judgeId: string;
   context: BoardJudgeContext;
   selectedEventId: string | null;
-  onNavigate: (page: DeskovkyPage) => void;
 }) {
   const [todayCount, setTodayCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1006,22 +1004,6 @@ function JudgeHomePage({
 
   return (
     <>
-      <section className="admin-card deskovky-toolbar deskovky-home-toolbar">
-        <div className="deskovky-toolbar-left">
-          <h2>Rozhodčí panel</h2>
-          <p className="admin-card-subtitle">Správa výsledků turnaje Deskové hry.</p>
-        </div>
-        <div className="deskovky-toolbar-actions">
-          <button
-            type="button"
-            className="admin-button admin-button--primary deskovky-home-primary-action"
-            onClick={() => onNavigate('new-match')}
-          >
-            Nový zápas
-          </button>
-        </div>
-      </section>
-
       <section className="admin-card">
         <header className="admin-card-header">
           <div>
@@ -4150,87 +4132,89 @@ function AdminPage({
         )}
 
         <div className="deskovky-admin-section-panel">
-          <section className="admin-card deskovky-admin-section-sticky">
-            <header className="deskovky-admin-section-sticky-head">
-              <div>
-                <h3>{activeSectionLabel}</h3>
-                <p className="admin-card-subtitle">{sectionHeaderConfig.description}</p>
-              </div>
-              {sectionHeaderConfig.action ? (
-                <button
-                  type="button"
-                  className={`admin-button ${sectionHeaderConfig.action.kind === 'primary' ? 'admin-button--primary' : 'admin-button--secondary'
-                    }`}
-                  onClick={sectionHeaderConfig.action.onClick}
-                  disabled={sectionHeaderConfig.action.disabled}
-                >
-                  {sectionHeaderConfig.action.label}
-                </button>
+          {activeSection !== 'draw' ? (
+            <section className="admin-card deskovky-admin-section-sticky">
+              <header className="deskovky-admin-section-sticky-head">
+                <div>
+                  <h3>{activeSectionLabel}</h3>
+                  <p className="admin-card-subtitle">{sectionHeaderConfig.description}</p>
+                </div>
+                {sectionHeaderConfig.action ? (
+                  <button
+                    type="button"
+                    className={`admin-button ${sectionHeaderConfig.action.kind === 'primary' ? 'admin-button--primary' : 'admin-button--secondary'
+                      }`}
+                    onClick={sectionHeaderConfig.action.onClick}
+                    disabled={sectionHeaderConfig.action.disabled}
+                  >
+                    {sectionHeaderConfig.action.label}
+                  </button>
+                ) : null}
+              </header>
+
+              {activeSection === 'games' ? (
+                <div className="deskovky-admin-filters deskovky-admin-filters--sticky">
+                  <label className="admin-field">
+                    <span>Hledat hru</span>
+                    <input
+                      value={gameSearch}
+                      onChange={(eventTarget) => setGameSearch(eventTarget.target.value)}
+                      placeholder="Název nebo poznámka…"
+                      aria-label="Hledat hru podle názvu nebo poznámky"
+                    />
+                  </label>
+                  <label className="admin-field">
+                    <span>Typ bodování</span>
+                    <select
+                      value={gameScoringFilter}
+                      onChange={(eventTarget) => setGameScoringFilter(eventTarget.target.value as 'all' | BoardScoringType)}
+                      aria-label="Filtrovat hry podle typu bodování"
+                    >
+                      <option value="all">Všechny</option>
+                      <option value="points">points</option>
+                      <option value="placement">placement</option>
+                      <option value="both">both</option>
+                    </select>
+                  </label>
+                </div>
               ) : null}
-            </header>
 
-            {activeSection === 'games' ? (
-              <div className="deskovky-admin-filters deskovky-admin-filters--sticky">
-                <label className="admin-field">
-                  <span>Hledat hru</span>
-                  <input
-                    value={gameSearch}
-                    onChange={(eventTarget) => setGameSearch(eventTarget.target.value)}
-                    placeholder="Název nebo poznámka…"
-                    aria-label="Hledat hru podle názvu nebo poznámky"
-                  />
-                </label>
-                <label className="admin-field">
-                  <span>Typ bodování</span>
-                  <select
-                    value={gameScoringFilter}
-                    onChange={(eventTarget) => setGameScoringFilter(eventTarget.target.value as 'all' | BoardScoringType)}
-                    aria-label="Filtrovat hry podle typu bodování"
-                  >
-                    <option value="all">Všechny</option>
-                    <option value="points">points</option>
-                    <option value="placement">placement</option>
-                    <option value="both">both</option>
-                  </select>
-                </label>
-              </div>
-            ) : null}
-
-            {activeSection === 'assignments' ? (
-              <div className="deskovky-admin-filters deskovky-admin-filters--sticky">
-                <label className="admin-field">
-                  <span>Rozhodčí</span>
-                  <select
-                    value={assignmentJudgeFilter}
-                    onChange={(eventTarget) => setAssignmentJudgeFilter(eventTarget.target.value)}
-                    aria-label="Filtrovat přiřazení podle rozhodčího"
-                  >
-                    <option value="">Všichni</option>
-                    {assignmentJudgeOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="admin-field">
-                  <span>Hra</span>
-                  <select
-                    value={assignmentGameFilter}
-                    onChange={(eventTarget) => setAssignmentGameFilter(eventTarget.target.value)}
-                    aria-label="Filtrovat přiřazení podle hry"
-                  >
-                    <option value="">Všechny</option>
-                    {games.map((game) => (
-                      <option key={game.id} value={game.id}>
-                        {game.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            ) : null}
-          </section>
+              {activeSection === 'assignments' ? (
+                <div className="deskovky-admin-filters deskovky-admin-filters--sticky">
+                  <label className="admin-field">
+                    <span>Rozhodčí</span>
+                    <select
+                      value={assignmentJudgeFilter}
+                      onChange={(eventTarget) => setAssignmentJudgeFilter(eventTarget.target.value)}
+                      aria-label="Filtrovat přiřazení podle rozhodčího"
+                    >
+                      <option value="">Všichni</option>
+                      {assignmentJudgeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="admin-field">
+                    <span>Hra</span>
+                    <select
+                      value={assignmentGameFilter}
+                      onChange={(eventTarget) => setAssignmentGameFilter(eventTarget.target.value)}
+                      aria-label="Filtrovat přiřazení podle hry"
+                    >
+                      <option value="">Všechny</option>
+                      {games.map((game) => (
+                        <option key={game.id} value={game.id}>
+                          {game.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           {activeSection === 'overview' ? (
             <section className="admin-card">
@@ -5261,7 +5245,6 @@ function DeskovkyDashboard({
             judgeId={judgeId}
             context={context}
             selectedEventId={selectedEventId}
-            onNavigate={navigate}
           />
         ) : null}
 
