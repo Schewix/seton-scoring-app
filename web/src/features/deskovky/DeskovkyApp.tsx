@@ -3596,14 +3596,17 @@ function AdminPage({
     setMessage(disqualified ? 'Hráč byl diskvalifikován.' : 'Diskvalifikace hráče byla zrušena.');
   }, []);
 
-  const handleGenerateDraw = useCallback(async () => {
+  const handleGenerateDraw = useCallback(async (mode: 'strict' | 'test' = 'strict') => {
     if (!selectedEventId) {
       setError('Vyber event.');
       return;
     }
 
+    const isTestMode = mode === 'test';
     const confirmed = window.confirm(
-      'Tímto smažeš dosavadní partie deskovek v tomto eventu a vylosuješ nové. Pokračovat?',
+      isTestMode
+        ? 'Test losování: chybějící stoly se doplní podle dostupných rozhodčích v DB. Pokračovat?'
+        : 'Tímto smažeš dosavadní partie deskovek v tomto eventu a vylosuješ nové. Pokračovat?',
     );
     if (!confirmed) {
       return;
@@ -3629,8 +3632,41 @@ function AdminPage({
         blocksByCategory.set(block.category_id, list);
       }
 
+      const orderedAssignments = [...assignments].sort((left, right) =>
+        left.created_at.localeCompare(right.created_at),
+      );
       const assignmentByKey = new Map<string, BoardJudgeAssignment>();
-      for (const assignment of assignments) {
+      const fallbackPoolsByKey = new Map<string, BoardJudgeAssignment[]>();
+      const fallbackRotationByKey = new Map<string, number>();
+
+      const pushFallbackPool = (key: string, assignment: BoardJudgeAssignment) => {
+        const list = fallbackPoolsByKey.get(key) ?? [];
+        list.push(assignment);
+        fallbackPoolsByKey.set(key, list);
+      };
+
+      const takeFallbackAssignment = (key: string): BoardJudgeAssignment | null => {
+        const list = fallbackPoolsByKey.get(key);
+        if (!list?.length) {
+          return null;
+        }
+        const index = fallbackRotationByKey.get(key) ?? 0;
+        const assignment = list[index % list.length];
+        fallbackRotationByKey.set(key, index + 1);
+        return assignment;
+      };
+
+      const resolveFallbackAssignment = (gameId: string, categoryId: string): BoardJudgeAssignment | null =>
+        takeFallbackAssignment(`${gameId}|${categoryId}`)
+        ?? takeFallbackAssignment(`${gameId}|*`)
+        ?? takeFallbackAssignment(`*|*`);
+
+      for (const assignment of orderedAssignments) {
+        pushFallbackPool(`*|*`, assignment);
+        pushFallbackPool(`${assignment.game_id}|*`, assignment);
+        if (assignment.category_id) {
+          pushFallbackPool(`${assignment.game_id}|${assignment.category_id}`, assignment);
+        }
         if (!assignment.category_id || !assignment.table_number) {
           continue;
         }
@@ -3642,6 +3678,8 @@ function AdminPage({
 
       const missingAssignments: string[] = [];
       const relaxedSameTeamBlocks: string[] = [];
+      const fallbackJudgeIds = new Set<string>();
+      let fallbackAssignmentsUsed = 0;
       const plannedRows: Array<{
         match: Omit<BoardMatch, 'id' | 'created_at' | 'status'>;
         players: string[];
@@ -3659,7 +3697,14 @@ function AdminPage({
           for (const round of blockPlan.rounds) {
             for (const table of round.tables) {
               const assignmentKey = `${blockPlan.block.game_id}|${blockPlan.block.category_id}|${table.tableNumber}`;
-              const assignment = assignmentByKey.get(assignmentKey);
+              let assignment = assignmentByKey.get(assignmentKey);
+              if (!assignment && isTestMode) {
+                assignment = resolveFallbackAssignment(blockPlan.block.game_id, blockPlan.block.category_id) ?? undefined;
+                if (assignment) {
+                  fallbackAssignmentsUsed += 1;
+                  fallbackJudgeIds.add(assignment.user_id);
+                }
+              }
               if (!assignment) {
                 missingAssignments.push(
                   `${category.name} · blok ${blockPlan.block.block_number} · stůl ${table.tableNumber}`,
@@ -3684,9 +3729,15 @@ function AdminPage({
       }
 
       if (missingAssignments.length) {
-        setError(
-          `Chybí přiřazení rozhodčího ke stolu: ${missingAssignments.slice(0, 6).join('; ')}${missingAssignments.length > 6 ? '…' : ''}`,
-        );
+        if (isTestMode) {
+          setError(
+            `Ani test losování nenašlo dost rozhodčích. Chybí: ${missingAssignments.slice(0, 6).join('; ')}${missingAssignments.length > 6 ? '…' : ''}`,
+          );
+        } else {
+          setError(
+            `Chybí přiřazení rozhodčího ke stolu: ${missingAssignments.slice(0, 6).join('; ')}${missingAssignments.length > 6 ? '…' : ''}`,
+          );
+        }
         return;
       }
 
@@ -3755,7 +3806,10 @@ function AdminPage({
       const relaxedSuffix = relaxedSameTeamBlocks.length
         ? ` Uvolněné pravidlo stejný oddíl (max 1× na hráče/hru): ${relaxedSameTeamBlocks.slice(0, 6).join('; ')}${relaxedSameTeamBlocks.length > 6 ? '…' : ''}.`
         : '';
-      setDrawSummary(`Partie: ${insertedMatches} · účasti hráčů: ${insertedRows}.${relaxedSuffix}`);
+      const testSuffix = isTestMode
+        ? ` Test losování: doplněno ${fallbackAssignmentsUsed} stolů podle dostupných rozhodčích (${fallbackJudgeIds.size} rozhodčích).`
+        : '';
+      setDrawSummary(`Partie: ${insertedMatches} · účasti hráčů: ${insertedRows}.${relaxedSuffix}${testSuffix}`);
       await loadEventDetail();
     } finally {
       setLoading(false);
@@ -4299,6 +4353,15 @@ function AdminPage({
                   title={drawDisabledReason ?? undefined}
                 >
                   Spustit losování
+                </button>
+                <button
+                  type="button"
+                  className="admin-button admin-button--secondary"
+                  onClick={() => void handleGenerateDraw('test')}
+                  disabled={!canGenerateDraw}
+                  title={drawDisabledReason ?? undefined}
+                >
+                  Test losování
                 </button>
               </div>
               {drawDisabledReason ? <p className="admin-card-subtitle">{drawDisabledReason}</p> : null}
