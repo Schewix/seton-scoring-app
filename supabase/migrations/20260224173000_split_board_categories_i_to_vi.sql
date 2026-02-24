@@ -417,9 +417,9 @@ with candidate_events as (
 ), base_primary as (
   select
     e.event_id,
-    max(case when c.name in ('Kategorie I', 'Kategorie II') then c.primary_game_id end) as game_i_ii,
-    max(case when c.name in ('Kategorie III', 'Kategorie IV') then c.primary_game_id end) as game_iii_iv,
-    max(case when c.name in ('Kategorie V', 'Kategorie VI') then c.primary_game_id end) as game_v_vi
+    min(case when c.name in ('Kategorie I', 'Kategorie II') then c.primary_game_id::text end)::uuid as game_i_ii,
+    min(case when c.name in ('Kategorie III', 'Kategorie IV') then c.primary_game_id::text end)::uuid as game_iii_iv,
+    min(case when c.name in ('Kategorie V', 'Kategorie VI') then c.primary_game_id::text end)::uuid as game_v_vi
   from candidate_events as e
   left join public.board_category as c on c.event_id = e.event_id
   group by e.event_id
