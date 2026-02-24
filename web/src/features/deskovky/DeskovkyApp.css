@@ -40,6 +40,23 @@
   white-space: nowrap;
 }
 
+.deskovky-nav-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.deskovky-nav-rules .admin-card-subtitle {
+  margin: 0;
+}
+
+.deskovky-rules-links--inline {
+  gap: 10px;
+}
+
 .deskovky-toolbar {
   display: flex;
   align-items: flex-end;
@@ -820,6 +837,11 @@
     flex: 0 0 auto;
     min-height: 40px;
     padding: 0 16px;
+  }
+
+  .deskovky-nav-rules {
+    margin-top: 10px;
+    padding-top: 8px;
   }
 
   .deskovky-toolbar {

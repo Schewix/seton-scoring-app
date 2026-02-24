@@ -46,6 +46,7 @@ export interface BoardPlayer {
   team_name: string | null;
   display_name: string | null;
   category_id: string;
+  disqualified?: boolean;
   created_at: string;
 }
 
@@ -55,6 +56,7 @@ export interface BoardJudgeAssignment {
   user_id: string;
   game_id: string;
   category_id: string | null;
+  table_number?: number | null;
   created_at: string;
 }
 
@@ -64,6 +66,7 @@ export interface BoardMatch {
   category_id: string;
   block_id: string;
   round_number: number | null;
+  table_number?: number | null;
   created_by: string;
   created_at: string;
   status: BoardMatchStatus;

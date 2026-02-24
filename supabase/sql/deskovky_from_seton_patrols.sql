@@ -120,9 +120,12 @@ select
 from tmp_deskovky_board_event b
 cross join (
   values
-    ('Kategorie I + II'),
-    ('Kategorie III + IV'),
-    ('Kategorie V + VI')
+    ('Kategorie I'),
+    ('Kategorie II'),
+    ('Kategorie III'),
+    ('Kategorie IV'),
+    ('Kategorie V'),
+    ('Kategorie VI')
 ) as c(name)
 on conflict (event_id, name) do nothing;
 
@@ -142,7 +145,7 @@ with game_src as (
         'both',
         'desc',
         false,
-        'Hlavní hra pro kategorii I + II.'
+        'Hlavní hra pro kategorii I a II.'
       ),
       (
         'Hop!',
@@ -156,28 +159,28 @@ with game_src as (
         'both',
         'desc',
         false,
-        'Vyšší součet bodů je lepší. Hlavní hra pro kategorii III + IV.'
+        'Vyšší součet bodů je lepší. Hlavní hra pro kategorii III a IV.'
       ),
       (
         'Kris kros',
         'both',
         'desc',
         true,
-        'Vyšší součet bodů je lepší. Hlavní hra pro kategorii V + VI.'
+        'Vyšší součet bodů je lepší. Hlavní hra pro kategorii V a VI.'
       ),
       (
         'Milostný dopis',
         'both',
         'desc',
         false,
-        'Alternativní druhá hra pro kategorii V + VI.'
+        'Alternativní druhá hra pro kategorii V a VI.'
       ),
       (
         'Dominion',
         'both',
         'desc',
         true,
-        'Výchozí druhá hra pro kategorii V + VI.'
+        'Výchozí druhá hra pro kategorii V a VI.'
       )
   ) as g(name, scoring_type, points_order, three_player_adjustment, notes)
 )
@@ -229,9 +232,12 @@ with primary_map as (
   select *
   from (
     values
-      ('Kategorie I + II', 'Tajná výprava čarodějů'),
-      ('Kategorie III + IV', 'Ubongo'),
-      ('Kategorie V + VI', 'Kris kros')
+      ('Kategorie I', 'Tajná výprava čarodějů'),
+      ('Kategorie II', 'Tajná výprava čarodějů'),
+      ('Kategorie III', 'Ubongo'),
+      ('Kategorie IV', 'Ubongo'),
+      ('Kategorie V', 'Kris kros'),
+      ('Kategorie VI', 'Kris kros')
   ) as pm(category_name, game_name)
 )
 update public.board_category c
@@ -247,21 +253,31 @@ with fixed_blocks as (
   select *
   from (
     values
-      ('Kategorie I + II', 1, 'Dobble'),
-      ('Kategorie I + II', 2, 'Tajná výprava čarodějů'),
-      ('Kategorie III + IV', 1, 'Hop!'),
-      ('Kategorie III + IV', 2, 'Ubongo'),
-      ('Kategorie V + VI', 1, 'Kris kros')
+      ('Kategorie I', 1, 'Dobble'),
+      ('Kategorie I', 2, 'Tajná výprava čarodějů'),
+      ('Kategorie II', 1, 'Dobble'),
+      ('Kategorie II', 2, 'Tajná výprava čarodějů'),
+      ('Kategorie III', 1, 'Hop!'),
+      ('Kategorie III', 2, 'Ubongo'),
+      ('Kategorie IV', 1, 'Hop!'),
+      ('Kategorie IV', 2, 'Ubongo'),
+      ('Kategorie V', 1, 'Kris kros'),
+      ('Kategorie VI', 1, 'Kris kros')
   ) as fb(category_name, block_number, game_name)
 ),
 block_src as (
   select * from fixed_blocks
   union all
   select
-    'Kategorie V + VI'::text as category_name,
+    c.category_name,
     2::int as block_number,
     b.v_vi_secondary_game as game_name
   from tmp_deskovky_board_event b
+  cross join (
+    values
+      ('Kategorie V'::text),
+      ('Kategorie VI'::text)
+  ) as c(category_name)
 )
 insert into public.board_block (event_id, category_id, block_number, game_id)
 select
@@ -351,10 +367,11 @@ mapped as (
   select
     m.*,
     case
-      when m.seton_category in ('N', 'M') then 'Kategorie I + II'
-      when m.seton_category = 'S' then 'Kategorie III + IV'
-      when m.seton_category = 'R' then 'Kategorie V + VI'
-      else (array['Kategorie I + II', 'Kategorie III + IV', 'Kategorie V + VI'])[(abs(hashtext(m.patrol_code)) % 3) + 1]
+      when m.seton_category = 'N' then 'Kategorie I'
+      when m.seton_category = 'M' then 'Kategorie II'
+      when m.seton_category = 'S' then (array['Kategorie III', 'Kategorie IV'])[(abs(hashtext(m.patrol_code)) % 2) + 1]
+      when m.seton_category = 'R' then (array['Kategorie V', 'Kategorie VI'])[(abs(hashtext(m.patrol_code)) % 2) + 1]
+      else (array['Kategorie I', 'Kategorie II', 'Kategorie III', 'Kategorie IV', 'Kategorie V', 'Kategorie VI'])[(abs(hashtext(m.patrol_code)) % 6) + 1]
     end as board_category_name
   from members m
 ),

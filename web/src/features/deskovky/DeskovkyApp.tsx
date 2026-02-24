@@ -25,6 +25,7 @@ import type {
   BoardJudgeAssignment,
   BoardJudgeContext,
   BoardMatch,
+  BoardMatchPlayer,
   BoardOverallStanding,
   BoardPlayer,
   BoardPointsOrder,
@@ -59,6 +60,9 @@ type CsvRow = {
 type AdminSectionKey =
   | 'overview'
   | 'event'
+  | 'draw'
+  | 'disqualify'
+  | 'assignments'
   | 'categories'
   | 'games'
   | 'blocks'
@@ -79,12 +83,9 @@ type AdminSectionHeaderConfig = {
 const ADMIN_SECTION_ITEMS: ReadonlyArray<{ key: AdminSectionKey; hash: string; label: string }> = [
   { key: 'overview', hash: 'prehled', label: 'Přehled' },
   { key: 'event', hash: 'event', label: 'Event' },
-  { key: 'categories', hash: 'kategorie', label: 'Kategorie' },
-  { key: 'games', hash: 'hry', label: 'Hry' },
-  { key: 'blocks', hash: 'bloky', label: 'Bloky' },
-  { key: 'players', hash: 'hraci', label: 'Hráči' },
-  { key: 'judges', hash: 'rozhodci', label: 'Rozhodčí' },
-  { key: 'import-export', hash: 'import-export', label: 'Import / export' },
+  { key: 'draw', hash: 'losovani', label: 'Losování' },
+  { key: 'disqualify', hash: 'diskvalifikace', label: 'Diskvalifikace' },
+  { key: 'assignments', hash: 'stoly', label: 'Rozhodčí a stoly' },
 ] as const;
 
 function resolveAdminSectionFromHash(hash: string): AdminSectionKey {
@@ -109,6 +110,28 @@ function slugify(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+function readErrorText(error: unknown, key: 'code' | 'message' | 'details'): string {
+  if (!error || typeof error !== 'object') {
+    return '';
+  }
+  const value = (error as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function boardEventMutationErrorMessage(error: unknown, fallback: string): string {
+  const code = readErrorText(error, 'code');
+  const message = readErrorText(error, 'message').toLowerCase();
+  const details = readErrorText(error, 'details').toLowerCase();
+  const isDuplicate = code === '23505'
+    || message.includes('duplicate key')
+    || details.includes('already exists');
+
+  if (isDuplicate) {
+    return 'Slug eventu už existuje. Zvol jiný slug.';
+  }
+  return fallback;
 }
 
 function escapeCsv(value: string | null | undefined): string {
@@ -163,6 +186,16 @@ function resolvePage(pathname: string): DeskovkyPage {
     return 'rules';
   }
   return 'home';
+}
+
+function resolveAllowedPage(page: DeskovkyPage, isAdmin: boolean): DeskovkyPage {
+  if (!isAdmin) {
+    return page;
+  }
+  if (page === 'home' || page === 'new-match') {
+    return 'admin';
+  }
+  return page;
 }
 
 function getTodayStartIso(): string {
@@ -322,7 +355,7 @@ const BOARD_RULES_SCORING =
 async function loadJudgeContext(judgeId: string): Promise<BoardJudgeContext> {
   const { data: assignmentsData, error: assignmentsError } = await supabase
     .from('board_judge_assignment')
-    .select('id, event_id, user_id, game_id, category_id, created_at')
+    .select('id, event_id, user_id, game_id, category_id, table_number, created_at')
     .eq('user_id', judgeId)
     .order('created_at', { ascending: false });
 
@@ -333,6 +366,7 @@ async function loadJudgeContext(judgeId: string): Promise<BoardJudgeContext> {
   const assignments = ((assignmentsData ?? []) as BoardJudgeAssignment[]).map((assignment) => ({
     ...assignment,
     category_id: assignment.category_id ?? null,
+    table_number: assignment.table_number ?? null,
   }));
 
   const eventIds = unique(assignments.map((assignment) => assignment.event_id));
@@ -420,6 +454,301 @@ function getScoringInputs(scoringType: BoardScoringType) {
     showPoints: scoringType === 'points' || scoringType === 'both',
     showPlacement: scoringType === 'placement' || scoringType === 'both',
   };
+}
+
+type DrawTable = {
+  tableNumber: number;
+  playerIds: string[];
+};
+
+type DrawRound = {
+  roundNumber: number;
+  tables: DrawTable[];
+};
+
+type DrawBlockPlan = {
+  block: BoardBlock;
+  rounds: DrawRound[];
+};
+
+type OpponentCounts = Map<string, Map<string, number>>;
+
+function getTeamKey(teamName: string | null | undefined): string {
+  const raw = (teamName ?? '').trim();
+  if (!raw) {
+    return '';
+  }
+  const numberMatch = raw.match(/(?:^|\s)(\d{1,3})\s*\./);
+  if (numberMatch?.[1]) {
+    return `pto-${numberMatch[1]}`;
+  }
+  return slugify(raw);
+}
+
+function getOpponentCount(opponents: OpponentCounts, playerA: string, playerB: string): number {
+  return opponents.get(playerA)?.get(playerB) ?? 0;
+}
+
+function addOpponentPair(opponents: OpponentCounts, playerA: string, playerB: string) {
+  if (!opponents.has(playerA)) {
+    opponents.set(playerA, new Map<string, number>());
+  }
+  const row = opponents.get(playerA)!;
+  row.set(playerB, (row.get(playerB) ?? 0) + 1);
+}
+
+function addRoundOpponents(opponents: OpponentCounts, playerIds: string[]) {
+  for (let i = 0; i < playerIds.length; i += 1) {
+    for (let j = i + 1; j < playerIds.length; j += 1) {
+      addOpponentPair(opponents, playerIds[i], playerIds[j]);
+      addOpponentPair(opponents, playerIds[j], playerIds[i]);
+    }
+  }
+}
+
+function buildRoundTableSizes(playerCount: number): number[] {
+  if (playerCount <= 0) {
+    return [];
+  }
+  if (playerCount <= 4) {
+    return [playerCount];
+  }
+  const tables = Math.ceil(playerCount / 4);
+  const base = Math.floor(playerCount / tables);
+  const remainder = playerCount % tables;
+  const sizes = Array.from({ length: tables }, (_, index) => base + (index < remainder ? 1 : 0));
+  return sizes.sort((a, b) => b - a);
+}
+
+function pairPenalty(
+  playerA: BoardPlayer,
+  playerB: BoardPlayer,
+  categoryOpponents: OpponentCounts,
+  blockOpponents: OpponentCounts,
+): number {
+  const sameTeamKey = getTeamKey(playerA.team_name);
+  const sameTeam = Boolean(sameTeamKey) && sameTeamKey === getTeamKey(playerB.team_name);
+  const blockMeetings = getOpponentCount(blockOpponents, playerA.id, playerB.id);
+  const categoryMeetings = getOpponentCount(categoryOpponents, playerA.id, playerB.id);
+
+  return (sameTeam ? 240 : 0) + blockMeetings * 120 + categoryMeetings * 45;
+}
+
+function groupContainsSameTeam(group: BoardPlayer[], candidate: BoardPlayer): boolean {
+  const candidateTeamKey = getTeamKey(candidate.team_name);
+  if (!candidateTeamKey) {
+    return false;
+  }
+  return group.some((player) => getTeamKey(player.team_name) === candidateTeamKey);
+}
+
+function chooseGroupSeed(
+  availablePlayers: BoardPlayer[],
+  allPlayers: BoardPlayer[],
+): BoardPlayer {
+  if (availablePlayers.length <= 1) {
+    return availablePlayers[0];
+  }
+  const byDifficulty = [...availablePlayers].sort((a, b) => {
+    const aTeam = getTeamKey(a.team_name);
+    const bTeam = getTeamKey(b.team_name);
+    const aConflicts = aTeam ? allPlayers.filter((player) => getTeamKey(player.team_name) === aTeam).length : 0;
+    const bConflicts = bTeam ? allPlayers.filter((player) => getTeamKey(player.team_name) === bTeam).length : 0;
+    if (aConflicts !== bConflicts) {
+      return bConflicts - aConflicts;
+    }
+    return a.short_code.localeCompare(b.short_code, 'cs');
+  });
+  return byDifficulty[0];
+}
+
+function evaluateRoundPenalty(
+  groups: BoardPlayer[][],
+  categoryOpponents: OpponentCounts,
+  blockOpponents: OpponentCounts,
+  threePlayerCounts: Map<string, number>,
+  trioHistory: Set<string>,
+): number {
+  let penalty = 0;
+
+  for (const group of groups) {
+    if (group.length === 3) {
+      const trioKey = group
+        .map((player) => player.id)
+        .sort()
+        .join('|');
+      if (trioHistory.has(trioKey)) {
+        penalty += 220;
+      }
+      for (const player of group) {
+        penalty += (threePlayerCounts.get(player.id) ?? 0) * 30;
+      }
+    }
+
+    if (group.length === 2) {
+      penalty += 90;
+    }
+
+    for (let i = 0; i < group.length; i += 1) {
+      for (let j = i + 1; j < group.length; j += 1) {
+        penalty += pairPenalty(group[i], group[j], categoryOpponents, blockOpponents);
+      }
+    }
+  }
+
+  return penalty;
+}
+
+function buildRoundAttempt(
+  players: BoardPlayer[],
+  tableSizes: number[],
+  categoryOpponents: OpponentCounts,
+  blockOpponents: OpponentCounts,
+  threePlayerCounts: Map<string, number>,
+  trioHistory: Set<string>,
+): { groups: BoardPlayer[][]; penalty: number } {
+  const available = [...players];
+  const groups: BoardPlayer[][] = [];
+
+  for (const targetSize of tableSizes) {
+    if (!available.length) {
+      break;
+    }
+    const seed = chooseGroupSeed(available, players);
+    const group: BoardPlayer[] = [seed];
+    available.splice(available.findIndex((player) => player.id === seed.id), 1);
+
+    while (group.length < targetSize && available.length) {
+      const candidatePool = available.some((player) => !groupContainsSameTeam(group, player))
+        ? available.filter((player) => !groupContainsSameTeam(group, player))
+        : available;
+      let bestIndex = 0;
+      let bestPenalty = Number.POSITIVE_INFINITY;
+
+      for (let index = 0; index < candidatePool.length; index += 1) {
+        const candidate = candidatePool[index];
+        const candidatePenalty = group.reduce(
+          (sum, current) => sum + pairPenalty(candidate, current, categoryOpponents, blockOpponents),
+          0,
+        );
+        const threePlayerPenalty = targetSize === 3 ? (threePlayerCounts.get(candidate.id) ?? 0) * 25 : 0;
+        const score = candidatePenalty + threePlayerPenalty + Math.random() * 0.01;
+        if (score < bestPenalty) {
+          bestPenalty = score;
+          bestIndex = available.findIndex((player) => player.id === candidate.id);
+        }
+      }
+
+      group.push(available[bestIndex]);
+      available.splice(bestIndex, 1);
+    }
+
+    groups.push(group);
+  }
+
+  if (available.length) {
+    groups[groups.length - 1].push(...available);
+  }
+
+  return {
+    groups,
+    penalty: evaluateRoundPenalty(groups, categoryOpponents, blockOpponents, threePlayerCounts, trioHistory),
+  };
+}
+
+function generateRoundGroups(
+  players: BoardPlayer[],
+  tableSizes: number[],
+  categoryOpponents: OpponentCounts,
+  blockOpponents: OpponentCounts,
+  threePlayerCounts: Map<string, number>,
+  trioHistory: Set<string>,
+): BoardPlayer[][] {
+  const attempts = Math.max(120, players.length * 16);
+  let best: { groups: BoardPlayer[][]; penalty: number } | null = null;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const candidate = buildRoundAttempt(
+      players,
+      tableSizes,
+      categoryOpponents,
+      blockOpponents,
+      threePlayerCounts,
+      trioHistory,
+    );
+    if (!best || candidate.penalty < best.penalty) {
+      best = candidate;
+    }
+  }
+
+  if (best) {
+    return best.groups;
+  }
+
+  const sorted = [...players].sort((a, b) => a.short_code.localeCompare(b.short_code, 'cs'));
+  const fallback: BoardPlayer[][] = [];
+  let cursor = 0;
+  for (const size of tableSizes) {
+    fallback.push(sorted.slice(cursor, cursor + size));
+    cursor += size;
+  }
+  return fallback;
+}
+
+function planCategoryDraw(categoryPlayers: BoardPlayer[], categoryBlocks: BoardBlock[]): DrawBlockPlan[] {
+  const activePlayers = categoryPlayers.filter((player) => !player.disqualified);
+  if (activePlayers.length < 2 || !categoryBlocks.length) {
+    return [];
+  }
+
+  const tableSizes = buildRoundTableSizes(activePlayers.length);
+  const categoryOpponents: OpponentCounts = new Map();
+  const threePlayerCounts = new Map<string, number>();
+  const trioHistory = new Set<string>();
+
+  return categoryBlocks
+    .sort((a, b) => a.block_number - b.block_number)
+    .map<DrawBlockPlan>((block) => {
+      const blockOpponents: OpponentCounts = new Map();
+      const rounds: DrawRound[] = [];
+
+      for (let roundNumber = 1; roundNumber <= 3; roundNumber += 1) {
+        const groups = generateRoundGroups(
+          activePlayers,
+          tableSizes,
+          categoryOpponents,
+          blockOpponents,
+          threePlayerCounts,
+          trioHistory,
+        );
+
+        rounds.push({
+          roundNumber,
+          tables: groups.map((group, index) => ({
+            tableNumber: index + 1,
+            playerIds: group.map((player) => player.id),
+          })),
+        });
+
+        for (const group of groups) {
+          const ids = group.map((player) => player.id);
+          addRoundOpponents(categoryOpponents, ids);
+          addRoundOpponents(blockOpponents, ids);
+          if (group.length === 3) {
+            const trioKey = ids.slice().sort().join('|');
+            trioHistory.add(trioKey);
+            for (const playerId of ids) {
+              threePlayerCounts.set(playerId, (threePlayerCounts.get(playerId) ?? 0) + 1);
+            }
+          }
+        }
+      }
+
+      return {
+        block,
+        rounds,
+      };
+    });
 }
 
 function LoadingState() {
@@ -584,6 +913,9 @@ function JudgeHomePage({
                   <p>
                     Kategorie:{' '}
                     <strong>{category?.name ?? 'Všechny v rámci přiřazené hry'}</strong>
+                  </p>
+                  <p>
+                    Stůl: <strong>{assignment.table_number ?? '—'}</strong>
                   </p>
                   <p className="admin-card-subtitle">
                     Typ bodování: {game?.scoring_type ?? '—'}
@@ -961,7 +1293,7 @@ function NewMatchPage({
 
       const { data, error: playerError } = await supabase
         .from('board_player')
-        .select('id, event_id, short_code, team_name, display_name, category_id, created_at')
+        .select('id, event_id, short_code, team_name, display_name, category_id, disqualified, created_at')
         .eq('event_id', selectedEventId)
         .eq('short_code', shortCode)
         .maybeSingle();
@@ -1150,7 +1482,7 @@ function NewMatchPage({
         round_number: parsedRound,
         created_by: judgeId,
       })
-      .select('id, event_id, category_id, block_id, round_number, created_by, created_at, status')
+      .select('id, event_id, category_id, block_id, round_number, table_number, created_by, created_at, status')
       .single();
 
     if (insertMatchError || !insertedMatch) {
@@ -1498,7 +1830,7 @@ function NewMatchPage({
 
         {isMobile ? (
           <div className="deskovky-mobile-submitbar" role="region" aria-label="Odeslání zápasu">
-            <p className="deskovky-mobile-submit-note" title={mobileSubmitHelperText}>
+            <p className="deskovky-mobile-submit-note" title={mobileSubmitHelperText ?? undefined}>
               {mobileSubmitHelperText}
             </p>
             <button
@@ -1519,6 +1851,441 @@ function NewMatchPage({
         </div>
       ) : null}
     </>
+  );
+}
+
+function AssignedTableMatchesPage({
+  judgeId,
+  context,
+  selectedEventId,
+  onSelectEventId,
+}: {
+  judgeId: string;
+  context: BoardJudgeContext;
+  selectedEventId: string | null;
+  onSelectEventId: (eventId: string) => void;
+}) {
+  const [setup, setSetup] = useState<EventSetup | null>(null);
+  const [players, setPlayers] = useState<BoardPlayer[]>([]);
+  const [matches, setMatches] = useState<BoardMatch[]>([]);
+  const [matchPlayers, setMatchPlayers] = useState<BoardMatchPlayer[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [selectedStationKey, setSelectedStationKey] = useState('');
+  const [selectedRound, setSelectedRound] = useState<number | null>(null);
+  const [entries, setEntries] = useState<Array<{ id: string; seat: number; playerId: string; points: string; placement: string }>>([]);
+
+  useEffect(() => {
+    if (!selectedEventId) {
+      setSetup(null);
+      setPlayers([]);
+      setMatches([]);
+      setMatchPlayers([]);
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+
+    void (async () => {
+      try {
+        const loadedSetup = await loadEventSetup(selectedEventId);
+        const { data: playersData, error: playersError } = await supabase
+          .from('board_player')
+          .select('id, event_id, short_code, team_name, display_name, category_id, disqualified, created_at')
+          .eq('event_id', selectedEventId);
+        if (playersError) {
+          throw playersError;
+        }
+
+        const { data: matchesData, error: matchesError } = await supabase
+          .from('board_match')
+          .select('id, event_id, category_id, block_id, round_number, table_number, created_by, created_at, status')
+          .eq('event_id', selectedEventId)
+          .eq('created_by', judgeId)
+          .neq('status', 'void')
+          .order('block_id', { ascending: true })
+          .order('round_number', { ascending: true })
+          .order('table_number', { ascending: true });
+        if (matchesError) {
+          throw matchesError;
+        }
+
+        const loadedMatches = (matchesData ?? []) as BoardMatch[];
+        const matchIds = loadedMatches.map((match) => match.id);
+
+        let loadedMatchPlayers: BoardMatchPlayer[] = [];
+        if (matchIds.length > 0) {
+          const { data: rowsData, error: rowsError } = await supabase
+            .from('board_match_player')
+            .select('id, match_id, player_id, seat, placement, points, created_at')
+            .in('match_id', matchIds)
+            .order('seat', { ascending: true });
+          if (rowsError) {
+            throw rowsError;
+          }
+          loadedMatchPlayers = (rowsData ?? []) as BoardMatchPlayer[];
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setSetup(loadedSetup);
+        setPlayers((playersData ?? []) as BoardPlayer[]);
+        setMatches(loadedMatches);
+        setMatchPlayers(loadedMatchPlayers);
+      } catch (loadError) {
+        console.error('Failed to load assigned board matches', loadError);
+        if (!cancelled) {
+          setError('Nepodařilo se načíst rozpis partií.');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [judgeId, selectedEventId]);
+
+  const categories = setup?.categories ?? [];
+  const games = setup?.games ?? [];
+  const blocks = setup?.blocks ?? [];
+
+  const categoryMap = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
+  const gameMap = useMemo(() => new Map(games.map((game) => [game.id, game])), [games]);
+  const blockMap = useMemo(() => new Map(blocks.map((block) => [block.id, block])), [blocks]);
+  const playerMap = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+
+  const stationMatches = useMemo(() => {
+    const grouped = new Map<string, BoardMatch[]>();
+    for (const match of matches) {
+      const key = `${match.block_id}|${match.table_number ?? 0}`;
+      const bucket = grouped.get(key) ?? [];
+      bucket.push(match);
+      grouped.set(key, bucket);
+    }
+    for (const bucket of grouped.values()) {
+      bucket.sort((a, b) => (a.round_number ?? 0) - (b.round_number ?? 0));
+    }
+    return grouped;
+  }, [matches]);
+
+  const stationOptions = useMemo(
+    () =>
+      Array.from(stationMatches.entries())
+        .map(([key, stationRows]) => {
+          const firstMatch = stationRows[0];
+          const block = blockMap.get(firstMatch.block_id);
+          const category = block ? categoryMap.get(block.category_id) : null;
+          const game = block ? gameMap.get(block.game_id) : null;
+          return {
+            key,
+            label: `${category?.name ?? firstMatch.category_id} · blok ${block?.block_number ?? '—'} · ${game?.name ?? 'Hra'} · stůl ${firstMatch.table_number ?? '—'}`,
+          };
+        })
+        .sort((a, b) => a.label.localeCompare(b.label, 'cs')),
+    [blockMap, categoryMap, gameMap, stationMatches],
+  );
+
+  useEffect(() => {
+    if (!stationOptions.length) {
+      setSelectedStationKey('');
+      return;
+    }
+    if (!selectedStationKey || !stationOptions.some((option) => option.key === selectedStationKey)) {
+      setSelectedStationKey(stationOptions[0].key);
+    }
+  }, [selectedStationKey, stationOptions]);
+
+  const selectedStationMatches = selectedStationKey ? stationMatches.get(selectedStationKey) ?? [] : [];
+  const availableRounds = useMemo(
+    () =>
+      selectedStationMatches
+        .map((match) => match.round_number ?? 0)
+        .filter((round) => round > 0)
+        .sort((a, b) => a - b),
+    [selectedStationMatches],
+  );
+
+  useEffect(() => {
+    if (!availableRounds.length) {
+      setSelectedRound(null);
+      return;
+    }
+    if (!selectedRound || !availableRounds.includes(selectedRound)) {
+      setSelectedRound(availableRounds[0]);
+    }
+  }, [availableRounds, selectedRound]);
+
+  const selectedMatch = useMemo(() => {
+    if (!selectedRound) {
+      return null;
+    }
+    return selectedStationMatches.find((match) => match.round_number === selectedRound) ?? null;
+  }, [selectedRound, selectedStationMatches]);
+
+  useEffect(() => {
+    if (!selectedMatch) {
+      setEntries([]);
+      return;
+    }
+    const rows = matchPlayers
+      .filter((row) => row.match_id === selectedMatch.id)
+      .sort((a, b) => a.seat - b.seat)
+      .map((row) => ({
+        id: row.id,
+        seat: row.seat,
+        playerId: row.player_id,
+        points: row.points === null ? '' : String(row.points),
+        placement: row.placement === null ? '' : String(row.placement),
+      }));
+    setEntries(rows);
+  }, [matchPlayers, selectedMatch]);
+
+  const selectedBlock = selectedMatch ? blockMap.get(selectedMatch.block_id) ?? null : null;
+  const selectedGame = selectedBlock ? gameMap.get(selectedBlock.game_id) ?? null : null;
+  const selectedCategory = selectedBlock ? categoryMap.get(selectedBlock.category_id) ?? null : null;
+
+  const scoringType = selectedGame?.scoring_type ?? 'both';
+  const scoringInputs = getScoringInputs(scoringType);
+
+  const validationError = useMemo(() => {
+    if (!entries.length) {
+      return 'Partie nemá načtené hráče.';
+    }
+    for (const entry of entries) {
+      const points = parseNumeric(entry.points);
+      const placement = parseNumeric(entry.placement);
+      if (scoringType === 'points' && points === null) {
+        return `Doplň body pro slot ${entry.seat}.`;
+      }
+      if (scoringType === 'placement' && placement === null) {
+        return `Doplň umístění pro slot ${entry.seat}.`;
+      }
+      if (scoringType === 'both' && points === null && placement === null) {
+        return `Doplň body nebo umístění pro slot ${entry.seat}.`;
+      }
+    }
+    return null;
+  }, [entries, scoringType]);
+
+  const handleChangeEntry = useCallback((rowId: string, field: 'points' | 'placement', value: string) => {
+    setEntries((current) =>
+      current.map((entry) =>
+        entry.id === rowId
+          ? {
+            ...entry,
+            [field]: value,
+          }
+          : entry,
+      ),
+    );
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (!selectedMatch) {
+      setError('Vyber partii.');
+      return;
+    }
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      for (const entry of entries) {
+        const { error: updateError } = await supabase
+          .from('board_match_player')
+          .update({
+            points: parseNumeric(entry.points),
+            placement: parseNumeric(entry.placement),
+          })
+          .eq('id', entry.id);
+        if (updateError) {
+          throw updateError;
+        }
+      }
+
+      setMatchPlayers((current) =>
+        current.map((row) => {
+          const updated = entries.find((entry) => entry.id === row.id);
+          if (!updated) {
+            return row;
+          }
+          return {
+            ...row,
+            points: parseNumeric(updated.points),
+            placement: parseNumeric(updated.placement),
+          };
+        }),
+      );
+      setMessage('Výsledky partie byly uloženy.');
+    } catch (saveError) {
+      console.error('Failed to save board match results', saveError);
+      setError('Nepodařilo se uložit výsledky partie.');
+    } finally {
+      setSaving(false);
+    }
+  }, [entries, selectedMatch, validationError]);
+
+  const event = useMemo(
+    () => context.events.find((item) => item.id === selectedEventId) ?? null,
+    [context.events, selectedEventId],
+  );
+
+  if (!selectedEventId) {
+    return (
+      <section className="admin-card">
+        <h2>Partie u stolu</h2>
+        <p className="admin-card-subtitle">Nejdřív vyber event na úvodní stránce.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="admin-card">
+      <header className="admin-card-header">
+        <div>
+          <h2>Partie u stolu</h2>
+          <p className="admin-card-subtitle">{event?.name ?? 'Event'} · vyber blok/stůl a kolo.</p>
+        </div>
+        {context.events.length > 1 ? (
+          <label className="admin-field deskovky-event-select">
+            <span>Event</span>
+            <select value={selectedEventId ?? ''} onChange={(eventTarget) => onSelectEventId(eventTarget.target.value)}>
+              {context.events.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </header>
+
+      {loading ? <p className="admin-card-subtitle">Načítám partie…</p> : null}
+      {error ? <p className="admin-error">{error}</p> : null}
+      {message ? <p className="admin-success">{message}</p> : null}
+
+      {!loading && stationOptions.length ? (
+        <>
+          <div className="deskovky-admin-grid">
+            <label className="admin-field">
+              <span>Stůl</span>
+              <select value={selectedStationKey} onChange={(eventTarget) => setSelectedStationKey(eventTarget.target.value)}>
+                {stationOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="admin-field">
+              <span>Kolo</span>
+              <div className="admin-card-actions">
+                {availableRounds.map((round) => (
+                  <button
+                    key={round}
+                    type="button"
+                    className={`admin-button ${selectedRound === round ? 'admin-button--primary' : 'admin-button--secondary'}`}
+                    onClick={() => setSelectedRound(round)}
+                  >
+                    {round}. partie
+                  </button>
+                ))}
+              </div>
+            </label>
+          </div>
+
+          {selectedMatch ? (
+            <>
+              <p className="admin-card-subtitle">
+                Kategorie: <strong>{selectedCategory?.name ?? selectedMatch.category_id}</strong> · hra:{' '}
+                <strong>{selectedGame?.name ?? selectedBlock?.game_id ?? '—'}</strong> · stůl{' '}
+                <strong>{selectedMatch.table_number ?? '—'}</strong>
+              </p>
+
+              <div className="deskovky-table-wrap">
+                <table className="deskovky-table">
+                  <thead>
+                    <tr>
+                      <th>Slot</th>
+                      <th>Hráč</th>
+                      <th>Kód</th>
+                      <th>Oddíl</th>
+                      {scoringInputs.showPoints ? <th>Body</th> : null}
+                      {scoringInputs.showPlacement ? <th>Pořadí</th> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries.map((entry) => {
+                      const player = playerMap.get(entry.playerId);
+                      return (
+                        <tr key={entry.id}>
+                          <td>{entry.seat}</td>
+                          <td>{player?.display_name || player?.short_code || entry.playerId}</td>
+                          <td>{player?.short_code ?? '—'}</td>
+                          <td>{player?.team_name ?? '—'}</td>
+                          {scoringInputs.showPoints ? (
+                            <td>
+                              <input
+                                type="number"
+                                step="0.5"
+                                value={entry.points}
+                                onChange={(eventTarget) => handleChangeEntry(entry.id, 'points', eventTarget.target.value)}
+                              />
+                            </td>
+                          ) : null}
+                          {scoringInputs.showPlacement ? (
+                            <td>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min={1}
+                                value={entry.placement}
+                                onChange={(eventTarget) => handleChangeEntry(entry.id, 'placement', eventTarget.target.value)}
+                              />
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="admin-card-actions admin-card-actions--end">
+                <button type="button" className="admin-button admin-button--primary" onClick={() => void handleSave()} disabled={saving}>
+                  {saving ? 'Ukládám…' : 'Uložit výsledky partie'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="admin-card-subtitle">Pro vybrané kolo není dostupná partie.</p>
+          )}
+        </>
+      ) : null}
+
+      {!loading && !stationOptions.length ? (
+        <p className="admin-card-subtitle">
+          Nemáš přiřazené žádné vylosované partie. Požádej administrátora o losování a přiřazení stolu.
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -1632,7 +2399,7 @@ function StandingsPage({
           .order('overall_rank', { ascending: true }),
         supabase
           .from('board_player')
-          .select('id, event_id, short_code, team_name, display_name, category_id, created_at')
+          .select('id, event_id, short_code, team_name, display_name, category_id, disqualified, created_at')
           .eq('event_id', selectedEventId)
           .eq('category_id', selectedCategoryId)
           .order('short_code', { ascending: true }),
@@ -1875,29 +2642,25 @@ function StandingsPage({
   );
 }
 
-function RulesPage() {
+function RulesLinks({ className = 'deskovky-rules-links' }: { className?: string }) {
   return (
-    <section className="admin-card">
-      <h2>Pravidla Deskových her</h2>
-      <p className="admin-card-subtitle">Dokumenty se otevřou v nové kartě.</p>
-      <div className="deskovky-rules-links">
-        {BOARD_RULES_TOURNAMENT ? (
-          <a href={BOARD_RULES_TOURNAMENT} target="_blank" rel="noreferrer" className="admin-button admin-button--primary">
-            Pravidla turnaje
-          </a>
-        ) : (
-          <span className="admin-error">Soubor „Pravidla turnaje“ nebyl nalezen.</span>
-        )}
+    <div className={className}>
+      {BOARD_RULES_TOURNAMENT ? (
+        <a href={BOARD_RULES_TOURNAMENT} target="_blank" rel="noreferrer" className="admin-button admin-button--primary">
+          Pravidla turnaje
+        </a>
+      ) : (
+        <span className="admin-error">Soubor „Pravidla turnaje“ nebyl nalezen.</span>
+      )}
 
-        {BOARD_RULES_SCORING ? (
-          <a href={BOARD_RULES_SCORING} target="_blank" rel="noreferrer" className="admin-button admin-button--secondary">
-            Hodnocení turnaje
-          </a>
-        ) : (
-          <span className="admin-error">Soubor „Hodnocení turnaje“ nebyl nalezen.</span>
-        )}
-      </div>
-    </section>
+      {BOARD_RULES_SCORING ? (
+        <a href={BOARD_RULES_SCORING} target="_blank" rel="noreferrer" className="admin-button admin-button--secondary">
+          Hodnocení turnaje
+        </a>
+      ) : (
+        <span className="admin-error">Soubor „Hodnocení turnaje“ nebyl nalezen.</span>
+      )}
+    </div>
   );
 }
 
@@ -1954,15 +2717,18 @@ function AdminPage({
   const [newAssignmentUserId, setNewAssignmentUserId] = useState('');
   const [newAssignmentGameId, setNewAssignmentGameId] = useState('');
   const [newAssignmentCategoryId, setNewAssignmentCategoryId] = useState('');
+  const [newAssignmentTableNumber, setNewAssignmentTableNumber] = useState('1');
 
   const [playerSearch, setPlayerSearch] = useState('');
   const [playerCategoryFilter, setPlayerCategoryFilter] = useState('');
+  const [selectedDisqualifyPlayerId, setSelectedDisqualifyPlayerId] = useState('');
   const [playerPage, setPlayerPage] = useState(1);
   const [playerPageSize, setPlayerPageSize] = useState(50);
   const [gameSearch, setGameSearch] = useState('');
   const [gameScoringFilter, setGameScoringFilter] = useState<'all' | BoardScoringType>('all');
   const [assignmentJudgeFilter, setAssignmentJudgeFilter] = useState('');
   const [assignmentGameFilter, setAssignmentGameFilter] = useState('');
+  const [drawSummary, setDrawSummary] = useState<string | null>(null);
 
   const activeSectionLabel = useMemo(
     () => ADMIN_SECTION_ITEMS.find((item) => item.key === activeSection)?.label ?? 'Přehled',
@@ -2030,12 +2796,12 @@ function AdminPage({
         .order('block_number', { ascending: true }),
       supabase
         .from('board_player')
-        .select('id, event_id, short_code, team_name, display_name, category_id, created_at')
+        .select('id, event_id, short_code, team_name, display_name, category_id, disqualified, created_at')
         .eq('event_id', selectedEventId)
         .order('short_code', { ascending: true }),
       supabase
         .from('board_judge_assignment')
-        .select('id, event_id, user_id, game_id, category_id, created_at')
+        .select('id, event_id, user_id, game_id, category_id, table_number, created_at')
         .eq('event_id', selectedEventId)
         .order('created_at', { ascending: false }),
       supabase
@@ -2067,7 +2833,13 @@ function AdminPage({
     setGames((gameRes.data ?? []) as BoardGame[]);
     setBlocks((blockRes.data ?? []) as BoardBlock[]);
     setPlayers((playerRes.data ?? []) as BoardPlayer[]);
-    setAssignments((assignmentRes.data ?? []) as BoardJudgeAssignment[]);
+    setAssignments(
+      ((assignmentRes.data ?? []) as BoardJudgeAssignment[]).map((assignment) => ({
+        ...assignment,
+        category_id: assignment.category_id ?? null,
+        table_number: assignment.table_number ?? null,
+      })),
+    );
   }, [selectedEventId]);
 
   useEffect(() => {
@@ -2206,6 +2978,12 @@ function AdminPage({
       return;
     }
 
+    const duplicateEvent = events.find((event) => event.slug === slug);
+    if (duplicateEvent) {
+      setError(`Slug „${slug}“ už používá event „${duplicateEvent.name}“.`);
+      return;
+    }
+
     setError(null);
     setMessage(null);
 
@@ -2222,7 +3000,7 @@ function AdminPage({
 
     if (createError || !data) {
       console.error('Failed to create board event', createError);
-      setError('Vytvoření eventu selhalo.');
+      setError(boardEventMutationErrorMessage(createError, 'Vytvoření eventu selhalo.'));
       return;
     }
 
@@ -2230,7 +3008,7 @@ function AdminPage({
     setEvents((current) => [next, ...current]);
     onSelectEventId(next.id);
     setMessage('Event byl vytvořen.');
-  }, [eventEndDate, eventName, eventSlug, eventStartDate, onSelectEventId]);
+  }, [eventEndDate, eventName, eventSlug, eventStartDate, events, onSelectEventId]);
 
   const handleUpdateEvent = useCallback(async () => {
     if (!selectedEventId) {
@@ -2246,6 +3024,15 @@ function AdminPage({
       return;
     }
 
+    const duplicateEvent = events.find((event) => event.id !== selectedEventId && event.slug === slug);
+    if (duplicateEvent) {
+      setError(`Slug „${slug}“ už používá event „${duplicateEvent.name}“.`);
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+
     const { error: updateError } = await supabase
       .from('board_event')
       .update({
@@ -2258,7 +3045,7 @@ function AdminPage({
 
     if (updateError) {
       console.error('Failed to update board event', updateError);
-      setError('Uložení eventu selhalo.');
+      setError(boardEventMutationErrorMessage(updateError, 'Uložení eventu selhalo.'));
       return;
     }
 
@@ -2276,7 +3063,7 @@ function AdminPage({
       ),
     );
     setMessage('Event byl uložen.');
-  }, [eventEndDate, eventName, eventSlug, eventStartDate, selectedEventId]);
+  }, [eventEndDate, eventName, eventSlug, eventStartDate, events, selectedEventId]);
 
   const handleCreateCategory = useCallback(async () => {
     if (!selectedEventId) {
@@ -2607,8 +3394,13 @@ function AdminPage({
     }
 
     const userId = newAssignmentUserId.trim();
-    if (!userId || !newAssignmentGameId) {
-      setError('Vyber uživatele a hru.');
+    const tableNumber = Number(newAssignmentTableNumber);
+    if (!userId || !newAssignmentGameId || !newAssignmentCategoryId) {
+      setError('Vyber rozhodčího, hru i kategorii.');
+      return;
+    }
+    if (!Number.isInteger(tableNumber) || tableNumber <= 0) {
+      setError('Číslo stolu musí být kladné celé číslo.');
       return;
     }
 
@@ -2618,9 +3410,10 @@ function AdminPage({
         event_id: selectedEventId,
         user_id: userId,
         game_id: newAssignmentGameId,
-        category_id: newAssignmentCategoryId || null,
+        category_id: newAssignmentCategoryId,
+        table_number: tableNumber,
       })
-      .select('id, event_id, user_id, game_id, category_id, created_at')
+      .select('id, event_id, user_id, game_id, category_id, table_number, created_at')
       .single();
 
     if (createError || !data) {
@@ -2630,8 +3423,12 @@ function AdminPage({
     }
 
     setAssignments((current) => [data as BoardJudgeAssignment, ...current]);
+    setNewAssignmentCategoryId('');
+    setNewAssignmentGameId('');
+    setNewAssignmentUserId('');
+    setNewAssignmentTableNumber('1');
     setMessage('Přiřazení bylo vytvořeno.');
-  }, [newAssignmentCategoryId, newAssignmentGameId, newAssignmentUserId, selectedEventId]);
+  }, [newAssignmentCategoryId, newAssignmentGameId, newAssignmentTableNumber, newAssignmentUserId, selectedEventId]);
 
   const handleDeleteAssignment = useCallback(async (assignmentId: string) => {
     const confirmed = window.confirm('Smazat přiřazení?');
@@ -2654,6 +3451,190 @@ function AdminPage({
     setMessage('Přiřazení bylo smazáno.');
   }, []);
 
+  const handleSetPlayerDisqualified = useCallback(async (playerId: string, disqualified: boolean) => {
+    const { error: updateError } = await supabase
+      .from('board_player')
+      .update({ disqualified })
+      .eq('id', playerId);
+
+    if (updateError) {
+      console.error('Failed to update board player disqualification', updateError);
+      setError('Nepodařilo se uložit diskvalifikaci hráče.');
+      return;
+    }
+
+    setPlayers((current) =>
+      current.map((player) =>
+        player.id === playerId
+          ? {
+            ...player,
+            disqualified,
+          }
+          : player,
+      ),
+    );
+    setMessage(disqualified ? 'Hráč byl diskvalifikován.' : 'Diskvalifikace hráče byla zrušena.');
+  }, []);
+
+  const handleGenerateDraw = useCallback(async () => {
+    if (!selectedEventId) {
+      setError('Vyber event.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Tímto smažeš dosavadní partie deskovek v tomto eventu a vylosuješ nové. Pokračovat?',
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+    setDrawSummary(null);
+    setLoading(true);
+
+    try {
+      const playersByCategory = new Map<string, BoardPlayer[]>();
+      for (const player of players) {
+        const list = playersByCategory.get(player.category_id) ?? [];
+        list.push(player);
+        playersByCategory.set(player.category_id, list);
+      }
+
+      const blocksByCategory = new Map<string, BoardBlock[]>();
+      for (const block of blocks) {
+        const list = blocksByCategory.get(block.category_id) ?? [];
+        list.push(block);
+        blocksByCategory.set(block.category_id, list);
+      }
+
+      const assignmentByKey = new Map<string, BoardJudgeAssignment>();
+      for (const assignment of assignments) {
+        if (!assignment.category_id || !assignment.table_number) {
+          continue;
+        }
+        assignmentByKey.set(
+          `${assignment.game_id}|${assignment.category_id}|${assignment.table_number}`,
+          assignment,
+        );
+      }
+
+      const missingAssignments: string[] = [];
+      const plannedRows: Array<{
+        match: Omit<BoardMatch, 'id' | 'created_at' | 'status'>;
+        players: string[];
+      }> = [];
+
+      for (const category of categories) {
+        const categoryPlayers = playersByCategory.get(category.id) ?? [];
+        const categoryBlocks = blocksByCategory.get(category.id) ?? [];
+        const blockPlans = planCategoryDraw(categoryPlayers, categoryBlocks);
+
+        for (const blockPlan of blockPlans) {
+          for (const round of blockPlan.rounds) {
+            for (const table of round.tables) {
+              const assignmentKey = `${blockPlan.block.game_id}|${blockPlan.block.category_id}|${table.tableNumber}`;
+              const assignment = assignmentByKey.get(assignmentKey);
+              if (!assignment) {
+                missingAssignments.push(
+                  `${category.name} · blok ${blockPlan.block.block_number} · stůl ${table.tableNumber}`,
+                );
+                continue;
+              }
+
+              plannedRows.push({
+                match: {
+                  event_id: selectedEventId,
+                  category_id: blockPlan.block.category_id,
+                  block_id: blockPlan.block.id,
+                  round_number: round.roundNumber,
+                  table_number: table.tableNumber,
+                  created_by: assignment.user_id,
+                },
+                players: table.playerIds,
+              });
+            }
+          }
+        }
+      }
+
+      if (missingAssignments.length) {
+        setError(
+          `Chybí přiřazení rozhodčího ke stolu: ${missingAssignments.slice(0, 6).join('; ')}${missingAssignments.length > 6 ? '…' : ''}`,
+        );
+        return;
+      }
+
+      if (!plannedRows.length) {
+        setError('Nebylo co vylosovat. Zkontroluj hráče, bloky a diskvalifikace.');
+        return;
+      }
+
+      const { error: deleteMatchesError } = await supabase
+        .from('board_match')
+        .delete()
+        .eq('event_id', selectedEventId);
+
+      if (deleteMatchesError) {
+        console.error('Failed to clear previous board matches', deleteMatchesError);
+        setError('Nepodařilo se smazat původní partie.');
+        return;
+      }
+
+      let insertedMatches = 0;
+      let insertedRows = 0;
+
+      for (const planned of plannedRows) {
+        const { data: insertedMatch, error: insertMatchError } = await supabase
+          .from('board_match')
+          .insert({
+            event_id: planned.match.event_id,
+            category_id: planned.match.category_id,
+            block_id: planned.match.block_id,
+            round_number: planned.match.round_number,
+            table_number: planned.match.table_number ?? null,
+            created_by: planned.match.created_by,
+          })
+          .select('id')
+          .single();
+
+        if (insertMatchError || !insertedMatch) {
+          console.error('Failed to insert drawn board match', insertMatchError);
+          setError('Nepodařilo se uložit vylosované partie.');
+          return;
+        }
+
+        const participantRows = planned.players.map((playerId, index) => ({
+          match_id: insertedMatch.id as string,
+          player_id: playerId,
+          seat: index + 1,
+          points: null,
+          placement: null,
+        }));
+
+        const { error: insertPlayersError } = await supabase
+          .from('board_match_player')
+          .insert(participantRows);
+
+        if (insertPlayersError) {
+          console.error('Failed to insert drawn board match players', insertPlayersError);
+          setError('Nepodařilo se uložit hráče do vylosovaných partií.');
+          return;
+        }
+
+        insertedMatches += 1;
+        insertedRows += participantRows.length;
+      }
+
+      setMessage('Losování bylo úspěšně vytvořeno.');
+      setDrawSummary(`Partie: ${insertedMatches} · účasti hráčů: ${insertedRows}.`);
+      await loadEventDetail();
+    } finally {
+      setLoading(false);
+    }
+  }, [assignments, blocks, categories, loadEventDetail, players, selectedEventId]);
+
   const selectedEventLabel = selectedEvent?.name ?? 'Nevybraný event';
   const sectionStats = useMemo(
     () => [
@@ -2661,9 +3642,10 @@ function AdminPage({
       { label: 'Hry', value: games.length },
       { label: 'Bloky', value: blocks.length },
       { label: 'Hráči', value: players.length },
-      { label: 'Přiřazení', value: assignments.length },
+      { label: 'Diskvalifikace', value: players.filter((player) => player.disqualified).length },
+      { label: 'Stoly rozhodčích', value: assignments.filter((assignment) => assignment.table_number).length },
     ],
-    [assignments.length, blocks.length, categories.length, games.length, players.length],
+    [assignments, blocks.length, categories.length, games.length, players],
   );
 
   const filteredGames = useMemo(() => {
@@ -2692,9 +3674,23 @@ function AdminPage({
     });
   }, [playerCategoryFilter, playerSearch, players]);
 
+  const selectedDisqualifyPlayer = useMemo(
+    () => players.find((player) => player.id === selectedDisqualifyPlayerId) ?? null,
+    [players, selectedDisqualifyPlayerId],
+  );
+
   useEffect(() => {
     setPlayerPage(1);
   }, [playerCategoryFilter, playerPageSize, playerSearch, selectedEventId]);
+
+  useEffect(() => {
+    if (!selectedDisqualifyPlayerId) {
+      return;
+    }
+    if (!players.some((player) => player.id === selectedDisqualifyPlayerId)) {
+      setSelectedDisqualifyPlayerId('');
+    }
+  }, [players, selectedDisqualifyPlayerId]);
 
   const playerTotalPages = Math.max(1, Math.ceil(filteredPlayers.length / playerPageSize));
   const safePlayerPage = Math.min(playerPage, playerTotalPages);
@@ -2748,6 +3744,46 @@ function AdminPage({
             disabled: !selectedEventId,
             onClick: () => {
               void handleUpdateEvent();
+            },
+          },
+        };
+      case 'draw':
+        return {
+          description: 'Automatické rozlosování partií na 3 kola v každém bloku a přidělení ke stolům.',
+          action: {
+            label: 'Vylosovat partie',
+            kind: 'primary',
+            disabled: !selectedEventId || loading,
+            onClick: () => {
+              void handleGenerateDraw();
+            },
+          },
+        };
+      case 'disqualify':
+        return {
+          description: 'Vyhledej hráče a nastav jeho diskvalifikaci. Diskvalifikovaní se neberou do nového losování.',
+          action: selectedDisqualifyPlayer
+            ? {
+              label: selectedDisqualifyPlayer.disqualified ? 'Zrušit diskvalifikaci' : 'Diskvalifikovat',
+              kind: selectedDisqualifyPlayer.disqualified ? 'secondary' : 'primary',
+              onClick: () => {
+                void handleSetPlayerDisqualified(
+                  selectedDisqualifyPlayer.id,
+                  !Boolean(selectedDisqualifyPlayer.disqualified),
+                );
+              },
+            }
+            : undefined,
+        };
+      case 'assignments':
+        return {
+          description: 'Přiřazení rozhodčích podle hry, kategorie a čísla stolu.',
+          action: {
+            label: 'Přidat přiřazení',
+            kind: 'primary',
+            disabled: !selectedEventId,
+            onClick: () => {
+              void handleCreateAssignment();
             },
           },
         };
@@ -2833,11 +3869,15 @@ function AdminPage({
     handleCreateBlock,
     handleCreateCategory,
     handleCreateGame,
+    handleGenerateDraw,
     handleImportPlayers,
+    handleSetPlayerDisqualified,
     handleUpdateEvent,
     navigateAdminSection,
+    selectedDisqualifyPlayer,
     selectedEventId,
     selectedEventLabel,
+    loading,
   ]);
 
   return (
@@ -2846,7 +3886,7 @@ function AdminPage({
         <header className="admin-card-header">
           <div>
             <h2>Administrace Deskovek</h2>
-            <p className="admin-card-subtitle">Konfigurace eventu, hráčů, bloků a přiřazení rozhodčích.</p>
+            <p className="admin-card-subtitle">Event, losování, diskvalifikace a přiřazení rozhodčích ke stolům.</p>
           </div>
           <div className="deskovky-toolbar-actions">
             <span className="deskovky-admin-current-section">Sekce: {activeSectionLabel}</span>
@@ -2943,48 +3983,7 @@ function AdminPage({
               </div>
             ) : null}
 
-            {activeSection === 'players' ? (
-              <div className="deskovky-admin-filters deskovky-admin-filters--sticky">
-                <label className="admin-field">
-                  <span>Hledat hráče</span>
-                  <input
-                    value={playerSearch}
-                    onChange={(eventTarget) => setPlayerSearch(eventTarget.target.value)}
-                    placeholder="Kód, jméno nebo tým…"
-                    aria-label="Hledat hráče podle kódu, jména nebo týmu"
-                  />
-                </label>
-                <label className="admin-field">
-                  <span>Kategorie</span>
-                  <select
-                    value={playerCategoryFilter}
-                    onChange={(eventTarget) => setPlayerCategoryFilter(eventTarget.target.value)}
-                    aria-label="Filtrovat hráče podle kategorie"
-                  >
-                    <option value="">Všechny</option>
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="admin-field">
-                  <span>Počet na stránku</span>
-                  <select
-                    value={String(playerPageSize)}
-                    onChange={(eventTarget) => setPlayerPageSize(Number(eventTarget.target.value))}
-                    aria-label="Počet hráčů na jednu stránku"
-                  >
-                    <option value="25">25</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                  </select>
-                </label>
-              </div>
-            ) : null}
-
-            {activeSection === 'judges' ? (
+            {activeSection === 'assignments' ? (
               <div className="deskovky-admin-filters deskovky-admin-filters--sticky">
                 <label className="admin-field">
                   <span>Rozhodčí</span>
@@ -3053,26 +4052,26 @@ function AdminPage({
                 <button
                   type="button"
                   className="admin-button admin-button--primary"
-                  onClick={() => navigateAdminSection('games')}
-                  aria-label="Přejít na sekci Přidat hru"
+                  onClick={() => navigateAdminSection('draw')}
+                  aria-label="Přejít na sekci Losování"
                 >
-                  Přidat hru
+                  Losování
                 </button>
                 <button
                   type="button"
                   className="admin-button admin-button--secondary"
-                  onClick={() => navigateAdminSection('import-export')}
-                  aria-label="Přejít na sekci Import hráčů"
+                  onClick={() => navigateAdminSection('disqualify')}
+                  aria-label="Přejít na sekci Diskvalifikace"
                 >
-                  Import hráčů
+                  Diskvalifikace
                 </button>
                 <button
                   type="button"
                   className="admin-button admin-button--secondary"
-                  onClick={() => navigateAdminSection('judges')}
-                  aria-label="Přejít na sekci Přiřadit rozhodčí"
+                  onClick={() => navigateAdminSection('assignments')}
+                  aria-label="Přejít na sekci Rozhodčí a stoly"
                 >
-                  Přiřadit rozhodčí
+                  Rozhodčí a stoly
                 </button>
               </div>
             </section>
@@ -3123,6 +4122,233 @@ function AdminPage({
             </section>
           ) : null}
 
+          {activeSection === 'draw' ? (
+            <section className="admin-card">
+              <h2>Losování partií</h2>
+              <p className="admin-card-subtitle">
+                V každém bloku se vylosují 3 partie na stolech. Losování respektuje oddíly a opakování soupeřů.
+              </p>
+              {drawSummary ? <p className="admin-success">{drawSummary}</p> : null}
+              <div className="deskovky-table-wrap">
+                <table className="deskovky-table">
+                  <thead>
+                    <tr>
+                      <th>Kategorie</th>
+                      <th>Hráči celkem</th>
+                      <th>Aktivní pro los</th>
+                      <th>Bloky</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {categories.map((category) => {
+                      const categoryPlayers = players.filter((player) => player.category_id === category.id);
+                      const activePlayers = categoryPlayers.filter((player) => !player.disqualified);
+                      const categoryBlocks = blocks.filter((block) => block.category_id === category.id);
+                      return (
+                        <tr key={category.id}>
+                          <td>{category.name}</td>
+                          <td>{categoryPlayers.length}</td>
+                          <td>{activePlayers.length}</td>
+                          <td>{categoryBlocks.length}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === 'disqualify' ? (
+            <section className="admin-card">
+              <h2>Diskvalifikace hráčů</h2>
+              <div className="deskovky-admin-filters">
+                <label className="admin-field">
+                  <span>Hledat hráče</span>
+                  <input
+                    value={playerSearch}
+                    onChange={(eventTarget) => setPlayerSearch(eventTarget.target.value)}
+                    placeholder="Kód, jméno nebo oddíl…"
+                  />
+                </label>
+                <label className="admin-field">
+                  <span>Kategorie</span>
+                  <select
+                    value={playerCategoryFilter}
+                    onChange={(eventTarget) => setPlayerCategoryFilter(eventTarget.target.value)}
+                  >
+                    <option value="">Všechny</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="admin-field">
+                  <span>Vybraný hráč</span>
+                  <select
+                    value={selectedDisqualifyPlayerId}
+                    onChange={(eventTarget) => setSelectedDisqualifyPlayerId(eventTarget.target.value)}
+                  >
+                    <option value="">Vyber hráče</option>
+                    {filteredPlayers.map((player) => (
+                      <option key={player.id} value={player.id}>
+                        {player.short_code} · {player.display_name || player.team_name || 'Bez jména'}
+                        {player.disqualified ? ' · DSQ' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {selectedDisqualifyPlayer ? (
+                <div className="deskovky-admin-grid">
+                  <article className="deskovky-assignment-card">
+                    <h3>{selectedDisqualifyPlayer.display_name || selectedDisqualifyPlayer.short_code}</h3>
+                    <p>
+                      <strong>Oddíl:</strong> {selectedDisqualifyPlayer.team_name || '—'}
+                    </p>
+                    <p>
+                      <strong>Kategorie:</strong>{' '}
+                      {categoryMap.get(selectedDisqualifyPlayer.category_id)?.name ?? selectedDisqualifyPlayer.category_id}
+                    </p>
+                    <p>
+                      <strong>Stav:</strong> {selectedDisqualifyPlayer.disqualified ? 'Diskvalifikován' : 'Aktivní'}
+                    </p>
+                    <div className="admin-card-actions">
+                      <button
+                        type="button"
+                        className={`admin-button ${selectedDisqualifyPlayer.disqualified ? 'admin-button--secondary' : 'admin-button--primary'}`}
+                        onClick={() =>
+                          void handleSetPlayerDisqualified(
+                            selectedDisqualifyPlayer.id,
+                            !Boolean(selectedDisqualifyPlayer.disqualified),
+                          )
+                        }
+                      >
+                        {selectedDisqualifyPlayer.disqualified ? 'Zrušit diskvalifikaci' : 'Diskvalifikovat'}
+                      </button>
+                    </div>
+                  </article>
+                </div>
+              ) : (
+                <p className="admin-card-subtitle">Vyber hráče ze seznamu.</p>
+              )}
+            </section>
+          ) : null}
+
+          {activeSection === 'assignments' ? (
+            <section className="admin-card">
+              <h2>Přiřazení rozhodčích ke stolům</h2>
+              <div className="deskovky-admin-grid">
+                {judges.length ? (
+                  <label className="admin-field">
+                    <span>Rozhodčí</span>
+                    <select
+                      value={newAssignmentUserId}
+                      onChange={(eventTarget) => setNewAssignmentUserId(eventTarget.target.value)}
+                    >
+                      <option value="">Vyber rozhodčího</option>
+                      {judges.map((judge) => (
+                        <option key={judge.id} value={judge.id}>
+                          {judge.display_name} ({judge.email})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <label className="admin-field">
+                    <span>User ID rozhodčího (UUID)</span>
+                    <input
+                      value={newAssignmentUserId}
+                      onChange={(eventTarget) => setNewAssignmentUserId(eventTarget.target.value)}
+                      placeholder="uuid"
+                    />
+                  </label>
+                )}
+
+                <label className="admin-field">
+                  <span>Hra</span>
+                  <select value={newAssignmentGameId} onChange={(eventTarget) => setNewAssignmentGameId(eventTarget.target.value)}>
+                    <option value="">Vyber hru</option>
+                    {games.map((game) => (
+                      <option key={game.id} value={game.id}>
+                        {game.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="admin-field">
+                  <span>Kategorie</span>
+                  <select
+                    value={newAssignmentCategoryId}
+                    onChange={(eventTarget) => setNewAssignmentCategoryId(eventTarget.target.value)}
+                  >
+                    <option value="">Vyber kategorii</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="admin-field">
+                  <span>Stůl</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={newAssignmentTableNumber}
+                    onChange={(eventTarget) => setNewAssignmentTableNumber(eventTarget.target.value)}
+                  />
+                </label>
+              </div>
+
+              <p className="admin-card-subtitle">
+                Zobrazeno {filteredAssignments.length} z {assignments.length} přiřazení.
+              </p>
+
+              <div className="deskovky-table-wrap">
+                <table className="deskovky-table">
+                  <thead>
+                    <tr>
+                      <th>Rozhodčí</th>
+                      <th>Hra</th>
+                      <th>Kategorie</th>
+                      <th>Stůl</th>
+                      <th>Akce</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAssignments.map((assignment) => {
+                      const judge = judgesMap.get(assignment.user_id);
+                      return (
+                        <tr key={assignment.id}>
+                          <td>{judge ? `${judge.display_name} (${judge.email})` : assignment.user_id}</td>
+                          <td>{gameMap.get(assignment.game_id)?.name ?? assignment.game_id}</td>
+                          <td>
+                            {assignment.category_id
+                              ? categoryMap.get(assignment.category_id)?.name ?? assignment.category_id
+                              : '—'}
+                          </td>
+                          <td>{assignment.table_number ?? '—'}</td>
+                          <td>
+                            <button type="button" className="ghost" onClick={() => void handleDeleteAssignment(assignment.id)}>
+                              Smazat
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
           {activeSection === 'categories' ? (
             <section className="admin-card">
               <h2>Kategorie</h2>
@@ -3132,7 +4358,7 @@ function AdminPage({
                   <input
                     value={newCategoryName}
                     onChange={(eventTarget) => setNewCategoryName(eventTarget.target.value)}
-                    placeholder="Např. Kategorie I + II"
+                    placeholder="Např. Kategorie I"
                   />
                 </label>
                 <label className="admin-field">
@@ -3633,35 +4859,65 @@ function DeskovkyDashboard({
   logout: () => Promise<void>;
 }) {
   const isMobile = useIsMobileBreakpoint(640);
-  const [page, setPage] = useState<DeskovkyPage>(() => resolvePage(window.location.pathname));
+  const judgeId = auth.manifest.judge.id;
+  const isAdmin = (auth.manifest.station.code || '').trim().toUpperCase() === 'T';
+  const [page, setPage] = useState<DeskovkyPage>(() => resolveAllowedPage(resolvePage(window.location.pathname), isAdmin));
   const [context, setContext] = useState<BoardJudgeContext | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
-  const judgeId = auth.manifest.judge.id;
-  const isAdmin = (auth.manifest.station.code || '').trim().toUpperCase() === 'T';
-
   const navigate = useCallback((nextPage: DeskovkyPage, options?: { replace?: boolean }) => {
-    const nextPath = buildCanonicalPath(nextPage);
+    const resolvedNextPage = resolveAllowedPage(nextPage, isAdmin);
+    const nextPath = buildCanonicalPath(resolvedNextPage);
     if (options?.replace) {
       window.history.replaceState(window.history.state, '', nextPath);
     } else {
       window.history.pushState(window.history.state, '', nextPath);
     }
-    setPage(nextPage);
-  }, []);
+    setPage(resolvedNextPage);
+  }, [isAdmin]);
+
+  useEffect(() => {
+    const resolvedPage = resolvePage(window.location.pathname);
+    const allowedPage = resolveAllowedPage(resolvedPage, isAdmin);
+    if (resolvedPage !== allowedPage) {
+      window.history.replaceState(window.history.state, '', buildCanonicalPath(allowedPage));
+    }
+    setPage(allowedPage);
+  }, [isAdmin]);
 
   useEffect(() => {
     const handlePopState = () => {
-      setPage(resolvePage(window.location.pathname));
+      const resolvedPage = resolvePage(window.location.pathname);
+      const allowedPage = resolveAllowedPage(resolvedPage, isAdmin);
+      if (resolvedPage !== allowedPage) {
+        window.history.replaceState(window.history.state, '', buildCanonicalPath(allowedPage));
+      }
+      setPage(allowedPage);
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, []);
+  }, [isAdmin]);
+
+  const navItems = useMemo<ReadonlyArray<{ page: DeskovkyPage; label: string; ariaLabel: string }>>(() => {
+    if (isAdmin) {
+      return [
+        { page: 'admin', label: 'Admin', ariaLabel: 'Přejít na administraci' },
+        { page: 'standings', label: 'Pořadí', ariaLabel: 'Přejít na Pořadí' },
+        { page: 'rules', label: 'Pravidla', ariaLabel: 'Přejít na Pravidla' },
+      ];
+    }
+    return [
+      { page: 'home', label: 'Přehled', ariaLabel: 'Přejít na Přehled' },
+      { page: 'new-match', label: 'Nový zápas', ariaLabel: 'Přejít na Nový zápas' },
+      { page: 'standings', label: 'Pořadí', ariaLabel: 'Přejít na Pořadí' },
+      { page: 'rules', label: 'Pravidla', ariaLabel: 'Přejít na Pravidla' },
+    ];
+  }, [isAdmin]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3700,7 +4956,7 @@ function DeskovkyDashboard({
   const pageTitle = useMemo(() => {
     switch (page) {
       case 'new-match':
-        return 'Nový zápas';
+        return 'Partie u stolu';
       case 'standings':
         return 'Průběžné pořadí';
       case 'rules':
@@ -3744,49 +5000,24 @@ function DeskovkyDashboard({
       <main className="admin-content">
         <section className="admin-card deskovky-nav-card">
           <div className="deskovky-nav-grid" role="tablist" aria-label="Sekce Deskovek">
-            <button
-              type="button"
-              className={`admin-button ${page === 'home' ? 'admin-button--primary' : 'admin-button--secondary'}`}
-              onClick={() => navigate('home')}
-              aria-label="Přejít na Přehled"
-            >
-              Přehled
-            </button>
-            <button
-              type="button"
-              className={`admin-button ${page === 'new-match' ? 'admin-button--primary' : 'admin-button--secondary'}`}
-              onClick={() => navigate('new-match')}
-              aria-label="Přejít na Nový zápas"
-            >
-              Nový zápas
-            </button>
-            <button
-              type="button"
-              className={`admin-button ${page === 'standings' ? 'admin-button--primary' : 'admin-button--secondary'}`}
-              onClick={() => navigate('standings')}
-              aria-label="Přejít na Pořadí"
-            >
-              Pořadí
-            </button>
-            <button
-              type="button"
-              className={`admin-button ${page === 'rules' ? 'admin-button--primary' : 'admin-button--secondary'}`}
-              onClick={() => navigate('rules')}
-              aria-label="Přejít na Pravidla"
-            >
-              Pravidla
-            </button>
-            {isAdmin ? (
+            {navItems.map((item) => (
               <button
+                key={item.page}
                 type="button"
-                className={`admin-button ${page === 'admin' ? 'admin-button--primary' : 'admin-button--secondary'}`}
-                onClick={() => navigate('admin')}
-                aria-label="Přejít na administraci"
+                className={`admin-button ${page === item.page ? 'admin-button--primary' : 'admin-button--secondary'}`}
+                onClick={() => navigate(item.page)}
+                aria-label={item.ariaLabel}
               >
-                Admin
+                {item.label}
               </button>
-            ) : null}
+            ))}
           </div>
+          {page === 'rules' ? (
+            <div className="deskovky-nav-rules">
+              <p className="admin-card-subtitle">Dokumenty se otevřou v nové kartě.</p>
+              <RulesLinks className="deskovky-rules-links deskovky-rules-links--inline" />
+            </div>
+          ) : null}
         </section>
 
         {page === 'home' ? (
@@ -3800,12 +5031,11 @@ function DeskovkyDashboard({
         ) : null}
 
         {page === 'new-match' ? (
-          <NewMatchPage
+          <AssignedTableMatchesPage
             judgeId={judgeId}
             context={context}
             selectedEventId={selectedEventId}
             onSelectEventId={setSelectedEventId}
-            isMobile={isMobile}
           />
         ) : null}
 
@@ -3817,8 +5047,6 @@ function DeskovkyDashboard({
             isMobile={isMobile}
           />
         ) : null}
-
-        {page === 'rules' ? <RulesPage /> : null}
 
         {page === 'admin' ? (
           isAdmin ? (
