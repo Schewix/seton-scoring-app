@@ -3733,6 +3733,37 @@ function AdminPage({
     [assignmentGameFilter, assignmentJudgeFilter, assignments],
   );
 
+  const drawOverview = useMemo(() => {
+    const activePlayersTotal = players.filter((player) => !player.disqualified).length;
+    const readyCategories = categories.filter((category) => {
+      const categoryPlayers = players.filter((player) => player.category_id === category.id && !player.disqualified);
+      const categoryBlocks = blocks.filter((block) => block.category_id === category.id);
+      return categoryPlayers.length >= 2 && categoryBlocks.length > 0;
+    }).length;
+    return {
+      activePlayersTotal,
+      readyCategories,
+    };
+  }, [blocks, categories, players]);
+
+  const drawDisabledReason = useMemo(() => {
+    if (!selectedEventId) {
+      return 'Nejdřív vyber event.';
+    }
+    if (loading) {
+      return 'Počkej na načtení administrace.';
+    }
+    if (drawOverview.activePlayersTotal === 0) {
+      return 'V databázi zatím nejsou načtení aktivní účastníci.';
+    }
+    if (drawOverview.readyCategories === 0) {
+      return 'Žádná kategorie nemá současně hráče a bloky.';
+    }
+    return null;
+  }, [drawOverview.activePlayersTotal, drawOverview.readyCategories, loading, selectedEventId]);
+
+  const canGenerateDraw = drawDisabledReason === null;
+
   const sectionHeaderConfig = useMemo<AdminSectionHeaderConfig>(() => {
     switch (activeSection) {
       case 'event':
@@ -3753,7 +3784,7 @@ function AdminPage({
           action: {
             label: 'Vylosovat partie',
             kind: 'primary',
-            disabled: !selectedEventId || loading,
+            disabled: !canGenerateDraw,
             onClick: () => {
               void handleGenerateDraw();
             },
@@ -3865,6 +3896,7 @@ function AdminPage({
     }
   }, [
     activeSection,
+    canGenerateDraw,
     handleCreateAssignment,
     handleCreateBlock,
     handleCreateCategory,
@@ -4128,6 +4160,21 @@ function AdminPage({
               <p className="admin-card-subtitle">
                 V každém bloku se vylosují 3 partie na stolech. Losování respektuje oddíly a opakování soupeřů.
               </p>
+              <p className="admin-card-subtitle">
+                Losování spusť až ve chvíli, kdy jsou všichni účastníci nahraní v databázi.
+              </p>
+              <div className="admin-card-actions">
+                <button
+                  type="button"
+                  className="admin-button admin-button--primary"
+                  onClick={() => void handleGenerateDraw()}
+                  disabled={!canGenerateDraw}
+                  title={drawDisabledReason ?? undefined}
+                >
+                  Spustit losování
+                </button>
+              </div>
+              {drawDisabledReason ? <p className="admin-card-subtitle">{drawDisabledReason}</p> : null}
               {drawSummary ? <p className="admin-success">{drawSummary}</p> : null}
               <div className="deskovky-table-wrap">
                 <table className="deskovky-table">
