@@ -43,6 +43,7 @@
 .deskovky-nav-rules {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 10px;
   margin-top: 12px;
   padding-top: 10px;
@@ -51,10 +52,12 @@
 
 .deskovky-nav-rules .admin-card-subtitle {
   margin: 0;
+  text-align: center;
 }
 
 .deskovky-rules-links--inline {
   gap: 10px;
+  justify-content: center;
 }
 
 .deskovky-toolbar {

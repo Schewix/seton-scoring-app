@@ -15,7 +15,8 @@
 --    - null => použije se nejnovější event z public.events
 --    - uuid => explicitní Seton event
 -- 2) v_vi_secondary_game:
---    - 'Dominion' nebo 'Milostný dopis'
+--    - aktualne pouzivej 'Dominion'
+--    - hodnota 'Milostny dopis' se automaticky prevede na 'Dominion'
 -- 3) rounds_per_block:
 --    - počet nalosovaných partií na každý blok/hru
 
@@ -77,7 +78,11 @@ select
     nullif(trim(r.board_event_name_override), ''),
     format('Deskové hry | %s', e.name)
   ) as board_event_name,
-  r.v_vi_secondary_game,
+  case
+    when lower(trim(r.v_vi_secondary_game)) in ('milostny dopis', 'milostný dopis', 'love letter')
+      then 'Dominion'
+    else r.v_vi_secondary_game
+  end as v_vi_secondary_game,
   r.rounds_per_block
 from resolved r
 join public.events e on e.id = r.seton_event_id;
@@ -169,13 +174,6 @@ with game_src as (
         'Vyšší součet bodů je lepší. Hlavní hra pro kategorii V a VI.'
       ),
       (
-        'Milostný dopis',
-        'both',
-        'desc',
-        false,
-        'Alternativní druhá hra pro kategorii V a VI.'
-      ),
-      (
         'Dominion',
         'both',
         'desc',
@@ -223,7 +221,7 @@ begin
     where g.name = selected_game
   ) then
     raise exception
-      'Sekundární hra "%" neexistuje. Použij "Dominion" nebo "Milostný dopis".',
+      'Sekundarni hra "%" neexistuje. Pouzij "Dominion".',
       selected_game;
   end if;
 end $$;

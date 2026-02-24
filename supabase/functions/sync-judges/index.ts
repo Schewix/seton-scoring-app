@@ -87,8 +87,9 @@ const BOARD_GAME_ALIASES: Record<string, string> = {
   tajnavyprava: 'tajna vyprava carodeju',
   tajnavypravacarodeju: 'tajna vyprava carodeju',
   hop: 'hop',
-  milostnydopis: 'milostny dopis',
-  loveletter: 'milostny dopis',
+  'milostny dopis': 'dominion',
+  milostnydopis: 'dominion',
+  loveletter: 'dominion',
 };
 
 function generatePassword(length = 12): string {

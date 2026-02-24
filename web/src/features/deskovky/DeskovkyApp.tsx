@@ -190,6 +190,9 @@ function resolvePage(pathname: string): DeskovkyPage {
 
 function resolveAllowedPage(page: DeskovkyPage, isAdmin: boolean): DeskovkyPage {
   if (!isAdmin) {
+    if (page === 'admin' || page === 'standings') {
+      return 'home';
+    }
     return page;
   }
   if (page === 'home' || page === 'new-match') {
@@ -469,9 +472,11 @@ type DrawRound = {
 type DrawBlockPlan = {
   block: BoardBlock;
   rounds: DrawRound[];
+  usedRelaxedSameTeamRule?: boolean;
 };
 
 type OpponentCounts = Map<string, Map<string, number>>;
+type DrawAttempt = { groups: BoardPlayer[][]; penalty: number };
 
 function getTeamKey(teamName: string | null | undefined): string {
   const raw = (teamName ?? '').trim();
@@ -534,12 +539,48 @@ function pairPenalty(
   return (sameTeam ? 240 : 0) + blockMeetings * 120 + categoryMeetings * 45;
 }
 
-function groupContainsSameTeam(group: BoardPlayer[], candidate: BoardPlayer): boolean {
-  const candidateTeamKey = getTeamKey(candidate.team_name);
-  if (!candidateTeamKey) {
+function isSameTeam(playerA: BoardPlayer, playerB: BoardPlayer): boolean {
+  const teamA = getTeamKey(playerA.team_name);
+  return Boolean(teamA) && teamA === getTeamKey(playerB.team_name);
+}
+
+function canAddCandidateToGroup(
+  candidate: BoardPlayer,
+  group: BoardPlayer[],
+  blockOpponents: OpponentCounts,
+  blockSameTeamCounts: Map<string, number>,
+  maxSameTeamOpponentsPerBlock: number | null,
+): boolean {
+  if (maxSameTeamOpponentsPerBlock === null) {
+    return true;
+  }
+
+  const candidateCurrentCount = blockSameTeamCounts.get(candidate.id) ?? 0;
+  let candidateAdditionalCount = 0;
+
+  for (const current of group) {
+    if (!isSameTeam(candidate, current)) {
+      continue;
+    }
+
+    // The same team-vs-team pair should not repeat in one game block.
+    if (getOpponentCount(blockOpponents, candidate.id, current.id) >= 1) {
+      return false;
+    }
+
+    const currentCount = blockSameTeamCounts.get(current.id) ?? 0;
+    if (currentCount + 1 > maxSameTeamOpponentsPerBlock) {
+      return false;
+    }
+
+    candidateAdditionalCount += 1;
+  }
+
+  if (candidateCurrentCount + candidateAdditionalCount > maxSameTeamOpponentsPerBlock) {
     return false;
   }
-  return group.some((player) => getTeamKey(player.team_name) === candidateTeamKey);
+
+  return true;
 }
 
 function chooseGroupSeed(
@@ -604,9 +645,11 @@ function buildRoundAttempt(
   tableSizes: number[],
   categoryOpponents: OpponentCounts,
   blockOpponents: OpponentCounts,
+  blockSameTeamCounts: Map<string, number>,
   threePlayerCounts: Map<string, number>,
   trioHistory: Set<string>,
-): { groups: BoardPlayer[][]; penalty: number } {
+  maxSameTeamOpponentsPerBlock: number | null,
+): DrawAttempt | null {
   const available = [...players];
   const groups: BoardPlayer[][] = [];
 
@@ -619,9 +662,18 @@ function buildRoundAttempt(
     available.splice(available.findIndex((player) => player.id === seed.id), 1);
 
     while (group.length < targetSize && available.length) {
-      const candidatePool = available.some((player) => !groupContainsSameTeam(group, player))
-        ? available.filter((player) => !groupContainsSameTeam(group, player))
-        : available;
+      const candidatePool = available.filter((player) =>
+        canAddCandidateToGroup(
+          player,
+          group,
+          blockOpponents,
+          blockSameTeamCounts,
+          maxSameTeamOpponentsPerBlock,
+        ),
+      );
+      if (!candidatePool.length) {
+        return null;
+      }
       let bestIndex = 0;
       let bestPenalty = Number.POSITIVE_INFINITY;
 
@@ -656,16 +708,20 @@ function buildRoundAttempt(
   };
 }
 
-function generateRoundGroups(
+function findBestRoundAttempt(
   players: BoardPlayer[],
   tableSizes: number[],
   categoryOpponents: OpponentCounts,
   blockOpponents: OpponentCounts,
+  blockSameTeamCounts: Map<string, number>,
   threePlayerCounts: Map<string, number>,
   trioHistory: Set<string>,
-): BoardPlayer[][] {
-  const attempts = Math.max(120, players.length * 16);
-  let best: { groups: BoardPlayer[][]; penalty: number } | null = null;
+  maxSameTeamOpponentsPerBlock: number | null,
+): DrawAttempt | null {
+  const attempts = Math.min(480, Math.max(80, players.length * 6));
+  const noImprovementLimit = 120;
+  let best: DrawAttempt | null = null;
+  let noImprovementCount = 0;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const candidate = buildRoundAttempt(
@@ -673,16 +729,91 @@ function generateRoundGroups(
       tableSizes,
       categoryOpponents,
       blockOpponents,
+      blockSameTeamCounts,
       threePlayerCounts,
       trioHistory,
+      maxSameTeamOpponentsPerBlock,
     );
+    if (!candidate) {
+      noImprovementCount += 1;
+      continue;
+    }
     if (!best || candidate.penalty < best.penalty) {
       best = candidate;
+      noImprovementCount = 0;
+      if (candidate.penalty <= 0) {
+        break;
+      }
+      continue;
+    }
+
+    noImprovementCount += 1;
+    if (best && noImprovementCount >= noImprovementLimit) {
+      break;
     }
   }
 
-  if (best) {
-    return best.groups;
+  return best;
+}
+
+function generateRoundGroups(
+  players: BoardPlayer[],
+  tableSizes: number[],
+  categoryOpponents: OpponentCounts,
+  blockOpponents: OpponentCounts,
+  blockSameTeamCounts: Map<string, number>,
+  threePlayerCounts: Map<string, number>,
+  trioHistory: Set<string>,
+): { groups: BoardPlayer[][]; usedRelaxedSameTeamRule: boolean } {
+  const strict = findBestRoundAttempt(
+    players,
+    tableSizes,
+    categoryOpponents,
+    blockOpponents,
+    blockSameTeamCounts,
+    threePlayerCounts,
+    trioHistory,
+    0,
+  );
+  if (strict) {
+    return {
+      groups: strict.groups,
+      usedRelaxedSameTeamRule: false,
+    };
+  }
+
+  const relaxed = findBestRoundAttempt(
+    players,
+    tableSizes,
+    categoryOpponents,
+    blockOpponents,
+    blockSameTeamCounts,
+    threePlayerCounts,
+    trioHistory,
+    1,
+  );
+  if (relaxed) {
+    return {
+      groups: relaxed.groups,
+      usedRelaxedSameTeamRule: true,
+    };
+  }
+
+  const unrestricted = findBestRoundAttempt(
+    players,
+    tableSizes,
+    categoryOpponents,
+    blockOpponents,
+    blockSameTeamCounts,
+    threePlayerCounts,
+    trioHistory,
+    null,
+  );
+  if (unrestricted) {
+    return {
+      groups: unrestricted.groups,
+      usedRelaxedSameTeamRule: true,
+    };
   }
 
   const sorted = [...players].sort((a, b) => a.short_code.localeCompare(b.short_code, 'cs'));
@@ -692,7 +823,10 @@ function generateRoundGroups(
     fallback.push(sorted.slice(cursor, cursor + size));
     cursor += size;
   }
-  return fallback;
+  return {
+    groups: fallback,
+    usedRelaxedSameTeamRule: true,
+  };
 }
 
 function planCategoryDraw(categoryPlayers: BoardPlayer[], categoryBlocks: BoardBlock[]): DrawBlockPlan[] {
@@ -710,17 +844,22 @@ function planCategoryDraw(categoryPlayers: BoardPlayer[], categoryBlocks: BoardB
     .sort((a, b) => a.block_number - b.block_number)
     .map<DrawBlockPlan>((block) => {
       const blockOpponents: OpponentCounts = new Map();
+      const blockSameTeamCounts = new Map<string, number>();
       const rounds: DrawRound[] = [];
+      let usedRelaxedSameTeamRule = false;
 
       for (let roundNumber = 1; roundNumber <= 3; roundNumber += 1) {
-        const groups = generateRoundGroups(
+        const generated = generateRoundGroups(
           activePlayers,
           tableSizes,
           categoryOpponents,
           blockOpponents,
+          blockSameTeamCounts,
           threePlayerCounts,
           trioHistory,
         );
+        const groups = generated.groups;
+        usedRelaxedSameTeamRule = usedRelaxedSameTeamRule || generated.usedRelaxedSameTeamRule;
 
         rounds.push({
           roundNumber,
@@ -734,6 +873,15 @@ function planCategoryDraw(categoryPlayers: BoardPlayer[], categoryBlocks: BoardB
           const ids = group.map((player) => player.id);
           addRoundOpponents(categoryOpponents, ids);
           addRoundOpponents(blockOpponents, ids);
+          for (let i = 0; i < group.length; i += 1) {
+            for (let j = i + 1; j < group.length; j += 1) {
+              if (!isSameTeam(group[i], group[j])) {
+                continue;
+              }
+              blockSameTeamCounts.set(group[i].id, (blockSameTeamCounts.get(group[i].id) ?? 0) + 1);
+              blockSameTeamCounts.set(group[j].id, (blockSameTeamCounts.get(group[j].id) ?? 0) + 1);
+            }
+          }
           if (group.length === 3) {
             const trioKey = ids.slice().sort().join('|');
             trioHistory.add(trioKey);
@@ -747,6 +895,7 @@ function planCategoryDraw(categoryPlayers: BoardPlayer[], categoryBlocks: BoardB
       return {
         block,
         rounds,
+        usedRelaxedSameTeamRule,
       };
     });
 }
@@ -778,13 +927,11 @@ function JudgeHomePage({
   judgeId,
   context,
   selectedEventId,
-  onSelectEventId,
   onNavigate,
 }: {
   judgeId: string;
   context: BoardJudgeContext;
   selectedEventId: string | null;
-  onSelectEventId: (eventId: string) => void;
   onNavigate: (page: DeskovkyPage) => void;
 }) {
   const [todayCount, setTodayCount] = useState<number | null>(null);
@@ -865,19 +1012,6 @@ function JudgeHomePage({
           <p className="admin-card-subtitle">Správa výsledků turnaje Deskové hry.</p>
         </div>
         <div className="deskovky-toolbar-actions">
-          <label className="admin-field deskovky-event-select">
-            <span>Event</span>
-            <select
-              value={selectedEventId ?? ''}
-              onChange={(eventTarget) => onSelectEventId(eventTarget.target.value)}
-            >
-              {context.events.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <button
             type="button"
             className="admin-button admin-button--primary deskovky-home-primary-action"
@@ -1858,12 +1992,10 @@ function AssignedTableMatchesPage({
   judgeId,
   context,
   selectedEventId,
-  onSelectEventId,
 }: {
   judgeId: string;
   context: BoardJudgeContext;
   selectedEventId: string | null;
-  onSelectEventId: (eventId: string) => void;
 }) {
   const [setup, setSetup] = useState<EventSetup | null>(null);
   const [players, setPlayers] = useState<BoardPlayer[]>([]);
@@ -2151,7 +2283,7 @@ function AssignedTableMatchesPage({
     return (
       <section className="admin-card">
         <h2>Partie u stolu</h2>
-        <p className="admin-card-subtitle">Nejdřív vyber event na úvodní stránce.</p>
+        <p className="admin-card-subtitle">K tomuto účtu zatím není přiřazený žádný event.</p>
       </section>
     );
   }
@@ -2163,18 +2295,6 @@ function AssignedTableMatchesPage({
           <h2>Partie u stolu</h2>
           <p className="admin-card-subtitle">{event?.name ?? 'Event'} · vyber blok/stůl a kolo.</p>
         </div>
-        {context.events.length > 1 ? (
-          <label className="admin-field deskovky-event-select">
-            <span>Event</span>
-            <select value={selectedEventId ?? ''} onChange={(eventTarget) => onSelectEventId(eventTarget.target.value)}>
-              {context.events.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
       </header>
 
       {loading ? <p className="admin-card-subtitle">Načítám partie…</p> : null}
@@ -3521,6 +3641,7 @@ function AdminPage({
       }
 
       const missingAssignments: string[] = [];
+      const relaxedSameTeamBlocks: string[] = [];
       const plannedRows: Array<{
         match: Omit<BoardMatch, 'id' | 'created_at' | 'status'>;
         players: string[];
@@ -3532,6 +3653,9 @@ function AdminPage({
         const blockPlans = planCategoryDraw(categoryPlayers, categoryBlocks);
 
         for (const blockPlan of blockPlans) {
+          if (blockPlan.usedRelaxedSameTeamRule) {
+            relaxedSameTeamBlocks.push(`${category.name} · blok ${blockPlan.block.block_number}`);
+          }
           for (const round of blockPlan.rounds) {
             for (const table of round.tables) {
               const assignmentKey = `${blockPlan.block.game_id}|${blockPlan.block.category_id}|${table.tableNumber}`;
@@ -3628,7 +3752,10 @@ function AdminPage({
       }
 
       setMessage('Losování bylo úspěšně vytvořeno.');
-      setDrawSummary(`Partie: ${insertedMatches} · účasti hráčů: ${insertedRows}.`);
+      const relaxedSuffix = relaxedSameTeamBlocks.length
+        ? ` Uvolněné pravidlo stejný oddíl (max 1× na hráče/hru): ${relaxedSameTeamBlocks.slice(0, 6).join('; ')}${relaxedSameTeamBlocks.length > 6 ? '…' : ''}.`
+        : '';
+      setDrawSummary(`Partie: ${insertedMatches} · účasti hráčů: ${insertedRows}.${relaxedSuffix}`);
       await loadEventDetail();
     } finally {
       setLoading(false);
@@ -4961,7 +5088,6 @@ function DeskovkyDashboard({
     return [
       { page: 'home', label: 'Přehled', ariaLabel: 'Přejít na Přehled' },
       { page: 'new-match', label: 'Nový zápas', ariaLabel: 'Přejít na Nový zápas' },
-      { page: 'standings', label: 'Pořadí', ariaLabel: 'Přejít na Pořadí' },
       { page: 'rules', label: 'Pravidla', ariaLabel: 'Přejít na Pravidla' },
     ];
   }, [isAdmin]);
@@ -5072,7 +5198,6 @@ function DeskovkyDashboard({
             judgeId={judgeId}
             context={context}
             selectedEventId={selectedEventId}
-            onSelectEventId={setSelectedEventId}
             onNavigate={navigate}
           />
         ) : null}
@@ -5082,7 +5207,6 @@ function DeskovkyDashboard({
             judgeId={judgeId}
             context={context}
             selectedEventId={selectedEventId}
-            onSelectEventId={setSelectedEventId}
           />
         ) : null}
 
