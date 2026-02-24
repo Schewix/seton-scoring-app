@@ -459,6 +459,26 @@ function getScoringInputs(scoringType: BoardScoringType) {
   };
 }
 
+function assignmentMatchesBlockAndTable(
+  assignment: BoardJudgeAssignment,
+  block: BoardBlock,
+  tableNumber: number | null | undefined,
+): boolean {
+  if (assignment.game_id !== block.game_id) {
+    return false;
+  }
+  if (assignment.category_id && assignment.category_id !== block.category_id) {
+    return false;
+  }
+  if (assignment.table_number === null || assignment.table_number === undefined) {
+    return true;
+  }
+  if (tableNumber === null || tableNumber === undefined) {
+    return false;
+  }
+  return assignment.table_number === tableNumber;
+}
+
 type DrawTable = {
   tableNumber: number;
   playerIds: string[];
@@ -1991,6 +2011,14 @@ function AssignedTableMatchesPage({
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
   const [entries, setEntries] = useState<Array<{ id: string; seat: number; playerId: string; points: string; placement: string }>>([]);
 
+  const eventAssignments = useMemo(
+    () =>
+      context.assignments.filter(
+        (assignment) => assignment.event_id === selectedEventId && assignment.user_id === judgeId,
+      ),
+    [context.assignments, judgeId, selectedEventId],
+  );
+
   useEffect(() => {
     if (!selectedEventId) {
       setSetup(null);
@@ -2082,7 +2110,17 @@ function AssignedTableMatchesPage({
 
   const stationMatches = useMemo(() => {
     const grouped = new Map<string, BoardMatch[]>();
-    for (const match of matches) {
+    const assignedMatches = matches.filter((match) => {
+      const block = blockMap.get(match.block_id);
+      if (!block) {
+        return false;
+      }
+      return eventAssignments.some((assignment) =>
+        assignmentMatchesBlockAndTable(assignment, block, match.table_number),
+      );
+    });
+
+    for (const match of assignedMatches) {
       const key = `${match.block_id}|${match.table_number ?? 0}`;
       const bucket = grouped.get(key) ?? [];
       bucket.push(match);
@@ -2092,7 +2130,7 @@ function AssignedTableMatchesPage({
       bucket.sort((a, b) => (a.round_number ?? 0) - (b.round_number ?? 0));
     }
     return grouped;
-  }, [matches]);
+  }, [blockMap, eventAssignments, matches]);
 
   const stationOptions = useMemo(
     () =>
@@ -2104,17 +2142,20 @@ function AssignedTableMatchesPage({
           const game = block ? gameMap.get(block.game_id) : null;
           return {
             key,
+            blockNumber: block?.block_number ?? Number.MAX_SAFE_INTEGER,
+            tableNumber: firstMatch.table_number ?? Number.MAX_SAFE_INTEGER,
             label: `${category?.name ?? firstMatch.category_id} · blok ${block?.block_number ?? '—'} · ${game?.name ?? 'Hra'} · stůl ${firstMatch.table_number ?? '—'}`,
           };
         })
-        .sort((a, b) => a.label.localeCompare(b.label, 'cs')),
+        .sort(
+          (a, b) =>
+            a.blockNumber - b.blockNumber
+            || a.tableNumber - b.tableNumber
+            || a.label.localeCompare(b.label, 'cs'),
+        )
+        .map(({ key, label }) => ({ key, label })),
     [blockMap, categoryMap, gameMap, stationMatches],
   );
-  const selectedStationOption = useMemo(
-    () => stationOptions.find((option) => option.key === selectedStationKey) ?? stationOptions[0] ?? null,
-    [selectedStationKey, stationOptions],
-  );
-
   useEffect(() => {
     if (!stationOptions.length) {
       setSelectedStationKey('');
@@ -2290,10 +2331,16 @@ function AssignedTableMatchesPage({
       {!loading && stationOptions.length ? (
         <>
           <div className="deskovky-admin-grid">
-            <div className="admin-field">
-              <span>Stůl</span>
-              <p className="admin-card-subtitle">{selectedStationOption?.label ?? '—'}</p>
-            </div>
+            <label className="admin-field">
+              <span>Blok / hra / stůl</span>
+              <select value={selectedStationKey} onChange={(eventTarget) => setSelectedStationKey(eventTarget.target.value)}>
+                {stationOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="admin-field">
               <span>Kolo</span>
               <div className="admin-card-actions">
@@ -2315,7 +2362,8 @@ function AssignedTableMatchesPage({
             <>
               <p className="admin-card-subtitle">
                 Kategorie: <strong>{selectedCategory?.name ?? selectedMatch.category_id}</strong> · hra:{' '}
-                <strong>{selectedGame?.name ?? selectedBlock?.game_id ?? '—'}</strong> · stůl{' '}
+                <strong>{selectedGame?.name ?? selectedBlock?.game_id ?? '—'}</strong> · blok{' '}
+                <strong>{selectedBlock?.block_number ?? '—'}</strong> · stůl{' '}
                 <strong>{selectedMatch.table_number ?? '—'}</strong>
               </p>
 
