@@ -493,6 +493,35 @@
   gap: 12px;
 }
 
+.deskovky-round-buttons {
+  width: 100%;
+}
+
+.deskovky-round-buttons .admin-button {
+  min-width: 0;
+}
+
+.deskovky-match-mobile-list {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.deskovky-match-mobile-card h3 {
+  font-size: 1rem;
+}
+
+.deskovky-match-mobile-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.deskovky-match-mobile-inputs .admin-field {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .deskovky-admin-filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -774,11 +803,17 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .deskovky-admin-mobile-meta strong {
   font-weight: 600;
   color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 .deskovky-admin-mobile-note {
@@ -1128,6 +1163,25 @@
 
   .deskovky-table {
     min-width: 520px;
+  }
+
+  .deskovky-round-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .deskovky-round-buttons .admin-button {
+    width: 100%;
+    min-height: 40px;
+    min-width: 0;
+    padding: 0 8px;
+    font-size: 0.86rem;
+  }
+
+  .deskovky-match-mobile-inputs {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 }
 

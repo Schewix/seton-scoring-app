@@ -148,9 +148,9 @@ with game_src as (
       (
         'Tajná výprava čarodějů',
         'both',
-        'desc',
+        'asc',
         false,
-        'Hlavní hra pro kategorii I a II.'
+        'Nižší součet bodů je lepší. Hlavní hra pro kategorii I a II.'
       ),
       (
         'Hop!',

@@ -258,6 +258,72 @@ function parseNumeric(value: string): number | null {
   return parsed;
 }
 
+function buildPlacementsFromPoints(
+  entries: Array<{ id: string; seat: number; points: string }>,
+  pointsOrder: BoardPointsOrder,
+): Map<string, number> {
+  const scored = entries
+    .map((entry) => ({
+      id: entry.id,
+      seat: entry.seat,
+      points: parseNumeric(entry.points),
+    }))
+    .filter((entry): entry is { id: string; seat: number; points: number } => entry.points !== null)
+    .sort((a, b) => {
+      if (a.points === b.points) {
+        return a.seat - b.seat;
+      }
+      return pointsOrder === 'asc' ? a.points - b.points : b.points - a.points;
+    });
+
+  const placements = new Map<string, number>();
+  let index = 0;
+
+  while (index < scored.length) {
+    const start = index;
+    const tiedPoints = scored[index].points;
+    while (index + 1 < scored.length && scored[index + 1].points === tiedPoints) {
+      index += 1;
+    }
+
+    const end = index;
+    const averageRank = ((start + 1) + (end + 1)) / 2;
+    for (let i = start; i <= end; i += 1) {
+      placements.set(scored[i].id, averageRank);
+    }
+
+    index += 1;
+  }
+
+  return placements;
+}
+
+function resolvePlacementForSave({
+  scoringType,
+  parsedPoints,
+  parsedPlacement,
+  autoPlacement,
+}: {
+  scoringType: BoardScoringType;
+  parsedPoints: number | null;
+  parsedPlacement: number | null;
+  autoPlacement: number | null;
+}): number | null {
+  if (scoringType === 'placement') {
+    return parsedPlacement;
+  }
+  if (scoringType === 'both') {
+    if (parsedPlacement !== null) {
+      return parsedPlacement;
+    }
+    if (parsedPoints !== null) {
+      return autoPlacement;
+    }
+    return null;
+  }
+  return null;
+}
+
 function splitCsvLine(line: string): string[] {
   const values: string[] = [];
   let current = '';
@@ -355,7 +421,12 @@ const BOARD_RULES_TOURNAMENT =
 const BOARD_RULES_SCORING =
   RULE_ASSETS.find((asset) => asset.key.includes('deskove-hry-2023-hodnoceni-turnaje'))?.url ?? null;
 
-async function loadJudgeContext(judgeId: string): Promise<BoardJudgeContext> {
+async function loadJudgeContext(
+  judgeId: string,
+  options?: {
+    includeAllEvents?: boolean;
+  },
+): Promise<BoardJudgeContext> {
   const { data: assignmentsData, error: assignmentsError } = await supabase
     .from('board_judge_assignment')
     .select('id, event_id, user_id, game_id, category_id, table_number, created_at')
@@ -380,14 +451,21 @@ async function loadJudgeContext(judgeId: string): Promise<BoardJudgeContext> {
       .filter((value): value is string => typeof value === 'string' && value.length > 0),
   );
 
+  const loadAllEvents = options?.includeAllEvents === true;
+
   const [eventsRes, gamesRes, categoriesRes] = await Promise.all([
-    eventIds.length
+    loadAllEvents
       ? supabase
         .from('board_event')
         .select('id, slug, name, start_date, end_date, created_at')
-        .in('id', eventIds)
         .order('start_date', { ascending: false, nullsFirst: false })
-      : Promise.resolve({ data: [], error: null }),
+      : eventIds.length
+        ? supabase
+          .from('board_event')
+          .select('id, slug, name, start_date, end_date, created_at')
+          .in('id', eventIds)
+          .order('start_date', { ascending: false, nullsFirst: false })
+        : Promise.resolve({ data: [], error: null }),
     gameIds.length
       ? supabase
         .from('board_game')
@@ -961,7 +1039,7 @@ function JudgeHomePage({
   context: BoardJudgeContext;
   selectedEventId: string | null;
 }) {
-  const [todayCount, setTodayCount] = useState<number | null>(null);
+  const [matchProgress, setMatchProgress] = useState<{ completed: number; total: number } | null>(null);
   const [loading, setLoading] = useState(false);
 
   const event = useMemo(
@@ -986,7 +1064,7 @@ function JudgeHomePage({
 
   useEffect(() => {
     if (!selectedEventId) {
-      setTodayCount(null);
+      setMatchProgress(null);
       return;
     }
 
@@ -994,31 +1072,111 @@ function JudgeHomePage({
     setLoading(true);
 
     void (async () => {
-      const { count, error } = await supabase
-        .from('board_match')
-        .select('id', { count: 'exact', head: true })
-        .eq('event_id', selectedEventId)
-        .eq('created_by', judgeId)
-        .gte('created_at', getTodayStartIso());
+      const [setup, matchesRes] = await Promise.all([
+        loadEventSetup(selectedEventId),
+        supabase
+          .from('board_match')
+          .select('id, event_id, category_id, block_id, round_number, table_number, created_by, created_at, status')
+          .eq('event_id', selectedEventId)
+          .neq('status', 'void'),
+      ]);
 
       if (cancelled) {
         return;
       }
 
       setLoading(false);
-      if (error) {
-        console.error('Failed to load board matches count', error);
-        setTodayCount(null);
+      if (matchesRes.error) {
+        console.error('Failed to load board match progress', matchesRes.error);
+        setMatchProgress(null);
         return;
       }
 
-      setTodayCount(count ?? 0);
+      const blocks = setup.blocks ?? [];
+      const games = setup.games ?? [];
+      const blockMap = new Map(blocks.map((block) => [block.id, block]));
+      const gameMap = new Map(games.map((game) => [game.id, game]));
+
+      const eventAssignments = context.assignments.filter(
+        (assignment) => assignment.event_id === selectedEventId && assignment.user_id === judgeId,
+      );
+
+      const assignedMatches = ((matchesRes.data ?? []) as BoardMatch[]).filter((match) => {
+        const block = blockMap.get(match.block_id);
+        if (!block) {
+          return false;
+        }
+        return eventAssignments.some((assignment) =>
+          assignmentMatchesBlockAndTable(assignment, block, match.table_number),
+        );
+      });
+
+      const total = assignedMatches.length;
+      if (!total) {
+        setMatchProgress({ completed: 0, total: 0 });
+        return;
+      }
+
+      const matchIds = assignedMatches.map((match) => match.id);
+      const { data: rowsData, error: rowsError } = await supabase
+        .from('board_match_player')
+        .select('match_id, points, placement')
+        .in('match_id', matchIds);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (rowsError) {
+        console.error('Failed to load board match rows for progress', rowsError);
+        setMatchProgress(null);
+        return;
+      }
+
+      const rowsByMatch = new Map<string, Array<{ points: number | null; placement: number | null }>>();
+      for (const row of (rowsData ?? []) as Array<{ match_id: string; points: number | null; placement: number | null }>) {
+        const list = rowsByMatch.get(row.match_id) ?? [];
+        list.push({ points: row.points, placement: row.placement });
+        rowsByMatch.set(row.match_id, list);
+      }
+
+      let completed = 0;
+      for (const match of assignedMatches) {
+        const block = blockMap.get(match.block_id);
+        if (!block) {
+          continue;
+        }
+        const game = gameMap.get(block.game_id);
+        const scoringType = game?.scoring_type ?? 'both';
+        const rows = rowsByMatch.get(match.id) ?? [];
+        if (!rows.length) {
+          continue;
+        }
+
+        const isMatchComplete = rows.every((row) => {
+          const hasPoints = row.points !== null;
+          const hasPlacement = row.placement !== null;
+          if (scoringType === 'points') {
+            return hasPoints;
+          }
+          if (scoringType === 'placement') {
+            return hasPlacement;
+          }
+          return hasPoints || hasPlacement;
+        });
+
+        if (isMatchComplete) {
+          completed += 1;
+        }
+      }
+
+      setMatchProgress({ completed, total });
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [judgeId, selectedEventId]);
+  }, [context.assignments, judgeId, selectedEventId]);
 
   if (!context.events.length) {
     return (
@@ -1042,8 +1200,8 @@ function JudgeHomePage({
             </p>
           </div>
           <div className="deskovky-kpi">
-            <span>Odevzdané zápasy dnes</span>
-            <strong>{loading ? '…' : todayCount ?? '—'}</strong>
+            <span>Hotovo / přiřazeno</span>
+            <strong>{loading ? '…' : matchProgress ? `${matchProgress.completed}/${matchProgress.total}` : '—'}</strong>
           </div>
         </header>
 
@@ -2003,10 +2161,12 @@ function AssignedTableMatchesPage({
   judgeId,
   context,
   selectedEventId,
+  isMobile,
 }: {
   judgeId: string;
   context: BoardJudgeContext;
   selectedEventId: string | null;
+  isMobile: boolean;
 }) {
   const [setup, setSetup] = useState<EventSetup | null>(null);
   const [players, setPlayers] = useState<BoardPlayer[]>([]);
@@ -2249,7 +2409,28 @@ function AssignedTableMatchesPage({
   const selectedCategory = selectedBlock ? categoryMap.get(selectedBlock.category_id) ?? null : null;
 
   const scoringType = selectedGame?.scoring_type ?? 'both';
+  const pointsOrder = selectedGame?.points_order ?? 'desc';
   const scoringInputs = getScoringInputs(scoringType);
+  const placementsFromPoints = useMemo(
+    () => buildPlacementsFromPoints(entries, pointsOrder),
+    [entries, pointsOrder],
+  );
+  const gameKey = useMemo(
+    () => slugify(selectedGame?.name ?? ''),
+    [selectedGame?.name],
+  );
+  const gameRequiresManualTieBreak = gameKey === 'dobble' || gameKey === 'hop' || gameKey === 'ubongo';
+  const hasTiedPoints = useMemo(() => {
+    const frequencies = new Map<number, number>();
+    for (const entry of entries) {
+      const points = parseNumeric(entry.points);
+      if (points === null) {
+        continue;
+      }
+      frequencies.set(points, (frequencies.get(points) ?? 0) + 1);
+    }
+    return Array.from(frequencies.values()).some((count) => count > 1);
+  }, [entries]);
 
   const validationError = useMemo(() => {
     if (!entries.length) {
@@ -2264,8 +2445,8 @@ function AssignedTableMatchesPage({
       if (scoringType === 'placement' && placement === null) {
         return `Doplň umístění pro slot ${entry.seat}.`;
       }
-      if (scoringType === 'both' && points === null && placement === null) {
-        return `Doplň body nebo umístění pro slot ${entry.seat}.`;
+      if (scoringType === 'both' && points === null) {
+        return `Doplň body pro slot ${entry.seat}.`;
       }
     }
     return null;
@@ -2300,11 +2481,20 @@ function AssignedTableMatchesPage({
 
     try {
       for (const entry of entries) {
+        const parsedPoints = parseNumeric(entry.points);
+        const parsedPlacement = parseNumeric(entry.placement);
+        const autoPlacement = placementsFromPoints.get(entry.id) ?? null;
+
         const { error: updateError } = await supabase
           .from('board_match_player')
           .update({
-            points: parseNumeric(entry.points),
-            placement: parseNumeric(entry.placement),
+            points: parsedPoints,
+            placement: resolvePlacementForSave({
+              scoringType,
+              parsedPoints,
+              parsedPlacement,
+              autoPlacement,
+            }),
           })
           .eq('id', entry.id);
         if (updateError) {
@@ -2318,10 +2508,18 @@ function AssignedTableMatchesPage({
           if (!updated) {
             return row;
           }
+          const parsedPoints = parseNumeric(updated.points);
+          const parsedPlacement = parseNumeric(updated.placement);
+          const autoPlacement = placementsFromPoints.get(updated.id) ?? null;
           return {
             ...row,
-            points: parseNumeric(updated.points),
-            placement: parseNumeric(updated.placement),
+            points: parsedPoints,
+            placement: resolvePlacementForSave({
+              scoringType,
+              parsedPoints,
+              parsedPlacement,
+              autoPlacement,
+            }),
           };
         }),
       );
@@ -2332,7 +2530,7 @@ function AssignedTableMatchesPage({
     } finally {
       setSaving(false);
     }
-  }, [entries, selectedMatch, validationError]);
+  }, [entries, placementsFromPoints, scoringType, selectedMatch, validationError]);
 
   const event = useMemo(
     () => context.events.find((item) => item.id === selectedEventId) ?? null,
@@ -2376,7 +2574,7 @@ function AssignedTableMatchesPage({
             </label>
             <label className="admin-field">
               <span>Kolo</span>
-              <div className="admin-card-actions">
+              <div className="admin-card-actions deskovky-round-buttons">
                 {availableRounds.map((round) => (
                   <button
                     key={round}
@@ -2399,55 +2597,139 @@ function AssignedTableMatchesPage({
                 <strong>{selectedBlock?.block_number ?? '—'}</strong> · stůl{' '}
                 <strong>{selectedMatch.table_number ?? '—'}</strong>
               </p>
+              {scoringType !== 'placement' ? (
+                <p className="admin-card-subtitle">
+                  Pořadí se dopočítává automaticky z bodů ({pointsOrder === 'asc' ? 'nižší body jsou lepší' : 'vyšší body jsou lepší'}).
+                </p>
+              ) : null}
+              {scoringType === 'both' && gameRequiresManualTieBreak && hasTiedPoints ? (
+                <p className="admin-card-subtitle">
+                  U této hry je při shodě bodů potřeba pořadí ručně upravit podle pravidel partie.
+                </p>
+              ) : null}
 
-              <div className="deskovky-table-wrap">
-                <table className="deskovky-table">
-                  <thead>
-                    <tr>
-                      <th>Slot</th>
-                      <th>Hráč</th>
-                      <th>Kód</th>
-                      <th>Oddíl</th>
-                      {scoringInputs.showPoints ? <th>Body</th> : null}
-                      {scoringInputs.showPlacement ? <th>Pořadí</th> : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map((entry) => {
-                      const player = playerMap.get(entry.playerId);
-                      return (
-                        <tr key={entry.id}>
-                          <td>{entry.seat}</td>
-                          <td>{player?.display_name || player?.short_code || entry.playerId}</td>
-                          <td>{player?.short_code ?? '—'}</td>
-                          <td>{player?.team_name ?? '—'}</td>
+              {isMobile ? (
+                <div className="deskovky-match-mobile-list">
+                  {entries.map((entry) => {
+                    const player = playerMap.get(entry.playerId);
+                    return (
+                      <article key={entry.id} className="deskovky-admin-mobile-card deskovky-match-mobile-card">
+                        <h3>
+                          Slot {entry.seat}: {player?.display_name || player?.short_code || entry.playerId}
+                        </h3>
+                        <p className="deskovky-admin-mobile-meta">
+                          Oddíl: <strong>{player?.team_name ?? '—'}</strong>
+                        </p>
+                        <p className="deskovky-admin-mobile-meta">
+                          Kód: <strong>{player?.short_code ?? '—'}</strong>
+                        </p>
+                        <div className="deskovky-match-mobile-inputs">
                           {scoringInputs.showPoints ? (
-                            <td>
+                            <label className="admin-field">
+                              <span>Body</span>
                               <input
                                 type="number"
                                 step="0.5"
                                 value={entry.points}
                                 onChange={(eventTarget) => handleChangeEntry(entry.id, 'points', eventTarget.target.value)}
                               />
-                            </td>
+                            </label>
                           ) : null}
                           {scoringInputs.showPlacement ? (
-                            <td>
-                              <input
-                                type="number"
-                                step="0.5"
-                                min={1}
-                                value={entry.placement}
-                                onChange={(eventTarget) => handleChangeEntry(entry.id, 'placement', eventTarget.target.value)}
-                              />
-                            </td>
+                            <label className="admin-field">
+                              <span>Pořadí</span>
+                              {scoringType === 'placement' ? (
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  min={1}
+                                  value={entry.placement}
+                                  onChange={(eventTarget) => handleChangeEntry(entry.id, 'placement', eventTarget.target.value)}
+                                />
+                              ) : (
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  min={1}
+                                  value={entry.placement !== '' ? entry.placement : (placementsFromPoints.get(entry.id) ?? '')}
+                                  onChange={(eventTarget) => handleChangeEntry(entry.id, 'placement', eventTarget.target.value)}
+                                  placeholder="auto"
+                                  aria-label={`Pořadí pro slot ${entry.seat}`}
+                                />
+                              )}
+                            </label>
                           ) : null}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="deskovky-table-wrap">
+                  <table className="deskovky-table">
+                    <thead>
+                      <tr>
+                        <th>Slot</th>
+                        <th>Hráč</th>
+                        <th>Oddíl</th>
+                        <th>Kód</th>
+                        {scoringInputs.showPoints ? <th>Body</th> : null}
+                        {scoringInputs.showPlacement ? <th>Pořadí</th> : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {entries.map((entry) => {
+                        const player = playerMap.get(entry.playerId);
+                        return (
+                          <tr key={entry.id}>
+                            <td>{entry.seat}</td>
+                            <td>{player?.display_name || player?.short_code || entry.playerId}</td>
+                            <td>{player?.team_name ?? '—'}</td>
+                            <td>{player?.short_code ?? '—'}</td>
+                            {scoringInputs.showPoints ? (
+                              <td>
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  value={entry.points}
+                                  onChange={(eventTarget) => handleChangeEntry(entry.id, 'points', eventTarget.target.value)}
+                                />
+                              </td>
+                            ) : null}
+                            {scoringInputs.showPlacement ? (
+                              <td>
+                                {scoringType === 'placement' ? (
+                                  <input
+                                    type="number"
+                                    step="0.5"
+                                    min={1}
+                                    value={entry.placement}
+                                    onChange={(eventTarget) => handleChangeEntry(entry.id, 'placement', eventTarget.target.value)}
+                                  />
+                                ) : (
+                                  <input
+                                    type="number"
+                                    step="0.5"
+                                    min={1}
+                                    value={
+                                      entry.placement !== ''
+                                        ? entry.placement
+                                        : (placementsFromPoints.get(entry.id) ?? '')
+                                    }
+                                    onChange={(eventTarget) => handleChangeEntry(entry.id, 'placement', eventTarget.target.value)}
+                                    placeholder="auto"
+                                    aria-label={`Pořadí pro slot ${entry.seat}`}
+                                  />
+                                )}
+                              </td>
+                            ) : null}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               <div className="admin-card-actions admin-card-actions--end">
                 <button type="button" className="admin-button admin-button--primary" onClick={() => void handleSave()} disabled={saving}>
@@ -4514,33 +4796,57 @@ function AdminPage({
               ) : null}
               {drawDisabledReason ? <p className="admin-card-subtitle">{drawDisabledReason}</p> : null}
               {drawSummary ? <p className="admin-success">{drawSummary}</p> : null}
-              <div className="deskovky-table-wrap">
-                <table className="deskovky-table">
-                  <thead>
-                    <tr>
-                      <th>Kategorie</th>
-                      <th>Hráči celkem</th>
-                      <th>Aktivní pro los</th>
-                      <th>Bloky</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {categories.map((category) => {
-                      const categoryPlayers = players.filter((player) => player.category_id === category.id);
-                      const activePlayers = categoryPlayers.filter((player) => !player.disqualified);
-                      const categoryBlocks = blocks.filter((block) => block.category_id === category.id);
-                      return (
-                        <tr key={category.id}>
-                          <td>{category.name}</td>
-                          <td>{categoryPlayers.length}</td>
-                          <td>{activePlayers.length}</td>
-                          <td>{categoryBlocks.length}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              {isMobile ? (
+                <div className="deskovky-admin-mobile-list">
+                  {categories.map((category) => {
+                    const categoryPlayers = players.filter((player) => player.category_id === category.id);
+                    const activePlayers = categoryPlayers.filter((player) => !player.disqualified);
+                    const categoryBlocks = blocks.filter((block) => block.category_id === category.id);
+                    return (
+                      <article key={category.id} className="deskovky-admin-mobile-card">
+                        <h3>{category.name}</h3>
+                        <p className="deskovky-admin-mobile-meta">
+                          Hráči celkem: <strong>{categoryPlayers.length}</strong>
+                        </p>
+                        <p className="deskovky-admin-mobile-meta">
+                          Aktivní pro los: <strong>{activePlayers.length}</strong>
+                        </p>
+                        <p className="deskovky-admin-mobile-meta">
+                          Bloky: <strong>{categoryBlocks.length}</strong>
+                        </p>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="deskovky-table-wrap">
+                  <table className="deskovky-table">
+                    <thead>
+                      <tr>
+                        <th>Kategorie</th>
+                        <th>Hráči celkem</th>
+                        <th>Aktivní pro los</th>
+                        <th>Bloky</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {categories.map((category) => {
+                        const categoryPlayers = players.filter((player) => player.category_id === category.id);
+                        const activePlayers = categoryPlayers.filter((player) => !player.disqualified);
+                        const categoryBlocks = blocks.filter((block) => block.category_id === category.id);
+                        return (
+                          <tr key={category.id}>
+                            <td>{category.name}</td>
+                            <td>{categoryPlayers.length}</td>
+                            <td>{activePlayers.length}</td>
+                            <td>{categoryBlocks.length}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
           ) : null}
 
@@ -4696,41 +5002,74 @@ function AdminPage({
                 Zobrazeno {filteredAssignments.length} z {assignments.length} přiřazení.
               </p>
 
-              <div className="deskovky-table-wrap">
-                <table className="deskovky-table">
-                  <thead>
-                    <tr>
-                      <th>Rozhodčí</th>
-                      <th>Hra</th>
-                      <th>Kategorie</th>
-                      <th>Stůl</th>
-                      <th>Akce</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredAssignments.map((assignment) => {
-                      const judge = judgesMap.get(assignment.user_id);
-                      return (
-                        <tr key={assignment.id}>
-                          <td>{judge ? `${judge.display_name} (${judge.email})` : assignment.user_id}</td>
-                          <td>{gameMap.get(assignment.game_id)?.name ?? assignment.game_id}</td>
-                          <td>
+              {isMobile ? (
+                <div className="deskovky-admin-mobile-list">
+                  {filteredAssignments.map((assignment) => {
+                    const judge = judgesMap.get(assignment.user_id);
+                    return (
+                      <article key={assignment.id} className="deskovky-admin-mobile-card">
+                        <h3>{judge ? judge.display_name : assignment.user_id}</h3>
+                        <p className="deskovky-admin-mobile-meta">{judge ? judge.email : 'Bez e-mailu v seznamu'}</p>
+                        <p className="deskovky-admin-mobile-meta">
+                          Hra: <strong>{gameMap.get(assignment.game_id)?.name ?? assignment.game_id}</strong>
+                        </p>
+                        <p className="deskovky-admin-mobile-meta">
+                          Kategorie:{' '}
+                          <strong>
                             {assignment.category_id
                               ? categoryMap.get(assignment.category_id)?.name ?? assignment.category_id
                               : '—'}
-                          </td>
-                          <td>{assignment.table_number ?? '—'}</td>
-                          <td>
-                            <button type="button" className="ghost" onClick={() => void handleDeleteAssignment(assignment.id)}>
-                              Smazat
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          </strong>
+                        </p>
+                        <p className="deskovky-admin-mobile-meta">
+                          Stůl: <strong>{assignment.table_number ?? '—'}</strong>
+                        </p>
+                        <div className="deskovky-admin-mobile-card-actions">
+                          <button type="button" className="ghost" onClick={() => void handleDeleteAssignment(assignment.id)}>
+                            Smazat
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="deskovky-table-wrap">
+                  <table className="deskovky-table">
+                    <thead>
+                      <tr>
+                        <th>Rozhodčí</th>
+                        <th>Hra</th>
+                        <th>Kategorie</th>
+                        <th>Stůl</th>
+                        <th>Akce</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredAssignments.map((assignment) => {
+                        const judge = judgesMap.get(assignment.user_id);
+                        return (
+                          <tr key={assignment.id}>
+                            <td>{judge ? `${judge.display_name} (${judge.email})` : assignment.user_id}</td>
+                            <td>{gameMap.get(assignment.game_id)?.name ?? assignment.game_id}</td>
+                            <td>
+                              {assignment.category_id
+                                ? categoryMap.get(assignment.category_id)?.name ?? assignment.category_id
+                                : '—'}
+                            </td>
+                            <td>{assignment.table_number ?? '—'}</td>
+                            <td>
+                              <button type="button" className="ghost" onClick={() => void handleDeleteAssignment(assignment.id)}>
+                                Smazat
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
           ) : null}
 
@@ -5310,7 +5649,7 @@ function DeskovkyDashboard({
 
     void (async () => {
       try {
-        const loaded = await loadJudgeContext(judgeId);
+        const loaded = await loadJudgeContext(judgeId, { includeAllEvents: isAdmin });
         if (cancelled) return;
 
         setContext(loaded);
@@ -5335,7 +5674,7 @@ function DeskovkyDashboard({
     return () => {
       cancelled = true;
     };
-  }, [judgeId]);
+  }, [isAdmin, judgeId]);
 
   const pageTitle = useMemo(() => {
     switch (page) {
@@ -5417,6 +5756,7 @@ function DeskovkyDashboard({
             judgeId={judgeId}
             context={context}
             selectedEventId={selectedEventId}
+            isMobile={isMobile}
           />
         ) : null}
 

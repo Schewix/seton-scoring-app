@@ -49,9 +49,9 @@ values
     'd2000000-0000-4000-8000-000000000001',
     'Tajná výprava čarodějů',
     'both',
-    'desc',
+    'asc',
     false,
-    'Hlavní hra pro kategorii I a II.'
+    'Nižší součet bodů je lepší. Hlavní hra pro kategorii I a II.'
   ),
   (
     'd2000000-0000-4000-8000-000000000023',
