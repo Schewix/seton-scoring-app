@@ -459,6 +459,12 @@ function getScoringInputs(scoringType: BoardScoringType) {
   };
 }
 
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
+
 function assignmentMatchesBlockAndTable(
   assignment: BoardJudgeAssignment,
   block: BoardBlock,
@@ -497,6 +503,8 @@ type DrawBlockPlan = {
 
 type OpponentCounts = Map<string, Map<string, number>>;
 type DrawAttempt = { groups: BoardPlayer[][]; penalty: number };
+const BOARD_DRAW_MAX_TABLES_PER_GAME = 25;
+const BOARD_DRAW_MAX_PLAYERS_PER_BLOCK = BOARD_DRAW_MAX_TABLES_PER_GAME * 4;
 
 function getTeamKey(teamName: string | null | undefined): string {
   const raw = (teamName ?? '').trim();
@@ -538,7 +546,7 @@ function buildRoundTableSizes(playerCount: number): number[] {
   if (playerCount <= 4) {
     return [playerCount];
   }
-  const tables = Math.ceil(playerCount / 4);
+  const tables = Math.min(BOARD_DRAW_MAX_TABLES_PER_GAME, Math.ceil(playerCount / 4));
   const base = Math.floor(playerCount / tables);
   const remainder = playerCount % tables;
   const sizes = Array.from({ length: tables }, (_, index) => base + (index < remainder ? 1 : 0));
@@ -738,8 +746,9 @@ function findBestRoundAttempt(
   trioHistory: Set<string>,
   maxSameTeamOpponentsPerBlock: number | null,
 ): DrawAttempt | null {
-  const attempts = Math.min(480, Math.max(80, players.length * 6));
-  const noImprovementLimit = 120;
+  // Keep draw quality while preventing long UI freezes in large categories.
+  const attempts = Math.min(220, Math.max(60, Math.round(players.length * 2.4)));
+  const noImprovementLimit = 64;
   let best: DrawAttempt | null = null;
   let noImprovementCount = 0;
 
@@ -2004,6 +2013,8 @@ function AssignedTableMatchesPage({
   const [matches, setMatches] = useState<BoardMatch[]>([]);
   const [matchPlayers, setMatchPlayers] = useState<BoardMatchPlayer[]>([]);
   const [loading, setLoading] = useState(false);
+  const [drawRunning, setDrawRunning] = useState(false);
+  const [drawProgress, setDrawProgress] = useState<{ label: string; current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -3676,7 +3687,9 @@ function AdminPage({
     setError(null);
     setMessage(null);
     setDrawSummary(null);
-    setLoading(true);
+    setDrawProgress({ label: 'Příprava losování…', current: 0, total: 1 });
+    setDrawRunning(true);
+    await yieldToBrowser();
 
     try {
       const playersByCategory = new Map<string, BoardPlayer[]>();
@@ -3745,8 +3758,34 @@ function AdminPage({
         match: Omit<BoardMatch, 'id' | 'created_at' | 'status'>;
         players: string[];
       }> = [];
+      const oversizedCategories = categories
+        .map((category) => {
+          const activePlayers = (playersByCategory.get(category.id) ?? []).filter((player) => !player.disqualified).length;
+          return {
+            name: category.name,
+            activePlayers,
+          };
+        })
+        .filter((item) => item.activePlayers > BOARD_DRAW_MAX_PLAYERS_PER_BLOCK);
 
-      for (const category of categories) {
+      if (oversizedCategories.length) {
+        const first = oversizedCategories[0];
+        setError(
+          `Kategorie ${first.name} má ${first.activePlayers} aktivních hráčů. Pro jednu deskovku je limit ${BOARD_DRAW_MAX_TABLES_PER_GAME} stolů (${BOARD_DRAW_MAX_PLAYERS_PER_BLOCK} hráčů po 4).`,
+        );
+        return;
+      }
+
+      const categoryTotal = Math.max(1, categories.length);
+      for (let categoryIndex = 0; categoryIndex < categories.length; categoryIndex += 1) {
+        const category = categories[categoryIndex];
+        setDrawProgress({
+          label: `Losuji kategorie… (${categoryIndex + 1}/${categoryTotal})`,
+          current: categoryIndex + 1,
+          total: categoryTotal,
+        });
+        await yieldToBrowser();
+
         const categoryPlayers = playersByCategory.get(category.id) ?? [];
         const categoryBlocks = blocksByCategory.get(category.id) ?? [];
         const blockPlans = planCategoryDraw(categoryPlayers, categoryBlocks);
@@ -3807,6 +3846,9 @@ function AdminPage({
         return;
       }
 
+      setDrawProgress({ label: 'Mažu předchozí partie…', current: 0, total: 1 });
+      await yieldToBrowser();
+
       const { error: deleteMatchesError } = await supabase
         .from('board_match')
         .delete()
@@ -3820,8 +3862,19 @@ function AdminPage({
 
       let insertedMatches = 0;
       let insertedRows = 0;
+      const totalRows = plannedRows.length;
 
-      for (const planned of plannedRows) {
+      for (let index = 0; index < plannedRows.length; index += 1) {
+        const planned = plannedRows[index];
+        if (index === 0 || index === totalRows - 1 || (index + 1) % 12 === 0) {
+          setDrawProgress({
+            label: `Ukládám partie… (${index + 1}/${totalRows})`,
+            current: index + 1,
+            total: totalRows,
+          });
+          await yieldToBrowser();
+        }
+
         const { data: insertedMatch, error: insertMatchError } = await supabase
           .from('board_match')
           .insert({
@@ -3871,9 +3924,11 @@ function AdminPage({
         ? ` Test losování: doplněno ${fallbackAssignmentsUsed} stolů podle dostupných rozhodčích (${fallbackJudgeIds.size} rozhodčích).`
         : '';
       setDrawSummary(`Partie: ${insertedMatches} · účasti hráčů: ${insertedRows}.${relaxedSuffix}${testSuffix}`);
+      setDrawProgress({ label: 'Dokončeno', current: 1, total: 1 });
       await loadEventDetail();
     } finally {
-      setLoading(false);
+      setDrawRunning(false);
+      setDrawProgress(null);
     }
   }, [assignments, blocks, categories, loadEventDetail, players, selectedEventId]);
 
@@ -3977,6 +4032,12 @@ function AdminPage({
 
   const drawOverview = useMemo(() => {
     const activePlayersTotal = players.filter((player) => !player.disqualified).length;
+    const oversizedCategories = categories
+      .map((category) => {
+        const activePlayers = players.filter((player) => player.category_id === category.id && !player.disqualified).length;
+        return activePlayers > BOARD_DRAW_MAX_PLAYERS_PER_BLOCK ? `${category.name} (${activePlayers})` : null;
+      })
+      .filter((value): value is string => Boolean(value));
     const readyCategories = categories.filter((category) => {
       const categoryPlayers = players.filter((player) => player.category_id === category.id && !player.disqualified);
       const categoryBlocks = blocks.filter((block) => block.category_id === category.id);
@@ -3985,6 +4046,7 @@ function AdminPage({
     return {
       activePlayersTotal,
       readyCategories,
+      oversizedCategories,
     };
   }, [blocks, categories, players]);
 
@@ -3992,17 +4054,23 @@ function AdminPage({
     if (!selectedEventId) {
       return 'Nejdřív vyber event.';
     }
+    if (drawRunning) {
+      return 'Losování právě běží.';
+    }
     if (loading) {
       return 'Počkej na načtení administrace.';
     }
     if (drawOverview.activePlayersTotal === 0) {
       return 'V databázi zatím nejsou načtení aktivní účastníci.';
     }
+    if (drawOverview.oversizedCategories.length) {
+      return `Překročen limit ${BOARD_DRAW_MAX_TABLES_PER_GAME} stolů (${BOARD_DRAW_MAX_PLAYERS_PER_BLOCK} hráčů) v: ${drawOverview.oversizedCategories.slice(0, 2).join(', ')}${drawOverview.oversizedCategories.length > 2 ? '…' : ''}.`;
+    }
     if (drawOverview.readyCategories === 0) {
       return 'Žádná kategorie nemá současně hráče a bloky.';
     }
     return null;
-  }, [drawOverview.activePlayersTotal, drawOverview.readyCategories, loading, selectedEventId]);
+  }, [drawOverview.activePlayersTotal, drawOverview.oversizedCategories, drawOverview.readyCategories, drawRunning, loading, selectedEventId]);
 
   const canGenerateDraw = drawDisabledReason === null;
 
@@ -4402,7 +4470,7 @@ function AdminPage({
             <section className="admin-card">
               <h2>Losování partií</h2>
               <p className="admin-card-subtitle">
-                V každém bloku se vylosují 3 partie na stolech. Losování respektuje oddíly a opakování soupeřů.
+                V každém bloku se vylosují 3 partie na stolech (max. {BOARD_DRAW_MAX_TABLES_PER_GAME} stolů na jednu deskovku). Losování respektuje oddíly a opakování soupeřů.
               </p>
               <p className="admin-card-subtitle">
                 Losování spusť až ve chvíli, kdy jsou všichni účastníci nahraní v databázi.
@@ -4415,7 +4483,7 @@ function AdminPage({
                   disabled={!canGenerateDraw}
                   title={drawDisabledReason ?? undefined}
                 >
-                  Spustit losování
+                  {drawRunning ? 'Losuji…' : 'Spustit losování'}
                 </button>
                 <button
                   type="button"
@@ -4427,6 +4495,15 @@ function AdminPage({
                   Test losování
                 </button>
               </div>
+              {drawProgress ? (
+                <div className="deskovky-draw-progress" role="status" aria-live="polite">
+                  <p className="admin-card-subtitle">{drawProgress.label}</p>
+                  <progress max={drawProgress.total || 1} value={Math.min(drawProgress.current, drawProgress.total || 1)} />
+                  <p className="admin-card-subtitle">
+                    {Math.round((Math.min(drawProgress.current, drawProgress.total || 1) / (drawProgress.total || 1)) * 100)} %
+                  </p>
+                </div>
+              ) : null}
               {drawDisabledReason ? <p className="admin-card-subtitle">{drawDisabledReason}</p> : null}
               {drawSummary ? <p className="admin-success">{drawSummary}</p> : null}
               <div className="deskovky-table-wrap">
@@ -5263,7 +5340,7 @@ function DeskovkyDashboard({
       case 'admin':
         return 'Administrace';
       default:
-        return 'Rozhodčí panel';
+        return '';
     }
   }, [page]);
 
@@ -5281,7 +5358,7 @@ function DeskovkyDashboard({
         <div className="admin-header-inner">
           <div>
             <h1>Deskové hry</h1>
-            <p className="admin-subtitle">{pageTitle}</p>
+            {pageTitle ? <p className="admin-subtitle">{pageTitle}</p> : null}
           </div>
           <div className="admin-header-actions">
             <button

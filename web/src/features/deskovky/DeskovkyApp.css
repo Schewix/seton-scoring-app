@@ -119,6 +119,17 @@
   color: var(--text);
 }
 
+.deskovky-draw-progress {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 0;
+}
+
+.deskovky-draw-progress progress {
+  width: 100%;
+  height: 10px;
+}
+
 .deskovky-assignment-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
