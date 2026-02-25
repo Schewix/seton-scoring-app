@@ -2108,29 +2108,40 @@ function AssignedTableMatchesPage({
   const blockMap = useMemo(() => new Map(blocks.map((block) => [block.id, block])), [blocks]);
   const playerMap = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
 
-  const stationMatches = useMemo(() => {
+  const filteredMatchGroups = useMemo(() => {
     const grouped = new Map<string, BoardMatch[]>();
-    const assignedMatches = matches.filter((match) => {
+    const mismatched: BoardMatch[] = [];
+
+    for (const match of matches) {
       const block = blockMap.get(match.block_id);
       if (!block) {
-        return false;
+        continue;
       }
-      return eventAssignments.some((assignment) =>
+
+      const isAssigned = eventAssignments.some((assignment) =>
         assignmentMatchesBlockAndTable(assignment, block, match.table_number),
       );
-    });
 
-    for (const match of assignedMatches) {
+      if (!isAssigned) {
+        mismatched.push(match);
+        continue;
+      }
+
       const key = `${match.block_id}|${match.table_number ?? 0}`;
       const bucket = grouped.get(key) ?? [];
       bucket.push(match);
       grouped.set(key, bucket);
     }
+
     for (const bucket of grouped.values()) {
       bucket.sort((a, b) => (a.round_number ?? 0) - (b.round_number ?? 0));
     }
-    return grouped;
+
+    return { grouped, mismatched };
   }, [blockMap, eventAssignments, matches]);
+
+  const stationMatches = filteredMatchGroups.grouped;
+  const mismatchedMatches = filteredMatchGroups.mismatched;
 
   const stationOptions = useMemo(
     () =>
@@ -2155,6 +2166,19 @@ function AssignedTableMatchesPage({
         )
         .map(({ key, label }) => ({ key, label })),
     [blockMap, categoryMap, gameMap, stationMatches],
+  );
+
+  const mismatchedStationLabels = useMemo(
+    () =>
+      unique(
+        mismatchedMatches.map((match) => {
+          const block = blockMap.get(match.block_id);
+          const category = block ? categoryMap.get(block.category_id) : null;
+          const game = block ? gameMap.get(block.game_id) : null;
+          return `${category?.name ?? match.category_id} · blok ${block?.block_number ?? '—'} · ${game?.name ?? 'Hra'} · stůl ${match.table_number ?? '—'}`;
+        }),
+      ),
+    [blockMap, categoryMap, gameMap, mismatchedMatches],
   );
   useEffect(() => {
     if (!stationOptions.length) {
@@ -2429,9 +2453,18 @@ function AssignedTableMatchesPage({
       ) : null}
 
       {!loading && !stationOptions.length ? (
-        <p className="admin-card-subtitle">
-          Nemáš přiřazené žádné vylosované partie. Požádej administrátora o losování a přiřazení stolu.
-        </p>
+        <>
+          <p className="admin-card-subtitle">
+            Nemáš přiřazené žádné vylosované partie. Požádej administrátora o losování a přiřazení stolu.
+          </p>
+          {mismatchedStationLabels.length ? (
+            <p className="admin-error">
+              Pozor: jsou nalezené partie s tvým účtem, ale mimo tvoje přiřazené stoly/kategorie (
+              {mismatchedStationLabels.slice(0, 3).join('; ')}
+              {mismatchedStationLabels.length > 3 ? '…' : ''}). Zkontroluj přiřazení stolu a spusť losování znovu.
+            </p>
+          ) : null}
+        </>
       ) : null}
     </section>
   );
@@ -3660,9 +3693,9 @@ function AdminPage({
         blocksByCategory.set(block.category_id, list);
       }
 
-      const orderedAssignments = [...assignments].sort((left, right) =>
-        left.created_at.localeCompare(right.created_at),
-      );
+      const orderedAssignments = assignments
+        .filter((assignment) => assignment.event_id === selectedEventId)
+        .sort((left, right) => left.created_at.localeCompare(right.created_at));
       const assignmentByKey = new Map<string, BoardJudgeAssignment>();
       const fallbackPoolsByKey = new Map<string, BoardJudgeAssignment[]>();
       const fallbackRotationByKey = new Map<string, number>();
@@ -3699,7 +3732,7 @@ function AdminPage({
           continue;
         }
         assignmentByKey.set(
-          `${assignment.game_id}|${assignment.category_id}|${assignment.table_number}`,
+          `${assignment.event_id}|${assignment.game_id}|${assignment.category_id}|${assignment.table_number}`,
           assignment,
         );
       }
@@ -3724,7 +3757,7 @@ function AdminPage({
           }
           for (const round of blockPlan.rounds) {
             for (const table of round.tables) {
-              const assignmentKey = `${blockPlan.block.game_id}|${blockPlan.block.category_id}|${table.tableNumber}`;
+              const assignmentKey = `${selectedEventId}|${blockPlan.block.game_id}|${blockPlan.block.category_id}|${table.tableNumber}`;
               let assignment = assignmentByKey.get(assignmentKey);
               if (!assignment && isTestMode) {
                 assignment = resolveFallbackAssignment(blockPlan.block.game_id, blockPlan.block.category_id) ?? undefined;
