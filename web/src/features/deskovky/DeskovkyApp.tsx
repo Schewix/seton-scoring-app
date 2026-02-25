@@ -2013,8 +2013,6 @@ function AssignedTableMatchesPage({
   const [matches, setMatches] = useState<BoardMatch[]>([]);
   const [matchPlayers, setMatchPlayers] = useState<BoardMatchPlayer[]>([]);
   const [loading, setLoading] = useState(false);
-  const [drawRunning, setDrawRunning] = useState(false);
-  const [drawProgress, setDrawProgress] = useState<{ label: string; current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -2921,6 +2919,8 @@ function AdminPage({
   const [assignmentJudgeFilter, setAssignmentJudgeFilter] = useState('');
   const [assignmentGameFilter, setAssignmentGameFilter] = useState('');
   const [drawSummary, setDrawSummary] = useState<string | null>(null);
+  const [drawRunning, setDrawRunning] = useState(false);
+  const [drawProgress, setDrawProgress] = useState<{ label: string; current: number; total: number } | null>(null);
 
   const activeSectionLabel = useMemo(
     () => ADMIN_SECTION_ITEMS.find((item) => item.key === activeSection)?.label ?? 'Přehled',
