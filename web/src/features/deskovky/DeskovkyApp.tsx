@@ -3741,13 +3741,20 @@ function AdminPage({
         if (assignment.category_id) {
           pushFallbackPool(`${assignment.game_id}|${assignment.category_id}`, assignment);
         }
-        if (!assignment.category_id || !assignment.table_number) {
+        if (!assignment.table_number) {
           continue;
         }
-        assignmentByKey.set(
-          `${assignment.event_id}|${assignment.game_id}|${assignment.category_id}|${assignment.table_number}`,
-          assignment,
-        );
+        if (assignment.category_id) {
+          assignmentByKey.set(
+            `${assignment.event_id}|${assignment.game_id}|${assignment.category_id}|${assignment.table_number}`,
+            assignment,
+          );
+        } else {
+          assignmentByKey.set(
+            `${assignment.event_id}|${assignment.game_id}|*|${assignment.table_number}`,
+            assignment,
+          );
+        }
       }
 
       const missingAssignments: string[] = [];
@@ -3797,7 +3804,8 @@ function AdminPage({
           for (const round of blockPlan.rounds) {
             for (const table of round.tables) {
               const assignmentKey = `${selectedEventId}|${blockPlan.block.game_id}|${blockPlan.block.category_id}|${table.tableNumber}`;
-              let assignment = assignmentByKey.get(assignmentKey);
+              const assignmentWildcardKey = `${selectedEventId}|${blockPlan.block.game_id}|*|${table.tableNumber}`;
+              let assignment = assignmentByKey.get(assignmentKey) ?? assignmentByKey.get(assignmentWildcardKey);
               if (!assignment && isTestMode) {
                 assignment = resolveFallbackAssignment(blockPlan.block.game_id, blockPlan.block.category_id) ?? undefined;
                 if (assignment) {
