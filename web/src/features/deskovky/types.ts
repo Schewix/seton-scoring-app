@@ -91,6 +91,7 @@ export interface BoardGameStanding {
   total_points: number | null;
   avg_placement: number | null;
   best_placement: number | null;
+  placement_sum: number | null;
   game_rank: number;
 }
 

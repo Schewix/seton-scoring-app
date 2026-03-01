@@ -2777,6 +2777,8 @@ function StandingsPage({
   const [gameStandings, setGameStandings] = useState<BoardGameStanding[]>([]);
   const [overallStandings, setOverallStandings] = useState<BoardOverallStanding[]>([]);
   const [players, setPlayers] = useState<BoardPlayer[]>([]);
+  const [playedMatchesByGamePlayer, setPlayedMatchesByGamePlayer] = useState<Record<string, number>>({});
+  const [totalMatchesByGame, setTotalMatchesByGame] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -2817,6 +2819,10 @@ function StandingsPage({
     () => new Map(games.map((game) => [game.id, game])),
     [games],
   );
+  const blockGameMap = useMemo(
+    () => new Map((setup?.blocks ?? []).map((block) => [block.id, block.game_id])),
+    [setup?.blocks],
+  );
   const selectedCategory = useMemo(
     () => categories.find((category) => category.id === selectedCategoryId) ?? null,
     [categories, selectedCategoryId],
@@ -2848,6 +2854,8 @@ function StandingsPage({
       setGameStandings([]);
       setOverallStandings([]);
       setPlayers([]);
+      setPlayedMatchesByGamePlayer({});
+      setTotalMatchesByGame({});
       return;
     }
 
@@ -2856,13 +2864,13 @@ function StandingsPage({
     setError(null);
 
     void (async () => {
-      const [gameRes, overallRes, playerRes] = await Promise.all([
+      const [gameRes, overallRes, playerRes, matchRes] = await Promise.all([
         supabase
           .from('board_game_standings')
-          .select('event_id, category_id, game_id, player_id, matches_played, total_points, avg_placement, best_placement, game_rank')
+          .select('event_id, category_id, game_id, player_id, matches_played, total_points, avg_placement, best_placement, placement_sum, game_rank')
           .eq('event_id', selectedEventId)
           .eq('category_id', selectedCategoryId)
-          .order('game_rank', { ascending: true }),
+          .order('game_id', { ascending: true }),
         supabase
           .from('board_overall_standings')
           .select('event_id, category_id, player_id, primary_game_id, games_counted, overall_score, game_breakdown, overall_rank')
@@ -2875,6 +2883,12 @@ function StandingsPage({
           .eq('event_id', selectedEventId)
           .eq('category_id', selectedCategoryId)
           .order('short_code', { ascending: true }),
+        supabase
+          .from('board_match')
+          .select('id, block_id, round_number, status')
+          .eq('event_id', selectedEventId)
+          .eq('category_id', selectedCategoryId)
+          .neq('status', 'void'),
       ]);
 
       if (cancelled) {
@@ -2883,21 +2897,97 @@ function StandingsPage({
 
       setLoading(false);
 
-      if (gameRes.error || overallRes.error || playerRes.error) {
-        console.error('Failed to load standings', gameRes.error, overallRes.error, playerRes.error);
+      if (gameRes.error || overallRes.error || playerRes.error || matchRes.error) {
+        console.error('Failed to load standings', gameRes.error, overallRes.error, playerRes.error, matchRes.error);
         setError('Nepodařilo se načíst průběžné pořadí.');
+        setPlayedMatchesByGamePlayer({});
+        setTotalMatchesByGame({});
         return;
+      }
+
+      const matches = (matchRes.data ?? []) as Array<Pick<BoardMatch, 'id' | 'block_id' | 'round_number' | 'status'>>;
+      const roundsByGame = new Map<string, Set<number>>();
+      const matchMetaById = new Map<string, { gameId: string; scoringType: BoardScoringType }>();
+      for (const match of matches) {
+        const gameId = blockGameMap.get(match.block_id);
+        if (!gameId) {
+          continue;
+        }
+        const game = gameMap.get(gameId);
+        if (!game) {
+          continue;
+        }
+        matchMetaById.set(match.id, { gameId, scoringType: game.scoring_type });
+        if (typeof match.round_number === 'number') {
+          const currentRounds = roundsByGame.get(gameId) ?? new Set<number>();
+          currentRounds.add(match.round_number);
+          roundsByGame.set(gameId, currentRounds);
+        }
+      }
+
+      const totalByGame: Record<string, number> = {};
+      roundsByGame.forEach((rounds, gameId) => {
+        totalByGame[gameId] = rounds.size;
+      });
+
+      const playedByGamePlayer: Record<string, number> = {};
+      if (matchMetaById.size) {
+        const { data: matchPlayerData, error: matchPlayerError } = await supabase
+          .from('board_match_player')
+          .select('match_id, player_id, points, placement')
+          .in('match_id', Array.from(matchMetaById.keys()));
+
+        if (cancelled) {
+          return;
+        }
+
+        if (matchPlayerError) {
+          console.error('Failed to load match rows for standings', matchPlayerError);
+          setError('Nepodařilo se načíst průběžné pořadí.');
+          setPlayedMatchesByGamePlayer({});
+          setTotalMatchesByGame({});
+          return;
+        }
+
+        for (const row of (matchPlayerData ?? []) as Array<{
+          match_id: string;
+          player_id: string;
+          points: number | null;
+          placement: number | null;
+        }>) {
+          const matchMeta = matchMetaById.get(row.match_id);
+          if (!matchMeta) {
+            continue;
+          }
+
+          const hasPoints = row.points !== null;
+          const hasPlacement = row.placement !== null;
+          const isCompleted = matchMeta.scoringType === 'points'
+            ? hasPoints
+            : matchMeta.scoringType === 'placement'
+              ? hasPlacement
+              : hasPoints || hasPlacement;
+
+          if (!isCompleted) {
+            continue;
+          }
+
+          const key = `${matchMeta.gameId}:${row.player_id}`;
+          playedByGamePlayer[key] = (playedByGamePlayer[key] ?? 0) + 1;
+        }
       }
 
       setGameStandings((gameRes.data ?? []) as BoardGameStanding[]);
       setOverallStandings((overallRes.data ?? []) as BoardOverallStanding[]);
       setPlayers((playerRes.data ?? []) as BoardPlayer[]);
+      setPlayedMatchesByGamePlayer(playedByGamePlayer);
+      setTotalMatchesByGame(totalByGame);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [selectedCategoryId, selectedEventId]);
+  }, [blockGameMap, gameMap, selectedCategoryId, selectedEventId]);
 
   const perGame = useMemo(() => {
     const grouped = new Map<string, BoardGameStanding[]>();
@@ -2906,8 +2996,49 @@ function StandingsPage({
       current.push(standing);
       grouped.set(standing.game_id, current);
     });
+
+    const toPlacementSum = (row: BoardGameStanding): number => {
+      if (row.placement_sum !== null) {
+        return Number(row.placement_sum);
+      }
+      if (row.avg_placement !== null) {
+        return Number(row.avg_placement) * Number(row.matches_played);
+      }
+      return Number.POSITIVE_INFINITY;
+    };
+
+    grouped.forEach((rows, gameId) => {
+      const game = gameMap.get(gameId);
+      const pointsOrder = game?.points_order ?? 'desc';
+      rows.sort((left, right) => {
+        const leftPlacementSum = toPlacementSum(left);
+        const rightPlacementSum = toPlacementSum(right);
+        if (leftPlacementSum !== rightPlacementSum) {
+          return leftPlacementSum - rightPlacementSum;
+        }
+
+        const leftPoints = left.total_points;
+        const rightPoints = right.total_points;
+        if (leftPoints !== null && rightPoints !== null && leftPoints !== rightPoints) {
+          return pointsOrder === 'asc' ? leftPoints - rightPoints : rightPoints - leftPoints;
+        }
+        if (leftPoints === null && rightPoints !== null) {
+          return 1;
+        }
+        if (leftPoints !== null && rightPoints === null) {
+          return -1;
+        }
+
+        const leftPlayer = playerMap.get(left.player_id);
+        const rightPlayer = playerMap.get(right.player_id);
+        const leftLabel = leftPlayer?.display_name || leftPlayer?.team_name || left.player_id;
+        const rightLabel = rightPlayer?.display_name || rightPlayer?.team_name || right.player_id;
+        return leftLabel.localeCompare(rightLabel, 'cs');
+      });
+    });
+
     return grouped;
-  }, [gameStandings]);
+  }, [gameMap, gameStandings, playerMap]);
 
   if (!context.events.length) {
     return (
@@ -3050,19 +3181,26 @@ function StandingsPage({
             <p className="admin-card-subtitle">Typ bodování: {game?.scoring_type ?? '—'}</p>
             {isMobile ? (
               <div className="deskovky-standings-cards">
-                {standings.map((row) => {
+                {standings.map((row, index) => {
                   const player = playerMap.get(row.player_id);
                   const label = player?.display_name || player?.team_name || row.player_id;
+                  const placementSum = row.placement_sum !== null
+                    ? Number(row.placement_sum)
+                    : row.avg_placement !== null
+                      ? Number(row.avg_placement) * Number(row.matches_played)
+                      : null;
+                  const playedMatches = playedMatchesByGamePlayer[`${gameId}:${row.player_id}`] ?? 0;
+                  const totalMatches = totalMatchesByGame[gameId] ?? row.matches_played;
                   return (
                     <article key={`${gameId}-${row.player_id}`} className="deskovky-standings-card">
                       <h3>
-                        {row.game_rank}. {label}
+                        {index + 1}. {label}
                       </h3>
                       <p>
-                        <strong>Součet pořadí:</strong> {row.avg_placement ?? '—'}
+                        <strong>Součet pořadí:</strong> {placementSum ?? '—'}
                       </p>
                       <p>
-                        <strong>Odehráno:</strong> {row.matches_played}
+                        <strong>Odehráno:</strong> {playedMatches}/{totalMatches}
                       </p>
                       <p>
                         <strong>Body:</strong> {row.total_points ?? '—'}
@@ -3083,22 +3221,29 @@ function StandingsPage({
                       <th>Hráč</th>
                       <th>Kód</th>
                       <th>Body</th>
-                      <th>Průměr umístění</th>
+                      <th>Součet pořadí</th>
                       <th>Počet partií</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {standings.map((row) => {
+                    {standings.map((row, index) => {
                       const player = playerMap.get(row.player_id);
                       const label = player?.display_name || player?.team_name || row.player_id;
+                      const placementSum = row.placement_sum !== null
+                        ? Number(row.placement_sum)
+                        : row.avg_placement !== null
+                          ? Number(row.avg_placement) * Number(row.matches_played)
+                          : null;
+                      const playedMatches = playedMatchesByGamePlayer[`${gameId}:${row.player_id}`] ?? 0;
+                      const totalMatches = totalMatchesByGame[gameId] ?? row.matches_played;
                       return (
                         <tr key={`${gameId}-${row.player_id}`}>
-                          <td>{row.game_rank}</td>
+                          <td>{index + 1}</td>
                           <td>{label}</td>
                           <td>{player?.short_code ?? '—'}</td>
                           <td>{row.total_points ?? '—'}</td>
-                          <td>{row.avg_placement ?? '—'}</td>
-                          <td>{row.matches_played}</td>
+                          <td>{placementSum ?? '—'}</td>
+                          <td>{playedMatches}/{totalMatches}</td>
                         </tr>
                       );
                     })}

@@ -92,6 +92,8 @@ const BOARD_GAME_ALIASES: Record<string, string> = {
   loveletter: 'dominion',
 };
 
+const ROMAN_CATEGORY_RE = /^(I|II|III|IV|V|VI)$/i;
+
 type ExistingJudgeRecord = {
   id: string;
   display_name: string;
@@ -221,6 +223,40 @@ function normalizeBoardGameKey(value: string): string {
   return BOARD_GAME_ALIASES[key] ?? key;
 }
 
+function parseMultiValueCell(raw: string): string[] {
+  if (!raw) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const part of raw.split(/[;,]+/)) {
+    const trimmed = part.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const dedupKey = normalizeLookupKey(trimmed);
+    if (!dedupKey || seen.has(dedupKey)) {
+      continue;
+    }
+    seen.add(dedupKey);
+    values.push(trimmed);
+  }
+  return values;
+}
+
+function extractRomanCategoryToken(value: string): string | null {
+  const normalized = value.trim().toUpperCase();
+  if (!normalized) {
+    return null;
+  }
+  if (ROMAN_CATEGORY_RE.test(normalized)) {
+    return normalized;
+  }
+  const match = normalized.match(/\b(VI|IV|V|III|II|I)\b/);
+  return match?.[1] ?? null;
+}
+
 function findHeaderIndex(normalizedHeader: string[], ...candidates: string[]): number {
   const normalizedCandidates = candidates
     .map((candidate) => normalizeHeaderKey(candidate))
@@ -310,6 +346,13 @@ function parseBoardCsv(text: string): BoardJudgeRow[] {
   const idxLast = findHeaderIndex(normalizedHeader, 'prijmeni', 'příjmení', 'last_name');
   const idxEmail = findHeaderIndex(normalizedHeader, 'email', 'e-mail');
   const idxPhone = findHeaderIndex(normalizedHeader, 'telefon', 'phone');
+  const idxAllowedCategories = findHeaderIndex(
+    normalizedHeader,
+    'allowed_categories',
+    'allowed categories',
+    'allowedcategories',
+    'allowed_category',
+  );
   const idxCategory = findHeaderIndex(normalizedHeader, 'kategorie', 'category');
 
   if (idxGame === -1 || idxEmail === -1) {
@@ -329,20 +372,33 @@ function parseBoardCsv(text: string): BoardJudgeRow[] {
     const email = normalizeCell(row[idxEmail]).toLowerCase();
     const phone = idxPhone !== -1 ? normalizeCell(row[idxPhone]) : '';
     const categoryNameRaw = idxCategory !== -1 ? normalizeCell(row[idxCategory]) : '';
+    const allowedCategoriesRaw = idxAllowedCategories !== -1 ? normalizeCell(row[idxAllowedCategories]) : '';
     const displayName = buildDisplayName(firstName, lastName) || email;
 
     if (!gameNameRaw || !email) {
       continue;
     }
 
-    result.push({
-      gameNameRaw,
-      gameNameKey: normalizeBoardGameKey(gameNameRaw),
-      categoryNameRaw: categoryNameRaw || null,
-      displayName,
-      email,
-      phone: phone || null,
-    });
+    const gameNames = parseMultiValueCell(gameNameRaw);
+    if (!gameNames.length) {
+      continue;
+    }
+
+    const categoryValues = parseMultiValueCell(allowedCategoriesRaw || categoryNameRaw);
+    const categories = categoryValues.length ? categoryValues : [null];
+
+    for (const gameName of gameNames) {
+      for (const category of categories) {
+        result.push({
+          gameNameRaw: gameName,
+          gameNameKey: normalizeBoardGameKey(gameName),
+          categoryNameRaw: category,
+          displayName,
+          email,
+          phone: phone || null,
+        });
+      }
+    }
   }
 
   return result;
@@ -727,7 +783,15 @@ async function resolveBoardSetup(client: SupabaseClient): Promise<BoardSetup | n
     if (!category?.id || !category?.name) {
       continue;
     }
-    categoryIdByKey.set(normalizeLookupKey(String(category.name)), String(category.id));
+    const categoryId = String(category.id);
+    const normalizedCategoryName = normalizeLookupKey(String(category.name));
+    categoryIdByKey.set(normalizedCategoryName, categoryId);
+
+    const romanToken = extractRomanCategoryToken(String(category.name));
+    if (romanToken) {
+      categoryIdByKey.set(normalizeLookupKey(romanToken), categoryId);
+      categoryIdByKey.set(normalizeLookupKey(`kategorie ${romanToken}`), categoryId);
+    }
   }
 
   return {
