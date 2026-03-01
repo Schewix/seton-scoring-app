@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const authBypass = (import.meta.env.VITE_AUTH_BYPASS as string | undefined) === 'true';
 const bypassToken = import.meta.env.VITE_AUTH_BYPASS_TOKEN as string | undefined;
 
 if (!url) {
@@ -18,7 +19,7 @@ export const supabase = createClient(url, anon, {
     autoRefreshToken: false,
     detectSessionInUrl: false,
   },
-  global: bypassToken
+  global: authBypass && bypassToken
     ? {
       headers: {
         Authorization: `Bearer ${bypassToken}`,
