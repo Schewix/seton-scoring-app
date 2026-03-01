@@ -61,6 +61,8 @@ const AUTH_BYPASS_EVENT_ID =
   AUTH_BYPASS_CLAIMS?.event_id ?? AUTH_BYPASS_CLAIMS?.eventId ?? env.VITE_EVENT_ID ?? 'event-test';
 const AUTH_BYPASS_STATION_ID =
   AUTH_BYPASS_CLAIMS?.station_id ?? AUTH_BYPASS_CLAIMS?.stationId ?? env.VITE_STATION_ID ?? 'station-test';
+const AUTH_BYPASS_STATION_CODE_DEFAULT = (env.VITE_AUTH_BYPASS_STATION_CODE ?? 'X').trim().toUpperCase() || 'X';
+const AUTH_BYPASS_STATION_CODE_STORAGE_KEY = 'auth:bypass:stationCode';
 const AUTH_BYPASS_JUDGE_ID = AUTH_BYPASS_CLAIMS?.sub ?? 'judge-test';
 const AUTH_BYPASS_JUDGE_EMAIL = AUTH_BYPASS_CLAIMS?.email ?? 'test@example.com';
 const AUTH_BYPASS_SESSION_ID = AUTH_BYPASS_CLAIMS?.sessionId ?? 'session-test';
@@ -161,6 +163,16 @@ function isTokenValidationError(error: unknown) {
   );
 }
 
+function resolveAuthBypassStationCode(): string {
+  if (typeof window !== 'undefined') {
+    const override = window.localStorage.getItem(AUTH_BYPASS_STATION_CODE_STORAGE_KEY);
+    if (typeof override === 'string' && override.trim().length > 0) {
+      return override.trim().toUpperCase();
+    }
+  }
+  return AUTH_BYPASS_STATION_CODE_DEFAULT;
+}
+
 async function bootstrap(): Promise<
   | {
       manifest: StationManifest;
@@ -198,6 +210,7 @@ function useInitialization(setStatus: (status: AuthStatus) => void) {
     const initialize = async () => {
       try {
         if (AUTH_BYPASS) {
+          const bypassStationCode = resolveAuthBypassStationCode();
           if (!cancelled) {
             setStatus({
               state: 'authenticated',
@@ -205,8 +218,8 @@ function useInitialization(setStatus: (status: AuthStatus) => void) {
                 judge: { id: AUTH_BYPASS_JUDGE_ID, email: AUTH_BYPASS_JUDGE_EMAIL, displayName: 'Test Judge' },
                 station: {
                   id: AUTH_BYPASS_STATION_ID,
-                  code: 'X',
-                  name: 'Testovací stanoviště',
+                  code: bypassStationCode,
+                  name: bypassStationCode === 'T' ? 'Testovací admin stanoviště' : 'Testovací stanoviště',
                 },
                 event: {
                   id: AUTH_BYPASS_EVENT_ID,

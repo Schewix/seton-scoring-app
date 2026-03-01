@@ -246,7 +246,7 @@ function buildInitialMatchEntries(): MatchEntry[] {
   }));
 }
 
-function parseNumeric(value: string): number | null {
+export function parseNumeric(value: string): number | null {
   const normalized = value.replace(',', '.').trim();
   if (!normalized) {
     return null;
@@ -258,7 +258,7 @@ function parseNumeric(value: string): number | null {
   return parsed;
 }
 
-function buildPlacementsFromPoints(
+export function buildPlacementsFromPoints(
   entries: Array<{ id: string; seat: number; points: string }>,
   pointsOrder: BoardPointsOrder,
 ): Map<string, number> {
@@ -298,7 +298,7 @@ function buildPlacementsFromPoints(
   return placements;
 }
 
-function resolvePlacementForSave({
+export function resolvePlacementForSave({
   scoringType,
   parsedPoints,
   parsedPlacement,
@@ -563,17 +563,17 @@ function assignmentMatchesBlockAndTable(
   return assignment.table_number === tableNumber;
 }
 
-type DrawTable = {
+export type DrawTable = {
   tableNumber: number;
   playerIds: string[];
 };
 
-type DrawRound = {
+export type DrawRound = {
   roundNumber: number;
   tables: DrawTable[];
 };
 
-type DrawBlockPlan = {
+export type DrawBlockPlan = {
   block: BoardBlock;
   rounds: DrawRound[];
   usedRelaxedSameTeamRule?: boolean;
@@ -581,8 +581,69 @@ type DrawBlockPlan = {
 
 type OpponentCounts = Map<string, Map<string, number>>;
 type DrawAttempt = { groups: BoardPlayer[][]; penalty: number };
-const BOARD_DRAW_MAX_TABLES_PER_GAME = 25;
-const BOARD_DRAW_MAX_PLAYERS_PER_BLOCK = BOARD_DRAW_MAX_TABLES_PER_GAME * 4;
+export const BOARD_DRAW_MAX_TABLES_PER_GAME = 25;
+export const BOARD_DRAW_MAX_PLAYERS_PER_BLOCK = BOARD_DRAW_MAX_TABLES_PER_GAME * 4;
+
+type SameTeamPairStats = {
+  totalPairs: number;
+  topTeams: Array<{ teamLabel: string; count: number }>;
+  byCategory: Array<{ categoryLabel: string; count: number }>;
+};
+
+function buildSameTeamPairStats(
+  plannedRows: Array<{
+    match: {
+      category_id: string;
+    };
+    players: string[];
+  }>,
+  playersById: Map<string, BoardPlayer>,
+  categoryNamesById: Map<string, string>,
+): SameTeamPairStats {
+  const teamCounts = new Map<string, number>();
+  const teamLabels = new Map<string, string>();
+  const categoryCounts = new Map<string, number>();
+  let totalPairs = 0;
+
+  for (const planned of plannedRows) {
+    const categoryLabel = categoryNamesById.get(planned.match.category_id) ?? planned.match.category_id;
+    for (let i = 0; i < planned.players.length; i += 1) {
+      for (let j = i + 1; j < planned.players.length; j += 1) {
+        const playerA = playersById.get(planned.players[i]);
+        const playerB = playersById.get(planned.players[j]);
+        if (!playerA || !playerB) {
+          continue;
+        }
+        const teamKeyA = getTeamKey(playerA.team_name);
+        const teamKeyB = getTeamKey(playerB.team_name);
+        if (!teamKeyA || teamKeyA !== teamKeyB) {
+          continue;
+        }
+
+        totalPairs += 1;
+        teamCounts.set(teamKeyA, (teamCounts.get(teamKeyA) ?? 0) + 1);
+        categoryCounts.set(categoryLabel, (categoryCounts.get(categoryLabel) ?? 0) + 1);
+        if (!teamLabels.has(teamKeyA)) {
+          const label = (playerA.team_name ?? '').trim() || (playerB.team_name ?? '').trim() || teamKeyA;
+          teamLabels.set(teamKeyA, label);
+        }
+      }
+    }
+  }
+
+  return {
+    totalPairs,
+    topTeams: [...teamCounts.entries()]
+      .map(([teamKey, count]) => ({
+        teamLabel: teamLabels.get(teamKey) ?? teamKey,
+        count,
+      }))
+      .sort((a, b) => b.count - a.count || a.teamLabel.localeCompare(b.teamLabel, 'cs')),
+    byCategory: [...categoryCounts.entries()]
+      .map(([categoryLabel, count]) => ({ categoryLabel, count }))
+      .sort((a, b) => b.count - a.count || a.categoryLabel.localeCompare(b.categoryLabel, 'cs')),
+  };
+}
 
 function getTeamKey(teamName: string | null | undefined): string {
   const raw = (teamName ?? '').trim();
@@ -617,7 +678,7 @@ function addRoundOpponents(opponents: OpponentCounts, playerIds: string[]) {
   }
 }
 
-function buildRoundTableSizes(playerCount: number): number[] {
+export function buildRoundTableSizes(playerCount: number): number[] {
   if (playerCount <= 0) {
     return [];
   }
@@ -650,23 +711,56 @@ function isSameTeam(playerA: BoardPlayer, playerB: BoardPlayer): boolean {
   return Boolean(teamA) && teamA === getTeamKey(playerB.team_name);
 }
 
+function buildTeamPlayerCounts(players: BoardPlayer[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const player of players) {
+    const teamKey = getTeamKey(player.team_name);
+    if (!teamKey) {
+      continue;
+    }
+    counts.set(teamKey, (counts.get(teamKey) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function buildTeamSameTeamCaps(teamPlayerCounts: Map<string, number>): Map<string, number> {
+  const caps = new Map<string, number>();
+  for (const [teamKey, size] of teamPlayerCounts.entries()) {
+    // Teams with 1-2 players should avoid internal matchups entirely.
+    // Larger teams absorb unavoidable same-team pairings proportionally.
+    caps.set(teamKey, Math.max(0, size - 2));
+  }
+  return caps;
+}
+
 function canAddCandidateToGroup(
   candidate: BoardPlayer,
   group: BoardPlayer[],
   blockOpponents: OpponentCounts,
   blockSameTeamCounts: Map<string, number>,
+  blockTeamSameTeamCounts: Map<string, number>,
+  teamPlayerCounts: Map<string, number>,
+  teamSameTeamCaps: Map<string, number>,
   maxSameTeamOpponentsPerBlock: number | null,
 ): boolean {
   if (maxSameTeamOpponentsPerBlock === null) {
     return true;
   }
 
+  const candidateTeamKey = getTeamKey(candidate.team_name);
+  const candidateTeamSize = candidateTeamKey ? (teamPlayerCounts.get(candidateTeamKey) ?? 0) : 0;
   const candidateCurrentCount = blockSameTeamCounts.get(candidate.id) ?? 0;
   let candidateAdditionalCount = 0;
+  let candidateTeamAdditionalCount = 0;
 
   for (const current of group) {
     if (!isSameTeam(candidate, current)) {
       continue;
+    }
+
+    // If a team only has two players in the category, they should not meet.
+    if (candidateTeamSize <= 2) {
+      return false;
     }
 
     // The same team-vs-team pair should not repeat in one game block.
@@ -680,10 +774,19 @@ function canAddCandidateToGroup(
     }
 
     candidateAdditionalCount += 1;
+    candidateTeamAdditionalCount += 1;
   }
 
   if (candidateCurrentCount + candidateAdditionalCount > maxSameTeamOpponentsPerBlock) {
     return false;
+  }
+
+  if (candidateTeamKey) {
+    const teamCurrentCount = blockTeamSameTeamCounts.get(candidateTeamKey) ?? 0;
+    const teamCap = teamSameTeamCaps.get(candidateTeamKey) ?? 0;
+    if (teamCurrentCount + candidateTeamAdditionalCount > teamCap) {
+      return false;
+    }
   }
 
   return true;
@@ -752,6 +855,9 @@ function buildRoundAttempt(
   categoryOpponents: OpponentCounts,
   blockOpponents: OpponentCounts,
   blockSameTeamCounts: Map<string, number>,
+  blockTeamSameTeamCounts: Map<string, number>,
+  teamPlayerCounts: Map<string, number>,
+  teamSameTeamCaps: Map<string, number>,
   threePlayerCounts: Map<string, number>,
   trioHistory: Set<string>,
   maxSameTeamOpponentsPerBlock: number | null,
@@ -774,6 +880,9 @@ function buildRoundAttempt(
           group,
           blockOpponents,
           blockSameTeamCounts,
+          blockTeamSameTeamCounts,
+          teamPlayerCounts,
+          teamSameTeamCaps,
           maxSameTeamOpponentsPerBlock,
         ),
       );
@@ -820,6 +929,9 @@ function findBestRoundAttempt(
   categoryOpponents: OpponentCounts,
   blockOpponents: OpponentCounts,
   blockSameTeamCounts: Map<string, number>,
+  blockTeamSameTeamCounts: Map<string, number>,
+  teamPlayerCounts: Map<string, number>,
+  teamSameTeamCaps: Map<string, number>,
   threePlayerCounts: Map<string, number>,
   trioHistory: Set<string>,
   maxSameTeamOpponentsPerBlock: number | null,
@@ -837,6 +949,9 @@ function findBestRoundAttempt(
       categoryOpponents,
       blockOpponents,
       blockSameTeamCounts,
+      blockTeamSameTeamCounts,
+      teamPlayerCounts,
+      teamSameTeamCaps,
       threePlayerCounts,
       trioHistory,
       maxSameTeamOpponentsPerBlock,
@@ -869,6 +984,9 @@ function generateRoundGroups(
   categoryOpponents: OpponentCounts,
   blockOpponents: OpponentCounts,
   blockSameTeamCounts: Map<string, number>,
+  blockTeamSameTeamCounts: Map<string, number>,
+  teamPlayerCounts: Map<string, number>,
+  teamSameTeamCaps: Map<string, number>,
   threePlayerCounts: Map<string, number>,
   trioHistory: Set<string>,
 ): { groups: BoardPlayer[][]; usedRelaxedSameTeamRule: boolean } {
@@ -878,6 +996,9 @@ function generateRoundGroups(
     categoryOpponents,
     blockOpponents,
     blockSameTeamCounts,
+    blockTeamSameTeamCounts,
+    teamPlayerCounts,
+    teamSameTeamCaps,
     threePlayerCounts,
     trioHistory,
     0,
@@ -895,6 +1016,9 @@ function generateRoundGroups(
     categoryOpponents,
     blockOpponents,
     blockSameTeamCounts,
+    blockTeamSameTeamCounts,
+    teamPlayerCounts,
+    teamSameTeamCaps,
     threePlayerCounts,
     trioHistory,
     1,
@@ -912,6 +1036,9 @@ function generateRoundGroups(
     categoryOpponents,
     blockOpponents,
     blockSameTeamCounts,
+    blockTeamSameTeamCounts,
+    teamPlayerCounts,
+    teamSameTeamCaps,
     threePlayerCounts,
     trioHistory,
     null,
@@ -936,7 +1063,7 @@ function generateRoundGroups(
   };
 }
 
-function planCategoryDraw(categoryPlayers: BoardPlayer[], categoryBlocks: BoardBlock[]): DrawBlockPlan[] {
+export function planCategoryDraw(categoryPlayers: BoardPlayer[], categoryBlocks: BoardBlock[]): DrawBlockPlan[] {
   const activePlayers = categoryPlayers.filter((player) => !player.disqualified);
   if (activePlayers.length < 2 || !categoryBlocks.length) {
     return [];
@@ -946,12 +1073,15 @@ function planCategoryDraw(categoryPlayers: BoardPlayer[], categoryBlocks: BoardB
   const categoryOpponents: OpponentCounts = new Map();
   const threePlayerCounts = new Map<string, number>();
   const trioHistory = new Set<string>();
+  const teamPlayerCounts = buildTeamPlayerCounts(activePlayers);
+  const teamSameTeamCaps = buildTeamSameTeamCaps(teamPlayerCounts);
 
   return categoryBlocks
     .sort((a, b) => a.block_number - b.block_number)
     .map<DrawBlockPlan>((block) => {
       const blockOpponents: OpponentCounts = new Map();
       const blockSameTeamCounts = new Map<string, number>();
+      const blockTeamSameTeamCounts = new Map<string, number>();
       const rounds: DrawRound[] = [];
       let usedRelaxedSameTeamRule = false;
 
@@ -962,6 +1092,9 @@ function planCategoryDraw(categoryPlayers: BoardPlayer[], categoryBlocks: BoardB
           categoryOpponents,
           blockOpponents,
           blockSameTeamCounts,
+          blockTeamSameTeamCounts,
+          teamPlayerCounts,
+          teamSameTeamCaps,
           threePlayerCounts,
           trioHistory,
         );
@@ -987,6 +1120,10 @@ function planCategoryDraw(categoryPlayers: BoardPlayer[], categoryBlocks: BoardB
               }
               blockSameTeamCounts.set(group[i].id, (blockSameTeamCounts.get(group[i].id) ?? 0) + 1);
               blockSameTeamCounts.set(group[j].id, (blockSameTeamCounts.get(group[j].id) ?? 0) + 1);
+              const teamKey = getTeamKey(group[i].team_name);
+              if (teamKey) {
+                blockTeamSameTeamCounts.set(teamKey, (blockTeamSameTeamCounts.get(teamKey) ?? 0) + 1);
+              }
             }
           }
           if (group.length === 3) {
@@ -3040,6 +3177,19 @@ function StandingsPage({
     return grouped;
   }, [gameMap, gameStandings, playerMap]);
 
+  const completedGamesByPlayer = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const gameId of perGame.keys()) {
+      for (const player of players) {
+        const played = playedMatchesByGamePlayer[`${gameId}:${player.id}`] ?? 0;
+        if (played > 0) {
+          counts.set(player.id, (counts.get(player.id) ?? 0) + 1);
+        }
+      }
+    }
+    return counts;
+  }, [perGame, playedMatchesByGamePlayer, players]);
+
   if (!context.events.length) {
     return (
       <section className="admin-card">
@@ -3104,6 +3254,7 @@ function StandingsPage({
               {overallStandings.map((row) => {
                 const player = playerMap.get(row.player_id);
                 const label = player?.display_name || player?.team_name || row.player_id;
+                const hasAnyResults = (completedGamesByPlayer.get(row.player_id) ?? 0) > 0;
                 const breakdown = (row.game_breakdown ?? [])
                   .map((item) => {
                     const gameName = item.game_name || gameMap.get(item.game_id)?.name || item.game_id;
@@ -3114,16 +3265,16 @@ function StandingsPage({
                 return (
                   <article key={`overall-${row.player_id}`} className="deskovky-standings-card">
                     <h3>
-                      {row.overall_rank}. {label}
+                      {hasAnyResults ? `${row.overall_rank}.` : '—'} {label}
                     </h3>
                     <p>
-                      <strong>Součet pořadí:</strong> {row.overall_score}
+                      <strong>Součet pořadí:</strong> {hasAnyResults ? row.overall_score : '—'}
                     </p>
                     <p>
                       <strong>Odehráno:</strong> {row.games_counted}/{totalGames}
                     </p>
                     <p>
-                      <strong>Kód:</strong> {player?.short_code ?? '—'}
+                      <strong>Oddíl:</strong> {player?.team_name ?? '—'}
                     </p>
                     <p>
                       <strong>Hry:</strong> {breakdown || '—'}
@@ -3139,7 +3290,7 @@ function StandingsPage({
                   <tr>
                     <th>#</th>
                     <th>Hráč</th>
-                    <th>Kód</th>
+                    <th>Oddíl</th>
                     <th>Součet umístění</th>
                     <th>Hry</th>
                   </tr>
@@ -3148,6 +3299,7 @@ function StandingsPage({
                   {overallStandings.map((row) => {
                     const player = playerMap.get(row.player_id);
                     const label = player?.display_name || player?.team_name || row.player_id;
+                    const hasAnyResults = (completedGamesByPlayer.get(row.player_id) ?? 0) > 0;
                     const breakdown = (row.game_breakdown ?? [])
                       .map((item) => {
                         const gameName = item.game_name || gameMap.get(item.game_id)?.name || item.game_id;
@@ -3156,10 +3308,10 @@ function StandingsPage({
                       .join(' · ');
                     return (
                       <tr key={`overall-${row.player_id}`}>
-                        <td>{row.overall_rank}</td>
+                        <td>{hasAnyResults ? row.overall_rank : '—'}</td>
                         <td>{label}</td>
-                        <td>{player?.short_code ?? '—'}</td>
-                        <td>{row.overall_score}</td>
+                        <td>{player?.team_name ?? '—'}</td>
+                        <td>{hasAnyResults ? row.overall_score : '—'}</td>
                         <td>{breakdown || '—'}</td>
                       </tr>
                     );
@@ -3206,7 +3358,7 @@ function StandingsPage({
                         <strong>Body:</strong> {row.total_points ?? '—'}
                       </p>
                       <p>
-                        <strong>Kód:</strong> {player?.short_code ?? '—'}
+                        <strong>Oddíl:</strong> {player?.team_name ?? '—'}
                       </p>
                     </article>
                   );
@@ -3219,7 +3371,7 @@ function StandingsPage({
                     <tr>
                       <th>#</th>
                       <th>Hráč</th>
-                      <th>Kód</th>
+                      <th>Oddíl</th>
                       <th>Body</th>
                       <th>Součet pořadí</th>
                       <th>Počet partií</th>
@@ -3240,7 +3392,7 @@ function StandingsPage({
                         <tr key={`${gameId}-${row.player_id}`}>
                           <td>{index + 1}</td>
                           <td>{label}</td>
-                          <td>{player?.short_code ?? '—'}</td>
+                          <td>{player?.team_name ?? '—'}</td>
                           <td>{row.total_points ?? '—'}</td>
                           <td>{placementSum ?? '—'}</td>
                           <td>{playedMatches}/{totalMatches}</td>
@@ -4135,6 +4287,61 @@ function AdminPage({
       const orderedAssignments = assignments
         .filter((assignment) => assignment.event_id === selectedEventId)
         .sort((left, right) => left.created_at.localeCompare(right.created_at));
+      const assignmentScopeKey = (assignment: BoardJudgeAssignment) =>
+        `${assignment.game_id}|${assignment.category_id ?? '*'}`;
+
+      const explicitTableAssignments = orderedAssignments.filter(
+        (assignment) => assignment.table_number !== null && assignment.table_number !== undefined,
+      );
+      const implicitTableAssignmentsByScope = new Map<string, BoardJudgeAssignment[]>();
+      for (const assignment of orderedAssignments) {
+        if (assignment.table_number !== null && assignment.table_number !== undefined) {
+          continue;
+        }
+        const scope = assignmentScopeKey(assignment);
+        const list = implicitTableAssignmentsByScope.get(scope) ?? [];
+        list.push(assignment);
+        implicitTableAssignmentsByScope.set(scope, list);
+      }
+
+      const synthesizedAssignments: BoardJudgeAssignment[] = [];
+      let synthesizedTableAssignments = 0;
+      let droppedImplicitAssignments = 0;
+      for (const [scope, implicitAssignments] of implicitTableAssignmentsByScope.entries()) {
+        const [scopeGameId, scopeCategoryIdOrWildcard] = scope.split('|');
+        const usedTables = new Set<number>(
+          explicitTableAssignments
+            .filter((assignment) =>
+              assignment.game_id === scopeGameId
+              && (scopeCategoryIdOrWildcard === '*'
+                ? assignment.category_id === null
+                : assignment.category_id === scopeCategoryIdOrWildcard),
+            )
+            .map((assignment) => assignment.table_number!)
+            .filter((value) => Number.isFinite(value)),
+        );
+
+        let candidateTable = 1;
+        for (const assignment of implicitAssignments) {
+          while (usedTables.has(candidateTable) && candidateTable <= BOARD_DRAW_MAX_TABLES_PER_GAME) {
+            candidateTable += 1;
+          }
+          if (candidateTable > BOARD_DRAW_MAX_TABLES_PER_GAME) {
+            droppedImplicitAssignments += 1;
+            continue;
+          }
+
+          usedTables.add(candidateTable);
+          synthesizedAssignments.push({
+            ...assignment,
+            table_number: candidateTable,
+          });
+          synthesizedTableAssignments += 1;
+          candidateTable += 1;
+        }
+      }
+
+      const assignmentsForTables = [...explicitTableAssignments, ...synthesizedAssignments];
       const assignmentByKey = new Map<string, BoardJudgeAssignment>();
       const fallbackPoolsByKey = new Map<string, BoardJudgeAssignment[]>();
       const fallbackRotationByKey = new Map<string, number>();
@@ -4156,10 +4363,14 @@ function AdminPage({
         return assignment;
       };
 
-      const resolveFallbackAssignment = (gameId: string, categoryId: string): BoardJudgeAssignment | null =>
+      const resolveFallbackAssignment = (
+        gameId: string,
+        categoryId: string,
+        options?: { includeGlobalPool?: boolean },
+      ): BoardJudgeAssignment | null =>
         takeFallbackAssignment(`${gameId}|${categoryId}`)
         ?? takeFallbackAssignment(`${gameId}|*`)
-        ?? takeFallbackAssignment(`*|*`);
+        ?? (options?.includeGlobalPool ? takeFallbackAssignment(`*|*`) : null);
 
       for (const assignment of orderedAssignments) {
         pushFallbackPool(`*|*`, assignment);
@@ -4167,6 +4378,9 @@ function AdminPage({
         if (assignment.category_id) {
           pushFallbackPool(`${assignment.game_id}|${assignment.category_id}`, assignment);
         }
+      }
+
+      for (const assignment of assignmentsForTables) {
         if (!assignment.table_number) {
           continue;
         }
@@ -4232,8 +4446,12 @@ function AdminPage({
               const assignmentKey = `${selectedEventId}|${blockPlan.block.game_id}|${blockPlan.block.category_id}|${table.tableNumber}`;
               const assignmentWildcardKey = `${selectedEventId}|${blockPlan.block.game_id}|*|${table.tableNumber}`;
               let assignment = assignmentByKey.get(assignmentKey) ?? assignmentByKey.get(assignmentWildcardKey);
-              if (!assignment && isTestMode) {
-                assignment = resolveFallbackAssignment(blockPlan.block.game_id, blockPlan.block.category_id) ?? undefined;
+              if (!assignment) {
+                assignment = resolveFallbackAssignment(
+                  blockPlan.block.game_id,
+                  blockPlan.block.category_id,
+                  { includeGlobalPool: isTestMode },
+                ) ?? undefined;
                 if (assignment) {
                   fallbackAssignmentsUsed += 1;
                   fallbackJudgeIds.add(assignment.user_id);
@@ -4279,6 +4497,10 @@ function AdminPage({
         setError('Nebylo co vylosovat. Zkontroluj hráče, bloky a diskvalifikace.');
         return;
       }
+
+      const playersById = new Map(players.map((player) => [player.id, player]));
+      const categoryNamesById = new Map(categories.map((category) => [category.id, category.name]));
+      const sameTeamPairStats = buildSameTeamPairStats(plannedRows, playersById, categoryNamesById);
 
       setDrawProgress({ label: 'Mažu předchozí partie…', current: 0, total: 1 });
       await yieldToBrowser();
@@ -4357,7 +4579,30 @@ function AdminPage({
       const testSuffix = isTestMode
         ? ` Test losování: doplněno ${fallbackAssignmentsUsed} stolů podle dostupných rozhodčích (${fallbackJudgeIds.size} rozhodčích).`
         : '';
-      setDrawSummary(`Partie: ${insertedMatches} · účasti hráčů: ${insertedRows}.${relaxedSuffix}${testSuffix}`);
+      const fallbackSuffix = !isTestMode && fallbackAssignmentsUsed > 0
+        ? ` Doplňeno ${fallbackAssignmentsUsed} stolů pomocí náhradního přiřazení ve stejné deskovce.`
+        : '';
+      const synthesizedSuffix = synthesizedTableAssignments
+        ? ` Automaticky doplněno ${synthesizedTableAssignments} přiřazení bez zadaného stolu.`
+        : '';
+      const droppedSuffix = droppedImplicitAssignments
+        ? ` ${droppedImplicitAssignments} přiřazení bez stolu se nevešlo do limitu ${BOARD_DRAW_MAX_TABLES_PER_GAME} stolů.`
+        : '';
+      const sameTeamTotalSuffix = ` Interní souboje ve stejném oddílu: ${sameTeamPairStats.totalPairs}.`;
+      const sameTeamCategorySuffix = sameTeamPairStats.byCategory.length
+        ? ` Kategorie: ${sameTeamPairStats.byCategory
+          .map((item) => `${item.categoryLabel} (${item.count})`)
+          .join('; ')}.`
+        : '';
+      const sameTeamTopTeamsSuffix = sameTeamPairStats.topTeams.length
+        ? ` Oddíly: ${sameTeamPairStats.topTeams
+          .slice(0, 6)
+          .map((item) => `${item.teamLabel} (${item.count})`)
+          .join(', ')}${sameTeamPairStats.topTeams.length > 6 ? '…' : ''}.`
+        : '';
+      setDrawSummary(
+        `Partie: ${insertedMatches} · účasti hráčů: ${insertedRows}.${synthesizedSuffix}${droppedSuffix}${fallbackSuffix}${relaxedSuffix}${testSuffix}${sameTeamTotalSuffix}${sameTeamCategorySuffix}${sameTeamTopTeamsSuffix}`,
+      );
       setDrawProgress({ label: 'Dokončeno', current: 1, total: 1 });
       await loadEventDetail();
     } finally {
