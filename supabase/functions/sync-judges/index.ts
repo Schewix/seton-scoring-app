@@ -92,6 +92,39 @@ const BOARD_GAME_ALIASES: Record<string, string> = {
   loveletter: 'dominion',
 };
 
+type ExistingJudgeRecord = {
+  id: string;
+  display_name: string;
+  metadata: Record<string, unknown> | null;
+  must_change_password: boolean;
+  onboarding_sent_at: string | null;
+  password_rotated_at: string | null;
+};
+
+type ExistingAssignmentRecord = {
+  id: string;
+  allowed_categories: string[] | null;
+};
+
+function buildAssignmentKey(judgeId: string, stationId: string): string {
+  return `${judgeId}|${stationId}`;
+}
+
+function buildBoardAssignmentKey(judgeId: string, gameId: string, categoryId: string | null): string {
+  return `${judgeId}|${gameId}|${categoryId ?? ''}`;
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  if (items.length <= size) {
+    return [items];
+  }
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
 function generatePassword(length = 12): string {
   const buffer = new Uint32Array(length);
   crypto.getRandomValues(buffer);
@@ -341,23 +374,102 @@ function resolveBoardSheetUrl(): string | null {
   return null;
 }
 
+async function fetchJudgesByEmails(
+  client: SupabaseClient,
+  emails: string[],
+): Promise<Map<string, ExistingJudgeRecord>> {
+  const map = new Map<string, ExistingJudgeRecord>();
+  if (!emails.length) {
+    return map;
+  }
+
+  for (const emailChunk of chunkArray(emails, 500)) {
+    const { data, error } = await client
+      .from('judges')
+      .select('id, email, display_name, metadata, must_change_password, onboarding_sent_at, password_rotated_at')
+      .in('email', emailChunk);
+
+    if (error) {
+      throw new Error(`Failed to load judges by email: ${error.message}`);
+    }
+
+    for (const judge of data ?? []) {
+      if (!judge?.email || !judge?.id) {
+        continue;
+      }
+      map.set(String(judge.email).toLowerCase(), {
+        id: String(judge.id),
+        display_name: String(judge.display_name ?? ''),
+        metadata: (judge.metadata ?? null) as Record<string, unknown> | null,
+        must_change_password: Boolean(judge.must_change_password),
+        onboarding_sent_at: judge.onboarding_sent_at ? String(judge.onboarding_sent_at) : null,
+        password_rotated_at: judge.password_rotated_at ? String(judge.password_rotated_at) : null,
+      });
+    }
+  }
+
+  return map;
+}
+
+async function fetchExistingAssignments(
+  client: SupabaseClient,
+): Promise<Map<string, ExistingAssignmentRecord>> {
+  const { data, error } = await client
+    .from('judge_assignments')
+    .select('id, judge_id, station_id, allowed_categories')
+    .eq('event_id', EVENT_ID);
+
+  if (error) {
+    throw new Error(`Failed to load judge assignments for event ${EVENT_ID}: ${error.message}`);
+  }
+
+  const map = new Map<string, ExistingAssignmentRecord>();
+  for (const assignment of data ?? []) {
+    if (!assignment?.id || !assignment?.judge_id || !assignment?.station_id) {
+      continue;
+    }
+    map.set(buildAssignmentKey(String(assignment.judge_id), String(assignment.station_id)), {
+      id: String(assignment.id),
+      allowed_categories: Array.isArray(assignment.allowed_categories)
+        ? (assignment.allowed_categories as string[])
+        : null,
+    });
+  }
+  return map;
+}
+
+async function fetchExistingBoardAssignments(
+  client: SupabaseClient,
+  boardEventId: string,
+): Promise<Set<string>> {
+  const { data, error } = await client
+    .from('board_judge_assignment')
+    .select('user_id, game_id, category_id')
+    .eq('event_id', boardEventId);
+
+  if (error) {
+    throw new Error(`Failed to load board assignments for event ${boardEventId}: ${error.message}`);
+  }
+
+  const set = new Set<string>();
+  for (const assignment of data ?? []) {
+    if (!assignment?.user_id || !assignment?.game_id) {
+      continue;
+    }
+    const categoryId = assignment.category_id ? String(assignment.category_id) : null;
+    set.add(buildBoardAssignmentKey(String(assignment.user_id), String(assignment.game_id), categoryId));
+  }
+  return set;
+}
+
 async function ensureJudge(
   client: SupabaseClient,
   row: Pick<JudgeRow, 'displayName' | 'email' | 'phone'>,
   options: SyncOptions,
+  judgeByEmail: Map<string, ExistingJudgeRecord>,
 ): Promise<JudgeResult> {
   const lowerEmail = row.email.toLowerCase();
-  const { data: existing, error } = await client
-    .from('judges')
-    .select('id, display_name, metadata, must_change_password, onboarding_sent_at, password_rotated_at')
-    .eq('email', lowerEmail)
-    .maybeSingle();
-
-  const errorCode = (error as { code?: string } | null)?.code;
-  if (error && errorCode !== 'PGRST116') {
-    throw new Error(`Failed to load judge "${lowerEmail}": ${error.message}`);
-  }
-
+  const existing = judgeByEmail.get(lowerEmail);
   const nowIso = new Date().toISOString();
 
   if (!existing) {
@@ -387,10 +499,27 @@ async function ensureJudge(
         throw new Error(`Failed to insert judge "${lowerEmail}": ${insertError?.message ?? 'unknown error'}`);
       }
 
+      judgeByEmail.set(lowerEmail, {
+        id: inserted.id,
+        display_name: row.displayName,
+        metadata,
+        must_change_password: true,
+        onboarding_sent_at: nowIso,
+        password_rotated_at: nowIso,
+      });
       return { id: inserted.id, status: 'created', generatedPassword: password };
     }
 
-    return { id: crypto.randomUUID(), status: 'created', generatedPassword: password };
+    const dryRunId = crypto.randomUUID();
+    judgeByEmail.set(lowerEmail, {
+      id: dryRunId,
+      display_name: row.displayName,
+      metadata,
+      must_change_password: true,
+      onboarding_sent_at: nowIso,
+      password_rotated_at: nowIso,
+    });
+    return { id: dryRunId, status: 'created', generatedPassword: password };
   }
 
   const updates: Record<string, unknown> = {};
@@ -418,6 +547,12 @@ async function ensureJudge(
     }
   }
 
+  judgeByEmail.set(lowerEmail, {
+    ...existing,
+    display_name: typeof updates.display_name === 'string' ? updates.display_name : existing.display_name,
+    metadata: (updates.metadata as Record<string, unknown> | undefined) ?? existing.metadata,
+  });
+
   return { id: existing.id, status: 'updated' };
 }
 
@@ -434,35 +569,34 @@ async function ensureAssignment(
   stationId: string,
   allowedCategories: string[],
   options: SyncOptions,
+  assignmentByJudgeStation: Map<string, ExistingAssignmentRecord>,
 ): Promise<AssignmentResult> {
-  const { data: existing, error } = await client
-    .from('judge_assignments')
-    .select('id, allowed_categories, allowed_tasks')
-    .eq('judge_id', judgeId)
-    .eq('station_id', stationId)
-    .eq('event_id', EVENT_ID)
-    .maybeSingle();
-
-  const errorCode = (error as { code?: string } | null)?.code;
-  if (error && errorCode !== 'PGRST116') {
-    throw new Error(`Failed to load assignment for judge ${judgeId}: ${error.message}`);
-  }
-
+  const cacheKey = buildAssignmentKey(judgeId, stationId);
+  const existing = assignmentByJudgeStation.get(cacheKey);
   const categories = [...allowedCategories];
   categories.sort();
 
   if (!existing) {
     if (!options.dryRun) {
-      const { error: insertError } = await client.from('judge_assignments').insert({
+      const { data: inserted, error: insertError } = await client.from('judge_assignments').insert({
         judge_id: judgeId,
         station_id: stationId,
         event_id: EVENT_ID,
         allowed_categories: categories,
         allowed_tasks: [],
-      });
-      if (insertError) {
+      }).select('id').single();
+      if (insertError || !inserted) {
         throw new Error(`Failed to create assignment for judge ${judgeId}: ${insertError.message}`);
       }
+      assignmentByJudgeStation.set(cacheKey, {
+        id: inserted.id,
+        allowed_categories: categories,
+      });
+    } else {
+      assignmentByJudgeStation.set(cacheKey, {
+        id: crypto.randomUUID(),
+        allowed_categories: categories,
+      });
     }
     return 'created';
   }
@@ -485,6 +619,11 @@ async function ensureAssignment(
       throw new Error(`Failed to update assignment for judge ${judgeId}: ${updateError.message}`);
     }
   }
+
+  assignmentByJudgeStation.set(cacheKey, {
+    id: existing.id,
+    allowed_categories: categories,
+  });
 
   return 'updated';
 }
@@ -602,23 +741,10 @@ async function ensureBoardAssignment(
   client: SupabaseClient,
   params: { boardEventId: string; judgeId: string; gameId: string; categoryId: string | null },
   options: SyncOptions,
+  existingBoardAssignments: Set<string>,
 ): Promise<BoardAssignmentResult> {
-  let query = client
-    .from('board_judge_assignment')
-    .select('id')
-    .eq('event_id', params.boardEventId)
-    .eq('user_id', params.judgeId)
-    .eq('game_id', params.gameId);
-
-  query = params.categoryId ? query.eq('category_id', params.categoryId) : query.is('category_id', null);
-
-  const { data: existing, error } = await query.maybeSingle();
-  const errorCode = (error as { code?: string } | null)?.code;
-  if (error && errorCode !== 'PGRST116') {
-    throw new Error(`Failed to load board assignment for judge ${params.judgeId}: ${error.message}`);
-  }
-
-  if (existing?.id) {
+  const cacheKey = buildBoardAssignmentKey(params.judgeId, params.gameId, params.categoryId);
+  if (existingBoardAssignments.has(cacheKey)) {
     return 'unchanged';
   }
 
@@ -633,6 +759,7 @@ async function ensureBoardAssignment(
       throw new Error(`Failed to create board assignment for judge ${params.judgeId}: ${insertError.message}`);
     }
   }
+  existingBoardAssignments.add(cacheKey);
 
   return 'created';
 }
@@ -717,7 +844,17 @@ Deno.serve(async (req) => {
       }
     }
 
+    const allEmails = Array.from(
+      new Set(
+        [...rows.map((row) => row.email), ...boardRows.map((row) => row.email)]
+          .map((email) => email.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    );
+    const judgeByEmail = await fetchJudgesByEmails(supabase, allEmails);
+
     const stationMap = rows.length > 0 ? await fetchStations(supabase) : new Map<string, StationRecord>();
+    const assignmentByJudgeStation = rows.length > 0 ? await fetchExistingAssignments(supabase) : new Map<string, ExistingAssignmentRecord>();
 
     for (const row of rows) {
       if (!row.email) {
@@ -736,7 +873,7 @@ Deno.serve(async (req) => {
       }
 
       try {
-        const judgeResult = await ensureJudge(supabase, row, options);
+        const judgeResult = await ensureJudge(supabase, row, options, judgeByEmail);
         summary.processed += 1;
         if (judgeResult.status === 'created') {
           summary.createdJudges += 1;
@@ -757,6 +894,7 @@ Deno.serve(async (req) => {
           station.id,
           row.allowedCategories,
           options,
+          assignmentByJudgeStation,
         );
 
         if (assignmentResult === 'created') {
@@ -795,11 +933,12 @@ Deno.serve(async (req) => {
         );
       } else {
         summary.boardEventId = boardSetup.boardEventId;
+        const existingBoardAssignments = await fetchExistingBoardAssignments(supabase, boardSetup.boardEventId);
         const seenAssignments = new Set<string>();
 
         for (const row of boardRows) {
           try {
-            const judgeResult = await ensureJudge(supabase, row, options);
+            const judgeResult = await ensureJudge(supabase, row, options, judgeByEmail);
             if (judgeResult.status === 'created') {
               summary.createdJudges += 1;
             } else if (judgeResult.status === 'updated') {
@@ -844,6 +983,7 @@ Deno.serve(async (req) => {
                 categoryId,
               },
               options,
+              existingBoardAssignments,
             );
 
             summary.boardProcessed += 1;

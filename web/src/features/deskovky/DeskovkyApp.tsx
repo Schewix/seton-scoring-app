@@ -2920,7 +2920,7 @@ function StandingsPage({
 
   return (
     <>
-      <section className="admin-card deskovky-toolbar deskovky-toolbar--sticky-mobile">
+      <section className="admin-card deskovky-toolbar deskovky-toolbar--sticky-mobile deskovky-toolbar--standings">
         <div className="deskovky-toolbar-left">
           <h2>Průběžné pořadí</h2>
           <p className="admin-card-subtitle">Přehled po hrách a celkové pořadí kategorie.</p>

@@ -68,6 +68,21 @@
   flex-wrap: wrap;
 }
 
+.deskovky-toolbar--standings {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.deskovky-toolbar--standings .deskovky-toolbar-left {
+  align-items: center;
+}
+
+.deskovky-toolbar--standings .deskovky-toolbar-actions {
+  justify-content: center;
+}
+
 .deskovky-toolbar-left {
   display: flex;
   flex-direction: column;
