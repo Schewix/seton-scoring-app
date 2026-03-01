@@ -3048,7 +3048,6 @@ function StandingsPage({
           <section key={gameId} className="admin-card">
             <h2>{game?.name ?? gameId}</h2>
             <p className="admin-card-subtitle">Typ bodování: {game?.scoring_type ?? '—'}</p>
-            // Stejná data, jiný layout: karty na mobile, tabulka na desktopu.
             {isMobile ? (
               <div className="deskovky-standings-cards">
                 {standings.map((row) => {
