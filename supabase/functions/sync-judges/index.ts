@@ -478,9 +478,18 @@ async function fetchStations(client: SupabaseClient): Promise<Map<string, Statio
 }
 
 async function resolveBoardSetup(client: SupabaseClient): Promise<BoardSetup | null> {
-  let boardEventId = BOARD_EVENT_ID || '';
+  const candidateEventIds: string[] = [];
+  const pushCandidate = (eventId: string | null | undefined) => {
+    const normalized = String(eventId ?? '').trim();
+    if (!normalized || candidateEventIds.includes(normalized)) {
+      return;
+    }
+    candidateEventIds.push(normalized);
+  };
 
-  if (!boardEventId && BOARD_EVENT_SLUG) {
+  pushCandidate(BOARD_EVENT_ID);
+
+  if (BOARD_EVENT_SLUG) {
     const { data: eventBySlug, error: slugError } = await client
       .from('board_event')
       .select('id')
@@ -489,66 +498,72 @@ async function resolveBoardSetup(client: SupabaseClient): Promise<BoardSetup | n
     if (slugError) {
       throw new Error(`Failed to load board event by slug "${BOARD_EVENT_SLUG}": ${slugError.message}`);
     }
-    boardEventId = eventBySlug?.id ?? '';
+    pushCandidate(eventBySlug?.id ?? '');
   }
 
-  if (!boardEventId) {
-    const { data: eventBySetonId, error: setonError } = await client
-      .from('board_event')
-      .select('id')
-      .eq('id', EVENT_ID)
-      .maybeSingle();
-    if (setonError) {
-      throw new Error(`Failed to load board event by id "${EVENT_ID}": ${setonError.message}`);
+  const { data: eventBySetonId, error: setonError } = await client
+    .from('board_event')
+    .select('id')
+    .eq('id', EVENT_ID)
+    .maybeSingle();
+  if (setonError) {
+    throw new Error(`Failed to load board event by id "${EVENT_ID}": ${setonError.message}`);
+  }
+  pushCandidate(eventBySetonId?.id ?? '');
+
+  for (const boardEventId of candidateEventIds) {
+    const [{ data: games, error: gamesError }, { data: categories, error: categoriesError }] = await Promise.all([
+      client.from('board_game').select('id, name').eq('event_id', boardEventId),
+      client.from('board_category').select('id, name').eq('event_id', boardEventId),
+    ]);
+
+    if (gamesError) {
+      throw new Error(`Failed to load board games for event ${boardEventId}: ${gamesError.message}`);
     }
-    boardEventId = eventBySetonId?.id ?? '';
-  }
+    if (categoriesError) {
+      throw new Error(`Failed to load board categories for event ${boardEventId}: ${categoriesError.message}`);
+    }
 
-  if (!boardEventId) {
-    return null;
-  }
-
-  const [{ data: games, error: gamesError }, { data: categories, error: categoriesError }] = await Promise.all([
-    client.from('board_game').select('id, name').eq('event_id', boardEventId),
-    client.from('board_category').select('id, name').eq('event_id', boardEventId),
-  ]);
-
-  if (gamesError) {
-    throw new Error(`Failed to load board games for event ${boardEventId}: ${gamesError.message}`);
-  }
-  if (categoriesError) {
-    throw new Error(`Failed to load board categories for event ${boardEventId}: ${categoriesError.message}`);
-  }
-
-  const gameIdByKey = new Map<string, string>();
-  for (const game of games ?? []) {
-    if (!game?.id || !game?.name) {
+    if (!(games?.length) || !(categories?.length)) {
       continue;
     }
-    gameIdByKey.set(normalizeBoardGameKey(String(game.name)), String(game.id));
-  }
 
-  const categoryIdByKey = new Map<string, string>();
-  for (const category of categories ?? []) {
-    if (!category?.id || !category?.name) {
+    const gameIdByKey = new Map<string, string>();
+    for (const game of games) {
+      if (!game?.id || !game?.name) {
+        continue;
+      }
+      gameIdByKey.set(normalizeBoardGameKey(String(game.name)), String(game.id));
+    }
+
+    const categoryIdByKey = new Map<string, string>();
+    for (const category of categories) {
+      if (!category?.id || !category?.name) {
+        continue;
+      }
+      const categoryId = String(category.id);
+      const normalizedCategoryName = normalizeLookupKey(String(category.name));
+      categoryIdByKey.set(normalizedCategoryName, categoryId);
+
+      const romanToken = extractRomanCategoryToken(String(category.name));
+      if (romanToken) {
+        categoryIdByKey.set(normalizeLookupKey(romanToken), categoryId);
+        categoryIdByKey.set(normalizeLookupKey(`kategorie ${romanToken}`), categoryId);
+      }
+    }
+
+    if (!gameIdByKey.size || !categoryIdByKey.size) {
       continue;
     }
-    const categoryId = String(category.id);
-    const normalizedCategoryName = normalizeLookupKey(String(category.name));
-    categoryIdByKey.set(normalizedCategoryName, categoryId);
 
-    const romanToken = extractRomanCategoryToken(String(category.name));
-    if (romanToken) {
-      categoryIdByKey.set(normalizeLookupKey(romanToken), categoryId);
-      categoryIdByKey.set(normalizeLookupKey(`kategorie ${romanToken}`), categoryId);
-    }
+    return {
+      boardEventId,
+      gameIdByKey,
+      categoryIdByKey,
+    };
   }
 
-  return {
-    boardEventId,
-    gameIdByKey,
-    categoryIdByKey,
-  };
+  return null;
 }
 
 async function ensureBoardAssignment(

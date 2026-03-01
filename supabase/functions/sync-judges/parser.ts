@@ -216,7 +216,15 @@ export function parseBoardCsvRows(rows: string[][]): BoardJudgeRow[] {
   const [header, ...dataRows] = rows;
   const normalizedHeader = header.map((column) => normalizeHeaderKey(column));
 
-  const idxGame = findHeaderIndex(normalizedHeader, 'deskovka', 'hra', 'game', 'board_game');
+  const idxGame = findHeaderIndex(
+    normalizedHeader,
+    'deskovka',
+    'deskové hry',
+    'deskove hry',
+    'hra',
+    'game',
+    'board_game',
+  );
   const idxFirst = findHeaderIndex(normalizedHeader, 'jmeno', 'jméno', 'first_name');
   const idxLast = findHeaderIndex(normalizedHeader, 'prijmeni', 'příjmení', 'last_name');
   const idxEmail = findHeaderIndex(normalizedHeader, 'email', 'e-mail');

@@ -26,6 +26,17 @@ describe('sync-judges parser integration', () => {
     expect(parsed.every((row) => row.email === 'osevcik@severka.org')).toBe(true);
   });
 
+  it('accepts header "deskové hry" as game column', () => {
+    const rows = [
+      ['deskové hry', 'jmeno', 'prijmeni', 'email', 'telefon', 'allowed_categories'],
+      ['kriskros, dominion', 'Ondřej', 'Ševčík', 'osevcik@severka.org', '', 'V,VI'],
+    ];
+
+    const parsed = parseBoardCsvRows(rows);
+    expect(parsed).toHaveLength(4);
+    expect(new Set(parsed.map((row) => row.gameNameKey))).toEqual(new Set(['kris kros', 'dominion']));
+  });
+
   it('deduplicates board assignments and maps games/categories to board_judge_assignment keys', () => {
     const parsedRows = parseBoardCsvRows([
       ['deskovka', 'jmeno', 'prijmeni', 'email', 'allowed_categories'],
