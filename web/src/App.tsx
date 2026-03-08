@@ -17,7 +17,7 @@ import LoginScreen from './auth/LoginScreen';
 import ChangePasswordScreen from './auth/ChangePasswordScreen';
 import type { AuthStatus } from './auth/types';
 import TicketQueue from './components/TicketQueue';
-import { createTicket, loadTickets, saveTickets, transitionTicket, Ticket, TicketState } from './auth/tickets';
+import { computeWaitTime, createTicket, loadTickets, saveTickets, transitionTicket, Ticket, TicketState } from './auth/tickets';
 import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord, getScanHistory, ScanRecord } from './storage/scanHistory';
 import { getManualPatrols, upsertManualPatrol } from './storage/manualPatrols';
@@ -431,9 +431,7 @@ function waitSecondsToMinutes(seconds: number) {
     return 0;
   }
   const safeSeconds = Math.floor(seconds);
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainder = safeSeconds % 60;
-  return Math.max(0, remainder > 30 ? minutes + 1 : minutes);
+  return Math.max(0, Math.floor(safeSeconds / 60));
 }
 
 function getStationDisplayName(name: string, code: string | null | undefined): string {
@@ -1602,7 +1600,7 @@ function StationApp({
         return;
       }
 
-      const waitSeconds = Math.max(0, Math.round(nextTicket.waitAccumMs / 1000));
+      const waitSeconds = Math.max(0, Math.round(computeWaitTime(nextTicket) / 1000));
       initializeFormForPatrol(ticketPatrol, {
         arrivedAt: nextTicket.createdAt,
         waitSeconds,

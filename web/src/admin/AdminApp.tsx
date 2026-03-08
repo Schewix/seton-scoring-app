@@ -1924,6 +1924,8 @@ function AdminDashboard({
           { width: 22 },
           { width: 27 },
         ];
+        // Keep patrol code for reliable import mapping, but hide it in exported sheets.
+        worksheet.getColumn(2).hidden = true;
       });
 
       await downloadWorkbook(workbook, toExportFileName(eventState.name, 'body-zelena-liga'));

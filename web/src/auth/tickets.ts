@@ -12,6 +12,8 @@ export interface Ticket {
   sex: string;
   state: TicketState;
   createdAt: string;
+  arrivedAt?: string;
+  servedAt?: string;
   waitStartedAt?: string;
   waitAccumMs: number;
   serveStartedAt?: string;
@@ -29,7 +31,14 @@ type StoredTicket = Ticket & { state?: TicketState | 'paused' };
 
 function sanitizeTicket(raw: StoredTicket): Ticket {
   const state: TicketState = raw.state === 'serving' || raw.state === 'done' ? raw.state : 'waiting';
-  const waitStartedAt = state === 'waiting' ? raw.waitStartedAt : undefined;
+  const normalizedArrivedAt =
+    typeof raw.arrivedAt === 'string' && raw.arrivedAt.length > 0
+      ? raw.arrivedAt
+      : typeof raw.waitStartedAt === 'string' && raw.waitStartedAt.length > 0
+        ? raw.waitStartedAt
+        : undefined;
+  const normalizedServedAt =
+    typeof raw.servedAt === 'string' && raw.servedAt.length > 0 ? raw.servedAt : undefined;
   const points =
     typeof raw.points === 'number' && Number.isFinite(raw.points) ? raw.points : raw.points ?? null;
   return {
@@ -41,7 +50,9 @@ function sanitizeTicket(raw: StoredTicket): Ticket {
     sex: typeof raw.sex === 'string' ? raw.sex : '',
     state,
     createdAt: raw.createdAt,
-    waitStartedAt,
+    arrivedAt: normalizedArrivedAt,
+    servedAt: normalizedServedAt,
+    waitStartedAt: state === 'waiting' ? raw.waitStartedAt : undefined,
     waitAccumMs: raw.waitAccumMs ?? 0,
     serveStartedAt: undefined,
     serveAccumMs: 0,
@@ -91,6 +102,8 @@ export function createTicket(data: {
     sex: data.sex,
     state,
     createdAt: now,
+    arrivedAt: state === 'waiting' ? now : undefined,
+    servedAt: state === 'serving' ? now : undefined,
     waitStartedAt: state === 'waiting' ? now : undefined,
     waitAccumMs: 0,
     serveStartedAt: undefined,
@@ -99,10 +112,31 @@ export function createTicket(data: {
   };
 }
 
+function toMs(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
 export function computeWaitTime(ticket: Ticket) {
+  const arrivedMs = toMs(ticket.arrivedAt);
+  const servedMs = toMs(ticket.servedAt);
+  if (arrivedMs !== null) {
+    if (servedMs !== null) {
+      return Math.max(0, servedMs - arrivedMs);
+    }
+    if (ticket.state === 'waiting' || ticket.state === 'serving') {
+      return Math.max(0, Date.now() - arrivedMs);
+    }
+    return 0;
+  }
+
+  // Legacy fallback for older stored tickets.
   const base = ticket.waitAccumMs;
   if (ticket.state === 'waiting' && ticket.waitStartedAt) {
-    return base + (Date.now() - new Date(ticket.waitStartedAt).getTime());
+    return base + Math.max(0, Date.now() - new Date(ticket.waitStartedAt).getTime());
   }
   return base;
 }
@@ -113,14 +147,15 @@ export function minutesFromMs(ms: number) {
 
 export function canonicalTicketSignaturePayload(tickets: Ticket[]) {
   return canonicalStringify(
-    tickets.map(({ id, state, waitAccumMs, serveAccumMs }) => ({ id, state, waitAccumMs, serveAccumMs })),
+    tickets.map(({ id, state, arrivedAt, servedAt, waitAccumMs, serveAccumMs }) => ({
+      id,
+      state,
+      arrivedAt,
+      servedAt,
+      waitAccumMs,
+      serveAccumMs,
+    })),
   );
-}
-
-function toTimestamp(value: string | undefined) {
-  if (!value) return null;
-  const ms = new Date(value).getTime();
-  return Number.isFinite(ms) ? ms : null;
 }
 
 export function transitionTicket(
@@ -130,52 +165,35 @@ export function transitionTicket(
 ): Ticket {
   const nowMs = typeof timestamp === 'number' ? timestamp : timestamp.getTime();
   const nowIso = new Date(nowMs).toISOString();
-  let waitAccum = ticket.waitAccumMs;
 
   const result: Ticket = {
     ...ticket,
     state: nextState,
-    waitAccumMs: waitAccum,
     waitStartedAt: ticket.waitStartedAt,
-    serveStartedAt: ticket.serveStartedAt,
-  };
-
-  const flushWait = () => {
-    const startedMs = toTimestamp(ticket.waitStartedAt);
-    if (startedMs !== null) {
-      waitAccum += Math.max(0, nowMs - startedMs);
-      result.waitAccumMs = waitAccum;
-    }
-    result.waitStartedAt = undefined;
+    serveStartedAt: undefined,
   };
 
   switch (nextState) {
     case 'waiting': {
-      if (ticket.state !== 'waiting') {
-        result.waitStartedAt = nowIso;
-      } else {
-        result.waitStartedAt = ticket.waitStartedAt ?? nowIso;
+      if (!ticket.arrivedAt) {
+        result.arrivedAt = nowIso;
       }
+      // Keep UI timer running for waiting column and make "servedAt" overwrite-able.
+      result.servedAt = undefined;
+      result.waitStartedAt = result.arrivedAt ?? nowIso;
       break;
     }
     case 'serving': {
-      if (ticket.state === 'waiting') {
-        const startedMs = toTimestamp(ticket.waitStartedAt);
-        if (startedMs !== null) {
-          waitAccum += Math.max(0, nowMs - startedMs);
-          result.waitAccumMs = waitAccum;
-        }
+      if (!ticket.arrivedAt && ticket.state === 'waiting') {
+        result.arrivedAt = nowIso;
       }
+      // Entering serving always updates "servedAt" so the supervisor can correct timing by requeueing.
+      result.servedAt = nowIso;
       result.waitStartedAt = undefined;
-      result.serveStartedAt = undefined;
       break;
     }
     case 'done': {
-      if (ticket.state === 'waiting') {
-        flushWait();
-      }
       result.waitStartedAt = undefined;
-      result.serveStartedAt = undefined;
       break;
     }
     default:
