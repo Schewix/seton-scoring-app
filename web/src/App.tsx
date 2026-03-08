@@ -1568,6 +1568,15 @@ function StationApp({
         return;
       }
 
+      if (
+        nextState === 'done'
+        && activePatrol
+        && activePatrol.id !== existingTicket.patrolId
+      ) {
+        pushAlert('Nejdřív ulož nebo vymaž rozpracovaný formulář.');
+        return;
+      }
+
       const nextTicket = transitionTicket(existingTicket, nextState);
 
       updateTickets((current) =>
@@ -1602,11 +1611,11 @@ function StationApp({
 
       const waitSeconds = Math.max(0, Math.round(computeWaitTime(nextTicket) / 1000));
       initializeFormForPatrol(ticketPatrol, {
-        arrivedAt: nextTicket.createdAt,
+        arrivedAt: nextTicket.arrivedAt ?? nextTicket.createdAt,
         waitSeconds,
       });
     },
-    [initializeFormForPatrol, patrolById, pushAlert, tickets, updateTickets],
+    [activePatrol, initializeFormForPatrol, patrolById, pushAlert, tickets, updateTickets],
   );
 
   const handleRemoveTicket = useCallback(
