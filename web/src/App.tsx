@@ -903,7 +903,13 @@ function StationApp({
     [eventId, outboxItems, stationId],
   );
   const pendingCount = useMemo(
-    () => currentSessionItems.filter((item) => item.state !== 'sent').length,
+    () =>
+      currentSessionItems.filter(
+        (item) =>
+          item.state !== 'sent'
+          && item.state !== 'blocked_other_session'
+          && item.state !== 'rejected_event_locked',
+      ).length,
     [currentSessionItems],
   );
 
@@ -2023,7 +2029,8 @@ function StationApp({
               item.event_id !== eventId ||
               item.station_id !== stationId ||
               item.state === 'sent' ||
-              item.state === 'blocked_other_session'
+              item.state === 'blocked_other_session' ||
+              item.state === 'rejected_event_locked'
             ) {
               return item;
             }
@@ -3889,6 +3896,8 @@ function StationApp({
                                   const blockedLabel =
                                     item.state === 'blocked_other_session'
                                       ? 'Záznam patří k jiné relaci.'
+                                      : item.state === 'rejected_event_locked'
+                                        ? 'Záznam vznikl po ukončení závodu, proto se neodešle.'
                                       : null;
                                   const patrolLabel = payload.team_name || 'Neznámá hlídka';
                                   const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';
@@ -3901,6 +3910,8 @@ function StationApp({
                                         return 'Čeká na přihlášení';
                                       case 'blocked_other_session':
                                         return 'Nelze odeslat';
+                                      case 'rejected_event_locked':
+                                        return 'Uzamčeno po ukončení závodu';
                                       case 'failed':
                                         return `Další pokus v ${formatTime(new Date(item.next_attempt_at).toISOString())}`;
                                       case 'sent':

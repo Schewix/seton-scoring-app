@@ -24,6 +24,15 @@ do $$ begin
   end if;
 exception when duplicate_column then null; end $$;
 
+do $$ begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'events' and column_name = 'scoring_locked_at'
+  ) then
+    alter table events add column scoring_locked_at timestamptz;
+  end if;
+exception when duplicate_column then null; end $$;
+
 create table if not exists patrols (
   id uuid primary key default gen_random_uuid(),
   event_id uuid not null references events(id) on delete cascade,

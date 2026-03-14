@@ -109,6 +109,31 @@ describe('submit-station-record api', () => {
     expect(timings?.length).toBe(1);
   });
 
+  it('rejects records created after event lock timestamp', async () => {
+    const lockAt = new Date();
+    const createdAfterLock = new Date(lockAt.getTime() + 60_000).toISOString();
+    await supabaseAdmin
+      .from('events')
+      .update({ scoring_locked: true, scoring_locked_at: lockAt.toISOString() })
+      .eq('id', ctx.eventId);
+
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: `Bearer ${ctx.accessToken}` },
+      body: basePayload({ client_created_at: createdAfterLock }),
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+    expect(res.statusCode).toBe(409);
+
+    const { data: scores } = await supabaseAdmin
+      .from('station_scores')
+      .select('*')
+      .eq('event_id', ctx.eventId);
+    expect(scores?.length ?? 0).toBe(0);
+  });
+
   it('target scoring stores quiz responses and is idempotent', async () => {
     const payload = basePayload({
       use_target_scoring: true,

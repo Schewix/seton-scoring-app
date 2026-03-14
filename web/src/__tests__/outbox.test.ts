@@ -229,6 +229,60 @@ describe('outbox flush', () => {
     expect(updated[0]?.attempts).toBe(1);
   });
 
+  it('marks items as rejected_event_locked on 409 and does not schedule retry', async () => {
+    const item: OutboxEntry = {
+      client_event_id: 'client-1',
+      type: 'station_score',
+      payload: buildStationScorePayload(
+        {
+          event_id: 'event-1',
+          station_id: 'station-1',
+          patrol_id: 'patrol-1',
+          category: 'M',
+          arrived_at: '2025-01-01T00:00:00.000Z',
+          wait_minutes: 0,
+          points: 5,
+          note: '',
+          use_target_scoring: false,
+          normalized_answers: null,
+          finish_time: null,
+          patrol_code: 'MH-1',
+          team_name: 'Test',
+          sex: 'H',
+        },
+        'client-1',
+        '2025-01-01T00:00:00.000Z',
+      ),
+      event_id: 'event-1',
+      station_id: 'station-1',
+      state: 'queued',
+      attempts: 0,
+      next_attempt_at: 0,
+      created_at: '2025-01-01T00:00:00.000Z',
+      response: null,
+    };
+
+    const now = Date.now();
+    const fetchFn = vi.fn(async () =>
+      new Response(JSON.stringify({ error: 'Event scoring is locked for new records.' }), { status: 409 }),
+    );
+
+    const { updated, sentIds } = await flushOutboxBatch({
+      items: [item],
+      eventId: 'event-1',
+      stationId: 'station-1',
+      accessToken: 'token',
+      endpoint: 'http://example.com',
+      fetchFn,
+      now,
+      batchSize: 10,
+    });
+
+    expect(sentIds).toHaveLength(0);
+    expect(updated[0]?.state).toBe('rejected_event_locked');
+    expect(updated[0]?.next_attempt_at).toBe(now);
+  });
+
   it('removes items when network succeeds', async () => {
     const item: OutboxEntry = {
       client_event_id: 'client-1',

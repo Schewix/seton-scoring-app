@@ -850,7 +850,7 @@
 .homepage-skeleton-chip {
   background: linear-gradient(90deg, rgba(4, 55, 44, 0.08) 20%, rgba(4, 55, 44, 0.16) 50%, rgba(4, 55, 44, 0.08) 80%);
   background-size: 220% 100%;
-  animation: homepage-skeleton-shimmer 1.25s ease-in-out infinite;
+  animation: homepage-skeleton-shimmer 2.5s ease-in-out infinite;
 }
 
 .homepage-skeleton-line {

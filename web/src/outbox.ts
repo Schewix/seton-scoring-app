@@ -1,6 +1,13 @@
 import { getOutboxStore } from './storage/localforage';
 
-export type OutboxState = 'queued' | 'sending' | 'sent' | 'failed' | 'needs_auth' | 'blocked_other_session';
+export type OutboxState =
+  | 'queued'
+  | 'sending'
+  | 'sent'
+  | 'failed'
+  | 'needs_auth'
+  | 'blocked_other_session'
+  | 'rejected_event_locked';
 
 export interface StationScorePayload {
   client_event_id: string;
@@ -243,6 +250,17 @@ export async function flushOutboxBatch(params: {
           ...item,
           state: 'blocked_other_session',
           last_error: body?.error ? String(body.error) : 'forbidden',
+          next_attempt_at: params.now,
+        });
+        continue;
+      }
+
+      if (response.status === 409) {
+        resultMap.set(item.client_event_id, {
+          ...item,
+          state: 'rejected_event_locked',
+          attempts: item.attempts + 1,
+          last_error: body?.error ? String(body.error) : 'event-locked',
           next_attempt_at: params.now,
         });
         continue;

@@ -104,4 +104,21 @@ describe('submit-station-record edge function', () => {
 
     expect(response.status).toBe(403);
   });
+
+  it('rejects records created after event lock timestamp', async () => {
+    const lockAt = new Date();
+    const createdAfterLock = new Date(lockAt.getTime() + 60_000).toISOString();
+    await supabaseAdmin
+      .from('events')
+      .update({ scoring_locked: true, scoring_locked_at: lockAt.toISOString() })
+      .eq('id', ctx.eventId);
+
+    const response = await fetch(`${FUNCTIONS_BASE_URL}/submit-station-record`, {
+      method: 'POST',
+      headers: buildHeaders(ctx.accessToken),
+      body: JSON.stringify(basePayload({ client_created_at: createdAfterLock })),
+    });
+
+    expect(response.status).toBe(409);
+  });
 });

@@ -837,13 +837,14 @@ function ArticleSkeletonGrid({ count = 4 }: { count?: number }) {
 }
 
 function GallerySkeletonGrid({ count = 8 }: { count?: number }) {
+  const normalizedCount = Number.isFinite(count) ? Math.max(1, Math.round(count)) : 8;
   return (
     <section className="gallery-year-section gallery-year-section--skeleton">
       <div className="gallery-year-header" aria-hidden="true">
         <div className="homepage-skeleton-line homepage-skeleton-line--year" />
       </div>
       <div className="gallery-album-grid homepage-skeleton-grid" aria-hidden="true">
-        {Array.from({ length: count }).map((_, index) => (
+        {Array.from({ length: normalizedCount }).map((_, index) => (
           <div key={`gallery-skeleton-${index}`} className="gallery-album-card gallery-album-card--skeleton">
             <div className="gallery-album-cover homepage-skeleton-block" />
             <div className="gallery-album-body">
@@ -1937,12 +1938,14 @@ function GalleryOverviewPage({
   loading,
   years,
   selectedYear,
+  loadingSkeletonCount,
   onSelectYear,
 }: {
   albums: DriveAlbum[];
   loading: boolean;
   years: string[];
   selectedYear: string | null;
+  loadingSkeletonCount?: number;
   onSelectYear: (year: string) => void;
 }) {
   const grouped = useMemo(() => {
@@ -1985,7 +1988,7 @@ function GalleryOverviewPage({
             <p className="homepage-skeleton-status" role="status">
               Načítám alba…
             </p>
-            <GallerySkeletonGrid />
+            <GallerySkeletonGrid count={loadingSkeletonCount} />
           </>
         ) : null}
         {!loading && albums.length === 0 ? (
@@ -3153,6 +3156,7 @@ export default function ZelenaligaSite() {
   const [leagueScores, setLeagueScores] = useState<LeagueScoresRecord>(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
   const [driveAlbums, setDriveAlbums] = useState<DriveAlbum[]>([]);
   const [galleryYears, setGalleryYears] = useState<string[]>([]);
+  const [galleryAlbumCountsByYear, setGalleryAlbumCountsByYear] = useState<Record<string, number>>({});
   const [selectedGalleryYear, setSelectedGalleryYear] = useState<string | null>(null);
   const [driveAlbumsLoading, setDriveAlbumsLoading] = useState(false);
   const path = window.location.pathname.replace(/\/$/, '') || '/';
@@ -3236,6 +3240,7 @@ export default function ZelenaligaSite() {
   useEffect(() => {
     if (!isGalleryOverviewRoute) {
       setGalleryYears([]);
+      setGalleryAlbumCountsByYear({});
       setSelectedGalleryYear(null);
       return;
     }
@@ -3247,9 +3252,20 @@ export default function ZelenaligaSite() {
         if (!active) {
           return;
         }
+        const albumCountsByYear: Record<string, number> = {};
+        if (data.albumCountsByYear && typeof data.albumCountsByYear === 'object' && !Array.isArray(data.albumCountsByYear)) {
+          Object.entries(data.albumCountsByYear as Record<string, unknown>).forEach(([yearKey, value]) => {
+            const parsed = Number(value);
+            if (yearKey.trim().length === 0 || !Number.isFinite(parsed) || parsed < 0) {
+              return;
+            }
+            albumCountsByYear[yearKey] = Math.round(parsed);
+          });
+        }
         const years = Array.isArray(data.years)
           ? data.years.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
           : [];
+        setGalleryAlbumCountsByYear(albumCountsByYear);
         setGalleryYears(years);
         setSelectedGalleryYear((current) => (current && years.includes(current) ? current : years[0] ?? null));
         if (years.length === 0) {
@@ -3260,6 +3276,7 @@ export default function ZelenaligaSite() {
       .catch(() => {
         if (active) {
           setGalleryYears([]);
+          setGalleryAlbumCountsByYear({});
           setSelectedGalleryYear(null);
           setDriveAlbums([]);
           setDriveAlbumsLoading(false);
@@ -3297,6 +3314,17 @@ export default function ZelenaligaSite() {
         if (active) {
           const albums = data.albums ?? [];
           setDriveAlbums(albums);
+          if (isGalleryOverviewRoute && selectedGalleryYear) {
+            setGalleryAlbumCountsByYear((current) => {
+              if (current[selectedGalleryYear] === albums.length) {
+                return current;
+              }
+              return {
+                ...current,
+                [selectedGalleryYear]: albums.length,
+              };
+            });
+          }
           // Data will be loaded on-demand when user navigates to gallery
           // Cache keeps data in memory for 5 minutes (see galleryCache.ts)
         }
@@ -3449,6 +3477,7 @@ export default function ZelenaligaSite() {
           loading={driveAlbumsLoading}
           years={galleryYears}
           selectedYear={selectedGalleryYear}
+          loadingSkeletonCount={selectedGalleryYear ? galleryAlbumCountsByYear[selectedGalleryYear] : undefined}
           onSelectYear={setSelectedGalleryYear}
         />
       );

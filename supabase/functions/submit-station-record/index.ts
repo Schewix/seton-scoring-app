@@ -231,6 +231,33 @@ Deno.serve(async (req) => {
   if (!station) {
     return jsonResponse({ error: 'Invalid station for event' }, 400);
   }
+
+  const { data: eventState, error: eventError } = await supabaseAdmin
+    .from('events')
+    .select('scoring_locked, scoring_locked_at')
+    .eq('id', body.event_id)
+    .maybeSingle();
+  if (eventError) {
+    logError('events lookup failed', eventError);
+    return jsonResponse({ error: 'Event lookup failed' }, 500);
+  }
+  if (!eventState) {
+    return jsonResponse({ error: 'Invalid event' }, 400);
+  }
+  if (eventState.scoring_locked) {
+    const lockAtMs = eventState.scoring_locked_at ? Date.parse(eventState.scoring_locked_at) : Number.NaN;
+    const createdAtMs = Date.parse(body.client_created_at);
+    if (!Number.isFinite(lockAtMs) || createdAtMs > lockAtMs) {
+      return jsonResponse(
+        {
+          error: 'Event scoring is locked for new records.',
+          detail: 'submission-created-after-lock',
+        },
+        409,
+      );
+    }
+  }
+
   const submittedBy = judgeId;
   const { error: submitError } = await supabaseAdmin.rpc('submit_station_record', {
     p_event_id: body.event_id,

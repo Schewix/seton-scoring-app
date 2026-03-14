@@ -68,6 +68,22 @@ function normalizeForMatch(value: string): string {
     .trim();
 }
 
+function parseAlbumAllowlist(raw: string): string[] {
+  return raw
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map(normalizeForMatch);
+}
+
+function isAlbumAllowedByAllowlist(albumName: string, allowlist: string[]): boolean {
+  if (allowlist.length === 0) {
+    return true;
+  }
+  const normalizedName = normalizeForMatch(albumName);
+  return allowlist.some((term) => normalizedName.includes(term));
+}
+
 async function fetchAlbumOverrides(): Promise<Map<string, string>> {
   try {
     const supabase = getSupabaseAdminClient();
@@ -360,18 +376,39 @@ async function handleAlbums(req: any, res: any) {
 
   try {
     const yearFolders = await listAllFolders(rootFolderId);
+    const allowlist = parseAlbumAllowlist(process.env.GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST ?? '');
+
     if (yearsOnly) {
-      const years = yearFolders
-        .map((folder) => folder.name ?? 'Ostatní')
-        .sort((a, b) => {
-          const yearA = sortYearLabel(a);
-          const yearB = sortYearLabel(b);
-          if (yearA !== yearB) {
-            return yearB - yearA;
+      const yearEntries = await Promise.all(
+        yearFolders.map(async (folder) => {
+          const year = folder.name ?? 'Ostatní';
+          if (!folder.id) {
+            return { year, albumCount: 0 };
           }
-          return b.localeCompare(a, 'cs');
-        });
-      const payload = { years };
+          const albumFolders = await listAllFolders(folder.id);
+          const albumCount = albumFolders.filter((albumFolder) => {
+            if (!albumFolder.name) {
+              return false;
+            }
+            return isAlbumAllowedByAllowlist(albumFolder.name, allowlist);
+          }).length;
+          return { year, albumCount };
+        }),
+      );
+      yearEntries.sort((a, b) => {
+        const yearA = sortYearLabel(a.year);
+        const yearB = sortYearLabel(b.year);
+        if (yearA !== yearB) {
+          return yearB - yearA;
+        }
+        return b.year.localeCompare(a.year, 'cs');
+      });
+      const years = yearEntries.map((entry) => entry.year);
+      const albumCountsByYear = yearEntries.reduce<Record<string, number>>((acc, entry) => {
+        acc[entry.year] = entry.albumCount;
+        return acc;
+      }, {});
+      const payload = { years, albumCountsByYear };
       if (!bypassCache) {
         setCache(cacheKey, payload);
       }
@@ -390,12 +427,6 @@ async function handleAlbums(req: any, res: any) {
       overrides = await fetchAlbumOverrides();
     }
 
-    const allowlistRaw = process.env.GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST ?? '';
-    const allowlist = allowlistRaw
-      .split(/[\n,]/)
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .map(normalizeForMatch);
     const scopedYearFolders = yearFilter
       ? yearFolders.filter((folder) => (folder.name ?? 'Ostatní') === yearFilter)
       : yearFolders;
@@ -418,12 +449,8 @@ async function handleAlbums(req: any, res: any) {
         if (!folder.id || !folder.name) {
           continue;
         }
-        if (allowlist.length > 0) {
-          const normalizedName = normalizeForMatch(folder.name);
-          const isAllowed = allowlist.some((term) => normalizedName.includes(term));
-          if (!isAllowed) {
-            continue;
-          }
+        if (!isAlbumAllowedByAllowlist(folder.name, allowlist)) {
+          continue;
         }
         const baseTitle = folder.name;
         const overrideTitle = folder.id ? overrides.get(folder.id) : undefined;

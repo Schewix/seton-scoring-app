@@ -302,6 +302,32 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: 'Invalid station for event' });
   }
 
+  const { data: eventState, error: eventError } = await supabaseAdmin
+    .from('events')
+    .select('scoring_locked, scoring_locked_at')
+    .eq('id', body.event_id)
+    .maybeSingle();
+
+  if (eventError) {
+    logError('events lookup failed', eventError);
+    return respond(res, 500, 'Event lookup failed', eventError.message);
+  }
+
+  if (!eventState) {
+    return res.status(400).json({ error: 'Invalid event' });
+  }
+
+  if (eventState.scoring_locked) {
+    const lockAtMs = eventState.scoring_locked_at ? Date.parse(eventState.scoring_locked_at) : Number.NaN;
+    const createdAtMs = Date.parse(body.client_created_at);
+    if (!Number.isFinite(lockAtMs) || createdAtMs > lockAtMs) {
+      return res.status(409).json({
+        error: 'Event scoring is locked for new records.',
+        detail: 'submission-created-after-lock',
+      });
+    }
+  }
+
   const submittedBy = judgeId;
   const { error: submitError } = await supabaseAdmin.rpc('submit_station_record', {
     p_event_id: body.event_id,
