@@ -365,9 +365,12 @@ function formatDateTimeLabel(value: string | null) {
 
 function formatWaitDuration(seconds: number) {
   const safe = Math.max(0, Math.floor(seconds));
-  const minutes = Math.floor(safe / 60);
-  const secs = safe % 60;
-  return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  const totalMinutes = Math.floor(safe / 60);
+  const hours = Math.floor(totalMinutes / 60)
+    .toString()
+    .padStart(2, '0');
+  const minutes = (totalMinutes % 60).toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
 }
 
 function toLocalTimeInput(value: string | null) {
