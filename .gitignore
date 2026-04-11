@@ -17,6 +17,7 @@ zelena-liga-sa.json
 
 # Supabase
 supabase/.branches/
+supabase/.temp/
 web/supabase/
 
 # IDE
