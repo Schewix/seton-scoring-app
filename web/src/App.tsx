@@ -3000,15 +3000,6 @@ function StationApp({
             </header>
             <section className="card station-menu-card">
               <header className="card-header">
-                <h3>Účet</h3>
-              </header>
-              <p className="card-hint">Odhlásíš se z aktuální relace.</p>
-              <button type="button" className="logout-button" onClick={handleLogout}>
-                Odhlásit se
-              </button>
-            </section>
-            <section className="card station-menu-card">
-              <header className="card-header">
                 <h3>Stanoviště</h3>
               </header>
               <ul className="station-menu-list">
@@ -3062,6 +3053,15 @@ function StationApp({
                   <li key={rule}>{rule}</li>
                 ))}
               </ul>
+            </section>
+            <section className="card station-menu-card">
+              <header className="card-header">
+                <h3>Účet</h3>
+              </header>
+              <p className="card-hint">Odhlásíš se z aktuální relace.</p>
+              <button type="button" className="logout-button" onClick={handleLogout}>
+                Odhlásit se
+              </button>
             </section>
           </aside>
         </div>
