@@ -19,7 +19,7 @@ import type { AuthStatus } from './auth/types';
 import TicketQueue from './components/TicketQueue';
 import { computeWaitTime, createTicket, loadTickets, saveTickets, transitionTicket, Ticket, TicketState } from './auth/tickets';
 import { registerPendingSync, setupSyncListener } from './backgroundSync';
-import { appendScanRecord, getScanHistory, ScanRecord } from './storage/scanHistory';
+import { appendScanRecord } from './storage/scanHistory';
 import { getManualPatrols, upsertManualPatrol } from './storage/manualPatrols';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
@@ -520,9 +520,6 @@ function StationApp({
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [authNeedsLogin, setAuthNeedsLogin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [scanHistory, setScanHistory] = useState<ScanRecord[]>([]);
-  const [scanHistoryLoading, setScanHistoryLoading] = useState(false);
-  const [scanHistoryError, setScanHistoryError] = useState<string | null>(null);
   const [manualCodeDraft, setManualCodeDraft] = useState('');
   const [confirmedManualCode, setConfirmedManualCode] = useState('');
   const [patrolRegistryEntries, setPatrolRegistryEntries] = useState<PatrolRegistryEntry[]>([]);
@@ -2823,10 +2820,6 @@ function StationApp({
     return badges;
   }, [enableTicketQueue, manifest.event.name, pendingCount]);
 
-  const failedCount = useMemo(
-    () => currentSessionItems.filter((item) => item.state === 'failed').length,
-    [currentSessionItems],
-  );
   const nextAttemptAtIso = useMemo(() => {
     const future = currentSessionItems
       .filter(
@@ -2841,52 +2834,9 @@ function StationApp({
     const earliest = Math.min(...future);
     return new Date(earliest).toISOString();
   }, [currentSessionItems]);
-  const nextAttemptAtLabel = useMemo(() => {
-    if (!nextAttemptAtIso) {
-      return null;
-    }
-    return formatTime(nextAttemptAtIso);
-  }, [nextAttemptAtIso]);
-  const offlineQueueSummaryLabel =
-    pendingCount === 0 ? 'Offline fronta prázdná' : `Čeká na odeslání: ${pendingCount}`;
-  const offlineSyncLabel = useMemo(() => {
-    if (syncing) {
-      return 'Odesílám…';
-    }
-    if (pendingCount === 0) {
-      return 'Zatím žádné odesílání';
-    }
-    if (nextAttemptAtLabel) {
-      return `Další pokus v ${nextAttemptAtLabel}`;
-    }
-    return 'Čeká na odeslání';
-  }, [nextAttemptAtLabel, pendingCount, syncing]);
-  const scanHistoryItems = useMemo(() => scanHistory.slice().reverse(), [scanHistory]);
-  const loadScanHistory = useCallback(async () => {
-    if (!eventId || !stationId) {
-      return;
-    }
-    setScanHistoryLoading(true);
-    setScanHistoryError(null);
-    try {
-      const records = await getScanHistory(eventId, stationId);
-      setScanHistory(records);
-    } catch (error) {
-      console.error('scan history load failed', error);
-      setScanHistoryError('Historii skenů se nepodařilo načíst.');
-    } finally {
-      setScanHistoryLoading(false);
-    }
-  }, [eventId, stationId]);
   const handleOpenRules = useCallback((url: string) => {
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
-
-  useEffect(() => {
-    if (menuOpen) {
-      void loadScanHistory();
-    }
-  }, [loadScanHistory, menuOpen]);
 
   useEffect(() => {
     if (!nextAttemptAtIso) {
@@ -3059,27 +3009,6 @@ function StationApp({
             </section>
             <section className="card station-menu-card">
               <header className="card-header">
-                <h3>Stav závodu</h3>
-              </header>
-              <ul className="station-menu-list">
-                <li>
-                  <span className="card-hint">Event</span>
-                  <strong className="station-menu-value">{manifest.event.name}</strong>
-                </li>
-                <li>
-                  <span className="card-hint">Offline fronta</span>
-                  <strong className="station-menu-value">{offlineQueueSummaryLabel}</strong>
-                </li>
-                {failedCount > 0 ? (
-                  <li>
-                    <span className="card-hint">Chyby</span>
-                    <strong className="station-menu-value">{failedCount}</strong>
-                  </li>
-                ) : null}
-              </ul>
-            </section>
-            <section className="card station-menu-card">
-              <header className="card-header">
                 <h3>Stanoviště</h3>
               </header>
               <ul className="station-menu-list">
@@ -3115,71 +3044,6 @@ function StationApp({
                   <strong className="station-menu-value station-menu-value--muted">{manifest.judge.email}</strong>
                 </li>
               </ul>
-            </section>
-            <section className="card station-menu-card">
-              <header className="card-header">
-                <h3>Offline fronta</h3>
-              </header>
-              <ul className="station-menu-list">
-                <li>
-                  <span className="card-hint">Síť</span>
-                  <strong className="station-menu-value">{isOnline ? 'Online' : 'Offline'}</strong>
-                </li>
-                <li>
-                  <span className="card-hint">Synchronizace</span>
-                  <strong className="station-menu-value">{offlineSyncLabel}</strong>
-                </li>
-                <li>
-                  <span className="card-hint">Fronta</span>
-                  <strong className="station-menu-value">
-                    {pendingCount === 0 ? 'prázdná' : `${pendingCount} položek`}
-                  </strong>
-                </li>
-              </ul>
-            </section>
-            <section className="card station-menu-card">
-              <header className="card-header">
-                <h3>Historie skenů</h3>
-              </header>
-              <p className="card-hint">Posledních 100 skenů uložených v tomto zařízení.</p>
-              <div className="station-menu-history-actions">
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => {
-                    void loadScanHistory();
-                  }}
-                  disabled={scanHistoryLoading}
-                >
-                  {scanHistoryLoading ? 'Načítám…' : 'Obnovit'}
-                </button>
-              </div>
-              {scanHistoryError ? <p className="error-text">{scanHistoryError}</p> : null}
-              {scanHistoryItems.length ? (
-                <ul className="scan-history-list">
-                  {scanHistoryItems.map((record, index) => (
-                    <li key={`${record.code}-${record.scannedAt}-${index}`} className="scan-history-item">
-                      <div className="scan-history-meta">
-                        <span className="scan-history-time">{formatTime(record.scannedAt)}</span>
-                        <span className="scan-history-code">{record.code}</span>
-                      </div>
-                      <div className="scan-history-detail">
-                        <span
-                          className={`scan-history-status ${
-                            record.status === 'success' ? 'scan-history-status--success' : 'scan-history-status--failed'
-                          }`}
-                        >
-                          {record.status === 'success' ? 'OK' : 'Chyba'}
-                        </span>
-                        <span className="scan-history-team">{record.teamName ?? '—'}</span>
-                      </div>
-                      {record.reason ? <span className="scan-history-reason">{record.reason}</span> : null}
-                    </li>
-                  ))}
-                </ul>
-              ) : scanHistoryLoading ? null : (
-                <p className="card-hint">Zatím tu nejsou žádné skeny.</p>
-              )}
             </section>
             <section className="card station-menu-card">
               <header className="card-header">

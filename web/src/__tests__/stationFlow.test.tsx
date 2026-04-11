@@ -976,16 +976,15 @@ describe('station workflow', () => {
     expect(await screen.findByText('TMP-001')).toBeInTheDocument();
   });
 
-  it('shows offline queue health widget', async () => {
+  it('does not show removed offline status sections in menu', async () => {
     const user = userEvent.setup();
     await renderApp();
 
     const menuButtons = await screen.findAllByRole('button', { name: 'Otevřít menu' });
     await user.click(menuButtons[0]);
     const menuDialog = await screen.findByRole('dialog');
-    expect(within(menuDialog).getByText('Síť')).toBeInTheDocument();
-    expect(within(menuDialog).getByText('Online')).toBeInTheDocument();
-    expect(within(menuDialog).getByText('Fronta')).toBeInTheDocument();
-    expect(within(menuDialog).getByText('prázdná')).toBeInTheDocument();
+    expect(within(menuDialog).queryByText('Stav závodu')).not.toBeInTheDocument();
+    expect(within(menuDialog).queryByText('Offline fronta')).not.toBeInTheDocument();
+    expect(within(menuDialog).queryByText('Historie skenů')).not.toBeInTheDocument();
   });
 });
