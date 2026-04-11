@@ -3569,11 +3569,6 @@ function StationApp({
                   <strong>{activePatrol.team_name}</strong>
                   <span>{formatPatrolMetaLabel(activePatrol)}</span>
                 </div>
-                <div className="judge-display">
-                  <span>Rozhodčí</span>
-                  <strong>{manifest.judge.displayName}</strong>
-                  <small>{manifest.judge.email}</small>
-                </div>
                 <div className="wait-field">
                   <span className="wait-label">Čekání</span>
                   <div className="wait-display">
@@ -3590,7 +3585,7 @@ function StationApp({
                       required
                     />
                   </div>
-                  <p className="wait-hint">Zadej čekání ručně ve formátu HH:MM (bez vteřin).</p>
+                  <p className="wait-hint">Zadej čekání ručně ve formátu HH:MM (bez vteřin), např. 01:30.</p>
                 </div>
                 {stationCode === 'T' ? (
                   <div className="calc-grid">
@@ -3818,7 +3813,7 @@ function StationApp({
                     value={points}
                     onChange={setPoints}
                     label="Body (0 až 12)"
-                    helperText="Zadej počet bodů, které hlídka získala."
+                    helperText="Zadej celé číslo v rozsahu 0 až 12 (např. 8)."
                   />
                 )}
                 <button type="button" className="primary" onClick={handleSave} disabled={scoringDisabled}>

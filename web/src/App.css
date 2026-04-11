@@ -1253,30 +1253,6 @@ body {
   text-transform: uppercase;
 }
 
-.judge-display {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 0;
-}
-
-.judge-display span {
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.judge-display strong {
-  font-size: 1.1rem;
-  color: var(--text);
-}
-
-.judge-display small {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
 .meta-pill {
   display: inline-flex;
   align-items: center;

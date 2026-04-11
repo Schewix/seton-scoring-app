@@ -58,7 +58,8 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
         <div>
           <h2>Fronta hlídek</h2>
           <p className="card-subtitle">
-            čekání / obsluha hlídky, stav se počítá z časových značek (zvládne offline i restart).
+            čekání / obsluha hlídky, stav se počítá z časových značek (zvládne offline i restart), čekání se měří
+            ve formátu HH:MM.
           </p>
         </div>
       </header>
