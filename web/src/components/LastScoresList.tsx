@@ -85,6 +85,14 @@ function parseWaitInput(value: string) {
   return total;
 }
 
+function normalizeWaitDraftInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) {
+    return digits;
+  }
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
 type ScoreRowRecord = Omit<ScoreRow, 'patrols' | 'waitMinutes' | 'waitRecorded'> & {
   patrols?: ScoreRow['patrols'] | ScoreRow['patrols'][] | null;
 };
@@ -485,12 +493,21 @@ export function LastScoresList({
                       <label>
                         Čekání (HH:MM)
                         <input
-                          type="time"
-                          step={60}
-                          min="00:00"
-                          max={formatWaitMinutesValue(WAIT_MINUTES_MAX)}
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9:]*"
                           value={editWait}
-                          onChange={(event) => setEditWait(event.target.value)}
+                          onChange={(event) => setEditWait(normalizeWaitDraftInput(event.target.value))}
+                          onBlur={() => {
+                            setEditWait((current) => {
+                              const parsed = parseWaitInput(current);
+                              if (Number.isNaN(parsed)) {
+                                return current;
+                              }
+                              return formatWaitMinutesValue(parsed);
+                            });
+                          }}
+                          placeholder="hh:mm"
                           disabled={savingId === row.id}
                         />
                       </label>

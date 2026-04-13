@@ -15,8 +15,10 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin, varia
   const { login, logout } = useAuth();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [pin, setPin] = useState(() => pendingPin ?? '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [passwordAlreadyChanged, setPasswordAlreadyChanged] = useState(false);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -40,14 +42,25 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin, varia
     setLoading(true);
 
     try {
-      await changePasswordRequest({
-        email,
-        id: judgeId,
-        newPassword,
-      });
-      await login({ email, password: newPassword, pin: pendingPin });
+      const loginPin = pin.trim() || pendingPin?.trim() || undefined;
+
+      if (!passwordAlreadyChanged) {
+        await changePasswordRequest({
+          email,
+          id: judgeId,
+          newPassword,
+        });
+        setPasswordAlreadyChanged(true);
+      }
+
+      await login({ email, password: newPassword, pin: loginPin });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.toLowerCase().includes('pin required')) {
+        setError('Heslo je už nastavené. Pro dokončení přihlášení zadej PIN a potvrď znovu.');
+      } else {
+        setError(message);
+      }
       return;
     } finally {
       if (isMountedRef.current) {
@@ -125,6 +138,7 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin, varia
                   onChange={(event) => {
                     setNewPassword(event.target.value);
                     setError('');
+                    setPasswordAlreadyChanged(false);
                   }}
                   required
                   aria-invalid={Boolean(error) ? 'true' : 'false'}
@@ -143,11 +157,35 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin, varia
                   onChange={(event) => {
                     setConfirmPassword(event.target.value);
                     setError('');
+                    setPasswordAlreadyChanged(false);
                   }}
                   required
                   aria-invalid={Boolean(error) ? 'true' : 'false'}
                 />
               </label>
+            </div>
+
+            <div className="auth-field-group">
+              <label className="auth-field" htmlFor="change-password-pin">
+                <span>PIN</span>
+                <input
+                  id="change-password-pin"
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  value={pin}
+                  onChange={(event) => {
+                    setPin(event.target.value.replace(/[^0-9]/g, ''));
+                    setError('');
+                  }}
+                  placeholder="např. 1234"
+                  aria-invalid={Boolean(error) ? 'true' : 'false'}
+                />
+              </label>
+              <p className="auth-field-hint">
+                PIN slouží pro odemknutí uložené relace na tomto zařízení.
+              </p>
             </div>
 
             {error ? (

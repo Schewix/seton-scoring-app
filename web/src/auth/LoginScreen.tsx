@@ -111,6 +111,10 @@ export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props
   const passwordFieldId = 'login-password';
   const pinFieldId = 'login-pin';
   const pinLabel = requirePinOnly ? 'PIN' : isDeskovky ? 'PIN (dle nastavení účtu)' : 'PIN (povinný mimo Výpočetku)';
+  const pinHintId = `${pinFieldId}-hint`;
+  const pinHintText = requirePinOnly
+    ? 'PIN slouží k odemknutí uloženého účtu na tomto zařízení.'
+    : 'PIN slouží k odemknutí uložené relace na tomto zařízení (pro rychlý návrat bez zadávání hesla).';
 
   const emailError = error?.field === 'email' ? error.message : null;
   const passwordError = error?.field === 'password' ? error.message : null;
@@ -283,9 +287,12 @@ export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props
                   placeholder="např. 1234"
                   required={requirePinOnly}
                   aria-invalid={pinError ? 'true' : 'false'}
-                  aria-describedby={pinError ? `${pinFieldId}-error` : undefined}
+                  aria-describedby={pinError ? `${pinHintId} ${pinFieldId}-error` : pinHintId}
                 />
               </label>
+              <p id={pinHintId} className="login-field-hint">
+                {pinHintText}
+              </p>
               {pinError ? (
                 <p id={`${pinFieldId}-error`} className="login-field-error">
                   {pinError}

@@ -2972,6 +2972,13 @@ textarea {
   font-weight: 600;
 }
 
+.auth-field-hint {
+  margin: 0;
+  color: #666666;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .auth-primary {
   appearance: none;
   border: none;

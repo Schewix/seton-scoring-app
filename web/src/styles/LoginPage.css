@@ -272,6 +272,13 @@
   color: #e94e1b;
 }
 
+.login-field-hint {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: #6a6a6a;
+}
+
 .login-primary {
   border: none;
   border-radius: 12px;
