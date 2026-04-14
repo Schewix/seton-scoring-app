@@ -9,10 +9,14 @@ export function parseAnswerLetters(value = '') {
   return (value.match(/[A-D]/gi) || []).map((letter) => letter.toUpperCase());
 }
 
+export function normalizeAnswersInput(value = '') {
+  return parseAnswerLetters(value).join('');
+}
+
 export function formatAnswersForInput(stored = '') {
   return parseAnswerLetters(stored).join(' ');
 }
 
 export function packAnswersForStorage(value = '') {
-  return parseAnswerLetters(value).join('');
+  return normalizeAnswersInput(value);
 }

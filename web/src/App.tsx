@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ClipboardEvent as ReactClipboardEvent, FormEvent as ReactFormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // import QRScanner from './components/QRScanner';
 import LastScoresList from './components/LastScoresList';
 import PatrolCodeInput, {
@@ -40,7 +40,14 @@ import {
   toStationCategoryKey,
 } from './utils/stationCategories';
 import { env } from './envVars';
-import { CategoryKey, formatAnswersForInput, isCategoryKey, packAnswersForStorage, parseAnswerLetters } from './utils/targetAnswers';
+import {
+  CategoryKey,
+  formatAnswersForInput,
+  isCategoryKey,
+  normalizeAnswersInput,
+  packAnswersForStorage,
+  parseAnswerLetters,
+} from './utils/targetAnswers';
 import {
   fetchPatrolRegistryEntries,
   loadPatrolRegistryCache,
@@ -2602,6 +2609,29 @@ function StationApp({
     navigateToPath(CHANGE_PASSWORD_ROUTE);
   }, [navigateToPath]);
 
+  const handleTargetAnswersBeforeInput = useCallback((event: ReactFormEvent<HTMLInputElement>) => {
+    const nativeEvent = event.nativeEvent as InputEvent;
+    const insertedText = nativeEvent.data;
+
+    if (typeof insertedText !== 'string' || insertedText.length === 0) {
+      return;
+    }
+
+    if (!/^[A-Da-d]+$/.test(insertedText)) {
+      event.preventDefault();
+    }
+  }, []);
+
+  const handleTargetAnswersPaste = useCallback((event: ReactClipboardEvent<HTMLInputElement>) => {
+    const pastedText = event.clipboardData.getData('text');
+    if (!pastedText) {
+      return;
+    }
+
+    event.preventDefault();
+    setAnswersInput((previous) => normalizeAnswersInput(`${previous}${pastedText}`));
+  }, []);
+
   const handleCloseChangePassword = useCallback(() => {
     navigateToPath(getStationPath(stationDisplayName), { replace: true });
   }, [navigateToPath, stationDisplayName]);
@@ -3747,8 +3777,13 @@ function StationApp({
                       <input
                         ref={answersInputRef}
                         value={answersInput}
-                        onChange={(event) => setAnswersInput(event.target.value.toUpperCase())}
-                        placeholder="např. A B C D …"
+                        onChange={(event) => setAnswersInput(normalizeAnswersInput(event.target.value))}
+                        onBeforeInput={handleTargetAnswersBeforeInput}
+                        onPaste={handleTargetAnswersPaste}
+                        placeholder="např. ABCD…"
+                        pattern="[A-Da-d]*"
+                        autoCapitalize="characters"
+                        maxLength={totalAnswers || undefined}
                       />
                     </label>
                     <p className="auto-score">Správně: {autoScore.correct} / {autoScore.total}</p>

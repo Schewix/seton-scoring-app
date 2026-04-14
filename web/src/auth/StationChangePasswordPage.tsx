@@ -7,6 +7,29 @@ interface StationChangePasswordPageProps {
   onBack: () => void;
 }
 
+function toFriendlyError(message: string) {
+  const normalized = message.trim().toLowerCase();
+  if (normalized.includes('missing new password')) {
+    return 'Chybí nové heslo.';
+  }
+  if (normalized.includes('missing current password')) {
+    return 'Zadej aktuální heslo.';
+  }
+  if (normalized.includes('current password is incorrect')) {
+    return 'Aktuální heslo nesouhlasí.';
+  }
+  if (normalized.includes('missing user identifier')) {
+    return 'Nepodařilo se určit účet rozhodčího. Přihlas se prosím znovu.';
+  }
+  if (normalized.includes('invalid access token')) {
+    return 'Přihlášení vypršelo. Přihlas se prosím znovu.';
+  }
+  if (normalized.includes('cannot change another user password')) {
+    return 'Nelze změnit heslo jiného účtu.';
+  }
+  return message || 'Heslo se nepodařilo změnit.';
+}
+
 function getPasswordStrength(password: string) {
   if (!password) {
     return { label: 'nezadané', hint: 'Použij alespoň 8 znaků, číslo a speciální znak.' };
@@ -73,7 +96,7 @@ export default function StationChangePasswordPage({ accessToken, onBack }: Stati
       setSuccess('Heslo bylo změněno.');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Heslo se nepodařilo změnit.';
-      setError(message || 'Heslo se nepodařilo změnit.');
+      setError(toFriendlyError(message));
     } finally {
       setSaving(false);
     }

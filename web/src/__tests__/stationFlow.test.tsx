@@ -782,6 +782,33 @@ describe('station workflow', () => {
     });
   });
 
+  it('allows only A-D letters without spaces in target answers input', async () => {
+    mockedStationCode = 'T';
+    supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Výpočetka' }));
+    supabaseMock.__setMock(
+      'station_category_answers',
+      () => createSelectResult([{ category: 'N', correct_answers: 'ABCDABCDABCD' }]),
+    );
+
+    const user = userEvent.setup();
+
+    await renderApp();
+
+    await waitForScannerToggle();
+    await loadPatrolAndOpenForm(user);
+
+    const answersInput = await screen.findByLabelText('Odpovědi hlídky (12)');
+    await user.type(answersInput, 'HHHHH');
+
+    expect(answersInput).toHaveValue('');
+    expect(await screen.findByText('Zadaných odpovědí: 0 / 12.')).toBeInTheDocument();
+
+    await user.type(answersInput, 'H h X z A b C d 1 -');
+
+    expect(answersInput).toHaveValue('ABCD');
+    expect(await screen.findByText('Zadaných odpovědí: 4 / 12.')).toBeInTheDocument();
+  });
+
   it('queues submission when sync endpoint reports failure', async () => {
     mockedStationCode = 'T';
     supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Výpočetka' }));
