@@ -723,6 +723,21 @@ describe('station workflow', () => {
       'station_category_answers',
       () => createSelectResult([{ category: 'N', correct_answers: 'ABCDABCDABCD' }])
     );
+    supabaseMock.__setMock('station_passages', () => {
+      const result = Promise.resolve({
+        data: [{ wait_minutes: 9 }, { wait_minutes: 6 }],
+        error: null,
+      });
+      const eqChain: any = {
+        eq: () => eqChain,
+        then: result.then.bind(result),
+        catch: result.catch.bind(result),
+        finally: result.finally?.bind(result),
+      };
+      return {
+        select: () => eqChain,
+      };
+    });
 
     fetchMock.mockResolvedValue({
       ok: true,
@@ -738,6 +753,9 @@ describe('station workflow', () => {
     await loadPatrolAndOpenForm(user);
 
     await screen.findAllByText(/Vlci/);
+    expect(
+      screen.queryByText('Zadej čekání ručně ve formátu HH:MM (bez vteřin), např. 01:30.'),
+    ).not.toBeInTheDocument();
 
     const answersInput = await screen.findByLabelText('Odpovědi hlídky (12)');
     await user.type(answersInput, 'A B C D A B C D A B C D');
@@ -755,6 +773,7 @@ describe('station workflow', () => {
     const body = JSON.parse((init?.body as string) ?? '{}');
     expect(body.use_target_scoring).toBe(true);
     expect(body.normalized_answers).toBe('ABCDABCDABCD');
+    expect(body.wait_minutes).toBe(15);
     expect(body.client_event_id).toBeTruthy();
 
     await waitFor(async () => {
@@ -974,6 +993,54 @@ describe('station workflow', () => {
     await user.click(quickAddButton);
 
     expect(await screen.findByText('TMP-001')).toBeInTheDocument();
+  });
+
+  it('opens change-password screen from menu and submits authenticated request', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : '';
+      if (url.includes('/auth/change-password')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true }),
+        } as any;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ results: [] }),
+      } as any;
+    });
+
+    await renderApp();
+
+    const menuButtons = await screen.findAllByRole('button', { name: 'Otevřít menu' });
+    await user.click(menuButtons[0]);
+    const menuDialog = await screen.findByRole('dialog');
+    await user.click(within(menuDialog).getByRole('button', { name: 'Změnit heslo' }));
+
+    expect(window.location.pathname).toBe('/change-password');
+    await screen.findByRole('heading', { name: 'Změnit heslo' });
+
+    await user.type(screen.getByLabelText('Aktuální heslo'), 'old-pass');
+    await user.type(screen.getByLabelText('Nové heslo'), 'NewPass123!');
+    await user.type(screen.getByLabelText('Potvrzení nového hesla'), 'NewPass123!');
+    await user.click(screen.getByRole('button', { name: 'Uložit nové heslo' }));
+
+    expect(await screen.findByText('Heslo bylo změněno.')).toBeInTheDocument();
+
+    const changeCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : '';
+      return url.includes('/auth/change-password');
+    });
+    expect(changeCall).toBeTruthy();
+    const [, init] = changeCall!;
+    expect(init?.headers?.Authorization).toBe('Bearer access-test');
+    expect(JSON.parse((init?.body as string) ?? '{}')).toEqual({
+      current_password: 'old-pass',
+      new_password: 'NewPass123!',
+    });
   });
 
   it('does not show removed offline status sections in menu', async () => {

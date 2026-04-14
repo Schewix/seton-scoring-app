@@ -96,6 +96,25 @@ export function changePasswordRequest(params: { email?: string; id?: string; new
   }).then((res) => handleResponse<{ success: true }>(res));
 }
 
+export function changeOwnPasswordRequest(params: {
+  currentPassword: string;
+  newPassword: string;
+  accessToken: string;
+}) {
+  const url = `${BASE_URL}/auth/change-password`;
+  return fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${params.accessToken}`,
+    },
+    body: JSON.stringify({
+      current_password: params.currentPassword,
+      new_password: params.newPassword,
+    }),
+  }).then((res) => handleResponse<{ success: true; message?: string }>(res));
+}
+
 export function requestPasswordReset(email: string) {
   const url = `${BASE_URL}/auth/reset-password`;
   return fetch(url, {

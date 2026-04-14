@@ -2105,6 +2105,43 @@ textarea {
   font-weight: 600;
 }
 
+.success-text {
+  color: #166534;
+  font-weight: 600;
+}
+
+.change-password-card {
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.change-password-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.change-password-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.change-password-toggle input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+}
+
+.change-password-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .form-placeholder {
   font-style: italic;
   color: #7d6d60;

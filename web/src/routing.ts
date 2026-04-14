@@ -15,6 +15,9 @@ export const DESKOVKY_MATCH_NEW_ROUTE = `${DESKOVKY_ROUTE_PREFIX}/match/new`;
 export const DESKOVKY_STANDINGS_ROUTE = `${DESKOVKY_ROUTE_PREFIX}/standings`;
 export const DESKOVKY_ADMIN_ROUTE = `${DESKOVKY_ROUTE_PREFIX}/admin`;
 export const DESKOVKY_RULES_ROUTE = `${DESKOVKY_ROUTE_PREFIX}/pravidla`;
+export const CHANGE_PASSWORD_ROUTE = '/change-password';
+export const SCORING_CHANGE_PASSWORD_ROUTE = `${ROUTE_PREFIX}/change-password`;
+export const LEGACY_SCORING_CHANGE_PASSWORD_ROUTE = `${LEGACY_ROUTE_PREFIX}/change-password`;
 
 const ADDITIONAL_STATION_PREFIXES = [
   `${ROUTE_PREFIX}/station`,
@@ -35,6 +38,11 @@ const DESKOVKY_PREFIXES = [
   LEGACY_DESKOVKY_ROUTE_PREFIX,
   '/aplikace/deskove-hry',
   '/deskove-hry',
+];
+const CHANGE_PASSWORD_PATHNAMES = [
+  CHANGE_PASSWORD_ROUTE,
+  SCORING_CHANGE_PASSWORD_ROUTE,
+  LEGACY_SCORING_CHANGE_PASSWORD_ROUTE,
 ];
 
 function stripDiacritics(value: string): string {
@@ -92,4 +100,9 @@ export function isAdminPathname(pathname: string): boolean {
 
 export function isDeskovkyPathname(pathname: string): boolean {
   return DESKOVKY_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+export function isChangePasswordPathname(pathname: string): boolean {
+  const normalized = pathname.replace(/\/$/, '') || '/';
+  return CHANGE_PASSWORD_PATHNAMES.includes(normalized);
 }

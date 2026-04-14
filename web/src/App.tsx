@@ -15,6 +15,7 @@ import { ManifestFetchError } from './auth/api';
 import { useAuth } from './auth/context';
 import LoginScreen from './auth/LoginScreen';
 import ChangePasswordScreen from './auth/ChangePasswordScreen';
+import StationChangePasswordPage from './auth/StationChangePasswordPage';
 import type { AuthStatus } from './auth/types';
 import TicketQueue from './components/TicketQueue';
 import { computeWaitTime, createTicket, loadTickets, saveTickets, transitionTicket, Ticket, TicketState } from './auth/tickets';
@@ -23,7 +24,14 @@ import { appendScanRecord } from './storage/scanHistory';
 import { getManualPatrols, upsertManualPatrol } from './storage/manualPatrols';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
-import { ROUTE_PREFIX, SCOREBOARD_ROUTE_PREFIX, getStationPath, isStationAppPath } from './routing';
+import {
+  CHANGE_PASSWORD_ROUTE,
+  ROUTE_PREFIX,
+  SCOREBOARD_ROUTE_PREFIX,
+  getStationPath,
+  isChangePasswordPathname,
+  isStationAppPath,
+} from './routing';
 import {
   createStationCategoryRecord,
   getAllowedStationCategories,
@@ -520,6 +528,9 @@ function StationApp({
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [authNeedsLogin, setAuthNeedsLogin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [currentPathname, setCurrentPathname] = useState(() =>
+    typeof window !== 'undefined' ? window.location.pathname : getStationPath(stationDisplayName),
+  );
   const [manualCodeDraft, setManualCodeDraft] = useState('');
   const [confirmedManualCode, setConfirmedManualCode] = useState('');
   const [patrolRegistryEntries, setPatrolRegistryEntries] = useState<PatrolRegistryEntry[]>([]);
@@ -576,6 +587,40 @@ function StationApp({
   const [showCompletedSummary, setShowCompletedSummary] = useState(false);
   const [showScannerPanel, setShowScannerPanel] = useState(false);
   const lastSummaryScrollRef = useRef<StationCategoryKey | null>(null);
+  const isChangePasswordView = useMemo(
+    () => isChangePasswordPathname(currentPathname),
+    [currentPathname],
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const handlePopState = () => setCurrentPathname(window.location.pathname);
+    handlePopState();
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
+  const navigateToPath = useCallback((pathname: string, options?: { replace?: boolean }) => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const normalizedPathname = pathname.replace(/\/$/, '') || '/';
+    const current = window.location.pathname.replace(/\/$/, '') || '/';
+    if (current === normalizedPathname) {
+      setCurrentPathname(normalizedPathname);
+      return;
+    }
+    if (options?.replace) {
+      window.history.replaceState(window.history.state, '', normalizedPathname);
+    } else {
+      window.history.pushState(window.history.state, '', normalizedPathname);
+    }
+    setCurrentPathname(normalizedPathname);
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1633,9 +1678,14 @@ function StationApp({
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      if (isChangePasswordPathname(window.location.pathname)) {
+        setCurrentPathname(window.location.pathname);
+        return;
+      }
       const desiredPath = getStationPath(stationDisplayName);
       if (window.location.pathname !== desiredPath) {
-        window.history.replaceState({}, '', desiredPath + window.location.search + window.location.hash);
+        window.history.replaceState(window.history.state, '', desiredPath);
+        setCurrentPathname(desiredPath);
       }
     }
   }, [stationDisplayName]);
@@ -2547,6 +2597,15 @@ function StationApp({
     void logout();
   }, [logout]);
 
+  const handleOpenChangePassword = useCallback(() => {
+    setMenuOpen(false);
+    navigateToPath(CHANGE_PASSWORD_ROUTE);
+  }, [navigateToPath]);
+
+  const handleCloseChangePassword = useCallback(() => {
+    navigateToPath(getStationPath(stationDisplayName), { replace: true });
+  }, [navigateToPath, stationDisplayName]);
+
   const enqueueStationScore = useCallback(
     async (payload: Omit<StationScorePayload, 'client_event_id' | 'client_created_at'>) => {
       return enqueueStationScoreHelper(
@@ -2739,11 +2798,20 @@ function StationApp({
       scorePoints = parsed;
     }
 
-    const waitMinutes = parseWaitDraft(waitDraft);
-    if (!Number.isInteger(waitMinutes) || waitMinutes < 0 || waitMinutes > WAIT_MINUTES_MAX) {
+    const manualWaitMinutes = parseWaitDraft(waitDraft);
+    if (
+      stationCode !== 'T' &&
+      (!Number.isInteger(manualWaitMinutes) || manualWaitMinutes < 0 || manualWaitMinutes > WAIT_MINUTES_MAX)
+    ) {
       pushAlert(`Čekání musí být čas v rozsahu 00:00–${WAIT_TIME_MAX}.`);
       return;
     }
+    const waitMinutes = stationCode === 'T'
+      ? (() => {
+          const parsed = Number(totalWaitMinutes ?? 0);
+          return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : 0;
+        })()
+      : manualWaitMinutes;
 
     const now = new Date().toISOString();
     const arrivalIso = arrivedAt || now;
@@ -2795,12 +2863,14 @@ function StationApp({
     resetForm,
     updateTickets,
     waitDraft,
+    totalWaitMinutes,
     arrivedAt,
     stationId,
     finishAt,
     registerManualPatrol,
     resolvePatrolCode,
     scoringDisabled,
+    stationCode,
     scrollToQueue,
     scrollToSummary,
     enableTicketQueue,
@@ -2922,6 +2992,14 @@ function StationApp({
     return tickets.some((ticket) => ticket.patrolId === scannerPatrol.id && ticket.state !== 'done');
   }, [scannerPatrol, tickets]);
 
+  if (isChangePasswordView) {
+    return (
+      <StationChangePasswordPage
+        accessToken={auth.tokens.accessToken}
+        onBack={handleCloseChangePassword}
+      />
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -3058,6 +3136,9 @@ function StationApp({
               <header className="card-header">
                 <h3>Účet</h3>
               </header>
+              <button type="button" className="logout-button" onClick={handleOpenChangePassword}>
+                Změnit heslo
+              </button>
               <p className="card-hint">Odhlásíš se z aktuální relace.</p>
               <button type="button" className="logout-button" onClick={handleLogout}>
                 Odhlásit se
@@ -3433,24 +3514,26 @@ function StationApp({
                   <strong>{activePatrol.team_name}</strong>
                   <span>{formatPatrolMetaLabel(activePatrol)}</span>
                 </div>
-                <div className="wait-field">
-                  <span className="wait-label">Čekání</span>
-                  <div className="wait-display">
-                    <input
-                      type="time"
-                      step={60}
-                      min={WAIT_TIME_ZERO}
-                      max={WAIT_TIME_MAX}
-                      value={waitDraft}
-                      onChange={(event) =>
-                        setWaitDraft((current) => normalizeWaitInput(event.target.value, current))
-                      }
-                      placeholder="hh:mm"
-                      required
-                    />
+                {stationCode !== 'T' ? (
+                  <div className="wait-field">
+                    <span className="wait-label">Čekání</span>
+                    <div className="wait-display">
+                      <input
+                        type="time"
+                        step={60}
+                        min={WAIT_TIME_ZERO}
+                        max={WAIT_TIME_MAX}
+                        value={waitDraft}
+                        onChange={(event) =>
+                          setWaitDraft((current) => normalizeWaitInput(event.target.value, current))
+                        }
+                        placeholder="hh:mm"
+                        required
+                      />
+                    </div>
+                    <p className="wait-hint">Zadej čekání ručně ve formátu HH:MM (bez vteřin), např. 01:30.</p>
                   </div>
-                  <p className="wait-hint">Zadej čekání ručně ve formátu HH:MM (bez vteřin), např. 01:30.</p>
-                </div>
+                ) : null}
                 {stationCode === 'T' ? (
                   <div className="calc-grid">
                     <div className="calc-time-card">
@@ -3943,6 +4026,9 @@ export function useStationRouting(status: AuthStatus) {
     const hash = window.location.hash ?? '';
 
     if (status.state === 'authenticated') {
+      if (isChangePasswordPathname(pathname)) {
+        return;
+      }
       const station = status.manifest.station;
       const stationDisplayName = getStationDisplayName(station.name, station.code);
       if (!stationDisplayName) {
@@ -3963,7 +4049,7 @@ export function useStationRouting(status: AuthStatus) {
       status.state === 'password-change-required' ||
       status.state === 'error'
     ) {
-      if (isStationAppPath(pathname)) {
+      if (isStationAppPath(pathname) || isChangePasswordPathname(pathname)) {
         window.history.replaceState(window.history.state, '', ROUTE_PREFIX);
       }
     }

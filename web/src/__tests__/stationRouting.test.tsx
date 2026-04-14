@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { AuthStatus } from '../auth/types';
-import { getStationPath, ROUTE_PREFIX } from '../routing';
+import { CHANGE_PASSWORD_ROUTE, getStationPath, ROUTE_PREFIX } from '../routing';
 
 let useStationRouting: (status: AuthStatus) => void;
 
@@ -55,6 +55,38 @@ describe('useStationRouting', () => {
     expect(getStationPath('Střelba z foukačky')).toBe(
       `${ROUTE_PREFIX}/stanoviste/strelba-z-foukacky`,
     );
+  });
+
+  it('keeps authenticated user on change-password route', () => {
+    window.history.replaceState({}, '', CHANGE_PASSWORD_ROUTE);
+
+    const stationStatus: AuthStatus = {
+      state: 'authenticated',
+      manifest: {
+        judge: { id: 'judge-1', email: 'judge@example.com', displayName: 'Test Judge' },
+        station: { id: 'station-123', code: 'X', name: 'Stanoviště X' },
+        event: { id: 'event-1', name: 'Test Event', scoringLocked: false },
+        allowedCategories: [],
+        allowedTasks: [],
+        manifestVersion: 1,
+      },
+      patrols: [],
+      deviceKey: new Uint8Array(0),
+      tokens: {
+        accessToken: 'access',
+        accessTokenExpiresAt: Date.now() + 1,
+        refreshToken: 'refresh',
+        sessionId: 'session',
+      },
+    };
+
+    renderHook<void, HookProps>(({ status }) => {
+      useStationRouting(status);
+    }, {
+      initialProps: { status: stationStatus },
+    });
+
+    expect(window.location.pathname).toBe(CHANGE_PASSWORD_ROUTE);
   });
 
   it('clears station path when returning to login', () => {

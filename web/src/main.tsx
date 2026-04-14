@@ -12,6 +12,7 @@ import {
   LEGACY_FORGOT_PASSWORD_ROUTE_ALT,
   LEGACY_ROUTE_PREFIX,
   ROUTE_PREFIX,
+  isChangePasswordPathname,
   isAdminPathname,
   isDeskovkyPathname,
   isScoreboardPathname,
@@ -107,12 +108,14 @@ const isScoreboardPath = isScoreboardPathname(pathname);
 const isAdminPath = isAdminPathname(pathname);
 const isHomepagePath = normalizedPath === '/';
 const isDeskovkyPath = isDeskovkyPathname(pathname);
+const isChangePasswordPath = isChangePasswordPathname(normalizedPath);
 const isScoringNamespace =
   normalizedPath === ROUTE_PREFIX ||
   normalizedPath.startsWith(`${ROUTE_PREFIX}/`) ||
   normalizedPath === LEGACY_ROUTE_PREFIX ||
   normalizedPath.startsWith(`${LEGACY_ROUTE_PREFIX}/`) ||
-  isStationAppPath(normalizedPath);
+  isStationAppPath(normalizedPath) ||
+  isChangePasswordPath;
 const scoreboardViews = new Set(['scoreboard', 'vysledky']);
 const forgotPasswordViews = new Set(['zapomenute-heslo', 'forgot-password']);
 const forgotPasswordPathnames = new Set([
