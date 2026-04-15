@@ -37,6 +37,9 @@ function normalizeBaseUrl(value: string) {
   return value.endsWith('/') ? value : `${value}/`;
 }
 
+const DEFAULT_WEB_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
 function normalizeText(value: string) {
   return value
     .toLowerCase()
@@ -169,6 +172,7 @@ function getAuthHeaders() {
     Authorization: `Bearer ${token}`,
     'X-Api-Token': token,
     Accept: 'application/json',
+    'User-Agent': process.env.PIONYR_API_USER_AGENT ?? DEFAULT_WEB_USER_AGENT,
   };
 }
 
@@ -219,6 +223,60 @@ function buildWebUrl(path: string) {
   }
   const normalizedPath = path.replace(/^\/+/, '');
   return new URL(normalizedPath, base);
+}
+
+function toggleWwwHostname(url: URL): URL {
+  const next = new URL(url.toString());
+  if (next.hostname.startsWith('www.')) {
+    next.hostname = next.hostname.slice(4);
+  } else {
+    next.hostname = `www.${next.hostname}`;
+  }
+  return next;
+}
+
+function getWebUrlCandidates(pathOrUrl: string): URL[] {
+  const primary = buildWebUrl(pathOrUrl);
+  const alternate = toggleWwwHostname(primary);
+  const items = [primary.toString(), alternate.toString()];
+  return Array.from(new Set(items)).map((item) => new URL(item));
+}
+
+function getWebFetchHeaders(targetUrl: URL): Record<string, string> {
+  return {
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'cs-CZ,cs;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Cache-Control': 'no-cache',
+    Pragma: 'no-cache',
+    Referer: `${targetUrl.origin}/`,
+    'User-Agent': process.env.PIONYR_WEB_USER_AGENT ?? DEFAULT_WEB_USER_AGENT,
+  };
+}
+
+async function fetchWebHtml(pathOrUrl: string): Promise<{ html: string; url: URL }> {
+  const candidates = getWebUrlCandidates(pathOrUrl);
+  let lastStatus: number | null = null;
+  let lastError: unknown = null;
+
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate.toString(), { headers: getWebFetchHeaders(candidate) });
+      if (response.ok) {
+        return { html: await response.text(), url: candidate };
+      }
+      lastStatus = response.status;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastStatus !== null) {
+    throw new Error(`Pionyr web error (${lastStatus})`);
+  }
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error('Pionyr web error (network)');
 }
 
 function absolutizeUrl(value: string | null, base: string): string | null {
@@ -338,12 +396,7 @@ async function fetchWebListItems(): Promise<WebArticleListItem[]> {
   }
 
   const listPath = process.env.PIONYR_WEB_ARTICLES_PATH ?? 'clanky';
-  const listUrl = buildWebUrl(listPath);
-  const response = await fetch(listUrl.toString());
-  if (!response.ok) {
-    throw new Error(`Pionyr web error (${response.status})`);
-  }
-  const html = await response.text();
+  const { html, url: listUrl } = await fetchWebHtml(listPath);
   const dom = new JSDOM(html);
   const doc = dom.window.document;
   normalizeDocumentUrls(doc, listUrl.toString());
@@ -353,7 +406,7 @@ async function fetchWebListItems(): Promise<WebArticleListItem[]> {
     const link = item.querySelector('a');
     const href = link?.getAttribute('href');
     if (!href) return;
-    const detailUrl = buildWebUrl(href).toString();
+    const detailUrl = new URL(href, listUrl.toString()).toString();
     const headingText = item.querySelector('h5')?.textContent ?? null;
     const { dateISO, title } = splitDateAndTitle(headingText);
     const perexNode = item.querySelector('p');
@@ -381,12 +434,16 @@ async function fetchWebListItems(): Promise<WebArticleListItem[]> {
 }
 
 async function fetchWebDetailBySlug(slug: string): Promise<PionyrArticle | null> {
-  const baseUrl = getWebBaseUrl();
   const list = await fetchWebListItems();
   const listItem = list.find((item) => item.slug === slug);
-  const detailUrl = listItem?.detailUrl ?? buildWebUrl(`clanky/${slug}`).toString();
-  const response = await fetch(detailUrl);
-  if (!response.ok) {
+  const detailTarget = listItem?.detailUrl ?? `clanky/${slug}`;
+  let html: string;
+  let detailUrl: URL;
+  try {
+    const result = await fetchWebHtml(detailTarget);
+    html = result.html;
+    detailUrl = result.url;
+  } catch {
     return listItem
       ? {
           source: 'pionyr',
@@ -400,10 +457,9 @@ async function fetchWebDetailBySlug(slug: string): Promise<PionyrArticle | null>
         }
       : null;
   }
-  const html = await response.text();
   const dom = new JSDOM(html);
   const doc = dom.window.document;
-  normalizeDocumentUrls(doc, baseUrl);
+  normalizeDocumentUrls(doc, detailUrl.toString());
 
   const headingText = doc.querySelector('h3')?.textContent ?? listItem?.title ?? null;
   const { dateISO, title } = splitDateAndTitle(headingText);
