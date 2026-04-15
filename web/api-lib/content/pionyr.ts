@@ -48,6 +48,15 @@ type WordpressPost = {
   };
 };
 
+type FeedItem = {
+  title: string;
+  slug: string;
+  excerpt: string;
+  dateISO: string;
+  coverImageUrl?: string | null;
+  bodyHtml?: string | null;
+};
+
 function normalizeBaseUrl(value: string) {
   return value.endsWith('/') ? value : `${value}/`;
 }
@@ -396,6 +405,115 @@ async function fetchWordpressPosts(): Promise<PionyrArticle[]> {
   throw new Error('Pionyr web error (network)');
 }
 
+function readElementText(parent: Element, tagName: string): string | null {
+  const node = parent.getElementsByTagName(tagName)[0];
+  if (!node) return null;
+  const text = node.textContent?.trim();
+  return text && text.length > 0 ? text : null;
+}
+
+function slugFromUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const segments = url.pathname.split('/').filter(Boolean);
+    return segments.length > 0 ? segments[segments.length - 1] : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseRssItems(xml: string): FeedItem[] {
+  const dom = new JSDOM(xml, { contentType: 'text/xml' });
+  const doc = dom.window.document;
+  const items = Array.from(doc.querySelectorAll('item'));
+  const output: FeedItem[] = [];
+
+  for (const item of items) {
+    const title = stripHtml(readElementText(item, 'title') ?? '');
+    const link = readElementText(item, 'link');
+    const slug = slugFromUrl(link);
+    if (!title || !slug) {
+      continue;
+    }
+
+    const pubDate = readElementText(item, 'pubDate');
+    const parsed = pubDate ? new Date(pubDate) : null;
+    const dateISO = parsed && !Number.isNaN(parsed.getTime()) ? parsed.toISOString() : new Date().toISOString();
+
+    const descriptionHtml = readElementText(item, 'description') ?? '';
+    const contentEncoded =
+      readElementText(item, 'content:encoded') ??
+      readElementText(item, 'encoded') ??
+      readElementText(item, 'content') ??
+      '';
+    const bodyHtml = contentEncoded || descriptionHtml || null;
+    const excerpt = stripHtml(descriptionHtml || contentEncoded).slice(0, 500);
+
+    const imageMatch = (bodyHtml ?? '').match(/<img[^>]+src=["']([^"']+)["']/i);
+    const coverImageUrl = imageMatch?.[1] ? imageMatch[1] : null;
+
+    output.push({
+      title,
+      slug,
+      excerpt,
+      dateISO,
+      coverImageUrl,
+      bodyHtml,
+    });
+  }
+
+  return output;
+}
+
+async function fetchRssPosts(): Promise<PionyrArticle[]> {
+  const feedPath = process.env.PIONYR_WEB_FEED_PATH ?? 'feed';
+  let lastStatus: number | null = null;
+  let lastError: unknown = null;
+
+  for (const base of getConfiguredWebBases()) {
+    for (const candidate of getWebUrlCandidates(new URL(feedPath, base).toString())) {
+      try {
+        const response = await fetch(candidate.toString(), {
+          headers: {
+            ...getWebFetchHeaders(candidate),
+            Accept: 'application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.8',
+          },
+        });
+        if (!response.ok) {
+          lastStatus = response.status;
+          continue;
+        }
+        const xml = await response.text();
+        const parsed = parseRssItems(xml);
+        if (parsed.length > 0) {
+          return parsed.map((entry) => ({
+            source: 'pionyr' as const,
+            slug: entry.slug,
+            title: entry.title,
+            excerpt: entry.excerpt,
+            dateISO: entry.dateISO,
+            author: null,
+            coverImageUrl: entry.coverImageUrl ?? null,
+            coverImageAlt: null,
+            bodyHtml: entry.bodyHtml ?? null,
+          }));
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+
+  if (lastStatus !== null) {
+    throw new Error(`Pionyr web error (${lastStatus})`);
+  }
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error('Pionyr web error (network)');
+}
+
 function absolutizeUrl(value: string | null, base: string): string | null {
   if (!value) return null;
   if (/^https?:\/\//i.test(value)) return value;
@@ -691,8 +809,17 @@ async function fetchPionyrArticlesFromWeb(terms: string[]): Promise<PionyrArticl
     console.warn('[pionyr] HTML scraping failed, trying WordPress API fallback.', error);
   }
 
-  const wordpressItems = await fetchWordpressPosts();
-  return wordpressItems.filter((item) => isAllowed(item, terms));
+  try {
+    const wordpressItems = await fetchWordpressPosts();
+    if (wordpressItems.length > 0) {
+      return wordpressItems.filter((item) => isAllowed(item, terms));
+    }
+  } catch (error) {
+    console.warn('[pionyr] WordPress API fallback failed, trying RSS fallback.', error);
+  }
+
+  const rssItems = await fetchRssPosts();
+  return rssItems.filter((item) => isAllowed(item, terms));
 }
 
 export async function fetchPionyrArticles(filterOverride?: string[] | null): Promise<PionyrArticle[]> {
@@ -748,7 +875,28 @@ export async function fetchPionyrArticles(filterOverride?: string[] | null): Pro
 
 export async function fetchPionyrArticleBySlug(slug: string): Promise<PionyrArticle | null> {
   if (shouldUseWebOnly()) {
-    return fetchWebDetailBySlug(slug);
+    try {
+      return await fetchWebDetailBySlug(slug);
+    } catch (error) {
+      console.warn('[pionyr] Web detail failed, trying structured fallbacks.', error);
+    }
+
+    try {
+      const wordpressItems = await fetchWordpressPosts();
+      const fromWordpress = wordpressItems.find((item) => item.slug === slug);
+      if (fromWordpress) {
+        return fromWordpress;
+      }
+    } catch (error) {
+      console.warn('[pionyr] WordPress detail fallback failed, trying RSS.', error);
+    }
+
+    try {
+      const rssItems = await fetchRssPosts();
+      return rssItems.find((item) => item.slug === slug) ?? null;
+    } catch {
+      return null;
+    }
   }
 
   let headers: Record<string, string>;
@@ -775,6 +923,11 @@ export async function fetchPionyrArticleBySlug(slug: string): Promise<PionyrArti
     return article;
   } catch (error) {
     console.warn('[pionyr] API failed, falling back to web scraping.', error);
-    return fetchWebDetailBySlug(slug);
+    try {
+      return await fetchWebDetailBySlug(slug);
+    } catch (webError) {
+      console.warn('[pionyr] Web detail fallback failed.', webError);
+      return null;
+    }
   }
 }
