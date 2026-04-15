@@ -33,6 +33,21 @@ type WebArticleListItem = {
   detailUrl: string;
 };
 
+type WordpressPost = {
+  slug?: string;
+  date?: string;
+  date_gmt?: string;
+  title?: { rendered?: string };
+  excerpt?: { rendered?: string };
+  content?: { rendered?: string };
+  _embedded?: {
+    'wp:featuredmedia'?: Array<{
+      source_url?: string;
+      alt_text?: string;
+    }>;
+  };
+};
+
 function normalizeBaseUrl(value: string) {
   return value.endsWith('/') ? value : `${value}/`;
 }
@@ -216,6 +231,17 @@ function getWebBaseUrl() {
   return normalizeBaseUrl(process.env.PIONYR_WEB_BASE_URL ?? 'https://jihomoravsky.pionyr.cz');
 }
 
+function getConfiguredWebBases(): string[] {
+  const primary = process.env.PIONYR_WEB_BASE_URL ?? 'https://jihomoravsky.pionyr.cz';
+  const extra = (process.env.PIONYR_WEB_ALT_BASE_URLS ?? '')
+    .split(/[\n,]/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  // Backup source for JMKOP content when primary website blocks bot traffic.
+  const defaults = ['https://jmkop.pionyr.cz'];
+  return Array.from(new Set([primary, ...extra, ...defaults].map(normalizeBaseUrl)));
+}
+
 function buildWebUrl(path: string) {
   const base = getWebBaseUrl();
   if (/^https?:\/\//i.test(path)) {
@@ -236,9 +262,20 @@ function toggleWwwHostname(url: URL): URL {
 }
 
 function getWebUrlCandidates(pathOrUrl: string): URL[] {
-  const primary = buildWebUrl(pathOrUrl);
-  const alternate = toggleWwwHostname(primary);
-  const items = [primary.toString(), alternate.toString()];
+  if (/^https?:\/\//i.test(pathOrUrl)) {
+    const primary = new URL(pathOrUrl);
+    const alternate = toggleWwwHostname(primary);
+    const items = [primary.toString(), alternate.toString()];
+    return Array.from(new Set(items)).map((item) => new URL(item));
+  }
+
+  const normalizedPath = pathOrUrl.replace(/^\/+/, '');
+  const items: string[] = [];
+  for (const base of getConfiguredWebBases()) {
+    const primary = new URL(normalizedPath, base);
+    const alternate = toggleWwwHostname(primary);
+    items.push(primary.toString(), alternate.toString());
+  }
   return Array.from(new Set(items)).map((item) => new URL(item));
 }
 
@@ -267,6 +304,86 @@ async function fetchWebHtml(pathOrUrl: string): Promise<{ html: string; url: URL
       lastStatus = response.status;
     } catch (error) {
       lastError = error;
+    }
+  }
+
+  if (lastStatus !== null) {
+    throw new Error(`Pionyr web error (${lastStatus})`);
+  }
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error('Pionyr web error (network)');
+}
+
+function mapWpPost(post: WordpressPost): PionyrArticle | null {
+  const slug = getString(post.slug);
+  const title = stripHtml(post.title?.rendered ?? '');
+  if (!slug || !title) {
+    return null;
+  }
+  const excerpt = stripHtml(post.excerpt?.rendered ?? '');
+  const bodyHtml = getString(post.content?.rendered ?? '');
+  const dateCandidate = getString(post.date_gmt) ?? getString(post.date);
+  const parsedDate = dateCandidate ? new Date(dateCandidate) : null;
+  const dateISO =
+    parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : new Date().toISOString();
+  const media = post._embedded?.['wp:featuredmedia']?.[0];
+  return {
+    source: 'pionyr',
+    slug,
+    title,
+    excerpt,
+    dateISO,
+    author: null,
+    coverImageUrl: getString(media?.source_url) ?? null,
+    coverImageAlt: getString(media?.alt_text) ?? null,
+    bodyHtml,
+  };
+}
+
+async function fetchWordpressPosts(): Promise<PionyrArticle[]> {
+  const perPage = 50;
+  let lastStatus: number | null = null;
+  let lastError: unknown = null;
+
+  for (const base of getConfiguredWebBases()) {
+    for (const candidate of getWebUrlCandidates(new URL('wp-json/wp/v2/posts', base).toString())) {
+      try {
+        let page = 1;
+        const aggregated: PionyrArticle[] = [];
+        while (page <= 10) {
+          const apiUrl = new URL(candidate.toString());
+          apiUrl.searchParams.set('per_page', String(perPage));
+          apiUrl.searchParams.set('_embed', '1');
+          apiUrl.searchParams.set('page', String(page));
+          const response = await fetch(apiUrl.toString(), {
+            headers: {
+              ...getWebFetchHeaders(apiUrl),
+              Accept: 'application/json,text/plain;q=0.9,*/*;q=0.8',
+            },
+          });
+          if (!response.ok) {
+            lastStatus = response.status;
+            break;
+          }
+          const raw = (await response.json()) as WordpressPost[];
+          const mapped = raw
+            .map(mapWpPost)
+            .filter((item): item is PionyrArticle => Boolean(item));
+          aggregated.push(...mapped);
+          const totalPages = Number(response.headers.get('x-wp-totalpages') ?? '1');
+          if (!Number.isFinite(totalPages) || page >= totalPages || raw.length < perPage) {
+            break;
+          }
+          page += 1;
+        }
+        if (aggregated.length > 0) {
+          return aggregated;
+        }
+      } catch (error) {
+        lastError = error;
+      }
     }
   }
 
@@ -553,20 +670,29 @@ function shouldUseWebOnly() {
 }
 
 async function fetchPionyrArticlesFromWeb(terms: string[]): Promise<PionyrArticle[]> {
-  const items = await fetchWebListItems();
-  return items
-    .map((item) => ({
-      source: 'pionyr' as const,
-      slug: item.slug,
-      title: item.title,
-      excerpt: item.excerpt,
-      dateISO: item.dateISO,
-      author: null,
-      coverImageUrl: item.coverImageUrl ?? null,
-      coverImageAlt: item.coverImageAlt ?? null,
-      bodyHtml: null,
-    }))
-    .filter((item) => isAllowed(item, terms));
+  try {
+    const items = await fetchWebListItems();
+    if (items.length > 0) {
+      return items
+        .map((item) => ({
+          source: 'pionyr' as const,
+          slug: item.slug,
+          title: item.title,
+          excerpt: item.excerpt,
+          dateISO: item.dateISO,
+          author: null,
+          coverImageUrl: item.coverImageUrl ?? null,
+          coverImageAlt: item.coverImageAlt ?? null,
+          bodyHtml: null,
+        }))
+        .filter((item) => isAllowed(item, terms));
+    }
+  } catch (error) {
+    console.warn('[pionyr] HTML scraping failed, trying WordPress API fallback.', error);
+  }
+
+  const wordpressItems = await fetchWordpressPosts();
+  return wordpressItems.filter((item) => isAllowed(item, terms));
 }
 
 export async function fetchPionyrArticles(filterOverride?: string[] | null): Promise<PionyrArticle[]> {
