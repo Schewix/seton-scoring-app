@@ -78,6 +78,7 @@ const AUTH_BYPASS_PATROLS: PatrolSummary[] = (() => {
 })();
 
 const ACCESS_REFRESH_SKEW_MS = 5 * 60 * 1000;
+const INACTIVITY_LOCK_MS = 15 * 60 * 1000;
 
 type SupabaseJwtClaims = {
   sub?: string;
@@ -362,6 +363,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async ({ email, password, pin }: { email: string; password: string; pin?: string }) => {
       const normalizedPin = pin?.trim() || undefined;
+      if (!normalizedPin) {
+        throw new Error('PIN required');
+      }
       const deviceKey = await generateDeviceKey();
       const devicePublicKey = toBase64(deviceKey);
       const response = await loginRequest(email, password, devicePublicKey);
@@ -381,10 +385,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const success = response;
-      const stationCode = success.manifest.station.code?.trim().toUpperCase() ?? '';
-      if (stationCode !== 'T' && !normalizedPin) {
-        throw new Error('PIN required');
-      }
       const accessClaims = decodeJwt<{ sessionId?: string }>(success.access_token);
       logAccessTokenClaims(success.access_token, 'login');
       validateSupabaseAccessToken(success.access_token);
@@ -609,6 +609,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, Math.max(0, refreshAt - Date.now()));
     return () => window.clearTimeout(timeoutId);
   }, [accessTokenExpiresAt, refreshTokens, status.state]);
+
+  const lockAfterInactivity = useCallback(async () => {
+    if (AUTH_BYPASS) {
+      return;
+    }
+
+    const pinHash = await getPinHash();
+    if (!pinHash) {
+      await logout();
+      return;
+    }
+
+    setStatus((prev) => {
+      if (prev.state !== 'authenticated') {
+        return prev;
+      }
+      return { state: 'locked', requiresPin: true };
+    });
+  }, [logout]);
+
+  useEffect(() => {
+    if (AUTH_BYPASS || status.state !== 'authenticated' || typeof window === 'undefined') {
+      return undefined;
+    }
+
+    let timeoutId: number | null = null;
+    const scheduleLock = () => {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+      timeoutId = window.setTimeout(() => {
+        void lockAfterInactivity();
+      }, INACTIVITY_LOCK_MS);
+    };
+
+    const handleActivity = () => {
+      scheduleLock();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        scheduleLock();
+      }
+    };
+
+    scheduleLock();
+
+    const passiveEvents: Array<keyof WindowEventMap> = ['pointerdown', 'mousemove', 'touchstart'];
+    const standardEvents: Array<keyof WindowEventMap> = ['keydown', 'focus'];
+
+    passiveEvents.forEach((eventName) => window.addEventListener(eventName, handleActivity, { passive: true }));
+    standardEvents.forEach((eventName) => window.addEventListener(eventName, handleActivity));
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+      passiveEvents.forEach((eventName) => window.removeEventListener(eventName, handleActivity));
+      standardEvents.forEach((eventName) => window.removeEventListener(eventName, handleActivity));
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [lockAfterInactivity, status.state]);
 
   useEffect(() => {
     if (AUTH_BYPASS || typeof window === 'undefined') {

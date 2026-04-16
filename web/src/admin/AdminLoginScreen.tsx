@@ -33,7 +33,8 @@ export default function AdminLoginScreen() {
 
   const hasEmail = email.trim().length > 0;
   const hasPassword = password.length > 0;
-  const submitDisabled = loading || !hasEmail || !hasPassword;
+  const hasPin = pin.trim().length > 0;
+  const submitDisabled = loading || !hasEmail || !hasPassword || !hasPin;
 
   const emailFieldId = 'admin-login-email';
   const passwordFieldId = 'admin-login-password';
@@ -45,7 +46,7 @@ export default function AdminLoginScreen() {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!hasEmail || !hasPassword) {
+    if (!hasEmail || !hasPassword || !hasPin) {
       return;
     }
 
@@ -170,7 +171,7 @@ export default function AdminLoginScreen() {
 
             <div className="login-field-group">
               <label className="login-field" htmlFor={pinFieldId}>
-                <span>PIN (volitelné)</span>
+                <span>PIN (povinný)</span>
                 <input
                   id={pinFieldId}
                   type="password"
@@ -184,6 +185,7 @@ export default function AdminLoginScreen() {
                     setError((current) => (current && current.field === 'pin' ? null : current));
                   }}
                   placeholder="např. 1234"
+                  required
                   aria-invalid={pinError ? 'true' : 'false'}
                   aria-describedby={pinError ? `${pinFieldId}-error` : undefined}
                 />

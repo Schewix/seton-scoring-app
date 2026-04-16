@@ -10,8 +10,8 @@ praktický návod pro provoz na stanovišti i pro kancelář závodu.
    kratší alias `/setonuv-zavod` je také podporovaný).
    Aplikace běží jako PWA a po prvním načtení funguje i bez připojení.
 2. Zadej e-mail a heslo rozhodčího. Přístupové údaje spravuje hlavní rozhodčí.
-3. Volitelně můžeš při přihlášení nastavit vlastní PIN (4–6 číslic). PIN se uloží
-   jen lokálně do prohlížeče a umožní zařízení odemknout bez zadávání hesla.
+3. Při přihlášení vždy zadej PIN (4–6 číslic). PIN se uloží jen lokálně do
+   prohlížeče a umožní zařízení odemknout bez zadávání hesla.
 4. Pokud systém vyžaduje změnu hesla, zobrazí se formulář pro zadání nového.
    Po uložení se přihlášení dokončí automaticky.
 5. Po úspěšném přihlášení aplikace stáhne manifest (údaje o stanovišti,

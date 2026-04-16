@@ -37,6 +37,10 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin, varia
       setError('Hesla se neshodují.');
       return;
     }
+    if (!pin.trim() && !pendingPin?.trim()) {
+      setError('Zadej prosím PIN.');
+      return;
+    }
 
     setError('');
     setLoading(true);
@@ -180,6 +184,7 @@ export default function ChangePasswordScreen({ email, judgeId, pendingPin, varia
                     setError('');
                   }}
                   placeholder="např. 1234"
+                  required
                   aria-invalid={Boolean(error) ? 'true' : 'false'}
                 />
               </label>

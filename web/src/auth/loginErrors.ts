@@ -34,7 +34,7 @@ export function translateLoginError(error: unknown): LoginErrorFeedback {
   }
 
   if (normalized.includes('pin required')) {
-    return { message: 'PIN je povinný pro toto stanoviště.', field: 'pin' };
+    return { message: 'PIN je povinný.', field: 'pin' };
   }
 
   if (normalized.includes('invalid pin')) {
