@@ -2,8 +2,8 @@ export type TimeScoringCategory = 'N' | 'M' | 'S' | 'R';
 
 const CATEGORY_TIME_LIMITS_MINUTES: Record<TimeScoringCategory, number> = {
   N: 110,
-  M: 120,
-  S: 130,
+  M: 140,
+  S: 140,
   R: 140,
 };
 

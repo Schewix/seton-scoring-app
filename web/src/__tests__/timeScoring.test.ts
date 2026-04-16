@@ -23,10 +23,14 @@ describe('timeScoring', () => {
   });
 
   it('applies one point penalty for each started 10 minutes over limit', () => {
-    expect(computeTimePoints('M', 121 * 60)).toBe(11);
-    expect(computeTimePoints('M', 129 * 60)).toBe(11);
-    expect(computeTimePoints('M', 130 * 60)).toBe(11);
-    expect(computeTimePoints('M', 131 * 60)).toBe(10);
+    expect(computeTimePoints('M', 141 * 60)).toBe(11);
+    expect(computeTimePoints('M', 149 * 60)).toBe(11);
+    expect(computeTimePoints('M', 150 * 60)).toBe(11);
+    expect(computeTimePoints('M', 151 * 60)).toBe(10);
+  });
+
+  it('matches the race time table for category M', () => {
+    expect(computeTimePoints('M', (3 * 60 + 57) * 60)).toBe(2);
   });
 
   it('returns null for unsupported categories or missing time', () => {
