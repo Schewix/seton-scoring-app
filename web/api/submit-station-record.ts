@@ -215,7 +215,7 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: 'Invalid wait minutes' });
   }
 
-  if (tokenEventId !== body.event_id || tokenStationId !== body.station_id) {
+  if (tokenEventId !== body.event_id) {
     return res.status(403).json({ error: 'Forbidden' });
   }
 
@@ -255,7 +255,7 @@ export default async function handler(req: any, res: any) {
 
   const { data: session, error: sessionError } = await supabaseAdmin
     .from('judge_sessions')
-    .select('id, judge_id, revoked_at')
+    .select('id, judge_id, station_id, revoked_at')
     .eq('id', sessionId)
     .eq('judge_id', judgeId)
     .maybeSingle();
@@ -265,24 +265,45 @@ export default async function handler(req: any, res: any) {
     return respond(res, 500, 'Session lookup failed', sessionError.message);
   }
 
-  if (!session || session.revoked_at) {
+  if (!session || session.revoked_at || session.station_id !== tokenStationId) {
     return res.status(401).json({ error: 'Invalid session' });
   }
 
-  const { data: assignment, error: assignmentError } = await supabaseAdmin
+  const { data: tokenStation, error: tokenStationError } = await supabaseAdmin
+    .from('stations')
+    .select('id, code')
+    .eq('id', tokenStationId)
+    .eq('event_id', tokenEventId)
+    .maybeSingle();
+
+  if (tokenStationError) {
+    logError('token station lookup failed', tokenStationError);
+    return respond(res, 500, 'Token station lookup failed', tokenStationError.message);
+  }
+
+  if (!tokenStation) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const hasCalcPrivileges = (tokenStation.code ?? '').trim().toUpperCase() === 'T';
+  if (!hasCalcPrivileges && tokenStationId !== body.station_id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { data: tokenAssignment, error: tokenAssignmentError } = await supabaseAdmin
     .from('judge_assignments')
     .select('id')
     .eq('judge_id', judgeId)
-    .eq('event_id', body.event_id)
-    .eq('station_id', body.station_id)
+    .eq('event_id', tokenEventId)
+    .eq('station_id', tokenStationId)
     .maybeSingle();
 
-  if (assignmentError) {
-    logError('judge_assignments lookup failed', assignmentError);
-    return respond(res, 500, 'Assignment lookup failed', assignmentError.message);
+  if (tokenAssignmentError) {
+    logError('judge_assignments token-station lookup failed', tokenAssignmentError);
+    return respond(res, 500, 'Assignment lookup failed', tokenAssignmentError.message);
   }
 
-  if (!assignment) {
+  if (!tokenAssignment) {
     return res.status(403).json({ error: 'Forbidden' });
   }
 

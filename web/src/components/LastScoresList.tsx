@@ -119,6 +119,18 @@ interface LastScoresListProps {
   stationId: string;
   isTargetStation: boolean;
   onQueueScoreUpdate: (payload: StationScorePayloadInput) => Promise<boolean>;
+  onRestoreTargetEdit?: (payload: RestoreTargetEditPayload) => void;
+}
+
+export interface RestoreTargetEditPayload {
+  patrolId: string;
+  patrolCode: string | null;
+  teamName: string;
+  category: string;
+  sex: string;
+  note: string | null;
+  normalizedAnswers: string | null;
+  createdAt: string;
 }
 
 export function LastScoresList({
@@ -126,6 +138,7 @@ export function LastScoresList({
   stationId,
   isTargetStation,
   onQueueScoreUpdate,
+  onRestoreTargetEdit,
 }: LastScoresListProps) {
   const [rows, setRows] = useState<ScoreRow[]>([]);
   const [totalCount, setTotalCount] = useState<number | null>(null);
@@ -324,6 +337,27 @@ export function LastScoresList({
   };
 
   const beginEdit = (row: ScoreRow) => {
+    if (isTargetStation && onRestoreTargetEdit) {
+      const patrol =
+        row.patrols ||
+        ({
+          patrol_code: null,
+          team_name: 'Neznámá hlídka',
+          category: '?',
+          sex: '?',
+        } satisfies ScoreRow['patrols']);
+      onRestoreTargetEdit({
+        patrolId: row.patrol_id,
+        patrolCode: patrol.patrol_code ?? null,
+        teamName: patrol.team_name,
+        category: patrol.category,
+        sex: patrol.sex,
+        note: row.note ?? null,
+        normalizedAnswers: row.quiz?.answers ?? null,
+        createdAt: row.created_at,
+      });
+      return;
+    }
     setEditingId(row.id);
     setEditPoints(String(row.points));
     setEditWait(formatWaitMinutesValue(row.waitMinutes ?? 0));
@@ -470,13 +504,23 @@ export function LastScoresList({
                     <button
                       type="button"
                       className="ghost score-edit-toggle"
-                      onClick={() => (isEditing ? cancelEdit() : beginEdit(row))}
+                      onClick={() =>
+                        isTargetStation && onRestoreTargetEdit
+                          ? beginEdit(row)
+                          : isEditing
+                            ? cancelEdit()
+                            : beginEdit(row)
+                      }
                     >
-                      {isEditing ? 'Zavřít editaci' : 'Upravit'}
+                      {isTargetStation && onRestoreTargetEdit
+                        ? 'Vrátit do formuláře'
+                        : isEditing
+                          ? 'Zavřít editaci'
+                          : 'Upravit'}
                     </button>
                   </div>
                   {row.note ? <p className="score-note">„{row.note}“</p> : null}
-                  {isEditing ? (
+                  {!isTargetStation && isEditing ? (
                     <div className="score-edit">
                       <label>
                         Body

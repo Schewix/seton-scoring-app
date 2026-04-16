@@ -23,3 +23,5 @@ web/supabase/
 # IDE
 .vscode/
 .idea/
+.vercel
+.env*.local

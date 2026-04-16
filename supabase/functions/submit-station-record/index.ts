@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
 
   const { data: session, error: sessionError } = await supabaseAdmin
     .from('judge_sessions')
-    .select('id, judge_id, revoked_at')
+    .select('id, judge_id, station_id, revoked_at')
     .eq('id', sessionId)
     .eq('judge_id', judgeId)
     .maybeSingle();
@@ -191,7 +191,7 @@ Deno.serve(async (req) => {
     logError('judge_sessions lookup failed', sessionError);
     return jsonResponse({ error: 'Invalid session' }, 401);
   }
-  if (!session || session.revoked_at) {
+  if (!session || session.revoked_at || session.station_id !== tokenStationId) {
     return jsonResponse({ error: 'Invalid session' }, 401);
   }
 
@@ -214,7 +214,40 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Invalid wait minutes' }, 400);
   }
 
-  if (tokenEventId !== body.event_id || tokenStationId !== body.station_id) {
+  if (tokenEventId !== body.event_id) {
+    return jsonResponse({ error: 'Forbidden' }, 403);
+  }
+
+  const { data: tokenStation, error: tokenStationError } = await supabaseAdmin
+    .from('stations')
+    .select('id, code')
+    .eq('id', tokenStationId)
+    .eq('event_id', tokenEventId)
+    .maybeSingle();
+  if (tokenStationError) {
+    logError('token station lookup failed', tokenStationError);
+    return jsonResponse({ error: 'Token station lookup failed' }, 500);
+  }
+  if (!tokenStation) {
+    return jsonResponse({ error: 'Forbidden' }, 403);
+  }
+  const hasCalcPrivileges = (tokenStation.code ?? '').trim().toUpperCase() === 'T';
+  if (!hasCalcPrivileges && tokenStationId !== body.station_id) {
+    return jsonResponse({ error: 'Forbidden' }, 403);
+  }
+
+  const { data: tokenAssignment, error: tokenAssignmentError } = await supabaseAdmin
+    .from('judge_assignments')
+    .select('id')
+    .eq('judge_id', judgeId)
+    .eq('event_id', tokenEventId)
+    .eq('station_id', tokenStationId)
+    .maybeSingle();
+  if (tokenAssignmentError) {
+    logError('judge_assignments token-station lookup failed', tokenAssignmentError);
+    return jsonResponse({ error: 'Assignment lookup failed' }, 500);
+  }
+  if (!tokenAssignment) {
     return jsonResponse({ error: 'Forbidden' }, 403);
   }
 

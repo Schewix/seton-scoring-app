@@ -195,6 +195,20 @@ function wasEditedAfterSync(row: { updated_at?: string | null; synced_at?: strin
   return updatedAt - syncedAt > SYNC_EDIT_GRACE_MS;
 }
 
+function formatImportError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 function mapLocalRow(row: LocalArticleRow): PublicArticle {
   const source = row.source === 'pionyr' ? 'pionyr' : 'local';
   return {
@@ -317,6 +331,10 @@ async function handleAdminImport(req: any, res: any) {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
+  const includeErrorDetails =
+    process.env.NODE_ENV !== 'production' ||
+    req.query?.debug === '1' ||
+    req.headers?.['x-debug-import'] === '1';
 
   try {
     const list = await fetchPionyrArticles();
@@ -352,7 +370,11 @@ async function handleAdminImport(req: any, res: any) {
       .select('id,external_id,updated_at,synced_at')
       .eq('source', 'pionyr');
     if (existingError) {
-      res.status(500).json({ error: 'Failed to load imported articles.' });
+      console.error('[api/content/import] failed to load existing rows', existingError);
+      res.status(500).json({
+        error: 'Failed to load imported articles.',
+        ...(includeErrorDetails ? { details: formatImportError(existingError) } : {}),
+      });
       return;
     }
 
@@ -379,7 +401,11 @@ async function handleAdminImport(req: any, res: any) {
         .from('content_articles')
         .upsert(upserts, { onConflict: 'source,external_id' });
       if (upsertError) {
-        res.status(500).json({ error: 'Failed to import articles.' });
+        console.error('[api/content/import] failed to upsert rows', upsertError);
+        res.status(500).json({
+          error: 'Failed to import articles.',
+          ...(includeErrorDetails ? { details: formatImportError(upsertError) } : {}),
+        });
         return;
       }
     }
@@ -397,7 +423,11 @@ async function handleAdminImport(req: any, res: any) {
     if (deleteIds.length > 0) {
       const { error: deleteError } = await supabase.from('content_articles').delete().in('id', deleteIds);
       if (deleteError) {
-        res.status(500).json({ error: 'Failed to clear imported articles.' });
+        console.error('[api/content/import] failed to delete stale rows', deleteError);
+        res.status(500).json({
+          error: 'Failed to clear imported articles.',
+          ...(includeErrorDetails ? { details: formatImportError(deleteError) } : {}),
+        });
         return;
       }
     }
@@ -411,7 +441,10 @@ async function handleAdminImport(req: any, res: any) {
     });
   } catch (error) {
     console.error('[api/content/import] failed', error);
-    res.status(500).json({ error: 'Failed to import articles.' });
+    res.status(500).json({
+      error: 'Failed to import articles.',
+      ...(includeErrorDetails ? { details: formatImportError(error) } : {}),
+    });
   }
 }
 

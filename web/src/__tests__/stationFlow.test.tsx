@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import localforage from 'localforage';
 import type { ReactNode } from 'react';
 import type { OutboxEntry, StationScorePayload } from '../outbox';
 import { buildOutboxEntry, buildStationScorePayload, readOutbox, writeOutboxEntry } from '../outbox';
 import { AuthProvider } from '../auth/context';
 import { ROUTE_PREFIX } from '../routing';
-import { getOutboxStore } from '../storage/localforage';
+import { getLocalforage, getOutboxStore } from '../storage/localforage';
 
 const { logoutMock } = vi.hoisted(() => ({ logoutMock: vi.fn() }));
 
@@ -17,6 +16,39 @@ vi.stubEnv('VITE_SUPABASE_URL', 'http://localhost');
 vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-test');
 vi.stubEnv('VITE_AUTH_BYPASS', '1');
 vi.stubEnv('VITE_STATION_CODE', 'X');
+
+vi.mock('../storage/localforage', () => {
+  const createStore = () => {
+    const store = new Map<string, unknown>();
+
+    return {
+      async getItem<T>(key: string): Promise<T | null> {
+        return (store.has(key) ? store.get(key) : null) as T | null;
+      },
+      async setItem<T>(key: string, value: T): Promise<T> {
+        store.set(key, value);
+        return value;
+      },
+      async removeItem(key: string): Promise<void> {
+        store.delete(key);
+      },
+      async clear(): Promise<void> {
+        store.clear();
+      },
+      async keys(): Promise<string[]> {
+        return Array.from(store.keys());
+      },
+    };
+  };
+
+  const localStore = createStore();
+  const outboxStore = createStore();
+
+  return {
+    getLocalforage: () => localStore,
+    getOutboxStore: () => outboxStore,
+  };
+});
 
 vi.mock('../supabaseClient', () => {
   const tableFactories = new Map<string, () => unknown>();
@@ -533,9 +565,11 @@ describe('station workflow', () => {
     vi.clearAllMocks();
     fetchMock.mockReset();
     (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
-    await localforage.clear();
+    await getLocalforage().clear();
     await getOutboxStore().clear();
-    window.localStorage.clear();
+    if (typeof window.localStorage?.clear === 'function') {
+      window.localStorage.clear();
+    }
     if (typeof Element !== 'undefined') {
       const proto = Element.prototype as Element & { scrollIntoView?: () => void };
       if (typeof proto.scrollIntoView !== 'function') {

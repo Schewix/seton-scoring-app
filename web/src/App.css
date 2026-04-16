@@ -1921,6 +1921,18 @@ textarea {
   gap: 18px;
 }
 
+.form-grid--calc .calc-auto {
+  order: 1;
+}
+
+.form-grid--calc .score-review {
+  order: 2;
+}
+
+.form-grid--calc .calc-grid {
+  order: 3;
+}
+
 .score-review {
   border: 1px dashed rgba(148, 163, 184, 0.5);
   border-radius: 16px;
@@ -1990,6 +2002,15 @@ textarea {
 .score-review-input--wait {
   width: 140px;
   min-width: 140px;
+}
+
+.score-review-auto-value {
+  display: inline-flex;
+  min-width: 72px;
+  justify-content: center;
+  font-weight: 700;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
 }
 
 .score-review-station {

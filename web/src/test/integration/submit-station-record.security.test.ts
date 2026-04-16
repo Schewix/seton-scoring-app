@@ -66,6 +66,25 @@ async function seedEventWithStationAndPatrol() {
   return { eventId, stationId, patrolId, patrolCode };
 }
 
+async function seedSessionForStation(params: { judgeId: string; stationId: string }) {
+  const sessionId = crypto.randomUUID();
+  const refreshExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const { error } = await supabaseAdmin.from('judge_sessions').insert({
+    id: sessionId,
+    judge_id: params.judgeId,
+    station_id: params.stationId,
+    device_salt: `salt-${sessionId}`,
+    public_key: `pub-${sessionId}`,
+    manifest_version: 1,
+    refresh_token_hash: `hash-${sessionId}`,
+    refresh_token_expires_at: refreshExpiresAt,
+  });
+  if (error) {
+    throw new Error(`seed judge_session failed: ${error.message ?? 'unknown-error'}`);
+  }
+  return sessionId;
+}
+
 describe('submit-station-record api security', () => {
   let ctx: Awaited<ReturnType<typeof seedBase>>;
   let other: Awaited<ReturnType<typeof seedEventWithStationAndPatrol>> | null = null;
@@ -134,9 +153,14 @@ describe('submit-station-record api security', () => {
   });
 
   it('blocks judge without station assignment', async () => {
+    const stationSessionId = await seedSessionForStation({
+      judgeId: ctx.judgeId,
+      stationId: stationOtherId ?? '',
+    });
+
     const token = createAccessToken({
       sub: ctx.judgeId,
-      sessionId: ctx.sessionId,
+      sessionId: stationSessionId,
       eventId: ctx.eventId,
       stationId: stationOtherId ?? '',
     });
@@ -160,10 +184,72 @@ describe('submit-station-record api security', () => {
     expect(scores?.length ?? 0).toBe(0);
   });
 
-  it('rejects event/station mismatch combinations', async () => {
+  it('allows station T to write score for other station in same event', async () => {
+    const calcStationId = crypto.randomUUID();
+    const calcSessionId = crypto.randomUUID();
+    const refreshExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+    await supabaseAdmin
+      .from('stations')
+      .insert({ id: calcStationId, event_id: ctx.eventId, code: 'T', name: 'Výpočetka' });
+
+    await supabaseAdmin.from('judge_assignments').insert({
+      judge_id: ctx.judgeId,
+      station_id: calcStationId,
+      event_id: ctx.eventId,
+      allowed_categories: ['M'],
+      allowed_tasks: [],
+    });
+
+    await supabaseAdmin.from('judge_sessions').insert({
+      id: calcSessionId,
+      judge_id: ctx.judgeId,
+      station_id: calcStationId,
+      device_salt: 'salt-calc',
+      public_key: 'pub-calc',
+      manifest_version: 1,
+      refresh_token_hash: 'hash-calc',
+      refresh_token_expires_at: refreshExpiresAt,
+    });
+
     const token = createAccessToken({
       sub: ctx.judgeId,
-      sessionId: ctx.sessionId,
+      sessionId: calcSessionId,
+      eventId: ctx.eventId,
+      stationId: calcStationId,
+    });
+
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: basePayload(ctx, {
+        station_id: stationOtherId,
+      }),
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+
+    const { data: scores } = await supabaseAdmin
+      .from('station_scores')
+      .select('*')
+      .eq('event_id', ctx.eventId)
+      .eq('station_id', stationOtherId ?? '')
+      .eq('patrol_id', ctx.patrolId);
+
+    expect(scores?.length ?? 0).toBe(1);
+  });
+
+  it('rejects event/station mismatch combinations', async () => {
+    const mismatchSessionId = await seedSessionForStation({
+      judgeId: ctx.judgeId,
+      stationId: other?.stationId ?? '',
+    });
+
+    const token = createAccessToken({
+      sub: ctx.judgeId,
+      sessionId: mismatchSessionId,
       eventId: ctx.eventId,
       stationId: other?.stationId ?? '',
     });
@@ -178,7 +264,7 @@ describe('submit-station-record api security', () => {
     const res = createMockRes();
 
     await handler(req, res);
-    expect([400, 403]).toContain(res.statusCode);
+    expect(res.statusCode).toBe(403);
 
     const { data: scores } = await supabaseAdmin
       .from('station_scores')

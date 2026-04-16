@@ -176,6 +176,52 @@ describe('outbox flush', () => {
     expect(updated[0]?.next_attempt_at).toBe(now);
   });
 
+  it('releases retry backoff for same event other station when event-wide mode is enabled', () => {
+    const now = Date.now();
+    const item: OutboxEntry = {
+      client_event_id: 'client-1',
+      type: 'station_score',
+      payload: buildStationScorePayload(
+        {
+          event_id: 'event-1',
+          station_id: 'station-other',
+          patrol_id: 'patrol-1',
+          category: 'M',
+          arrived_at: '2025-01-01T00:00:00.000Z',
+          wait_minutes: 0,
+          points: 5,
+          note: '',
+          use_target_scoring: false,
+          normalized_answers: null,
+          finish_time: null,
+          patrol_code: 'MH-1',
+          team_name: 'Test',
+          sex: 'H',
+        },
+        'client-1',
+        '2025-01-01T00:00:00.000Z',
+      ),
+      event_id: 'event-1',
+      station_id: 'station-other',
+      state: 'failed',
+      attempts: 2,
+      last_error: 'Failed to fetch',
+      next_attempt_at: now + 60_000,
+      created_at: '2025-01-01T00:00:00.000Z',
+      response: null,
+    };
+
+    const { updated, changed } = releaseNetworkBackoff([item], {
+      eventId: 'event-1',
+      stationId: 'station-t',
+      now,
+      allowEventWideStation: true,
+    });
+
+    expect(changed).toBe(true);
+    expect(updated[0]?.next_attempt_at).toBe(now);
+  });
+
   it('keeps items when network fails', async () => {
     const item: OutboxEntry = {
       client_event_id: 'client-1',
@@ -333,5 +379,56 @@ describe('outbox flush', () => {
     expect(updated[0]?.state).toBe('sent');
     const retained = updated.filter((entry) => entry.state !== 'sent');
     expect(retained).toHaveLength(0);
+  });
+
+  it('flushes same-event records from other stations when event-wide mode is enabled', async () => {
+    const item: OutboxEntry = {
+      client_event_id: 'client-1',
+      type: 'station_score',
+      payload: buildStationScorePayload(
+        {
+          event_id: 'event-1',
+          station_id: 'station-other',
+          patrol_id: 'patrol-1',
+          category: 'M',
+          arrived_at: '2025-01-01T00:00:00.000Z',
+          wait_minutes: 0,
+          points: 5,
+          note: '',
+          use_target_scoring: false,
+          normalized_answers: null,
+          finish_time: null,
+          patrol_code: 'MH-1',
+          team_name: 'Test',
+          sex: 'H',
+        },
+        'client-1',
+        '2025-01-01T00:00:00.000Z',
+      ),
+      event_id: 'event-1',
+      station_id: 'station-other',
+      state: 'queued',
+      attempts: 0,
+      next_attempt_at: 0,
+      created_at: '2025-01-01T00:00:00.000Z',
+      response: null,
+    };
+
+    const fetchFn = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    const { updated, sentIds } = await flushOutboxBatch({
+      items: [item],
+      eventId: 'event-1',
+      stationId: 'station-t',
+      allowEventWideStation: true,
+      accessToken: 'token',
+      endpoint: 'http://example.com',
+      fetchFn,
+      now: Date.now(),
+      batchSize: 10,
+    });
+
+    expect(sentIds).toEqual(['client-1']);
+    expect(updated[0]?.state).toBe('sent');
   });
 });

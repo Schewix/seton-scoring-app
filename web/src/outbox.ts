@@ -127,13 +127,13 @@ export function isLikelyNetworkFailure(lastError?: string) {
 
 export function releaseNetworkBackoff(
   items: OutboxEntry[],
-  params: { eventId: string; stationId: string; now: number },
+  params: { eventId: string; stationId: string; now: number; allowEventWideStation?: boolean },
 ) {
   let changed = false;
   const updated = items.map((item) => {
     if (
       item.event_id === params.eventId &&
-      item.station_id === params.stationId &&
+      (item.station_id === params.stationId || params.allowEventWideStation) &&
       item.state === 'failed' &&
       item.next_attempt_at > params.now &&
       isLikelyNetworkFailure(item.last_error)
@@ -180,6 +180,7 @@ export async function flushOutboxBatch(params: {
   items: OutboxEntry[];
   eventId: string;
   stationId: string;
+  allowEventWideStation?: boolean;
   accessToken: string;
   endpoint: string;
   fetchFn: typeof fetch;
@@ -189,7 +190,7 @@ export async function flushOutboxBatch(params: {
   const ready = params.items.filter(
     (item) =>
       item.event_id === params.eventId &&
-      item.station_id === params.stationId &&
+      (item.station_id === params.stationId || params.allowEventWideStation) &&
       (item.state === 'queued' || item.state === 'failed') &&
       item.next_attempt_at <= params.now,
   );

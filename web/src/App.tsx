@@ -1,6 +1,6 @@
 import { ClipboardEvent as ReactClipboardEvent, FormEvent as ReactFormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // import QRScanner from './components/QRScanner';
-import LastScoresList from './components/LastScoresList';
+import LastScoresList, { type RestoreTargetEditPayload } from './components/LastScoresList';
 import PatrolCodeInput, {
   normalisePatrolCode,
   PatrolRegistryEntry,
@@ -508,6 +508,7 @@ function StationApp({
   const stationDisplayName = getStationDisplayName(manifest.station.name, manifest.station.code);
   const scoringLocked = manifest.event.scoringLocked;
   const isTargetStation = stationCode === 'T';
+  const canManageEventWideOutbox = stationCode === 'T';
   const canReviewStationScores =
     isTargetStation || manifest.allowedTasks.some((task) => SCORE_REVIEW_TASK_KEYS.has(task));
   const scoringDisabled = scoringLocked && !isTargetStation;
@@ -887,7 +888,9 @@ function StationApp({
         if (item.state === 'sent') {
           return item;
         }
-        const isCurrent = item.event_id === eventId && item.station_id === stationId;
+        const isCurrent =
+          item.event_id === eventId &&
+          (item.station_id === stationId || canManageEventWideOutbox);
         if (!isCurrent && item.state !== 'blocked_other_session') {
           changed = true;
           return { ...item, state: 'blocked_other_session', next_attempt_at: now };
@@ -903,7 +906,7 @@ function StationApp({
       }
       return updated;
     },
-    [eventId, stationId],
+    [canManageEventWideOutbox, eventId, stationId],
   );
 
   const refreshOutbox = useCallback(async () => {
@@ -912,7 +915,7 @@ function StationApp({
     if (!didRecoverOutbox.current) {
       didRecoverOutbox.current = true;
       const now = Date.now();
-      const recovered = items.map((item) =>
+      const recovered = items.map<OutboxEntry>((item) =>
         item.state === 'sending' ? { ...item, state: 'queued', next_attempt_at: now } : item,
       );
       if (recovered.some((item, index) => item !== items[index])) {
@@ -929,8 +932,13 @@ function StationApp({
   }, [refreshOutbox]);
 
   const currentSessionItems = useMemo(
-    () => outboxItems.filter((item) => item.event_id === eventId && item.station_id === stationId),
-    [eventId, outboxItems, stationId],
+    () =>
+      outboxItems.filter(
+        (item) =>
+          item.event_id === eventId &&
+          (item.station_id === stationId || canManageEventWideOutbox),
+      ),
+    [canManageEventWideOutbox, eventId, outboxItems, stationId],
   );
   const queuedPatrolIds = useMemo(() => {
     const ids = new Set<string>();
@@ -951,8 +959,13 @@ function StationApp({
     return tickets.some((ticket) => ticket.state === 'waiting' || ticket.state === 'serving');
   }, [enableTicketQueue, tickets]);
   const otherSessionItems = useMemo(
-    () => outboxItems.filter((item) => item.event_id !== eventId || item.station_id !== stationId),
-    [eventId, outboxItems, stationId],
+    () =>
+      outboxItems.filter(
+        (item) =>
+          item.event_id !== eventId ||
+          (!canManageEventWideOutbox && item.station_id !== stationId),
+      ),
+    [canManageEventWideOutbox, eventId, outboxItems, stationId],
   );
   const pendingCount = useMemo(
     () =>
@@ -1387,7 +1400,7 @@ function StationApp({
         }))
           .filter((station) => {
             if (station.code === 'T' || station.code === 'R') {
-              return false;
+              return true;
             }
             if (!patrolStationCategory) {
               return true;
@@ -1743,20 +1756,17 @@ function StationApp({
     setStationPassageError(null);
 
     try {
-      const judgeId = manifest.judge.id;
       const [passagesRes, scoresRes] = await Promise.all([
         supabase
           .from('station_passages')
           .select('patrol_id')
           .eq('event_id', eventId)
-          .eq('station_id', stationId)
-          .eq('submitted_by', judgeId),
+          .eq('station_id', stationId),
         supabase
           .from('station_scores')
           .select('patrol_id')
           .eq('event_id', eventId)
-          .eq('station_id', stationId)
-          .eq('submitted_by', judgeId),
+          .eq('station_id', stationId),
       ]);
 
       if (passagesRes.error || scoresRes.error) {
@@ -1785,7 +1795,7 @@ function StationApp({
     } finally {
       setStationPassageLoading(false);
     }
-  }, [eventId, manifest.judge.id, reportSupabaseError, stationId]);
+  }, [eventId, reportSupabaseError, stationId]);
 
   const stationCategorySummary = useMemo<StationCategorySummary>(() => {
     const record = createStationCategoryRecord(() => ({
@@ -2028,7 +2038,12 @@ function StationApp({
       items = await normalizeOutboxForSession(items);
       updateOutboxState(items);
 
-      const released = releaseNetworkBackoff(items, { eventId, stationId, now });
+      const released = releaseNetworkBackoff(items, {
+        eventId,
+        stationId,
+        now,
+        allowEventWideStation: canManageEventWideOutbox,
+      });
       if (released.changed) {
         items = released.updated;
         await writeOutboxEntriesAndSync(items);
@@ -2039,7 +2054,7 @@ function StationApp({
         const forced = items.map((item) => {
           if (
             item.event_id === eventId &&
-            item.station_id === stationId &&
+            (item.station_id === stationId || canManageEventWideOutbox) &&
             (item.state === 'queued' || item.state === 'failed') &&
             item.next_attempt_at > now
           ) {
@@ -2056,7 +2071,7 @@ function StationApp({
       const ready = items.filter(
         (item) =>
           item.event_id === eventId &&
-          item.station_id === stationId &&
+          (item.station_id === stationId || canManageEventWideOutbox) &&
           (item.state === 'queued' || item.state === 'failed') &&
           item.next_attempt_at <= now,
       );
@@ -2084,7 +2099,7 @@ function StationApp({
           const updated = items.map<OutboxEntry>((item) => {
             if (
               item.event_id !== eventId ||
-              item.station_id !== stationId ||
+              (!canManageEventWideOutbox && item.station_id !== stationId) ||
               item.state === 'sent' ||
               item.state === 'blocked_other_session' ||
               item.state === 'rejected_event_locked'
@@ -2112,7 +2127,11 @@ function StationApp({
       }
 
       const cleared = items.map<OutboxEntry>((item) => {
-        if (item.event_id === eventId && item.station_id === stationId && item.state === 'needs_auth') {
+        if (
+          item.event_id === eventId &&
+          (item.station_id === stationId || canManageEventWideOutbox) &&
+          item.state === 'needs_auth'
+        ) {
           return { ...item, state: 'queued', last_error: undefined, next_attempt_at: now };
         }
         return item;
@@ -2144,6 +2163,7 @@ function StationApp({
           items,
           eventId,
           stationId,
+          allowEventWideStation: canManageEventWideOutbox,
           accessToken,
           endpoint,
           fetchFn: fetch,
@@ -2189,6 +2209,7 @@ function StationApp({
     }
   }, [
     auth.tokens.accessToken,
+    canManageEventWideOutbox,
     eventId,
     loadStationPassages,
     normalizeOutboxForSession,
@@ -2665,6 +2686,10 @@ function StationApp({
         return;
       }
 
+      if (baseRow.stationCode === 'R' || baseRow.stationCode === 'T') {
+        return;
+      }
+
       const trimmedPoints = state.pointsDraft.trim();
       const pointsValue = trimmedPoints === '' ? NaN : Number(trimmedPoints);
       const waitValue = parseWaitDraft(state.waitDraft);
@@ -2730,6 +2755,19 @@ function StationApp({
           throw new Error('queue-failed');
         }
 
+        setScoreReviewRows((prev) =>
+          prev.map((row) =>
+            row.stationId === stationId
+              ? {
+                ...row,
+                points: pointsValue,
+                waitMinutes: waitValue,
+                hasScore: true,
+                hasWait: true,
+              }
+              : row,
+          ),
+        );
         pushAlert(`Záznam pro stanoviště ${baseRow.stationCode || stationId} aktualizován.`);
         await loadScoreReview(
           activePatrol.id,
@@ -2781,6 +2819,49 @@ function StationApp({
       scoreReviewState,
     ],
   );
+
+  const effectiveTotalWaitMinutes = useMemo(() => {
+    if (stationCode !== 'T') {
+      return totalWaitMinutes;
+    }
+    if (!scoreReviewRows.length) {
+      return totalWaitMinutes;
+    }
+
+    let hasAnyWait = false;
+    let total = 0;
+
+    scoreReviewRows.forEach((row) => {
+      if (row.stationCode === 'R' || row.stationCode === 'T') {
+        return;
+      }
+
+      const reviewState = scoreReviewState[row.stationId];
+      const draftWait = reviewState && !reviewState.ok ? parseWaitDraft(reviewState.waitDraft) : Number.NaN;
+
+      if (Number.isInteger(draftWait) && draftWait >= 0) {
+        hasAnyWait = true;
+        total += draftWait;
+        return;
+      }
+
+      if (typeof row.waitMinutes === 'number' && Number.isFinite(row.waitMinutes) && row.waitMinutes >= 0) {
+        hasAnyWait = true;
+        total += Math.round(row.waitMinutes);
+        return;
+      }
+
+      if (row.hasWait) {
+        hasAnyWait = true;
+      }
+    });
+
+    if (hasAnyWait) {
+      return total;
+    }
+
+    return totalWaitMinutes;
+  }, [scoreReviewRows, scoreReviewState, stationCode, totalWaitMinutes]);
 
   const handleSave = useCallback(async () => {
     if (scoringDisabled) {
@@ -2838,7 +2919,7 @@ function StationApp({
     }
     const waitMinutes = stationCode === 'T'
       ? (() => {
-          const parsed = Number(totalWaitMinutes ?? 0);
+          const parsed = Number(effectiveTotalWaitMinutes ?? 0);
           return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : 0;
         })()
       : manualWaitMinutes;
@@ -2893,7 +2974,7 @@ function StationApp({
     resetForm,
     updateTickets,
     waitDraft,
-    totalWaitMinutes,
+    effectiveTotalWaitMinutes,
     arrivedAt,
     stationId,
     finishAt,
@@ -2906,6 +2987,31 @@ function StationApp({
     enableTicketQueue,
     hasQueueTickets,
   ]);
+
+  const handleRestoreTargetEdit = useCallback(
+    (payload: RestoreTargetEditPayload) => {
+      if (!isTargetStation) {
+        return;
+      }
+
+      const patrol: Patrol = {
+        id: payload.patrolId,
+        team_name: payload.teamName,
+        category: payload.category,
+        sex: payload.sex,
+        patrol_code: payload.patrolCode,
+      };
+
+      initializeFormForPatrol(patrol, { arrivedAt: payload.createdAt });
+      setUseTargetScoring(true);
+      setAnswersInput(normalizeAnswersInput(payload.normalizedAnswers ?? ''));
+      setAnswersError('');
+      setNote(payload.note ?? '');
+      setShowPendingDetails(false);
+      pushAlert(`Hlídka ${payload.teamName} vrácena do formuláře.`);
+    },
+    [initializeFormForPatrol, isTargetStation, pushAlert],
+  );
 
   const totalAnswers = useMemo(
     () => (activePatrol ? parseAnswerLetters(categoryAnswers[activePatrol.category] || '').length : 0),
@@ -2981,9 +3087,9 @@ function StationApp({
     if (Number.isNaN(start.getTime()) || Number.isNaN(finish.getTime())) {
       return null;
     }
-    const waitMinutes = Number(totalWaitMinutes ?? 0);
+    const waitMinutes = Number(effectiveTotalWaitMinutes ?? 0);
     return computePureCourseSeconds({ start, finish, waitMinutes });
-  }, [finishAt, startTime, totalWaitMinutes]);
+  }, [effectiveTotalWaitMinutes, finishAt, startTime]);
 
   const pureCourseLabel = useMemo(() => {
     if (pureCourseSeconds === null) {
@@ -3003,17 +3109,34 @@ function StationApp({
     return computeTimePoints(category, pureCourseSeconds);
   }, [activePatrol, pureCourseSeconds]);
 
+  const targetAnswersReady = useMemo(
+    () => autoScore.total > 0 && autoScore.given === autoScore.total,
+    [autoScore],
+  );
+
+  const targetSectionPoints = useMemo(() => {
+    if (!isTargetStation) {
+      return null;
+    }
+    if (targetAnswersReady) {
+      return autoScore.correct;
+    }
+    const persistedTargetRow = scoreReviewRows.find(
+      (row) => row.stationCode === 'R' && typeof row.points === 'number',
+    );
+    return persistedTargetRow?.points ?? null;
+  }, [autoScore.correct, isTargetStation, scoreReviewRows, targetAnswersReady]);
+
   const controlChecks = useMemo(() => {
     const checks: { label: string; ok: boolean }[] = [];
     if (stationCode === 'T') {
       checks.push({ label: 'Čas doběhu vyplněn', ok: Boolean(finishAt && finishTimeInput) });
       checks.push({ label: 'Čas startu dostupný', ok: Boolean(startTime) });
       checks.push({ label: 'Čistý čas vypočítán', ok: pureCourseSeconds !== null });
-      const answersReady = autoScore.total > 0 ? autoScore.given === autoScore.total : false;
-      checks.push({ label: 'Odpovědi zadány', ok: answersReady });
+      checks.push({ label: 'Odpovědi zadány', ok: targetAnswersReady });
     }
     return checks;
-  }, [stationCode, finishAt, finishTimeInput, startTime, autoScore, pureCourseSeconds]);
+  }, [stationCode, finishAt, finishTimeInput, startTime, pureCourseSeconds, targetAnswersReady]);
 
   const isPatrolInQueue = useMemo(() => {
     if (!scannerPatrol) {
@@ -3524,7 +3647,7 @@ function StationApp({
                 <h2>Stanovištní formulář</h2>
                 <p className="card-subtitle">
                   {stationCode === 'T'
-                    ? 'Zapiš čas doběhu, zkontroluj terčové odpovědi a potvrď uložení.'
+                    ? 'Nejprve vyplň terčový úsek, zkontroluj body stanovišť a nakonec zapiš čas doběhu.'
                     : useTargetScoring
                       ? 'Zadej odpovědi a potvrď uložení.'
                       : 'Vyplň body a potvrď uložení.'}
@@ -3539,7 +3662,7 @@ function StationApp({
               </button>
             </header>
             {activePatrol ? (
-              <div className="form-grid">
+              <div className={`form-grid${stationCode === 'T' ? ' form-grid--calc' : ''}`}>
                 <div className="patrol-meta">
                   <strong>{activePatrol.team_name}</strong>
                   <span>{formatPatrolMetaLabel(activePatrol)}</span>
@@ -3597,8 +3720,8 @@ function StationApp({
                         <div>
                           <span className="calc-meta-label">Čekání:</span>
                           <strong>
-                            {totalWaitMinutes !== null
-                              ? formatWaitDuration(totalWaitMinutes * 60)
+                            {effectiveTotalWaitMinutes !== null
+                              ? formatWaitDuration(effectiveTotalWaitMinutes * 60)
                               : '—'}
                           </strong>
                         </div>
@@ -3670,8 +3793,18 @@ function StationApp({
                                   saving: false,
                                   error: null,
                                 } satisfies StationScoreRowState);
-                              const pointsDraft = state.pointsDraft;
-                              const rawWaitDraft = state.waitDraft;
+                              const isAutoTargetRow = stationCode === 'T' && row.stationCode === 'R';
+                              const isAutoTimeRow = stationCode === 'T' && row.stationCode === 'T';
+                              const isAutoComputedRow = isAutoTargetRow || isAutoTimeRow;
+                              const computedPoints = isAutoTargetRow
+                                ? targetSectionPoints
+                                : isAutoTimeRow
+                                  ? timePoints
+                                  : null;
+                              const pointsDraft = isAutoComputedRow
+                                ? (typeof computedPoints === 'number' ? String(computedPoints) : '')
+                                : state.pointsDraft;
+                              const rawWaitDraft = isAutoComputedRow ? WAIT_TIME_ZERO : state.waitDraft;
                               const pointsTrimmed = pointsDraft.trim();
                               const pointsNumber = pointsTrimmed === '' ? NaN : Number(pointsTrimmed);
                               const waitNumber = parseWaitDraft(rawWaitDraft);
@@ -3692,34 +3825,44 @@ function StationApp({
                                 ? row.waitMinutes !== null
                                 : waitNumber !== baseWait;
                               const isValid = pointsValid && waitValid;
-                              const dirty = !state.ok && (dirtyPoints || dirtyWait);
+                              const dirty = !state.ok && !isAutoComputedRow && (dirtyPoints || dirtyWait);
                               return (
                                 <tr key={row.stationId} className={state.ok ? '' : 'score-review-editing'}>
                                   <td>
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      max={12}
-                                      inputMode="numeric"
-                                      value={pointsDraft}
-                                      onChange={(event) => handleScoreDraftChange(row.stationId, event.target.value)}
-                                      disabled={state.ok || state.saving}
-                                      placeholder="—"
-                                      className="score-review-input"
-                                    />
+                                    {isAutoComputedRow ? (
+                                      <span className="score-review-auto-value">
+                                        {typeof computedPoints === 'number' ? computedPoints : '—'}
+                                      </span>
+                                    ) : (
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={12}
+                                        inputMode="numeric"
+                                        value={pointsDraft}
+                                        onChange={(event) => handleScoreDraftChange(row.stationId, event.target.value)}
+                                        disabled={state.ok || state.saving}
+                                        placeholder="—"
+                                        className="score-review-input"
+                                      />
+                                    )}
                                   </td>
                                   <td>
-                                    <input
-                                      type="time"
-                                      step={60}
-                                      min={WAIT_TIME_ZERO}
-                                      max={WAIT_TIME_MAX}
-                                      value={waitDraft}
-                                      onChange={(event) => handleWaitDraftChange(row.stationId, event.target.value)}
-                                      disabled={state.ok || state.saving}
-                                      placeholder="hh:mm"
-                                      className="score-review-input score-review-input--wait"
-                                    />
+                                    {isAutoComputedRow ? (
+                                      <span className="score-review-auto-value">—</span>
+                                    ) : (
+                                      <input
+                                        type="time"
+                                        step={60}
+                                        min={WAIT_TIME_ZERO}
+                                        max={WAIT_TIME_MAX}
+                                        value={waitDraft}
+                                        onChange={(event) => handleWaitDraftChange(row.stationId, event.target.value)}
+                                        disabled={state.ok || state.saving}
+                                        placeholder="hh:mm"
+                                        className="score-review-input score-review-input--wait"
+                                      />
+                                    )}
                                   </td>
                                   <td>
                                     <div className="score-review-station">
@@ -3728,18 +3871,24 @@ function StationApp({
                                     </div>
                                   </td>
                                   <td>
-                                    <label className="score-review-check">
-                                      <input
-                                        type="checkbox"
-                                        checked={state.ok}
-                                        onChange={(event) => handleScoreOkToggle(row.stationId, event.target.checked)}
-                                        disabled={state.saving}
-                                      />
-                                      <span>OK</span>
-                                    </label>
+                                    {isAutoComputedRow ? (
+                                      <span className="score-review-status">AUTO</span>
+                                    ) : (
+                                      <label className="score-review-check">
+                                        <input
+                                          type="checkbox"
+                                          checked={state.ok}
+                                          onChange={(event) => handleScoreOkToggle(row.stationId, event.target.checked)}
+                                          disabled={state.saving}
+                                        />
+                                        <span>OK</span>
+                                      </label>
+                                    )}
                                   </td>
                                   <td>
-                                    {state.ok ? (
+                                    {isAutoComputedRow ? (
+                                      <span className="score-review-status">Automaticky dopočteno</span>
+                                    ) : state.ok ? (
                                       <span className="score-review-status">
                                         {row.hasScore ? 'Potvrzeno' : 'Bez bodů'}
                                       </span>
@@ -4041,6 +4190,7 @@ function StationApp({
             stationId={stationId}
             isTargetStation={isTargetStation}
             onQueueScoreUpdate={enqueueStationScore}
+            onRestoreTargetEdit={handleRestoreTargetEdit}
           />
 
         </>
