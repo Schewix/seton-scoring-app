@@ -441,13 +441,10 @@ function formatSecondsForExport(seconds: number | null): string {
     return '—';
   }
   const safeSeconds = Math.max(0, Math.round(seconds));
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  const remainingSeconds = safeSeconds % 60;
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
-  }
-  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+  const totalMinutes = Math.floor(safeSeconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 function formatDateTimeForExport(value: string | null | undefined): string {
@@ -459,7 +456,11 @@ function formatDateTimeForExport(value: string | null | undefined): string {
   if (Number.isNaN(parsed.getTime())) {
     return '—';
   }
-  return parsed.toLocaleString('cs-CZ');
+  return parsed.toLocaleTimeString('cs-CZ', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }
 
 function stripDiacritics(value: string): string {

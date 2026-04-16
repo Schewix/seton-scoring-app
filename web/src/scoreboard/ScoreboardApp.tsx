@@ -307,15 +307,10 @@ function compareRankedResults(a: RankedResult, b: RankedResult) {
 function formatSeconds(seconds: number | null) {
   if (seconds === null) return '—';
   const safeSeconds = Math.max(0, Math.round(seconds));
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  const secs = safeSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-
-  return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  const totalMinutes = Math.floor(safeSeconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 function formatPoints(value: number | null) {
@@ -329,7 +324,11 @@ function formatDateTime(value: string | null) {
   if (Number.isNaN(date.getTime())) {
     return '—';
   }
-  return date.toLocaleString('cs-CZ');
+  return date.toLocaleTimeString('cs-CZ', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }
 
 function parsePatrolMembersList(members: string | null) {
