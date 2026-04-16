@@ -18,6 +18,7 @@ type SubmissionPayload = {
   note: string;
   use_target_scoring: boolean;
   normalized_answers: string | null;
+  start_time?: string | null;
   finish_time: string | null;
   patrol_code: string;
   team_name?: string;
@@ -109,6 +110,12 @@ function ensurePayload(body: unknown): SubmissionPayload | null {
     return null;
   }
   if (payload.normalized_answers !== null && typeof payload.normalized_answers !== 'string') {
+    return null;
+  }
+  if (payload.start_time !== undefined && payload.start_time !== null && typeof payload.start_time !== 'string') {
+    return null;
+  }
+  if (payload.start_time !== undefined && payload.start_time !== null && !isValidDateString(payload.start_time)) {
     return null;
   }
   if (payload.finish_time !== null && typeof payload.finish_time !== 'string') {
@@ -361,6 +368,7 @@ export default async function handler(req: any, res: any) {
     p_note: body.note,
     p_use_target_scoring: body.use_target_scoring,
     p_normalized_answers: body.normalized_answers,
+    p_start_time: body.start_time ?? null,
     p_finish_time: body.finish_time,
     p_client_event_id: body.client_event_id,
     p_client_created_at: body.client_created_at,

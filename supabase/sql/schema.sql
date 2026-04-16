@@ -330,6 +330,7 @@ create or replace function public.submit_station_record(
   p_use_target_scoring boolean,
   p_normalized_answers text,
   p_finish_time timestamptz,
+  p_start_time timestamptz,
   p_client_event_id uuid,
   p_client_created_at timestamptz,
   p_submitted_by uuid
@@ -400,10 +401,11 @@ begin
   where station_scores.client_created_at is null
      or station_scores.client_created_at <= excluded.client_created_at;
 
-  if p_finish_time is not null then
+  if p_finish_time is not null or p_start_time is not null then
     insert into timings (
       event_id,
       patrol_id,
+      start_time,
       finish_time,
       client_event_id,
       client_created_at,
@@ -411,6 +413,7 @@ begin
     ) values (
       p_event_id,
       p_patrol_id,
+      p_start_time,
       p_finish_time,
       p_client_event_id,
       p_client_created_at,
@@ -418,7 +421,8 @@ begin
     )
     on conflict (event_id, patrol_id)
     do update set
-      finish_time = excluded.finish_time,
+      start_time = coalesce(excluded.start_time, timings.start_time),
+      finish_time = coalesce(excluded.finish_time, timings.finish_time),
       client_event_id = excluded.client_event_id,
       client_created_at = excluded.client_created_at,
       submitted_by = excluded.submitted_by

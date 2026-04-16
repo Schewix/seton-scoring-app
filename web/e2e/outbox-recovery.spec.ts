@@ -94,22 +94,23 @@ test('outbox se po reloadu obnovi a synchronizuje po navratu online', async ({ p
       payload = {};
     }
 
-    await supabaseAdmin.rpc('submit_station_record', {
-      p_event_id: payload.event_id,
-      p_station_id: payload.station_id,
-      p_patrol_id: payload.patrol_id,
-      p_category: payload.category,
-      p_arrived_at: payload.arrived_at,
-      p_wait_minutes: payload.wait_minutes,
-      p_points: payload.points,
-      p_note: payload.note,
-      p_use_target_scoring: payload.use_target_scoring,
-      p_normalized_answers: payload.normalized_answers,
-      p_finish_time: payload.finish_time,
-      p_client_event_id: payload.client_event_id,
-      p_client_created_at: payload.client_created_at,
-      p_submitted_by: seedData.judgeId,
-    });
+      await supabaseAdmin.rpc('submit_station_record', {
+        p_event_id: payload.event_id,
+        p_station_id: payload.station_id,
+        p_patrol_id: payload.patrol_id,
+        p_category: payload.category,
+        p_arrived_at: payload.arrived_at,
+        p_wait_minutes: payload.wait_minutes,
+        p_points: payload.points,
+        p_note: payload.note,
+        p_use_target_scoring: payload.use_target_scoring,
+        p_normalized_answers: payload.normalized_answers,
+        p_start_time: payload.start_time ?? null,
+        p_finish_time: payload.finish_time,
+        p_client_event_id: payload.client_event_id,
+        p_client_created_at: payload.client_created_at,
+        p_submitted_by: seedData.judgeId,
+      });
 
     await route.fulfill({
       status: 200,

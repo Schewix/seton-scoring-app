@@ -22,6 +22,7 @@ export interface StationScorePayload {
   note: string;
   use_target_scoring: boolean;
   normalized_answers: string | null;
+  start_time?: string | null;
   finish_time: string | null;
   patrol_code: string;
   team_name?: string;

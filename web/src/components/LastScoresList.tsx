@@ -203,20 +203,15 @@ export function LastScoresList({
         .eq('station_id', stationId);
 
       if (isTargetStation) {
-        const [scoresRes, countRes, quizRes] = await Promise.all([
+        const [scoresRes, countRes] = await Promise.all([
           scoresQuery,
           countQuery,
-          supabase
-            .from('station_quiz_responses')
-            .select('patrol_id, correct_count, answers, updated_at')
-            .eq('event_id', eventId)
-            .eq('station_id', stationId),
         ]);
 
         setLoading(false);
 
-        if (scoresRes.error || quizRes.error) {
-          console.error('Nepodařilo se načíst poslední záznamy', scoresRes.error, quizRes.error);
+        if (scoresRes.error) {
+          console.error('Nepodařilo se načíst poslední záznamy', scoresRes.error);
           setTotalCount(null);
           return;
         }
@@ -225,14 +220,31 @@ export function LastScoresList({
         }
         setTotalCount(typeof countRes.count === 'number' ? countRes.count : (scoresRes.data ?? []).length);
 
-        const quizMap = new Map<string, ScoreRow['quiz']>();
-        ((quizRes.data ?? []) as QuizRowRecord[]).forEach((item) => {
-          const { patrol_id, ...quiz } = item;
-          quizMap.set(patrol_id, quiz);
-        });
-
         const baseRows = mapScoreRows((scoresRes.data ?? []) as ScoreRowRecord[]);
-        const waitMap = await loadWaits(baseRows.map((row) => row.patrol_id));
+        const patrolIds = baseRows.map((row) => row.patrol_id);
+        const waitMap = await loadWaits(patrolIds);
+
+        const quizMap = new Map<string, ScoreRow['quiz']>();
+        if (patrolIds.length > 0) {
+          const { data: quizRows, error: quizError } = await supabase
+            .from('station_quiz_responses')
+            .select('patrol_id, correct_count, answers, updated_at')
+            .eq('event_id', eventId)
+            .in('patrol_id', patrolIds)
+            .order('updated_at', { ascending: false });
+
+          if (quizError) {
+            console.error('Nepodařilo se načíst odpovědi terčového úseku', quizError);
+          } else {
+            ((quizRows ?? []) as QuizRowRecord[]).forEach((item) => {
+              const { patrol_id, ...quiz } = item;
+              if (!quizMap.has(patrol_id)) {
+                quizMap.set(patrol_id, quiz);
+              }
+            });
+          }
+        }
+
         const merged = baseRows.map((row) => ({
           ...row,
           quiz: quizMap.get(row.patrol_id) || undefined,
@@ -291,7 +303,7 @@ export function LastScoresList({
   }, [load]);
 
   useEffect(() => {
-    const handleScopedRefresh = (
+    const handleStationScoreRefresh = (
       payload: RealtimePostgresChangesPayload<{ event_id?: string; station_id?: string }>
     ) => {
       const record = (payload.new ?? payload.old) as
@@ -303,19 +315,29 @@ export function LastScoresList({
       scheduleRealtimeRefresh();
     };
 
+    const handleQuizRefresh = (
+      payload: RealtimePostgresChangesPayload<{ event_id?: string }>
+    ) => {
+      const record = (payload.new ?? payload.old) as { event_id?: string } | null;
+      if (!record || record.event_id !== eventId) {
+        return;
+      }
+      scheduleRealtimeRefresh();
+    };
+
     const channel = supabase
       .channel(`station-scores-${eventId}-${stationId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'station_scores' },
-        handleScopedRefresh
+        handleStationScoreRefresh
       );
 
     if (isTargetStation) {
       channel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'station_quiz_responses' },
-        handleScopedRefresh
+        handleQuizRefresh
       );
     }
 

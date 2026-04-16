@@ -412,7 +412,11 @@ function parseTimeInput(value: string) {
   return { hours, minutes };
 }
 
-function combineDateWithTime(baseIso: string | null, value: string) {
+function combineDateWithTime(
+  baseIso: string | null,
+  value: string,
+  options?: { rolloverToNextDay?: boolean },
+) {
   const parsed = parseTimeInput(value);
   if (!parsed) return null;
   const { hours, minutes } = parsed;
@@ -422,7 +426,8 @@ function combineDateWithTime(baseIso: string | null, value: string) {
   }
   const candidate = new Date(baseDate);
   candidate.setHours(hours, minutes, 0, 0);
-  if (baseIso) {
+  const rolloverToNextDay = options?.rolloverToNextDay ?? true;
+  if (baseIso && rolloverToNextDay) {
     const original = new Date(baseIso);
     if (candidate.getTime() < original.getTime()) {
       candidate.setDate(candidate.getDate() + 1);
@@ -583,6 +588,7 @@ function StationApp({
   const pointsInputRef = useRef<HTMLInputElement | null>(null);
   const answersInputRef = useRef<HTMLInputElement | null>(null);
   const [startTime, setStartTime] = useState<string | null>(null);
+  const [startTimeInput, setStartTimeInput] = useState('');
   const [finishTimeInput, setFinishTimeInput] = useState('');
   const [scoreReviewRows, setScoreReviewRows] = useState<StationScoreRow[]>([]);
   const [scoreReviewState, setScoreReviewState] = useState<Record<string, StationScoreRowState>>({});
@@ -1108,6 +1114,10 @@ function StationApp({
   }, [refreshManifest, pushAlert]);
 
   useEffect(() => {
+    setStartTimeInput(toLocalTimeInput(startTime));
+  }, [startTime, stationId]);
+
+  useEffect(() => {
     setFinishTimeInput(toLocalTimeInput(finishAt));
   }, [finishAt, stationId]);
 
@@ -1251,7 +1261,7 @@ function StationApp({
             .eq('patrol_id', patrolId),
           supabase
             .from('station_passages')
-            .select('wait_minutes')
+            .select('station_id, wait_minutes')
             .eq('event_id', eventId)
             .eq('patrol_id', patrolId),
         ]);
@@ -1275,15 +1285,18 @@ function StationApp({
         console.error('Failed to load wait data', waitError);
         setTotalWaitMinutes(null);
       } else {
-        const rows = (passageRows as { wait_minutes?: number | null }[] | null) ?? [];
+        const rows = (passageRows as { station_id?: string | null; wait_minutes?: number | null }[] | null) ?? [];
         const total = rows.reduce((acc, current) => {
+          if (current?.station_id === stationId) {
+            return acc;
+          }
           const value = Number(current?.wait_minutes ?? 0);
           return Number.isFinite(value) ? acc + value : acc;
         }, 0);
         setTotalWaitMinutes(total);
       }
     },
-    [eventId, reportSupabaseError, stationCode],
+    [eventId, reportSupabaseError, stationCode, stationId],
   );
 
   const loadScoreReview = useCallback(
@@ -2278,6 +2291,7 @@ function StationApp({
     setConfirmedManualCode('');
     setArrivedAt(null);
     setFinishAt(null);
+    setStartTimeInput('');
     setFinishTimeInput('');
     setStartTime(null);
     setTotalWaitMinutes(null);
@@ -2368,6 +2382,28 @@ function StationApp({
     resetForm();
     setShowPendingDetails(false);
   }, [resetForm, stationId]);
+
+  const handleStartTimeChange = useCallback(
+    (value: string) => {
+      setStartTimeInput(value);
+      const combined = combineDateWithTime(startTime, value, { rolloverToNextDay: false });
+      if (combined) {
+        setStartTime(combined);
+        if (finishTimeInput) {
+          const recomputedFinish = combineDateWithTime(combined, finishTimeInput);
+          setFinishAt(recomputedFinish);
+        }
+        return;
+      }
+      if (!value) {
+        setStartTime(null);
+        if (finishTimeInput) {
+          setFinishAt(null);
+        }
+      }
+    },
+    [finishTimeInput, startTime],
+  );
 
   const handleFinishTimeChange = useCallback(
     (value: string) => {
@@ -2746,6 +2782,7 @@ function StationApp({
           note: baseRow.note ?? '',
           use_target_scoring: false,
           normalized_answers: null,
+          start_time: null,
           finish_time: null,
           patrol_code: resolvePatrolCode(activePatrol),
           team_name: activePatrol.team_name,
@@ -2837,7 +2874,7 @@ function StationApp({
       }
 
       const reviewState = scoreReviewState[row.stationId];
-      const draftWait = reviewState && !reviewState.ok ? parseWaitDraft(reviewState.waitDraft) : Number.NaN;
+      const draftWait = reviewState ? parseWaitDraft(reviewState.waitDraft) : Number.NaN;
 
       if (Number.isInteger(draftWait) && draftWait >= 0) {
         hasAnyWait = true;
@@ -2928,26 +2965,116 @@ function StationApp({
     const arrivalIso = arrivedAt || now;
     const effectivePatrolCode = resolvePatrolCode(activePatrol);
 
-    const submissionData = {
+    const baseSubmissionData = {
       event_id: eventId,
-      station_id: stationId,
       patrol_id: activePatrol.id,
       category: activePatrol.category,
       arrived_at: arrivalIso,
-      wait_minutes: waitMinutes,
-      points: scorePoints,
-      note,
-      use_target_scoring: useTargetScoring,
-      normalized_answers: normalizedAnswers,
-      finish_time: finishAt,
       patrol_code: effectivePatrolCode,
       team_name: activePatrol.team_name,
       sex: activePatrol.sex,
     };
-    const queued = await enqueueStationScore(submissionData);
-    if (!queued) {
-      return;
+
+    if (stationCode === 'T') {
+      const normalizedCategory = activePatrol.category.trim().toUpperCase();
+      if (!isTimeScoringCategory(normalizedCategory)) {
+        pushAlert('Body za čas nejdou spočítat pro tuto kategorii hlídky.');
+        return;
+      }
+      if (!startTime || !finishAt) {
+        pushAlert('Nelze spočítat body za čas bez startu a doběhu.');
+        return;
+      }
+
+      const start = new Date(startTime);
+      const finish = new Date(finishAt);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(finish.getTime())) {
+        pushAlert('Čas startu nebo doběhu má neplatný formát.');
+        return;
+      }
+
+      const computedPureSeconds = computePureCourseSeconds({ start, finish, waitMinutes });
+      const computedTimePoints = computeTimePoints(normalizedCategory, computedPureSeconds);
+      if (!Number.isInteger(computedTimePoints) || computedTimePoints < 0 || computedTimePoints > 12) {
+        pushAlert('Body za čas se nepodařilo spočítat. Zkontroluj vyplněné časy.');
+        return;
+      }
+
+      const targetRow = scoreReviewRows.find((row) => row.stationCode === 'R');
+      if (!targetRow) {
+        pushAlert('V přehledu bodů chybí stanoviště R, záznam nejde dokončit.');
+        return;
+      }
+
+      const queuedTime = await enqueueStationScore({
+        ...baseSubmissionData,
+        station_id: stationId,
+        wait_minutes: waitMinutes,
+        points: computedTimePoints,
+        note,
+        use_target_scoring: false,
+        normalized_answers: null,
+        start_time: startTime,
+        finish_time: finishAt,
+      });
+      if (!queuedTime) {
+        return;
+      }
+
+      const queuedTarget = await enqueueStationScore({
+        ...baseSubmissionData,
+        station_id: targetRow.stationId,
+        wait_minutes: 0,
+        points: scorePoints,
+        note: '',
+        use_target_scoring: true,
+        normalized_answers: normalizedAnswers,
+        start_time: null,
+        finish_time: null,
+      });
+      if (!queuedTarget) {
+        pushAlert('Body terčového úseku se nepodařilo uložit. Zkus záznam uložit znovu.');
+        return;
+      }
+
+      setScoreReviewRows((prev) =>
+        prev.map((row) => {
+          if (row.stationCode === 'T') {
+            return {
+              ...row,
+              points: computedTimePoints,
+              waitMinutes,
+              hasScore: true,
+              hasWait: true,
+            };
+          }
+          if (row.stationCode === 'R') {
+            return {
+              ...row,
+              points: scorePoints,
+              hasScore: true,
+            };
+          }
+          return row;
+        }),
+      );
+    } else {
+      const queued = await enqueueStationScore({
+        ...baseSubmissionData,
+        station_id: stationId,
+        wait_minutes: waitMinutes,
+        points: scorePoints,
+        note,
+        use_target_scoring: useTargetScoring,
+        normalized_answers: normalizedAnswers,
+        start_time: null,
+        finish_time: finishAt,
+      });
+      if (!queued) {
+        return;
+      }
     }
+
     void registerManualPatrol(activePatrol);
     if (enableTicketQueue) {
       updateTickets((current) =>
@@ -2978,8 +3105,10 @@ function StationApp({
     arrivedAt,
     stationId,
     finishAt,
+    startTime,
     registerManualPatrol,
     resolvePatrolCode,
+    scoreReviewRows,
     scoringDisabled,
     stationCode,
     scrollToQueue,
@@ -3126,6 +3255,53 @@ function StationApp({
     );
     return persistedTargetRow?.points ?? null;
   }, [autoScore.correct, isTargetStation, scoreReviewRows, targetAnswersReady]);
+
+  const calcPointsSummary = useMemo(() => {
+    if (stationCode !== 'T' || !scoreReviewRows.length) {
+      return { total: null as number | null, withoutT: null as number | null };
+    }
+
+    let hasAny = false;
+    let total = 0;
+    let withoutT = 0;
+
+    scoreReviewRows.forEach((row) => {
+      let pointsValue: number | null = null;
+
+      if (row.stationCode === 'R') {
+        pointsValue = typeof targetSectionPoints === 'number' ? targetSectionPoints : row.points;
+      } else if (row.stationCode === 'T') {
+        pointsValue = typeof timePoints === 'number' ? timePoints : row.points;
+      } else {
+        const state = scoreReviewState[row.stationId];
+        const draftPoints = state ? Number(state.pointsDraft.trim()) : Number.NaN;
+        if (Number.isInteger(draftPoints) && draftPoints >= 0 && draftPoints <= 12) {
+          pointsValue = draftPoints;
+        } else if (typeof row.points === 'number' && Number.isFinite(row.points) && row.points >= 0) {
+          pointsValue = row.points;
+        }
+      }
+
+      if (typeof pointsValue !== 'number' || !Number.isFinite(pointsValue)) {
+        return;
+      }
+
+      hasAny = true;
+      total += pointsValue;
+      if (row.stationCode !== 'T') {
+        withoutT += pointsValue;
+      }
+    });
+
+    if (!hasAny) {
+      return { total: null as number | null, withoutT: null as number | null };
+    }
+
+    return {
+      total,
+      withoutT,
+    };
+  }, [scoreReviewRows, scoreReviewState, stationCode, targetSectionPoints, timePoints]);
 
   const controlChecks = useMemo(() => {
     const checks: { label: string; ok: boolean }[] = [];
@@ -3698,6 +3874,17 @@ function StationApp({
                         </p>
                       </div>
                       <div className="calc-time-input">
+                        <label htmlFor="start-time-input">Start (HH:MM)</label>
+                        <input
+                          id="start-time-input"
+                          type="time"
+                          value={startTimeInput}
+                          onChange={(event) => handleStartTimeChange(event.target.value)}
+                          step={60}
+                          placeholder="hh:mm"
+                        />
+                      </div>
+                      <div className="calc-time-input">
                         <label htmlFor="finish-time-input">Doběh (HH:MM)</label>
                         <input
                           id="finish-time-input"
@@ -3734,6 +3921,21 @@ function StationApp({
                           <strong>{timePoints ?? '—'}</strong>
                         </div>
                       </div>
+                      <div className="calc-points-summary">
+                        <h4>Přepis do karty hlídky</h4>
+                        <div>
+                          <span className="calc-meta-label">Body celkem:</span>
+                          <strong>{calcPointsSummary.total ?? '—'}</strong>
+                        </div>
+                        <div>
+                          <span className="calc-meta-label">Body bez T:</span>
+                          <strong>{calcPointsSummary.withoutT ?? '—'}</strong>
+                        </div>
+                        <p className="card-hint">Rozhodčí přepíše hodnoty do karty hlídky.</p>
+                      </div>
+                      <button type="button" className="primary" onClick={handleSave} disabled={scoringDisabled}>
+                        Uložit záznam
+                      </button>
                     </div>
                     {controlChecks.length ? (
                       <div className="calc-checklist">
@@ -3947,9 +4149,11 @@ function StationApp({
                     helperText="Zadej celé číslo v rozsahu 0 až 12 (např. 8)."
                   />
                 )}
-                <button type="button" className="primary" onClick={handleSave} disabled={scoringDisabled}>
-                  Uložit záznam
-                </button>
+                {stationCode !== 'T' ? (
+                  <button type="button" className="primary" onClick={handleSave} disabled={scoringDisabled}>
+                    Uložit záznam
+                  </button>
+                ) : null}
                 {scoringDisabled ? (
                   <p className="error-text">
                     Závod byl ukončen. Zapisování bodů je možné pouze na stanovišti T.

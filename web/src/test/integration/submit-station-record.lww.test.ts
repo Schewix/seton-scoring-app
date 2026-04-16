@@ -14,6 +14,7 @@ function buildPayload(ctx: Awaited<ReturnType<typeof seedBase>>, overrides: Part
     p_use_target_scoring: false,
     p_normalized_answers: null,
     p_finish_time: null,
+    p_start_time: null,
     p_client_event_id: crypto.randomUUID(),
     p_client_created_at: new Date().toISOString(),
     p_submitted_by: ctx.judgeId,

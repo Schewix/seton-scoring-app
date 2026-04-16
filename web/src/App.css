@@ -836,6 +836,26 @@ body {
   margin-left: 6px;
 }
 
+.calc-points-summary {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+
+.calc-points-summary h4 {
+  margin: 0 0 2px;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.calc-points-summary strong {
+  margin-left: 6px;
+}
+
 .calc-meta-label {
   font-size: 0.78rem;
   text-transform: uppercase;

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import type { OutboxEntry, StationScorePayload } from '../outbox';
@@ -449,14 +449,48 @@ function createMaybeSingleResult<T>(data: T, error: unknown = null) {
     name: (data as unknown as { name?: string | null }).name ?? null,
   };
   const listResult = Promise.resolve({ data: [row], error: null });
+  const maybeSingleResult = Promise.resolve({ data, error });
+  const firstEq: any = {
+    eq: () => ({
+      maybeSingle: () => maybeSingleResult,
+    }),
+    order: () => listResult,
+    then: listResult.then.bind(listResult),
+    catch: listResult.catch.bind(listResult),
+    finally: listResult.finally?.bind(listResult),
+  };
   return {
     select: () => ({
-      eq: () => ({
-        eq: () => ({
-          maybeSingle: () => Promise.resolve({ data, error }),
-        }),
-        order: () => listResult,
-      }),
+      eq: () => firstEq,
+      order: () => listResult,
+    }),
+  };
+}
+
+function createCalcStationResult() {
+  const listResult = Promise.resolve({
+    data: [
+      { id: 'station-r', code: 'R', name: 'Terčový úsek' },
+      { id: 'station-test', code: 'T', name: 'Výpočetka' },
+    ],
+    error: null,
+  });
+  const maybeSingleResult = Promise.resolve({
+    data: { id: 'station-test', code: 'T', name: 'Výpočetka' },
+    error: null,
+  });
+  const firstEq: any = {
+    eq: () => ({
+      maybeSingle: () => maybeSingleResult,
+    }),
+    order: () => listResult,
+    then: listResult.then.bind(listResult),
+    catch: listResult.catch.bind(listResult),
+    finally: listResult.finally?.bind(listResult),
+  };
+  return {
+    select: () => ({
+      eq: () => firstEq,
       order: () => listResult,
     }),
   };
@@ -694,7 +728,7 @@ describe('station workflow', () => {
 
   it('allows loading patrols on Výpočetka even if already passed through', async () => {
     mockedStationCode = 'T';
-    supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Výpočetka' }));
+    supabaseMock.__setMock('stations', () => createCalcStationResult());
     supabaseMock.__setMock(
       'station_passages',
       () => ({
@@ -752,14 +786,18 @@ describe('station workflow', () => {
 
   it('automatically scores target answers and saves quiz responses', async () => {
     mockedStationCode = 'T';
-    supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Výpočetka' }));
+    supabaseMock.__setMock('stations', () => createCalcStationResult());
     supabaseMock.__setMock(
       'station_category_answers',
       () => createSelectResult([{ category: 'N', correct_answers: 'ABCDABCDABCD' }])
     );
     supabaseMock.__setMock('station_passages', () => {
       const result = Promise.resolve({
-        data: [{ wait_minutes: 9 }, { wait_minutes: 6 }],
+        data: [
+          { station_id: 'station-a', wait_minutes: 9 },
+          { station_id: 'station-b', wait_minutes: 6 },
+          { station_id: 'station-test', wait_minutes: 15 },
+        ],
         error: null,
       });
       const eqChain: any = {
@@ -796,19 +834,41 @@ describe('station workflow', () => {
 
     await screen.findByText('Správně: 12 / 12');
 
+    const startTimeInput = await screen.findByLabelText('Start (HH:MM)');
+    fireEvent.change(startTimeInput, { target: { value: '08:05' } });
+
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await waitFor(() => {
       expect(screen.queryByText(/Čeká na odeslání:/)).not.toBeInTheDocument();
     });
-    const [, init] = fetchMock.mock.calls.at(-1)!;
-    expect(init?.headers?.Authorization).toBe('Bearer access-test');
-    const body = JSON.parse((init?.body as string) ?? '{}');
-    expect(body.use_target_scoring).toBe(true);
-    expect(body.normalized_answers).toBe('ABCDABCDABCD');
-    expect(body.wait_minutes).toBe(15);
-    expect(body.client_event_id).toBeTruthy();
+    const requestBodies = fetchMock.mock.calls.map(([, init]) => JSON.parse((init?.body as string) ?? '{}'));
+    expect(fetchMock.mock.calls[0]?.[1]?.headers?.Authorization).toBe('Bearer access-test');
+    expect(fetchMock.mock.calls[1]?.[1]?.headers?.Authorization).toBe('Bearer access-test');
+
+    const timePayload = requestBodies.find((body: Record<string, unknown>) => body.station_id === 'station-test');
+    const targetPayload = requestBodies.find((body: Record<string, unknown>) => body.station_id === 'station-r');
+
+    expect(timePayload).toBeTruthy();
+    expect(timePayload?.use_target_scoring).toBe(false);
+    expect(timePayload?.normalized_answers).toBeNull();
+    expect(timePayload?.wait_minutes).toBe(15);
+    expect(timePayload?.points).toBe(12);
+    expect(timePayload?.start_time).toBeTruthy();
+    expect(timePayload?.finish_time).toBeTruthy();
+    expect(timePayload?.client_event_id).toBeTruthy();
+    const editedStartTime = new Date(String(timePayload?.start_time));
+    expect(editedStartTime.getHours()).toBe(8);
+    expect(editedStartTime.getMinutes()).toBe(5);
+
+    expect(targetPayload).toBeTruthy();
+    expect(targetPayload?.use_target_scoring).toBe(true);
+    expect(targetPayload?.normalized_answers).toBe('ABCDABCDABCD');
+    expect(targetPayload?.wait_minutes).toBe(0);
+    expect(targetPayload?.points).toBe(12);
+    expect(targetPayload?.finish_time).toBeNull();
+    expect(targetPayload?.client_event_id).toBeTruthy();
 
     await waitFor(async () => {
       const storedQueue = await readOutbox();
@@ -818,7 +878,7 @@ describe('station workflow', () => {
 
   it('allows only A-D letters without spaces in target answers input', async () => {
     mockedStationCode = 'T';
-    supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Výpočetka' }));
+    supabaseMock.__setMock('stations', () => createCalcStationResult());
     supabaseMock.__setMock(
       'station_category_answers',
       () => createSelectResult([{ category: 'N', correct_answers: 'ABCDABCDABCD' }]),
@@ -845,7 +905,7 @@ describe('station workflow', () => {
 
   it('queues submission when sync endpoint reports failure', async () => {
     mockedStationCode = 'T';
-    supabaseMock.__setMock('stations', () => createMaybeSingleResult({ code: 'T', name: 'Výpočetka' }));
+    supabaseMock.__setMock('stations', () => createCalcStationResult());
     supabaseMock.__setMock(
       'station_category_answers',
       () => createSelectResult([{ category: 'N', correct_answers: 'ABCDABCDABCD' }])
@@ -873,13 +933,14 @@ describe('station workflow', () => {
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
-    await screen.findByText(/Čeká na odeslání: 1/);
+    await screen.findByText(/Čeká na odeslání: 2/);
 
     const storedQueue = await readOutbox();
-    expect(storedQueue).toHaveLength(1);
-    const [queued] = storedQueue;
-    expect(queued.attempts).toBe(1);
-    expect(queued.last_error).toBe('server-error');
+    expect(storedQueue).toHaveLength(2);
+    storedQueue.forEach((queued) => {
+      expect(queued.attempts).toBe(1);
+      expect(queued.last_error).toBe('server-error');
+    });
   });
 
   it('forces logout when sync endpoint responds with unauthorized error', async () => {

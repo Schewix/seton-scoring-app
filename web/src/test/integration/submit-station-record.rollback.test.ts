@@ -30,6 +30,7 @@ describe('submit_station_record rpc rollback', () => {
       p_use_target_scoring: true,
       p_normalized_answers: 'ABCD',
       p_finish_time: new Date().toISOString(),
+      p_start_time: new Date().toISOString(),
       p_client_event_id: crypto.randomUUID(),
       p_client_created_at: new Date().toISOString(),
       p_submitted_by: ctx.judgeId,
