@@ -49,6 +49,18 @@ async function waitForOutboxEmpty(page: Page) {
   await expect(page.getByText(/Čeká na odeslání:/)).toHaveCount(0);
 }
 
+async function readPatrolPoints() {
+  const { data, error } = await supabaseAdmin
+    .from('station_scores')
+    .select('points')
+    .eq('event_id', seedData.eventId)
+    .eq('station_id', seedData.stationId)
+    .eq('patrol_id', patrol.id)
+    .maybeSingle();
+
+  return { points: data?.points, error };
+}
+
 test.beforeEach(async ({ page }) => {
   await clearStationData();
   await page.goto(ROUTE_PREFIX);
@@ -96,13 +108,19 @@ test('offline editace používá last-write-wins podle client_created_at', async
   await flushIfNeeded(page);
   await waitForOutboxEmpty(page);
 
-  const { data } = await supabaseAdmin
-    .from('station_scores')
-    .select('points')
-    .eq('event_id', seedData.eventId)
-    .eq('station_id', seedData.stationId)
-    .eq('patrol_id', patrol.id)
-    .maybeSingle();
-
-  expect(data?.points).toBe(8);
+  await expect
+    .poll(
+      async () => {
+        const { points, error } = await readPatrolPoints();
+        if (error) {
+          return `ERROR: ${error.message}`;
+        }
+        return points ?? null;
+      },
+      {
+        timeout: 15_000,
+        message: 'čekám na zapsání upravených bodů (LWW) do station_scores',
+      },
+    )
+    .toBe(8);
 });

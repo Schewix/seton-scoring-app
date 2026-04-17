@@ -871,7 +871,6 @@ function ScoreboardApp() {
         const stationHeaders = sheetStationCodes.map((code) => `Body ${code}`);
         const rows = [
           [
-            '#',
             'Shoda po 1-5',
             'Hlídka',
             'Oddíl',
@@ -883,7 +882,6 @@ function ScoreboardApp() {
             'Čas na trati bez čekání',
             ...stationHeaders,
             'Body celkem',
-            'Body bez času',
           ],
           ...group.visibleItems.map((row) => {
             const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
@@ -891,7 +889,6 @@ function ScoreboardApp() {
             const memberCells = formatMemberColumns(row.patrolMembers, maxMemberCount);
             const stationCells = formatStationColumns(row.stationPointsBreakdown, sheetStationCodes);
             return [
-              formatRankValue(row.disqualified, displayRank) + (row.isTie ? '*' : ''),
               formatTieExportValue(row.disqualified, displayRank, row.tieSize),
               formatPatrolNumber(row.patrolCode, fallbackCode),
               row.teamName,
@@ -903,7 +900,6 @@ function ScoreboardApp() {
               formatSeconds(row.pureSeconds),
               ...stationCells,
               row.totalPoints ?? '',
-              row.pointsNoT ?? '',
             ];
           }),
         ];
@@ -911,7 +907,6 @@ function ScoreboardApp() {
           const emptyMemberCells = Array.from({ length: maxMemberCount }, () => '—');
           const emptyStationCells = Array.from({ length: sheetStationCodes.length }, () => '—');
           rows.push([
-            '—',
             '—',
             '—',
             'Žádné výsledky v této kategorii.',
@@ -922,7 +917,6 @@ function ScoreboardApp() {
             '—',
             '—',
             ...emptyStationCells,
-            '',
             '',
           ]);
         }

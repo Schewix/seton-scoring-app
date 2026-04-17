@@ -12,7 +12,16 @@ type LoadCase = {
   waitUntilReady: (page: Page) => Promise<void>;
 };
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4175';
+type NodeLikeProcess = {
+  env?: Record<string, string | undefined>;
+};
+
+function readNodeEnv(envName: string) {
+  const maybeProcess = (globalThis as { process?: NodeLikeProcess }).process;
+  return maybeProcess?.env?.[envName];
+}
+
+const BASE_URL = readNodeEnv('PLAYWRIGHT_BASE_URL') ?? 'http://127.0.0.1:4175';
 
 const PERF_BUDGETS = {
   domContentLoadedMs: readBudget('E2E_PUBLIC_DCL_MS', 1000),
@@ -68,7 +77,7 @@ const LOAD_CASES: LoadCase[] = [
 ];
 
 function readBudget(envName: string, fallback: number) {
-  const raw = process.env[envName];
+  const raw = readNodeEnv(envName);
   if (!raw) {
     return fallback;
   }
