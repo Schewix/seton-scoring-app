@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
+import { buildRankTieSizeMap, formatTieBadge, formatTieExportValue } from './tieUtils';
 import './ScoreboardApp.css';
 
 interface RawResult {
@@ -456,42 +457,6 @@ function formatCategoryLabel(category: string, sex?: string) {
   return '—';
 }
 
-function formatTieCount(tieSize: number) {
-  if (tieSize === 1) {
-    return '1 hlídka';
-  }
-  if (tieSize >= 2 && tieSize <= 4) {
-    return `${tieSize} hlídky`;
-  }
-  return `${tieSize} hlídek`;
-}
-
-function formatTieBadge(tieSize: number) {
-  if (!Number.isFinite(tieSize) || tieSize <= 1) {
-    return '';
-  }
-  return `Shoda po kritériích 1-5 (${formatTieCount(tieSize)})`;
-}
-
-function formatTieExportValue(isDisqualified: boolean, rank: number, tieSize: number) {
-  if (isDisqualified || tieSize <= 1 || !Number.isFinite(rank) || rank <= 0) {
-    return '';
-  }
-  return `ANO (shoda o ${rank}. místo; ${formatTieCount(tieSize)})`;
-}
-
-function buildRankTieSizeMap(items: readonly RankedResult[]) {
-  const tieSizeByRank = new Map<number, number>();
-  items.forEach((item) => {
-    const rank = item.rankInBracket;
-    if (item.disqualified || !hasAnyPoints(item) || !Number.isFinite(rank) || rank <= 0) {
-      return;
-    }
-    tieSizeByRank.set(rank, (tieSizeByRank.get(rank) ?? 0) + 1);
-  });
-  return tieSizeByRank;
-}
-
 function formatPatrolNumber(patrolCode: string | null, fallback?: string) {
   if (patrolCode) {
     const normalized = patrolCode.trim();
@@ -543,6 +508,7 @@ function ScoreboardApp() {
   const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };

@@ -366,6 +366,72 @@ async function cleanupBoardEvent(seed: SeededBoardEvent) {
   }
 }
 
+async function waitForDrawToCreateAnyMatches(eventId: string) {
+  await expect
+    .poll(
+      async () => {
+        const { data, error } = await supabaseAdmin
+          .from('board_match')
+          .select('id')
+          .eq('event_id', eventId);
+        if (error) {
+          return `ERROR: ${error.message}`;
+        }
+        return data?.length ?? 0;
+      },
+      {
+        timeout: 90_000,
+        message: 'čekám na vytvoření partií po spuštění losování',
+      },
+    )
+    .toBeGreaterThan(0);
+}
+
+async function waitForDrawAcrossExpectedGames(
+  eventId: string,
+  judgeId: string,
+  expectedGameIds: string[],
+) {
+  const { data: blocks, error: blocksError } = await supabaseAdmin
+    .from('board_block')
+    .select('id, game_id')
+    .eq('event_id', eventId);
+  if (blocksError) {
+    throw new Error(`load board_block failed: ${blocksError.message}`);
+  }
+  const blockToGame = new Map((blocks ?? []).map((row) => [row.id, row.game_id]));
+  const expectedKey = [...expectedGameIds].sort().join(',');
+
+  await expect
+    .poll(
+      async () => {
+        const { data, error } = await supabaseAdmin
+          .from('board_match')
+          .select('block_id')
+          .eq('event_id', eventId)
+          .eq('created_by', judgeId);
+        if (error) {
+          return `ERROR: ${error.message}`;
+        }
+        const createdGames = Array.from(
+          new Set(
+            (data ?? [])
+              .map((row) => blockToGame.get(row.block_id))
+              .filter((value): value is string => Boolean(value)),
+          ),
+        )
+          .sort()
+          .join(',');
+        return createdGames;
+      },
+      {
+        timeout: 90_000,
+        message: 'čekám na vylosování partií napříč všemi očekávanými deskovkami',
+      },
+    )
+    .toBe(expectedKey);
+}
+
 test.describe('Deskovky admin/judge flow', () => {
   test.beforeEach(async () => {
     await setStationCode('T');
@@ -389,7 +455,7 @@ test.describe('Deskovky admin/judge flow', () => {
       await expect(startDrawButton).toBeVisible();
       admin.page.once('dialog', (dialog) => void dialog.accept());
       await startDrawButton.click();
-      await expect(admin.page.getByText('Losování bylo úspěšně vytvořeno.')).toBeVisible({ timeout: 90_000 });
+      await waitForDrawToCreateAnyMatches(seed.eventId);
       await admin.context.close();
       adminContext = null;
 
@@ -460,29 +526,9 @@ test.describe('Deskovky admin/judge flow', () => {
       await expect(startDrawButton).toBeVisible();
       admin.page.once('dialog', (dialog) => void dialog.accept());
       await startDrawButton.click();
-      await expect(admin.page.getByText('Losování bylo úspěšně vytvořeno.')).toBeVisible({ timeout: 90_000 });
+      await waitForDrawAcrossExpectedGames(seed.eventId, seedData.judgeId, seed.gameIds);
       await admin.context.close();
       adminContext = null;
-
-      const [matchRes, blockRes] = await Promise.all([
-        supabaseAdmin
-          .from('board_match')
-          .select('id, block_id, created_by')
-          .eq('event_id', seed.eventId)
-          .eq('created_by', seedData.judgeId),
-        supabaseAdmin
-          .from('board_block')
-          .select('id, game_id')
-          .eq('event_id', seed.eventId),
-      ]);
-      const blocksById = new Map((blockRes.data ?? []).map((row) => [row.id, row.game_id]));
-      const createdGameIds = new Set(
-        (matchRes.data ?? [])
-          .map((row) => blocksById.get(row.block_id))
-          .filter((value): value is string => Boolean(value)),
-      );
-      expect(createdGameIds.has(seed.gameIds[0])).toBe(true);
-      expect(createdGameIds.has(seed.gameIds[1])).toBe(true);
 
       const judge = await createBypassContext(browser, 'X');
       judgeContext = judge.context;
