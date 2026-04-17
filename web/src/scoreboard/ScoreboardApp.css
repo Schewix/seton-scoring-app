@@ -353,6 +353,14 @@
   text-align: center;
 }
 
+.scoreboard-section-hint--tie {
+  color: #7a4f00;
+}
+
+.scoreboard-section-hint--tie strong {
+  color: #5f3f00;
+}
+
 .scoreboard-placeholder {
   padding: 24px;
   border-radius: 22px;
@@ -489,6 +497,20 @@
   font-size: 1.05rem;
   color: var(--text);
   letter-spacing: 0.02em;
+}
+
+.scoreboard-tie-badge {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fff5d0;
+  color: #7a4f00;
+  border: 1px solid #f2d689;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .scoreboard-row-toggle {

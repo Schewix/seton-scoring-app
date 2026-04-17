@@ -58,6 +58,9 @@ interface RankedResult extends Result {
 
 interface RankedGroupItem extends RankedResult {
   displayRank: number;
+  orderInBracket: number;
+  isTie: boolean;
+  tieSize: number;
 }
 
 interface RankedGroup {
@@ -453,6 +456,42 @@ function formatCategoryLabel(category: string, sex?: string) {
   return '—';
 }
 
+function formatTieCount(tieSize: number) {
+  if (tieSize === 1) {
+    return '1 hlídka';
+  }
+  if (tieSize >= 2 && tieSize <= 4) {
+    return `${tieSize} hlídky`;
+  }
+  return `${tieSize} hlídek`;
+}
+
+function formatTieBadge(tieSize: number) {
+  if (!Number.isFinite(tieSize) || tieSize <= 1) {
+    return '';
+  }
+  return `Shoda po kritériích 1-5 (${formatTieCount(tieSize)})`;
+}
+
+function formatTieExportValue(isDisqualified: boolean, rank: number, tieSize: number) {
+  if (isDisqualified || tieSize <= 1 || !Number.isFinite(rank) || rank <= 0) {
+    return '';
+  }
+  return `ANO (shoda o ${rank}. místo; ${formatTieCount(tieSize)})`;
+}
+
+function buildRankTieSizeMap(items: readonly RankedResult[]) {
+  const tieSizeByRank = new Map<number, number>();
+  items.forEach((item) => {
+    const rank = item.rankInBracket;
+    if (item.disqualified || !hasAnyPoints(item) || !Number.isFinite(rank) || rank <= 0) {
+      return;
+    }
+    tieSizeByRank.set(rank, (tieSizeByRank.get(rank) ?? 0) + 1);
+  });
+  return tieSizeByRank;
+}
+
 function formatPatrolNumber(patrolCode: string | null, fallback?: string) {
   if (patrolCode) {
     const normalized = patrolCode.trim();
@@ -745,10 +784,20 @@ function ScoreboardApp() {
 
     return Array.from(groups.values())
       .map((group) => {
-        const rankedItems = [...group.items]
-          .sort(compareRankedResults)
-          .map((item, index) => ({ ...item, displayRank: index + 1 }));
-        const visibleItems = rankedItems;
+        const rankedItems = [...group.items].sort(compareRankedResults);
+        const tieSizeByRank = buildRankTieSizeMap(rankedItems);
+        const visibleItems = rankedItems.map((item, index) => {
+          const orderInBracket = index + 1;
+          const displayRank = item.rankInBracket > 0 ? item.rankInBracket : orderInBracket;
+          const tieSize = item.disqualified ? 0 : (tieSizeByRank.get(displayRank) ?? 0);
+          return {
+            ...item,
+            displayRank,
+            orderInBracket,
+            tieSize,
+            isTie: tieSize > 1,
+          };
+        });
         return {
           ...group,
           items: rankedItems,
@@ -757,6 +806,10 @@ function ScoreboardApp() {
       })
       .sort((a, b) => compareBrackets(a.category, a.sex, b.category, b.sex));
   }, [ranked]);
+
+  const hasAnyFinalTies = useMemo(() => {
+    return groupedRanked.some((group) => group.visibleItems.some((row) => row.isTie));
+  }, [groupedRanked]);
 
   const handleRefresh = useCallback(() => {
     loadData();
@@ -819,6 +872,7 @@ function ScoreboardApp() {
         const rows = [
           [
             '#',
+            'Shoda po 1-5',
             'Hlídka',
             'Oddíl',
             ...memberHeaders,
@@ -833,11 +887,12 @@ function ScoreboardApp() {
           ],
           ...group.visibleItems.map((row) => {
             const displayRank = row.displayRank > 0 ? row.displayRank : row.rankInBracket;
-            const fallbackCode = createFallbackPatrolCode(group.category, group.sex, displayRank);
+            const fallbackCode = createFallbackPatrolCode(group.category, group.sex, row.orderInBracket);
             const memberCells = formatMemberColumns(row.patrolMembers, maxMemberCount);
             const stationCells = formatStationColumns(row.stationPointsBreakdown, sheetStationCodes);
             return [
-              formatRankValue(row.disqualified, displayRank),
+              formatRankValue(row.disqualified, displayRank) + (row.isTie ? '*' : ''),
+              formatTieExportValue(row.disqualified, displayRank, row.tieSize),
               formatPatrolNumber(row.patrolCode, fallbackCode),
               row.teamName,
               ...memberCells,
@@ -856,6 +911,7 @@ function ScoreboardApp() {
           const emptyMemberCells = Array.from({ length: maxMemberCount }, () => '—');
           const emptyStationCells = Array.from({ length: sheetStationCodes.length }, () => '—');
           rows.push([
+            '—',
             '—',
             '—',
             'Žádné výsledky v této kategorii.',
@@ -1006,13 +1062,18 @@ function ScoreboardApp() {
                   Přehled je seřazen podle předem definovaných kategorií závodu.
                 </p>
               ) : null}
+              {hasAnyFinalTies ? (
+                <p className="scoreboard-section-hint scoreboard-section-hint--tie">
+                  Položky označené <strong>*</strong> mají shodu i po kritériích 1-5.
+                </p>
+              ) : null}
             </div>
             {loading && !groupedRanked.length ? (
               <div className="scoreboard-placeholder">Načítám data…</div>
             ) : groupedRanked.length ? (
               <div className="scoreboard-groups">
                 {groupedRanked.map((group) => {
-                  const displayRows = group.items;
+                  const displayRows = group.visibleItems;
                   return (
                     <div key={group.key} className="scoreboard-group">
                       <h3>{formatCategoryLabel(group.category, group.sex)}</h3>
@@ -1033,7 +1094,7 @@ function ScoreboardApp() {
                               const fallbackCode = createFallbackPatrolCode(
                                 group.category,
                                 group.sex,
-                                displayRank,
+                                row.orderInBracket,
                               );
                               const members = parsePatrolMembers(row.patrolMembers);
                               const isExpanded = expandedPatrolId === row.patrolId;
@@ -1048,10 +1109,13 @@ function ScoreboardApp() {
                                     .join(' ') || undefined}
                                 >
                                   <td className={row.disqualified ? 'scoreboard-rank-dsq' : undefined}>
-                                    {formatRankValue(row.disqualified, displayRank)}
+                                    {formatRankValue(row.disqualified, displayRank) + (row.isTie ? '*' : '')}
                                   </td>
                                   <td className="scoreboard-team">
                                     <strong>{formatPatrolNumber(row.patrolCode, fallbackCode)}</strong>
+                                    {row.isTie ? (
+                                      <span className="scoreboard-tie-badge">{formatTieBadge(row.tieSize)}</span>
+                                    ) : null}
                                     <button
                                       type="button"
                                       className="scoreboard-row-toggle"
