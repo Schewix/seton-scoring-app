@@ -100,6 +100,36 @@ VITE_AUTH_BYPASS=1
 VITE_ADMIN_MODE=1
 ```
 
+### Seton: Pořadí Výsledků
+
+Pořadí hlídek v `results_ranked` / `scoreboard_view` se vyhodnocuje podle těchto kritérií:
+
+1. `total_points` (vyšší je lepší)
+2. `points_no_T` = body bez stanoviště `T` (vyšší je lepší)
+3. `pure_seconds` = čistý čas na trati (nižší je lepší)
+4. počet stanovišť s plným počtem bodů (`points_12_count`, vyšší je lepší)
+5. následně počty stanovišť s body `11, 10, 9, ...` (`points_11_count`, `points_10_count`, ...; vyšší je lepší)
+
+Pokud je po kritériích 1-5 stále shoda, hlídky zůstávají na stejném `rank_in_bracket`.
+Ve veřejné tabulce i v XLSX exportu se taková shoda označuje jako `Shoda po 1-5`.
+
+## Testy
+
+Web testy:
+
+- jednotkové/UI: `pnpm -C web test --run`
+- integrační: `pnpm -C web test:integration`
+- e2e (Playwright): `pnpm -C web test:e2e`
+
+Zátěžové/stress scénáře:
+
+- scoreboard read/write mix: `pnpm -C web test:stress:scoreboard`
+- outbox massive flush: `pnpm -C web test:stress:outbox`
+- thundering herd restart: `pnpm -C web test:stress:herd`
+- DB constraints mix: `pnpm -C web test:stress:dbmix`
+- cold start edge: `pnpm -C web test:stress:coldstart`
+- rate limit: `pnpm -C web test:stress:ratelimit`
+
 ## Deskové Hry Modul
 
 Nový modul běží ve webu na trasách:
@@ -186,12 +216,3 @@ Poznámka: názvy DB objektů (tabulky/pohledy/policies) zůstávají stabilní 
 - Web build: `npm ci && npm run build` ve složce `web/`
 - Nutné Vercel secrets: `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_TOKEN`
 - Nutné runtime env proměnné: viz sekce backend/web výše
-
-## Renaming Checklist
-
-Po merge udělej ručně:
-
-1. GitHub repository rename (název + případně topics).
-2. Vercel project rename (a zkontrolovat propojení s GitHub repem).
-3. Aktualizovat domény/redirecty (`zelenaliga.cz`, custom domény).
-4. Zkontrolovat všechny env vars a secrets v CI/Vercelu/Supabase.
