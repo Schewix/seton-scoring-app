@@ -29,6 +29,11 @@ Volitelně můžeš přidat i `SYNC_SECRET` – pokud je nastavený, funkce oče
 
 `SUPABASE_URL` není potřeba zadávat; v prostředí Supabase Functions se doplní automaticky.
 
+`SHEET_EXPORTS` umí dva režimy:
+
+- `CATEGORY_SEX=https://...` (např. `N_H=...`): fallback režim pro starší data. `patrol_code` může být `1`, `NH1` i `NH-1` a normalizuje se na `NH-1`.
+- `NAME=https://...` (např. `ALL=...`): bez defaultu kategorie/pohlaví. Pak musí být v CSV vždy plný `patrol_code` s prefixem (`NH-1`, `SD-1`, ...).
+
 ## Lokální vývoj
 
 Pro lokální testování si vystačíš se Supabase CLI (vyžaduje Deno):

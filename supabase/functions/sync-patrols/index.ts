@@ -6,8 +6,8 @@ import { parse } from 'https://deno.land/std@0.224.0/csv/mod.ts';
 
 type SheetSource = {
   key: string;
-  category: string;
-  sex: string;
+  defaultCategory?: string;
+  defaultSex?: string;
   url: string;
 };
 
@@ -72,25 +72,18 @@ function parseSheetConfig(config: string | undefined): SheetSource[] {
     const url = entry.slice(eqIndex + 1);
     const trimmedKey = key.trim();
     const trimmedUrl = url.trim();
-    const [category, sex] = trimmedKey.split('_');
-    if (!category || !sex) {
-      throw new Error(`SHEET_EXPORTS key must be CATEGORY_SEX (e.g. N_H). Problem: ${trimmedKey}`);
+    if (!trimmedKey || !trimmedUrl) {
+      throw new Error(`Invalid SHEET_EXPORTS entry: "${entry}". Key and URL are required.`);
     }
 
-    const upperCategory = category.trim().toUpperCase();
-    const upperSex = sex.trim().toUpperCase();
-
-    if (!['N', 'M', 'S', 'R'].includes(upperCategory)) {
-      throw new Error(`Unsupported category "${upperCategory}" in entry ${trimmedKey}`);
-    }
-    if (!['H', 'D'].includes(upperSex)) {
-      throw new Error(`Unsupported sex "${upperSex}" in entry ${trimmedKey}`);
-    }
+    const defaultMatch = trimmedKey.match(/^([NMSR])_([HD])$/i);
+    const defaultCategory = defaultMatch ? defaultMatch[1].toUpperCase() : undefined;
+    const defaultSex = defaultMatch ? defaultMatch[2].toUpperCase() : undefined;
 
     sources.push({
       key: trimmedKey,
-      category: upperCategory,
-      sex: upperSex,
+      defaultCategory,
+      defaultSex,
       url: trimmedUrl,
     });
   }
@@ -153,6 +146,24 @@ function generateCode(existing: Set<string>, batch: Set<string>): string {
     }
   }
   throw new Error('Unable to generate a unique patrol_code after multiple attempts.');
+}
+
+function parsePrefixedPatrolCode(rawCode: string): { patrolCode: string; category: string; sex: string } | null {
+  const compact = rawCode.trim().toUpperCase().replace(/\s+/g, '');
+  const match = compact.match(/^([NMSR])([HD])-?(.+)$/);
+  if (!match) return null;
+
+  const [, category, sex, rawSuffix] = match;
+  const suffix = rawSuffix.replace(/^-+/, '');
+  if (!suffix) {
+    throw new Error(`Invalid patrol_code "${rawCode}". Expected format like NH-1.`);
+  }
+
+  return {
+    patrolCode: `${category}${sex}-${suffix}`,
+    category,
+    sex,
+  };
 }
 
 async function fetchCsv(url: string): Promise<string> {
@@ -331,23 +342,49 @@ function buildRows(
         continue;
       }
 
-      const prefix = `${source.category}${source.sex}`;
       let patrolCode = normalizeString(raw.patrol_code);
+      let category = source.defaultCategory;
+      let sex = source.defaultSex;
       if (patrolCode) {
-        const numericMatch = patrolCode.match(/^(\d+)$/);
-        if (numericMatch) {
-          patrolCode = `${prefix}-${numericMatch[1]}`;
+        const prefixed = parsePrefixedPatrolCode(patrolCode);
+        if (prefixed) {
+          patrolCode = prefixed.patrolCode;
+          category = prefixed.category;
+          sex = prefixed.sex;
         } else {
-          const upper = patrolCode.toUpperCase();
-          if (upper.startsWith(prefix) && !upper.startsWith(`${prefix}-`)) {
-            patrolCode = `${prefix}-${upper.slice(prefix.length).replace(/^[-\s]*/, '')}`;
-          } else if (upper.startsWith(prefix)) {
-            patrolCode = `${prefix}-${upper.slice(prefix.length + 1).trim()}`;
+          if (!source.defaultCategory || !source.defaultSex) {
+            throw new Error(
+              `patrol_code "${patrolCode}" must include full prefix (e.g. NH-1 or SD-1) when SHEET_EXPORTS key is not CATEGORY_SEX.`,
+            );
+          }
+
+          const prefix = `${source.defaultCategory}${source.defaultSex}`;
+          const compact = patrolCode.trim().toUpperCase().replace(/\s+/g, '');
+          const numericMatch = compact.match(/^(\d+)$/);
+          if (numericMatch) {
+            patrolCode = `${prefix}-${numericMatch[1]}`;
+          } else if (compact.startsWith(prefix)) {
+            const suffix = compact.slice(prefix.length).replace(/^-+/, '');
+            if (!suffix) {
+              throw new Error(`Invalid patrol_code "${patrolCode}". Expected format like ${prefix}-1.`);
+            }
+            patrolCode = `${prefix}-${suffix}`;
+          } else {
+            patrolCode = compact;
           }
         }
       }
       if (!patrolCode) {
+        if (!source.defaultCategory || !source.defaultSex) {
+          throw new Error(
+            `Missing patrol_code for team "${teamName}" in source "${source.key}". Use full patrol_code like NH-1 or SD-1.`,
+          );
+        }
         patrolCode = generateCode(existingCodes, batchCodes);
+      }
+
+      if (!category || !sex) {
+        throw new Error(`Unable to determine category/sex for patrol_code "${patrolCode}".`);
       }
 
       if (batchCodes.has(patrolCode)) {
@@ -369,8 +406,8 @@ function buildRows(
         patrol: {
           event_id: eventId,
           team_name: teamName,
-          category: source.category,
-          sex: source.sex,
+          category,
+          sex,
           patrol_code: patrolCode,
           note,
           active: isActive(raw.active),
