@@ -84,6 +84,17 @@ const BRACKET_ORDER = ['N__H', 'N__D', 'M__H', 'M__D', 'S__H', 'S__D', 'R__H', '
 
 const BRACKET_ORDER_INDEX = new Map(BRACKET_ORDER.map((key, index) => [key, index] as const));
 
+const HIGHLIGHT_LIMIT_BY_BRACKET: Record<(typeof BRACKET_ORDER)[number], number> = {
+  N__H: 5,
+  N__D: 5,
+  M__H: 6,
+  M__D: 6,
+  S__H: 6,
+  S__D: 6,
+  R__H: 3,
+  R__D: 3,
+};
+
 const CATEGORY_CODES = ['N', 'M', 'S', 'R'] as const;
 type CategoryCode = (typeof CATEGORY_CODES)[number];
 
@@ -455,6 +466,12 @@ function compareBrackets(aCategory: string, aSex: string, bCategory: string, bSe
   }
 
   return aKey.localeCompare(bKey);
+}
+
+function getHighlightLimitForBracket(category: string, sex: string) {
+  const key = normaliseBracketKey(category, sex);
+  const configured = HIGHLIGHT_LIMIT_BY_BRACKET[key as keyof typeof HIGHLIGHT_LIMIT_BY_BRACKET];
+  return typeof configured === 'number' ? configured : 3;
 }
 
 function formatCategoryLabel(category: string, sex?: string) {
@@ -1047,6 +1064,7 @@ function ScoreboardApp() {
               <div className="scoreboard-groups">
                 {groupedRanked.map((group) => {
                   const displayRows = group.visibleItems;
+                  const highlightLimit = getHighlightLimitForBracket(group.category, group.sex);
                   return (
                     <div key={group.key} className="scoreboard-group">
                       <h3>{formatCategoryLabel(group.category, group.sex)}</h3>
@@ -1071,10 +1089,12 @@ function ScoreboardApp() {
                               );
                               const members = parsePatrolMembers(row.patrolMembers);
                               const isExpanded = expandedPatrolId === row.patrolId;
+                              const isHighlighted = !row.disqualified && row.orderInBracket <= highlightLimit;
                               return (
                                 <tr
                                   key={row.patrolId}
                                   className={[
+                                    isHighlighted ? 'scoreboard-row-highlight' : '',
                                     isExpanded ? 'scoreboard-row-expanded' : '',
                                     row.disqualified ? 'scoreboard-row-disqualified' : '',
                                   ]

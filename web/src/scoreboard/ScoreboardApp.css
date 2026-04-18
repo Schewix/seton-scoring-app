@@ -440,7 +440,7 @@
   color: var(--text-muted);
 }
 
-.scoreboard-table tbody tr:nth-child(-n + 3) {
+.scoreboard-table tbody tr.scoreboard-row-highlight {
   box-shadow: inset 4px 0 0 var(--zl-yellow);
 }
 
