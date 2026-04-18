@@ -2012,6 +2012,13 @@ textarea {
   border-bottom: none;
 }
 
+.score-review-separator td {
+  height: 10px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
 .score-review-input {
   width: 72px;
   text-align: center;

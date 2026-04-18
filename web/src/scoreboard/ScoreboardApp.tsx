@@ -364,6 +364,10 @@ type PatrolMember = {
   nickname?: string;
 };
 
+function isInlineNicknameCandidate(value: string) {
+  return /^\p{Ll}[\p{L}\p{N}._'-]*$/u.test(value);
+}
+
 function parsePatrolMembers(members: string | null): PatrolMember[] {
   return parsePatrolMembersList(members).map((raw) => {
     const trimmed = raw.trim();
@@ -383,6 +387,15 @@ function parsePatrolMembers(members: string | null): PatrolMember[] {
       const name = dashMatch[1].trim();
       const nickname = dashMatch[2].trim();
       return { name: name || trimmed, nickname: nickname || undefined };
+    }
+
+    const inlineNicknameMatch = trimmed.match(/^(.+?)\s+([^\s()]+)\s*$/u);
+    if (inlineNicknameMatch) {
+      const name = inlineNicknameMatch[1].trim().replace(/\s+/g, ' ');
+      const nickname = inlineNicknameMatch[2].trim();
+      if (name.split(/\s+/).length >= 2 && isInlineNicknameCandidate(nickname)) {
+        return { name, nickname };
+      }
     }
 
     return { name: trimmed };
@@ -1098,7 +1111,7 @@ function ScoreboardApp() {
                                                 <li key={`${row.patrolId}-member-${index}`}>
                                                   <span>{member.name}</span>
                                                   {member.nickname ? (
-                                                    <span className="scoreboard-row-nickname">{member.nickname}</span>
+                                                    <span className="scoreboard-row-nickname">({member.nickname})</span>
                                                   ) : null}
                                                 </li>
                                               ))}

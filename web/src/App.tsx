@@ -1,4 +1,4 @@
-import { ClipboardEvent as ReactClipboardEvent, FormEvent as ReactFormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ClipboardEvent as ReactClipboardEvent, FormEvent as ReactFormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // import QRScanner from './components/QRScanner';
 import LastScoresList, { type RestoreTargetEditPayload } from './components/LastScoresList';
 import PatrolCodeInput, {
@@ -106,6 +106,7 @@ interface StationScoreRow {
   note: string | null;
   hasScore: boolean;
   hasWait: boolean;
+  separatorBefore?: boolean;
 }
 
 interface StationScoreRowState {
@@ -481,6 +482,26 @@ function formatStationCategoryDetailLabel(category: StationCategoryKey): string 
 }
 
 const NO_SESSION_ERROR = 'NO_SESSION';
+
+const CALC_SCORE_REVIEW_ORDER_BY_CATEGORY: Record<StationCategoryKey, readonly string[]> = {
+  NH: ['F', 'U', 'C', 'O', 'B', 'Z', 'K', 'P', 'J', 'R'],
+  ND: ['F', 'U', 'C', 'O', 'B', 'Z', 'K', 'P', 'J', 'R'],
+  MH: ['F', 'U', 'C', 'O', 'B', 'S', 'Z', 'M', 'A', 'K', 'P', 'J', 'R'],
+  MD: ['R', 'J', 'P', 'K', 'A', 'M', 'Z', 'S', 'B', 'O', 'C', 'U', 'F'],
+  SH: ['F', 'U', 'C', 'B', 'S', 'Z', 'M', 'V', 'N', 'O', 'A', 'P', 'J', 'R'],
+  SD: ['R', 'J', 'P', 'A', 'O', 'N', 'V', 'M', 'Z', 'S', 'B', 'C', 'U', 'F'],
+  RH: ['A', 'B', 'C', 'D', 'F', 'J', 'M', 'N', 'O', 'P', 'R', 'S', 'U', 'V', 'Z'],
+  RD: ['A', 'B', 'C', 'D', 'F', 'J', 'M', 'N', 'O', 'P', 'R', 'S', 'U', 'V', 'Z'],
+};
+
+const CALC_SCORE_REVIEW_SEPARATOR_BEFORE_BY_CATEGORY: Partial<Record<StationCategoryKey, string>> = {
+  NH: 'R',
+  ND: 'R',
+  MH: 'R',
+  MD: 'J',
+  SH: 'R',
+  SD: 'J',
+};
 
 function requireAccessToken(accessToken: string | null) {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -1405,6 +1426,17 @@ function StationApp({
         }
 
         const patrolStationCategory = toStationCategoryKey(patrolCategory, patrolSex);
+        const hideTimeStation = stationCode === 'T';
+        const categoryOrder = patrolStationCategory
+          ? CALC_SCORE_REVIEW_ORDER_BY_CATEGORY[patrolStationCategory]
+          : null;
+        const orderIndex = new Map<string, number>(
+          (categoryOrder ?? []).map((code, index) => [code, index] as const),
+        );
+        const separatorBeforeCode = patrolStationCategory
+          ? CALC_SCORE_REVIEW_SEPARATOR_BEFORE_BY_CATEGORY[patrolStationCategory] ?? null
+          : null;
+
         const stations = stationsData
           .map((station) => ({
           id: station.id,
@@ -1412,8 +1444,11 @@ function StationApp({
           name: station.name,
         }))
           .filter((station) => {
-            if (station.code === 'T' || station.code === 'R') {
+            if (station.code === 'R') {
               return true;
+            }
+            if (station.code === 'T') {
+              return !hideTimeStation;
             }
             if (!patrolStationCategory) {
               return true;
@@ -1465,7 +1500,22 @@ function StationApp({
               hasWait: waitPresent.has(station.id),
             };
           })
-          .sort((a, b) => a.stationCode.localeCompare(b.stationCode, 'cs'));
+          .sort((a, b) => {
+            const aIndex = orderIndex.get(a.stationCode);
+            const bIndex = orderIndex.get(b.stationCode);
+            if (aIndex !== undefined || bIndex !== undefined) {
+              if (aIndex === undefined) return 1;
+              if (bIndex === undefined) return -1;
+              if (aIndex !== bIndex) {
+                return aIndex - bIndex;
+              }
+            }
+            return a.stationCode.localeCompare(b.stationCode, 'cs');
+          })
+          .map((row, index) => ({
+            ...row,
+            separatorBefore: Boolean(separatorBeforeCode) && index > 0 && row.stationCode === separatorBeforeCode,
+          }));
 
         setScoreReviewRows(rows);
         setScoreReviewState((prev) => {
@@ -4029,88 +4079,95 @@ function StationApp({
                               const isValid = pointsValid && waitValid;
                               const dirty = !state.ok && !isAutoComputedRow && (dirtyPoints || dirtyWait);
                               return (
-                                <tr key={row.stationId} className={state.ok ? '' : 'score-review-editing'}>
-                                  <td>
-                                    {isAutoComputedRow ? (
-                                      <span className="score-review-auto-value">
-                                        {typeof computedPoints === 'number' ? computedPoints : '—'}
-                                      </span>
-                                    ) : (
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        max={12}
-                                        inputMode="numeric"
-                                        value={pointsDraft}
-                                        onChange={(event) => handleScoreDraftChange(row.stationId, event.target.value)}
-                                        disabled={state.ok || state.saving}
-                                        placeholder="—"
-                                        className="score-review-input"
-                                      />
-                                    )}
-                                  </td>
-                                  <td>
-                                    {isAutoComputedRow ? (
-                                      <span className="score-review-auto-value">—</span>
-                                    ) : (
-                                      <input
-                                        type="time"
-                                        step={60}
-                                        min={WAIT_TIME_ZERO}
-                                        max={WAIT_TIME_MAX}
-                                        value={waitDraft}
-                                        onChange={(event) => handleWaitDraftChange(row.stationId, event.target.value)}
-                                        disabled={state.ok || state.saving}
-                                        placeholder="hh:mm"
-                                        className="score-review-input score-review-input--wait"
-                                      />
-                                    )}
-                                  </td>
-                                  <td>
-                                    <div className="score-review-station">
-                                      <span className="score-review-code">{row.stationCode || '—'}</span>
-                                      <span className="score-review-name">{row.stationName}</span>
-                                    </div>
-                                  </td>
-                                  <td>
-                                    {isAutoComputedRow ? (
-                                      <span className="score-review-status">AUTO</span>
-                                    ) : (
-                                      <label className="score-review-check">
+                                <Fragment key={row.stationId}>
+                                  {row.separatorBefore ? (
+                                    <tr className="score-review-separator" aria-hidden>
+                                      <td colSpan={5} />
+                                    </tr>
+                                  ) : null}
+                                  <tr className={state.ok ? '' : 'score-review-editing'}>
+                                    <td>
+                                      {isAutoComputedRow ? (
+                                        <span className="score-review-auto-value">
+                                          {typeof computedPoints === 'number' ? computedPoints : '—'}
+                                        </span>
+                                      ) : (
                                         <input
-                                          type="checkbox"
-                                          checked={state.ok}
-                                          onChange={(event) => handleScoreOkToggle(row.stationId, event.target.checked)}
-                                          disabled={state.saving}
+                                          type="number"
+                                          min={0}
+                                          max={12}
+                                          inputMode="numeric"
+                                          value={pointsDraft}
+                                          onChange={(event) => handleScoreDraftChange(row.stationId, event.target.value)}
+                                          disabled={state.ok || state.saving}
+                                          placeholder="—"
+                                          className="score-review-input"
                                         />
-                                        <span>OK</span>
-                                      </label>
-                                    )}
-                                  </td>
-                                  <td>
-                                    {isAutoComputedRow ? (
-                                      <span className="score-review-status">Automaticky dopočteno</span>
-                                    ) : state.ok ? (
-                                      <span className="score-review-status">
-                                        {row.hasScore ? 'Potvrzeno' : 'Bez bodů'}
-                                      </span>
-                                    ) : (
-                                      <div className="score-review-actions">
-                                        <button
-                                          type="button"
-                                          className="ghost score-review-save"
-                                          onClick={() => handleSaveStationScore(row.stationId)}
-                                          disabled={state.saving || !isValid || !dirty}
-                                        >
-                                          {state.saving ? 'Ukládám…' : 'Uložit'}
-                                        </button>
-                                        {state.error ? (
-                                          <span className="error-text score-review-row-error">{state.error}</span>
-                                        ) : null}
+                                      )}
+                                    </td>
+                                    <td>
+                                      {isAutoComputedRow ? (
+                                        <span className="score-review-auto-value">—</span>
+                                      ) : (
+                                        <input
+                                          type="time"
+                                          step={60}
+                                          min={WAIT_TIME_ZERO}
+                                          max={WAIT_TIME_MAX}
+                                          value={waitDraft}
+                                          onChange={(event) => handleWaitDraftChange(row.stationId, event.target.value)}
+                                          disabled={state.ok || state.saving}
+                                          placeholder="hh:mm"
+                                          className="score-review-input score-review-input--wait"
+                                        />
+                                      )}
+                                    </td>
+                                    <td>
+                                      <div className="score-review-station">
+                                        <span className="score-review-code">{row.stationCode || '—'}</span>
+                                        <span className="score-review-name">{row.stationName}</span>
                                       </div>
-                                    )}
-                                  </td>
-                                </tr>
+                                    </td>
+                                    <td>
+                                      {isAutoComputedRow ? (
+                                        <span className="score-review-status">AUTO</span>
+                                      ) : (
+                                        <label className="score-review-check">
+                                          <input
+                                            type="checkbox"
+                                            checked={state.ok}
+                                            onChange={(event) => handleScoreOkToggle(row.stationId, event.target.checked)}
+                                            disabled={state.saving}
+                                          />
+                                          <span>OK</span>
+                                        </label>
+                                      )}
+                                    </td>
+                                    <td>
+                                      {isAutoComputedRow ? (
+                                        <span className="score-review-status">Automaticky dopočteno</span>
+                                      ) : state.ok ? (
+                                        <span className="score-review-status">
+                                          {row.hasScore ? 'Potvrzeno' : 'Bez bodů'}
+                                        </span>
+                                      ) : (
+                                        <div className="score-review-actions">
+                                          <button
+                                            type="button"
+                                            className="ghost score-review-save"
+                                            onClick={() => handleSaveStationScore(row.stationId)}
+                                            disabled={state.saving || !isValid || !dirty}
+                                          >
+                                            {state.saving ? 'Ukládám…' : 'Uložit'}
+                                          </button>
+                                          {state.error ? (
+                                            <span className="error-text score-review-row-error">{state.error}</span>
+                                          ) : null}
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                </Fragment>
                               );
                             })}
                           </tbody>
