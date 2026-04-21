@@ -22,6 +22,7 @@ import { computeWaitTime, createTicket, loadTickets, saveTickets, transitionTick
 import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord } from './storage/scanHistory';
 import { getManualPatrols, upsertManualPatrol } from './storage/manualPatrols';
+import { loadStoredPatrolWaitMinutes, saveStoredPatrolWaitMinutes } from './storage/patrolWaitMemory';
 import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
 import {
@@ -542,6 +543,7 @@ function StationApp({
   const [scannerPatrol, setScannerPatrol] = useState<Patrol | null>(null);
   const [scannerSource, setScannerSource] = useState<'manual' | 'scan' | 'summary' | null>(null);
   const [showPatrolChoice, setShowPatrolChoice] = useState(false);
+  const [pendingRecoveredWaitMinutes, setPendingRecoveredWaitMinutes] = useState<number | null>(null);
   const [points, setPoints] = useState('');
   const [note, setNote] = useState('');
   const [answersInput, setAnswersInput] = useState('');
@@ -1143,7 +1145,10 @@ function StationApp({
   }, [finishAt, stationId]);
 
   const handleAddTicket = useCallback(
-    (initialState: Extract<TicketState, 'waiting' | 'serving'> = 'waiting') => {
+    (
+      initialState: Extract<TicketState, 'waiting' | 'serving'> = 'waiting',
+      options?: { restoredWaitMinutes?: number | null },
+    ) => {
       if (scoringDisabled) {
         pushAlert('Závod byl ukončen. Zapisování bodů je uzamčeno.');
         return;
@@ -1161,7 +1166,15 @@ function StationApp({
         if (exists) {
           return current;
         }
-        const newTicket = createTicket({
+        const restoredWaitMinutes = Number(options?.restoredWaitMinutes ?? 0);
+        const nowMs = Date.now();
+        const nowIso = new Date(nowMs).toISOString();
+        const restoredArrivedAtIso =
+          restoredWaitMinutes > 0
+            ? new Date(nowMs - restoredWaitMinutes * 60 * 1000).toISOString()
+            : '';
+
+        const newTicket: Ticket = createTicket({
           patrolId: scannerPatrol.id,
           patrolCode,
           teamName: scannerPatrol.team_name,
@@ -1169,6 +1182,16 @@ function StationApp({
           sex: scannerPatrol.sex,
           initialState,
         });
+        if (restoredArrivedAtIso) {
+          newTicket.arrivedAt = restoredArrivedAtIso;
+          if (initialState === 'waiting') {
+            newTicket.waitStartedAt = restoredArrivedAtIso;
+            newTicket.servedAt = undefined;
+          } else {
+            newTicket.waitStartedAt = undefined;
+            newTicket.servedAt = nowIso;
+          }
+        }
         addedState = newTicket.state;
         return [...current, newTicket];
       });
@@ -1183,6 +1206,7 @@ function StationApp({
       } else {
         setShowPatrolChoice(false);
       }
+      setPendingRecoveredWaitMinutes(null);
     },
     [scannerPatrol, pushAlert, resolvePatrolCode, scoringDisabled, updateTickets],
   );
@@ -1608,23 +1632,29 @@ function StationApp({
 
   const handleServePatrol = useCallback(() => {
     if (enableTicketQueue) {
-      handleAddTicket('serving');
+      handleAddTicket('serving', { restoredWaitMinutes: pendingRecoveredWaitMinutes });
       return;
     }
     if (!scannerPatrol) {
       pushAlert('Nejprve načti hlídku.');
       return;
     }
-    initializeFormForPatrol(scannerPatrol);
+    initializeFormForPatrol(scannerPatrol, {
+      waitSeconds: pendingRecoveredWaitMinutes && pendingRecoveredWaitMinutes > 0
+        ? pendingRecoveredWaitMinutes * 60
+        : 0,
+    });
     if (stationCode === 'T' && scannerSource === 'summary') {
       setSelectedSummaryCategory(null);
     }
     pushAlert(`Hlídka ${scannerPatrol.team_name} je připravena k obsluze.`);
     setShowPatrolChoice(false);
+    setPendingRecoveredWaitMinutes(null);
   }, [
     enableTicketQueue,
     handleAddTicket,
     initializeFormForPatrol,
+    pendingRecoveredWaitMinutes,
     pushAlert,
     scannerPatrol,
     scannerSource,
@@ -2003,7 +2033,7 @@ function StationApp({
   }, []);
 
   const handleSelectSummaryPatrol = useCallback(
-    (patrol: StationSummaryPatrol) => {
+    async (patrol: StationSummaryPatrol) => {
       if (scannerPatrol && scannerPatrol.id === patrol.id) {
         pushAlert('Hlídka už je načtená.');
         return;
@@ -2021,6 +2051,20 @@ function StationApp({
         pushAlert('Hlídka nenalezena.');
         return;
       }
+      const storedWaitMinutes =
+        !isTargetStation ? await loadStoredPatrolWaitMinutes(eventId, stationId, data.id) : null;
+      let recoveredWaitMinutes: number | null = null;
+      if (storedWaitMinutes && storedWaitMinutes > 0) {
+        const shouldRecover = typeof window === 'undefined'
+          ? false
+          : window.confirm(
+              `Hlídka ${data.team_name} už na tomto stanovišti čekala ${formatWaitMinutes(storedWaitMinutes)}. Chceš načíst toto čekání?`,
+            );
+        if (shouldRecover) {
+          recoveredWaitMinutes = storedWaitMinutes;
+        }
+      }
+      setPendingRecoveredWaitMinutes(recoveredWaitMinutes);
       setScannerPatrol({ ...data });
       setScannerSource('summary');
       setShowPatrolChoice(true);
@@ -2031,10 +2075,14 @@ function StationApp({
     [
       activePatrol,
       auth.patrols,
+      eventId,
+      isTargetStation,
       pushAlert,
       scannerPatrol,
+      stationId,
       setConfirmedManualCode,
       setManualCodeDraft,
+      setPendingRecoveredWaitMinutes,
       setScanActive,
       setScannerPatrol,
       setScannerSource,
@@ -2336,6 +2384,7 @@ function StationApp({
     setActivePatrol(null);
       setScannerPatrol(null);
       setScannerSource(null);
+    setPendingRecoveredWaitMinutes(null);
     setShowPatrolChoice(false);
     setPoints('');
     setNote('');
@@ -2360,11 +2409,23 @@ function StationApp({
     lastScanRef.current = null;
   }, [clearWait, isTargetStation]);
 
-  const handleReturnToQueue = useCallback(() => {
+  const handleReturnToQueue = useCallback(async () => {
     if (!activePatrol) {
       resetForm();
       scrollToQueue();
       return;
+    }
+
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('Vážně chceš vrátit hlídku zpět na přehled?');
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    const waitMinutes = parseWaitDraft(waitDraft);
+    if (Number.isInteger(waitMinutes) && waitMinutes > 0 && stationCode !== 'T') {
+      await saveStoredPatrolWaitMinutes(eventId, stationId, activePatrol.id, waitMinutes);
     }
 
     if (!enableTicketQueue) {
@@ -2397,12 +2458,16 @@ function StationApp({
     scrollToQueue();
   }, [
     activePatrol,
+    eventId,
     enableTicketQueue,
     pushAlert,
     resetForm,
     scrollToQueue,
+    stationCode,
+    stationId,
     tickets,
     updateTickets,
+    waitDraft,
   ]);
 
   const needsAuthCount = useMemo(
@@ -2593,6 +2658,21 @@ function StationApp({
         return false;
       }
 
+      const storedWaitMinutes =
+        !isTargetStation ? await loadStoredPatrolWaitMinutes(eventId, stationId, data.id) : null;
+      let recoveredWaitMinutes: number | null = null;
+      if (storedWaitMinutes && storedWaitMinutes > 0) {
+        const shouldRecover = typeof window === 'undefined'
+          ? false
+          : window.confirm(
+              `Hlídka ${data.team_name} už na tomto stanovišti čekala ${formatWaitMinutes(storedWaitMinutes)}. Chceš načíst toto čekání?`,
+            );
+        if (shouldRecover) {
+          recoveredWaitMinutes = storedWaitMinutes;
+        }
+      }
+
+      setPendingRecoveredWaitMinutes(recoveredWaitMinutes);
       setScannerPatrol({ ...data });
       setShowPatrolChoice(true);
       setScanActive(false);
@@ -2619,6 +2699,7 @@ function StationApp({
       eventId,
       isCategoryAllowed,
       isOnline,
+      isTargetStation,
       pushAlert,
       reportSupabaseError,
       scannerPatrol,
@@ -3541,7 +3622,10 @@ function StationApp({
               <button
                 type="button"
                 className="ghost patrol-choice-close"
-                onClick={() => setShowPatrolChoice(false)}
+                onClick={() => {
+                  setPendingRecoveredWaitMinutes(null);
+                  setShowPatrolChoice(false);
+                }}
                 aria-label="Zavřít dialog"
               >
                 ✕
@@ -3569,7 +3653,7 @@ function StationApp({
                   type="button"
                   className="ghost"
                   onClick={() => {
-                    handleAddTicket('waiting');
+                    handleAddTicket('waiting', { restoredWaitMinutes: pendingRecoveredWaitMinutes });
                     setShowPatrolChoice(false);
                   }}
                 >
@@ -3695,7 +3779,9 @@ function StationApp({
                           <button
                             type="button"
                             className="ghost"
-                            onClick={() => handleAddTicket('waiting')}
+                            onClick={() =>
+                              handleAddTicket('waiting', { restoredWaitMinutes: pendingRecoveredWaitMinutes })
+                            }
                             disabled={isPatrolInQueue}
                           >
                             Čekat
