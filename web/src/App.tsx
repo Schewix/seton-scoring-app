@@ -1783,10 +1783,31 @@ function StationApp({
   );
 
   const handleRemoveTicket = useCallback(
-    (id: string) => {
+    async (id: string) => {
+      const ticket = tickets.find((candidate) => candidate.id === id);
+      if (!ticket) {
+        return false;
+      }
+
+      if (typeof window !== 'undefined') {
+        const confirmed = window.confirm('Vážně chceš vrátit hlídku zpět na přehled?');
+        if (!confirmed) {
+          return false;
+        }
+      }
+
+      if (stationCode !== 'T') {
+        const waitSeconds = Math.max(0, Math.round(computeWaitTime(ticket) / 1000));
+        const waitMinutes = waitSecondsToMinutes(waitSeconds);
+        if (waitMinutes > 0) {
+          await saveStoredPatrolWaitMinutes(eventId, stationId, ticket.patrolId, waitMinutes);
+        }
+      }
+
       updateTickets((current) => current.filter((ticket) => ticket.id !== id));
+      return true;
     },
-    [updateTickets],
+    [eventId, stationCode, stationId, tickets, updateTickets],
   );
 
   useEffect(() => {

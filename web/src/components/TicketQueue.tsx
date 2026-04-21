@@ -5,7 +5,7 @@ import { computeWaitTime } from '../auth/tickets';
 interface TicketQueueProps {
   tickets: Ticket[];
   onChangeState: (id: string, nextState: Ticket['state']) => void;
-  onRemove?: (id: string) => void;
+  onRemove?: (id: string) => boolean | Promise<boolean>;
   heartbeat: number;
   onBackToSummary?: () => void;
 }
@@ -89,9 +89,11 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
                         <button
                           type="button"
                           className="ghost"
-                          onClick={() => {
-                            onRemove(ticket.id);
-                            onBackToSummary?.();
+                          onClick={async () => {
+                            const removed = await onRemove(ticket.id);
+                            if (removed !== false) {
+                              onBackToSummary?.();
+                            }
                           }}
                         >
                           Zpět na přehled
@@ -131,9 +133,11 @@ const TicketQueue = forwardRef<HTMLElement, TicketQueueProps>(function TicketQue
                         <button
                           type="button"
                           className="ghost"
-                          onClick={() => {
-                            onRemove(ticket.id);
-                            onBackToSummary?.();
+                          onClick={async () => {
+                            const removed = await onRemove(ticket.id);
+                            if (removed !== false) {
+                              onBackToSummary?.();
+                            }
                           }}
                         >
                           Zpět na přehled
