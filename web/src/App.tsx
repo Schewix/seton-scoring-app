@@ -118,6 +118,17 @@ interface StationScoreRowState {
   error: string | null;
 }
 
+interface PatrolFormDraft {
+  points: string;
+  note: string;
+  answersInput: string;
+  useTargetScoring: boolean;
+  waitDraft: string;
+  arrivedAt: string | null;
+  startTime: string | null;
+  finishAt: string | null;
+}
+
 interface StationSummaryPatrol {
   id: string;
   code: string;
@@ -620,6 +631,7 @@ function StationApp({
   const [stationPassageIds, setStationPassageIds] = useState<string[]>([]);
   const [stationPassageLoading, setStationPassageLoading] = useState(false);
   const [stationPassageError, setStationPassageError] = useState<string | null>(null);
+  const [patrolFormDrafts, setPatrolFormDrafts] = useState<Record<string, PatrolFormDraft>>({});
   const [selectedSummaryCategory, setSelectedSummaryCategory] = useState<StationCategoryKey | null>(null);
   const [showCompletedSummary, setShowCompletedSummary] = useState(false);
   const [showScannerPanel, setShowScannerPanel] = useState(false);
@@ -1578,34 +1590,43 @@ function StationApp({
   );
 
   const initializeFormForPatrol = useCallback(
-    (data: Patrol, options?: { arrivedAt?: string | null; waitSeconds?: number | null }) => {
+    (
+      data: Patrol,
+      options?: { arrivedAt?: string | null; waitSeconds?: number | null; draft?: PatrolFormDraft | null },
+    ) => {
+      const draft = options?.draft ?? null;
       setActivePatrol({ ...data });
       setScannerPatrol({ ...data });
-      setPoints('');
-      setNote('');
-      setAnswersInput('');
+      setPoints(draft?.points ?? '');
+      setNote(draft?.note ?? '');
+      setAnswersInput(draft?.answersInput ?? '');
       setAnswersError('');
       setScanActive(false);
       setManualCodeDraft('');
       setConfirmedManualCode('');
-      setUseTargetScoring(isTargetStation);
+      setUseTargetScoring(draft?.useTargetScoring ?? isTargetStation);
 
-      const arrival = options?.arrivedAt ?? new Date().toISOString();
+      const arrival = draft?.arrivedAt ?? options?.arrivedAt ?? new Date().toISOString();
       setArrivedAt(arrival);
-
-      clearWait();
+      setStartTime(draft?.startTime ?? null);
+      setFinishAt(draft?.finishAt ?? null);
+      setStartTimeInput('');
+      setFinishTimeInput('');
+      setTotalWaitMinutes(null);
 
       const waitMinutes = !isTargetStation && typeof options?.waitSeconds === 'number'
         ? waitSecondsToMinutes(options.waitSeconds)
         : 0;
-      setWaitDraft(formatWaitMinutes(waitMinutes));
+      setWaitDraft(draft?.waitDraft ? normalizeWaitInput(draft.waitDraft, WAIT_TIME_ZERO) : formatWaitMinutes(waitMinutes));
 
       const stored = categoryAnswers[data.category] || '';
       const total = parseAnswerLetters(stored).length;
       setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
 
-      void loadTimingData(data.id);
-      if (canReviewStationScores) {
+      if (!draft) {
+        void loadTimingData(data.id);
+      }
+      if (canReviewStationScores && !draft) {
         void loadScoreReview(data.id, data.patrol_code, data.category, data.sex);
       }
 
@@ -1622,7 +1643,6 @@ function StationApp({
     },
     [
       categoryAnswers,
-      clearWait,
       isTargetStation,
       loadTimingData,
       loadScoreReview,
@@ -1774,12 +1794,14 @@ function StationApp({
       }
 
       const waitSeconds = Math.max(0, Math.round(computeWaitTime(nextTicket) / 1000));
+      const draft = patrolFormDrafts[nextTicket.patrolId] ?? null;
       initializeFormForPatrol(ticketPatrol, {
         arrivedAt: nextTicket.arrivedAt ?? nextTicket.createdAt,
         waitSeconds,
+        draft,
       });
     },
-    [activePatrol, initializeFormForPatrol, patrolById, pushAlert, tickets, updateTickets],
+    [activePatrol, initializeFormForPatrol, patrolById, patrolFormDrafts, pushAlert, tickets, updateTickets],
   );
 
   const handleRemoveTicket = useCallback(
@@ -1805,6 +1827,14 @@ function StationApp({
       }
 
       updateTickets((current) => current.filter((ticket) => ticket.id !== id));
+      setPatrolFormDrafts((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current, ticket.patrolId)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[ticket.patrolId];
+        return next;
+      });
       return true;
     },
     [eventId, stationCode, stationId, tickets, updateTickets],
@@ -2444,6 +2474,20 @@ function StationApp({
       }
     }
 
+    setPatrolFormDrafts((current) => ({
+      ...current,
+      [activePatrol.id]: {
+        points,
+        note,
+        answersInput,
+        useTargetScoring,
+        waitDraft,
+        arrivedAt,
+        startTime,
+        finishAt,
+      },
+    }));
+
     const waitMinutes = parseWaitDraft(waitDraft);
     if (Number.isInteger(waitMinutes) && waitMinutes > 0 && stationCode !== 'T') {
       await saveStoredPatrolWaitMinutes(eventId, stationId, activePatrol.id, waitMinutes);
@@ -2479,15 +2523,22 @@ function StationApp({
     scrollToQueue();
   }, [
     activePatrol,
+    answersInput,
+    arrivedAt,
     eventId,
     enableTicketQueue,
+    finishAt,
+    note,
+    points,
     pushAlert,
     resetForm,
     scrollToQueue,
+    startTime,
     stationCode,
     stationId,
     tickets,
     updateTickets,
+    useTargetScoring,
     waitDraft,
   ]);
 
@@ -3242,6 +3293,14 @@ function StationApp({
         ),
       );
     }
+    setPatrolFormDrafts((current) => {
+      if (!Object.prototype.hasOwnProperty.call(current, activePatrol.id)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[activePatrol.id];
+      return next;
+    });
     setShowPendingDetails(false);
     resetForm();
     if (hasQueueTickets) {
