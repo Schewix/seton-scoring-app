@@ -74,6 +74,14 @@ type JudgeRow = {
   display_name: string | null;
 };
 
+type PatrolRow = {
+  id: string;
+  team_name: string;
+  category: string;
+  sex: string;
+  patrol_code: string;
+};
+
 type StationManifest = {
   judge: { id: string; email: string; displayName: string };
   station: { id: string; code: string; name: string };
@@ -275,7 +283,27 @@ async function handleManifestRequest(req: any, res: any) {
     manifestVersion,
   };
 
-  return res.json({ manifest, device_salt: session.device_salt });
+  let patrolQuery = supabase
+    .from('patrols')
+    .select('id, team_name, category, sex, patrol_code')
+    .eq('event_id', eventId)
+    .eq('active', true);
+
+  if (allowedCategories.length > 0) {
+    patrolQuery = patrolQuery.in('category', allowedCategories);
+  }
+
+  const { data: patrolsData, error: patrolsError } = await patrolQuery.order('patrol_code', {
+    ascending: true,
+  });
+
+  if (patrolsError) {
+    return respond(res, 500, 'Failed to load patrols', patrolsError.message);
+  }
+
+  const patrols = (patrolsData ?? []) as PatrolRow[];
+
+  return res.json({ manifest, patrols, device_salt: session.device_salt });
 }
 
 export default async function handler(req: any, res: any) {

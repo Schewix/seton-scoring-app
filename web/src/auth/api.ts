@@ -1,5 +1,5 @@
 import { env } from '../envVars';
-import type { LoginResponse, RefreshSuccessResponse, StationManifest } from './types';
+import type { LoginResponse, PatrolSummary, RefreshSuccessResponse, StationManifest } from './types';
 
 const FALLBACK_BASE_URL = import.meta.env.PROD ? '/api' : env.VITE_SUPABASE_URL ?? '';
 const BASE_URL = (env.VITE_AUTH_API_URL ?? FALLBACK_BASE_URL).replace(/\/$/, '');
@@ -178,9 +178,14 @@ export async function fetchManifest(_accessToken: string) {
     });
   }
 
-  let payload: { manifest?: StationManifest; device_salt?: string; error?: string } | null = null;
+  let payload: { manifest?: StationManifest; patrols?: PatrolSummary[]; device_salt?: string; error?: string } | null = null;
   try {
-    payload = (await response.json()) as { manifest?: StationManifest; device_salt?: string; error?: string };
+    payload = (await response.json()) as {
+      manifest?: StationManifest;
+      patrols?: PatrolSummary[];
+      device_salt?: string;
+      error?: string;
+    };
   } catch (error) {
     throw new ManifestFetchError('Failed to parse manifest response.', {
       url,
@@ -209,5 +214,9 @@ export async function fetchManifest(_accessToken: string) {
     });
   }
 
-  return { manifest: payload.manifest, device_salt: payload.device_salt ?? '' };
+  return {
+    manifest: payload.manifest,
+    patrols: Array.isArray(payload.patrols) ? payload.patrols : null,
+    device_salt: payload.device_salt ?? '',
+  };
 }

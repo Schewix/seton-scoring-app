@@ -2044,8 +2044,15 @@ function StationApp({
   );
 
   const handleRefreshStationPassages = useCallback(() => {
-    void loadStationPassages();
-  }, [loadStationPassages]);
+    void (async () => {
+      await loadStationPassages();
+      try {
+        await refreshManifest();
+      } catch (error) {
+        console.error('Manual manifest refresh failed', error);
+      }
+    })();
+  }, [loadStationPassages, refreshManifest]);
 
   const stationSummaryRemaining = useMemo(
     () => Math.max(0, stationCategorySummary.totalExpected - stationCategorySummary.totalVisited),

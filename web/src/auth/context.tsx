@@ -564,18 +564,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!refreshResult) {
       return;
     }
-    const { manifest: nextManifest, device_salt: nextDeviceSalt } = refreshResult;
+    const { manifest: nextManifest, patrols: nextPatrolsPayload, device_salt: nextDeviceSalt } = refreshResult;
+    const nextPatrols = Array.isArray(nextPatrolsPayload) ? nextPatrolsPayload : status.patrols;
 
-    await setManifest(nextManifest);
+    await Promise.all([setManifest(nextManifest), setPatrols(nextPatrols)]);
 
     setStatus((prev) => {
       if (prev.state !== 'authenticated') return prev;
-      return { ...prev, manifest: nextManifest };
+      return { ...prev, manifest: nextManifest, patrols: nextPatrols };
     });
 
     setCachedData((prev) => {
       if (!prev) return prev;
-      return { ...prev, manifest: nextManifest };
+      return { ...prev, manifest: nextManifest, patrols: nextPatrols };
     });
 
     if (nextDeviceSalt) {

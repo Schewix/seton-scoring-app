@@ -302,7 +302,27 @@ export async function manifestHandler(req: Request, res: Response) {
       manifestVersion: session.manifest_version ?? 1,
     };
 
-    res.json({ manifest, device_salt: session.device_salt });
+    let patrolQuery = supabase
+      .from('patrols')
+      .select('id, team_name, category, sex, patrol_code')
+      .eq('event_id', assignment.event_id)
+      .eq('active', true);
+
+    if (allowedCategories.length > 0) {
+      patrolQuery = patrolQuery.in('category', allowedCategories);
+    }
+
+    const { data: patrolsData, error: patrolsError } = await patrolQuery.order('patrol_code', {
+      ascending: true,
+    });
+
+    if (patrolsError) {
+      return res.status(500).json({ error: 'Failed to load patrols' });
+    }
+
+    const patrols = (patrolsData ?? []) as PatrolSummary[];
+
+    res.json({ manifest, patrols, device_salt: session.device_salt });
   } catch (error) {
     console.error('Failed to issue manifest', error);
     return res.status(401).json({ error: 'Invalid token' });

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import Picker from 'react-mobile-picker';
 
-const PATROL_CODE_REGEX = /^(N|M|S|R)(H|D)-(0?[1-9]|[12][0-9]|3[0-9]|40)$/;
+const PATROL_CODE_REGEX = /^(N|M|S|R)(H|D)-(0?[1-9]|[1-4][0-9]|50)$/;
 const PARTIAL_PATROL_CODE_REGEX = /^(?:[NMSR]|[NMSR]-|[NMSR][HD](?:-\d{0,2})?)$/;
 
 const CATEGORY_OPTIONS = ['N', 'M', 'S', 'R'] as const;
