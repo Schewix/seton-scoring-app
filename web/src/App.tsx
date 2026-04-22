@@ -563,6 +563,13 @@ function StationApp({
   const [categoryAnswers, setCategoryAnswers] = useState<Record<string, string>>({});
   const [outboxItems, setOutboxItems] = useState<OutboxEntry[]>([]);
   const [showPendingDetails, setShowPendingDetails] = useState(false);
+  const [editingOutboxEntryId, setEditingOutboxEntryId] = useState<string | null>(null);
+  const [editingOutboxPoints, setEditingOutboxPoints] = useState('');
+  const [editingOutboxWait, setEditingOutboxWait] = useState(WAIT_TIME_ZERO);
+  const [editingOutboxNote, setEditingOutboxNote] = useState('');
+  const [editingOutboxAnswers, setEditingOutboxAnswers] = useState('');
+  const [editingOutboxError, setEditingOutboxError] = useState<string | null>(null);
+  const [savingOutboxEntryId, setSavingOutboxEntryId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const didRecoverOutbox = useRef(false);
   const flushInFlightRef = useRef(false);
@@ -1022,6 +1029,9 @@ function StationApp({
   useEffect(() => {
     if (outboxItems.length === 0) {
       setShowPendingDetails(false);
+      setEditingOutboxEntryId(null);
+      setEditingOutboxError(null);
+      setSavingOutboxEntryId(null);
     }
   }, [outboxItems.length]);
 
@@ -1042,20 +1052,95 @@ function StationApp({
     pushAlert('Staré záznamy z jiné relace byly odstraněny.');
   }, [otherSessionItems, outboxItems, pushAlert, updateOutboxState]);
 
-  const handleRemoveOutboxEntry = useCallback(
+  const beginOutboxEdit = useCallback((entry: OutboxEntry) => {
+    if (entry.state === 'sending') {
+      return;
+    }
+    setEditingOutboxEntryId(entry.client_event_id);
+    setEditingOutboxPoints(String(entry.payload.points));
+    setEditingOutboxWait(formatWaitMinutes(entry.payload.wait_minutes));
+    setEditingOutboxNote(entry.payload.note || '');
+    setEditingOutboxAnswers(normalizeAnswersInput(entry.payload.normalized_answers || ''));
+    setEditingOutboxError(null);
+    setSavingOutboxEntryId(null);
+  }, []);
+
+  const cancelOutboxEdit = useCallback(() => {
+    setEditingOutboxEntryId(null);
+    setEditingOutboxError(null);
+    setSavingOutboxEntryId(null);
+  }, []);
+
+  const handleSaveOutboxEntry = useCallback(
     async (entry: OutboxEntry) => {
-      if (typeof window !== 'undefined') {
-        const confirmed = window.confirm('Opravdu chcete záznam z fronty odstranit?');
-        if (!confirmed) {
+      const pointsValue = Number(editingOutboxPoints.trim());
+      if (!Number.isInteger(pointsValue) || pointsValue < 0 || pointsValue > 12) {
+        setEditingOutboxError('Body musí být celé číslo 0–12.');
+        return;
+      }
+
+      const waitValue = parseWaitDraft(editingOutboxWait);
+      if (!Number.isInteger(waitValue) || waitValue < 0 || waitValue > WAIT_MINUTES_MAX) {
+        setEditingOutboxError(`Čekání musí být čas v rozsahu 00:00–${WAIT_TIME_MAX}.`);
+        return;
+      }
+
+      let normalizedAnswers: string | null = null;
+      if (entry.payload.use_target_scoring) {
+        normalizedAnswers = packAnswersForStorage(editingOutboxAnswers);
+        const hasAnswers = parseAnswerLetters(normalizedAnswers).length > 0;
+        if (!hasAnswers) {
+          setEditingOutboxError('Pro terčový úsek je potřeba vyplnit odpovědi A–D.');
           return;
         }
       }
-      await deleteOutboxEntries([entry.client_event_id]);
-      const filtered = outboxItems.filter((item) => item.client_event_id !== entry.client_event_id);
-      updateOutboxState(filtered);
-      pushAlert('Záznam byl z fronty odstraněn.');
+
+      setSavingOutboxEntryId(entry.client_event_id);
+      setEditingOutboxError(null);
+
+      const nextState = entry.state === 'needs_auth' ? 'needs_auth' : 'queued';
+      const now = Date.now();
+      const updatedEntry: OutboxEntry = {
+        ...entry,
+        payload: {
+          ...entry.payload,
+          points: pointsValue,
+          wait_minutes: waitValue,
+          note: editingOutboxNote.trim(),
+          normalized_answers: entry.payload.use_target_scoring ? normalizedAnswers : null,
+        },
+        state: nextState,
+        attempts: nextState === 'needs_auth' ? entry.attempts : 0,
+        last_error: undefined,
+        next_attempt_at: now,
+        response: null,
+      };
+
+      try {
+        await writeOutboxEntry(updatedEntry);
+        const nextItems = outboxItems.map((item) =>
+          item.client_event_id === updatedEntry.client_event_id ? updatedEntry : item,
+        );
+        updateOutboxState(nextItems);
+        setEditingOutboxEntryId(null);
+        setSavingOutboxEntryId(null);
+        setEditingOutboxError(null);
+        pushAlert('Záznam ve frontě byl upraven.');
+      } catch (error) {
+        console.error('Failed to update outbox entry', error);
+        setSavingOutboxEntryId(null);
+        setEditingOutboxError('Úprava fronty se nepodařila. Zkus to prosím znovu.');
+      }
     },
-    [outboxItems, pushAlert, updateOutboxState],
+    [
+      editingOutboxAnswers,
+      editingOutboxNote,
+      editingOutboxPoints,
+      editingOutboxWait,
+      outboxItems,
+      pushAlert,
+      updateOutboxState,
+    ],
   );
 
   const lastManifestToastAtRef = useRef<number | null>(null);
@@ -4456,6 +4541,8 @@ function StationApp({
                                   const answers = payload.use_target_scoring
                                     ? formatAnswersForInput(payload.normalized_answers || '')
                                     : '';
+                                  const isEditing = editingOutboxEntryId === item.client_event_id;
+                                  const isSaving = savingOutboxEntryId === item.client_event_id;
                                   const blockedLabel =
                                     item.state === 'blocked_other_session'
                                       ? 'Záznam patří k jiné relaci.'
@@ -4484,52 +4571,144 @@ function StationApp({
                                     }
                                   })();
                                   return (
-                                    <tr key={`${item.client_event_id}-${index}`}>
-                                      <td>
-                                        <div className="pending-patrol">
-                                          <strong>
-                                            {patrolLabel}
-                                            {codeLabel}
-                                          </strong>
-                                          <span className="pending-subline">{categoryLabel}</span>
-                                          <span className="pending-subline">Čekání: {payload.wait_minutes} min</span>
-                                        </div>
-                                      </td>
-                                      <td>
-                                        <div className="pending-score">
-                                          <span className="pending-score-points">{payload.points} b</span>
-                                          <span className="pending-subline">
-                                            {payload.use_target_scoring ? 'Terčový úsek' : 'Manuální body'}
-                                          </span>
-                                          {payload.use_target_scoring ? (
-                                            <span className="pending-answers">{answers || '—'}</span>
-                                          ) : null}
-                                        </div>
-                                      </td>
-                                      <td>{manifest.judge.displayName || '—'}</td>
-                                      <td>{payload.note ? payload.note : '—'}</td>
-                                      <td>
-                                        <div className="pending-status">
-                                          <span>{statusLabel}</span>
-                                          {blockedLabel ? (
-                                            <span className="pending-subline">{blockedLabel}</span>
-                                          ) : null}
-                                          {item.last_error ? (
-                                            <span className="pending-subline">Chyba: {item.last_error}</span>
-                                          ) : null}
-                                        </div>
-                                      </td>
-                                      <td>
-                                        <button
-                                          type="button"
-                                          className="ghost pending-remove"
-                                          onClick={() => void handleRemoveOutboxEntry(item)}
-                                          disabled={item.state === 'sending'}
-                                        >
-                                          Smazat
-                                        </button>
-                                      </td>
-                                    </tr>
+                                    <Fragment key={`${item.client_event_id}-${index}`}>
+                                      <tr>
+                                        <td>
+                                          <div className="pending-patrol">
+                                            <strong>
+                                              {patrolLabel}
+                                              {codeLabel}
+                                            </strong>
+                                            <span className="pending-subline">{categoryLabel}</span>
+                                            <span className="pending-subline">Čekání: {payload.wait_minutes} min</span>
+                                          </div>
+                                        </td>
+                                        <td>
+                                          <div className="pending-score">
+                                            <span className="pending-score-points">{payload.points} b</span>
+                                            <span className="pending-subline">
+                                              {payload.use_target_scoring ? 'Terčový úsek' : 'Manuální body'}
+                                            </span>
+                                            {payload.use_target_scoring ? (
+                                              <span className="pending-answers">{answers || '—'}</span>
+                                            ) : null}
+                                          </div>
+                                        </td>
+                                        <td>{manifest.judge.displayName || '—'}</td>
+                                        <td>{payload.note ? payload.note : '—'}</td>
+                                        <td>
+                                          <div className="pending-status">
+                                            <span>{statusLabel}</span>
+                                            {blockedLabel ? (
+                                              <span className="pending-subline">{blockedLabel}</span>
+                                            ) : null}
+                                            {item.last_error ? (
+                                              <span className="pending-subline">Chyba: {item.last_error}</span>
+                                            ) : null}
+                                          </div>
+                                        </td>
+                                        <td>
+                                          <button
+                                            type="button"
+                                            className="ghost pending-remove"
+                                            onClick={() => {
+                                              if (isEditing) {
+                                                cancelOutboxEdit();
+                                                return;
+                                              }
+                                              beginOutboxEdit(item);
+                                            }}
+                                            disabled={item.state === 'sending' || isSaving}
+                                          >
+                                            {isEditing ? 'Zavřít editaci' : 'Upravit'}
+                                          </button>
+                                        </td>
+                                      </tr>
+                                      {isEditing ? (
+                                        <tr className="pending-edit-row">
+                                          <td colSpan={6}>
+                                            <div className="pending-edit">
+                                              <label>
+                                                Body
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  max={12}
+                                                  inputMode="numeric"
+                                                  value={editingOutboxPoints}
+                                                  onChange={(event) => setEditingOutboxPoints(event.target.value)}
+                                                  disabled={isSaving}
+                                                />
+                                              </label>
+                                              <label>
+                                                Čekání (HH:MM)
+                                                <input
+                                                  type="time"
+                                                  step={60}
+                                                  min={WAIT_TIME_ZERO}
+                                                  max={WAIT_TIME_MAX}
+                                                  value={editingOutboxWait}
+                                                  onChange={(event) =>
+                                                    setEditingOutboxWait((current) =>
+                                                      normalizeWaitInput(event.target.value, current),
+                                                    )
+                                                  }
+                                                  disabled={isSaving}
+                                                />
+                                              </label>
+                                              {payload.use_target_scoring ? (
+                                                <label>
+                                                  Odpovědi (A-D)
+                                                  <input
+                                                    type="text"
+                                                    value={editingOutboxAnswers}
+                                                    onChange={(event) =>
+                                                      setEditingOutboxAnswers(normalizeAnswersInput(event.target.value))
+                                                    }
+                                                    onBeforeInput={handleTargetAnswersBeforeInput}
+                                                    onPaste={(event) => {
+                                                      const pasted = event.clipboardData.getData('text');
+                                                      if (!pasted) {
+                                                        return;
+                                                      }
+                                                      event.preventDefault();
+                                                      setEditingOutboxAnswers((previous) =>
+                                                        normalizeAnswersInput(`${previous}${pasted}`),
+                                                      );
+                                                    }}
+                                                    placeholder="např. ABCD"
+                                                    autoCapitalize="characters"
+                                                    disabled={isSaving}
+                                                  />
+                                                </label>
+                                              ) : null}
+                                              <label>
+                                                Poznámka
+                                                <textarea
+                                                  value={editingOutboxNote}
+                                                  onChange={(event) => setEditingOutboxNote(event.target.value)}
+                                                  disabled={isSaving}
+                                                />
+                                              </label>
+                                              <div className="pending-edit-actions">
+                                                <button
+                                                  type="button"
+                                                  className="ghost"
+                                                  onClick={() => void handleSaveOutboxEntry(item)}
+                                                  disabled={isSaving}
+                                                >
+                                                  {isSaving ? 'Ukládám…' : 'Uložit změny'}
+                                                </button>
+                                                <button type="button" onClick={cancelOutboxEdit} disabled={isSaving}>
+                                                  Zrušit
+                                                </button>
+                                              </div>
+                                              {editingOutboxError ? <p className="error-text">{editingOutboxError}</p> : null}
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      ) : null}
+                                    </Fragment>
                                   );
                                 })}
                               </tbody>
