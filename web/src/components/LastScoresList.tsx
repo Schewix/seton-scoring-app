@@ -526,36 +526,15 @@ export function LastScoresList({
                     <button
                       type="button"
                       className="ghost score-edit-toggle"
-                      onClick={() =>
-                        isTargetStation && onRestoreTargetEdit
-                          ? beginEdit(row)
-                          : isEditing
-                            ? cancelEdit()
-                            : beginEdit(row)
-                      }
+                      onClick={() => beginEdit(row)}
                     >
                       {isTargetStation && onRestoreTargetEdit
                         ? 'Vrátit do formuláře'
-                        : isEditing
-                          ? 'Zavřít editaci'
-                          : 'Upravit'}
+                        : 'Upravit'}
                     </button>
                   </div>
-                  {row.note ? <p className="score-note">„{row.note}“</p> : null}
                   {!isTargetStation && isEditing ? (
                     <div className="score-edit">
-                      <label>
-                        Body
-                        <input
-                          type="number"
-                          min={0}
-                          max={12}
-                          inputMode="numeric"
-                          value={editPoints}
-                          onChange={(event) => setEditPoints(event.target.value)}
-                          disabled={savingId === row.id}
-                        />
-                      </label>
                       <label>
                         Čekání (HH:MM)
                         <input
@@ -578,10 +557,14 @@ export function LastScoresList({
                         />
                       </label>
                       <label>
-                        Poznámka
-                        <textarea
-                          value={editNote}
-                          onChange={(event) => setEditNote(event.target.value)}
+                        Body
+                        <input
+                          type="number"
+                          min={0}
+                          max={12}
+                          inputMode="numeric"
+                          value={editPoints}
+                          onChange={(event) => setEditPoints(event.target.value)}
                           disabled={savingId === row.id}
                         />
                       </label>

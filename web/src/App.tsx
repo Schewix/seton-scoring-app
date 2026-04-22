@@ -566,7 +566,6 @@ function StationApp({
   const [editingOutboxEntryId, setEditingOutboxEntryId] = useState<string | null>(null);
   const [editingOutboxPoints, setEditingOutboxPoints] = useState('');
   const [editingOutboxWait, setEditingOutboxWait] = useState(WAIT_TIME_ZERO);
-  const [editingOutboxNote, setEditingOutboxNote] = useState('');
   const [editingOutboxAnswers, setEditingOutboxAnswers] = useState('');
   const [editingOutboxError, setEditingOutboxError] = useState<string | null>(null);
   const [savingOutboxEntryId, setSavingOutboxEntryId] = useState<string | null>(null);
@@ -1059,7 +1058,6 @@ function StationApp({
     setEditingOutboxEntryId(entry.client_event_id);
     setEditingOutboxPoints(String(entry.payload.points));
     setEditingOutboxWait(formatWaitMinutes(entry.payload.wait_minutes));
-    setEditingOutboxNote(entry.payload.note || '');
     setEditingOutboxAnswers(normalizeAnswersInput(entry.payload.normalized_answers || ''));
     setEditingOutboxError(null);
     setSavingOutboxEntryId(null);
@@ -1106,7 +1104,6 @@ function StationApp({
           ...entry.payload,
           points: pointsValue,
           wait_minutes: waitValue,
-          note: editingOutboxNote.trim(),
           normalized_answers: entry.payload.use_target_scoring ? normalizedAnswers : null,
         },
         state: nextState,
@@ -1134,7 +1131,6 @@ function StationApp({
     },
     [
       editingOutboxAnswers,
-      editingOutboxNote,
       editingOutboxPoints,
       editingOutboxWait,
       outboxItems,
@@ -4530,7 +4526,6 @@ function StationApp({
                                   <th>Hlídka</th>
                                   <th>Body / Terč</th>
                                   <th>Rozhodčí</th>
-                                  <th>Poznámka</th>
                                   <th>Stav</th>
                                   <th>Akce</th>
                                 </tr>
@@ -4595,7 +4590,6 @@ function StationApp({
                                           </div>
                                         </td>
                                         <td>{manifest.judge.displayName || '—'}</td>
-                                        <td>{payload.note ? payload.note : '—'}</td>
                                         <td>
                                           <div className="pending-status">
                                             <span>{statusLabel}</span>
@@ -4611,35 +4605,17 @@ function StationApp({
                                           <button
                                             type="button"
                                             className="ghost pending-remove"
-                                            onClick={() => {
-                                              if (isEditing) {
-                                                cancelOutboxEdit();
-                                                return;
-                                              }
-                                              beginOutboxEdit(item);
-                                            }}
+                                            onClick={() => beginOutboxEdit(item)}
                                             disabled={item.state === 'sending' || isSaving}
                                           >
-                                            {isEditing ? 'Zavřít editaci' : 'Upravit'}
+                                            Upravit
                                           </button>
                                         </td>
                                       </tr>
                                       {isEditing ? (
                                         <tr className="pending-edit-row">
-                                          <td colSpan={6}>
+                                          <td colSpan={5}>
                                             <div className="pending-edit">
-                                              <label>
-                                                Body
-                                                <input
-                                                  type="number"
-                                                  min={0}
-                                                  max={12}
-                                                  inputMode="numeric"
-                                                  value={editingOutboxPoints}
-                                                  onChange={(event) => setEditingOutboxPoints(event.target.value)}
-                                                  disabled={isSaving}
-                                                />
-                                              </label>
                                               <label>
                                                 Čekání (HH:MM)
                                                 <input
@@ -4653,6 +4629,18 @@ function StationApp({
                                                       normalizeWaitInput(event.target.value, current),
                                                     )
                                                   }
+                                                  disabled={isSaving}
+                                                />
+                                              </label>
+                                              <label>
+                                                Body
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  max={12}
+                                                  inputMode="numeric"
+                                                  value={editingOutboxPoints}
+                                                  onChange={(event) => setEditingOutboxPoints(event.target.value)}
                                                   disabled={isSaving}
                                                 />
                                               </label>
@@ -4682,14 +4670,6 @@ function StationApp({
                                                   />
                                                 </label>
                                               ) : null}
-                                              <label>
-                                                Poznámka
-                                                <textarea
-                                                  value={editingOutboxNote}
-                                                  onChange={(event) => setEditingOutboxNote(event.target.value)}
-                                                  disabled={isSaving}
-                                                />
-                                              </label>
                                               <div className="pending-edit-actions">
                                                 <button
                                                   type="button"
