@@ -58,6 +58,7 @@ import { ACCESS_DENIED_MESSAGE } from './auth/messages';
 import competitionRulesPdf from './assets/pravidla/pravidla-souteze.pdf';
 import stationRulesPdf from './assets/pravidla/pravidla-stanovist.pdf';
 import stationAppGuidePdf from './assets/instrukce-pouzivani-aplikace.pdf';
+import calcGuidePdf from './assets/pruvodce-vypocetka.pdf';
 import {
   OutboxEntry,
   StationScorePayload,
@@ -3745,7 +3746,7 @@ function StationApp({
             </section>
             <section className="card station-menu-card">
               <header className="card-header">
-                <h3>Pravidla</h3>
+                <h3>Pravidla a návody</h3>
               </header>
               <div className="station-menu-rules-actions">
                 <button type="button" className="primary" onClick={() => handleOpenRules(competitionRulesPdf)}>
@@ -3758,7 +3759,11 @@ function StationApp({
                   <button type="button" className="ghost" onClick={() => handleOpenRules(stationAppGuidePdf)}>
                     Instrukce aplikace
                   </button>
-                ) : null}
+                ) : (
+                  <button type="button" className="ghost" onClick={() => handleOpenRules(calcGuidePdf)}>
+                    Průvodce výpočetka
+                  </button>
+                )}
               </div>
               <ul className="station-menu-rules">
                 {stationRules.map((rule) => (
