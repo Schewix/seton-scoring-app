@@ -3647,10 +3647,6 @@ function StationApp({
             </a>
             <div>
               <h1>Setonův závod - aplikace</h1>
-              <p>
-                Tady spravuješ průběh závodu na svém stanovišti. Zapisuj výsledky hlídek, kontroluj průchody a nech aplikaci,
-                aby se o zbytek postarala. Když není signál, vše se uloží a po připojení se automaticky odešle.
-              </p>
             </div>
           </div>
           <div className="hero-meta">
