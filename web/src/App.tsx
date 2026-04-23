@@ -693,6 +693,24 @@ function StationApp({
     };
   }, []);
 
+  const shouldRefreshAccessToken = useCallback(() => {
+    const expiresAt = auth.tokens.accessTokenExpiresAt;
+    if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
+      return true;
+    }
+    return Date.now() >= expiresAt - ACCESS_TOKEN_REFRESH_SKEW_MS;
+  }, [auth.tokens.accessTokenExpiresAt]);
+
+  const refreshAccessToken = useCallback(
+    async (options?: { force?: boolean; reason?: string }) => {
+      if (!isOnline) {
+        return false;
+      }
+      return refreshTokens(options);
+    },
+    [isOnline, refreshTokens],
+  );
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -1194,6 +1212,20 @@ function StationApp({
           scheduleRetryOnOnline();
           return;
         }
+
+        if (shouldRefreshAccessToken()) {
+          const refreshed = await refreshAccessToken({ reason: 'manifest-preflight' });
+          if (refreshed) {
+            // Access token was rotated; wait for the next render so manifest refresh
+            // uses the latest auth context callbacks and token values.
+            return;
+          }
+          if (navigator.onLine === false) {
+            scheduleRetryOnOnline();
+          }
+          return;
+        }
+
         await refreshManifest();
       } catch (error) {
         console.error('Manifest refresh failed', error);
@@ -1229,7 +1261,7 @@ function StationApp({
         window.removeEventListener('online', onlineListener);
       }
     };
-  }, [refreshManifest, pushAlert]);
+  }, [pushAlert, refreshAccessToken, refreshManifest, shouldRefreshAccessToken]);
 
   useEffect(() => {
     setStartTimeInput(toLocalTimeInput(startTime));
@@ -2239,24 +2271,6 @@ function StationApp({
   const stationSummaryRemaining = useMemo(
     () => Math.max(0, stationCategorySummary.totalExpected - stationCategorySummary.totalVisited),
     [stationCategorySummary.totalExpected, stationCategorySummary.totalVisited],
-  );
-
-  const shouldRefreshAccessToken = useCallback(() => {
-    const expiresAt = auth.tokens.accessTokenExpiresAt;
-    if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
-      return true;
-    }
-    return Date.now() >= expiresAt - ACCESS_TOKEN_REFRESH_SKEW_MS;
-  }, [auth.tokens.accessTokenExpiresAt]);
-
-  const refreshAccessToken = useCallback(
-    async (options?: { force?: boolean; reason?: string }) => {
-      if (!isOnline) {
-        return false;
-      }
-      return refreshTokens(options);
-    },
-    [isOnline, refreshTokens],
   );
 
   useEffect(() => {
