@@ -92,11 +92,36 @@ function applyBranding() {
   ICON_LINKS.forEach(upsertIconLink);
 }
 
+async function requestPersistentStorage() {
+  if (typeof navigator === 'undefined' || !navigator.storage) {
+    return;
+  }
+
+  const storageManager = navigator.storage;
+  if (typeof storageManager.persist !== 'function') {
+    return;
+  }
+
+  try {
+    const alreadyPersisted =
+      typeof storageManager.persisted === 'function' ? await storageManager.persisted() : false;
+    if (alreadyPersisted) {
+      return;
+    }
+    await storageManager.persist();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.debug('[storage] persistent storage request failed', error);
+    }
+  }
+}
+
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 
 if ('serviceWorker' in navigator) {
   registerSW({ immediate: true });
 }
+void requestPersistentStorage();
 
 applyBranding();
 
