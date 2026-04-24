@@ -16,6 +16,7 @@ const envCandidates = [
   path.resolve(process.cwd(), 'web/.env.local'),
   path.resolve(process.cwd(), 'web/src/.env'),
   path.resolve(process.cwd(), 'web/src/.env.local'),
+  
 ];
 
 const loadedEnvFiles = [];
