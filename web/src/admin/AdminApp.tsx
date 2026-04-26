@@ -2453,7 +2453,7 @@ function AdminDashboard({
             const sortedContributions = [...contributions].sort(compareTroopContributionsByPoints);
             const countedContributions = sortedContributions.slice(0, 4);
             const performancePoints = countedContributions.reduce((sum, item) => sum + item.points, 0);
-            const totalPoints = (performancePoints + participationPoints) * setonCoefficient;
+            const totalPoints = performancePoints * setonCoefficient + participationPoints;
             return {
               troopName,
               performancePoints,
