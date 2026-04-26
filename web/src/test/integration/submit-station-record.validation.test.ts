@@ -119,6 +119,19 @@ describe('submit-station-record api validation', () => {
     await expectNoWrites(ctx.eventId);
   });
 
+  it('rejects invalid patrol_members values', async () => {
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: `Bearer ${ctx.accessToken}` },
+      body: basePayload(ctx, { patrol_members: 123 }),
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+    expect(res.statusCode).toBe(400);
+    await expectNoWrites(ctx.eventId);
+  });
+
   it('rejects negative points on non-time station', async () => {
     const req: any = {
       method: 'POST',

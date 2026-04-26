@@ -26,6 +26,7 @@ export interface StationScorePayload {
   finish_time: string | null;
   patrol_code: string;
   team_name?: string;
+  patrol_members?: string | null;
   sex?: string;
 }
 

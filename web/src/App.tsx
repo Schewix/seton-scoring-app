@@ -95,6 +95,7 @@ interface Patrol {
   category: string;
   sex: string;
   patrol_code: string | null;
+  patrol_members?: string | null;
 }
 
 type OutboxState = OutboxEntry['state'];
@@ -275,6 +276,16 @@ function normalizeWaitInput(value: string, fallback: string) {
     return fallback;
   }
   return formatWaitMinutes(hours * 60 + minutes);
+}
+
+function normalizePatrolMembersText(value: string) {
+  const normalized = value.replace(/\r\n?/g, '\n');
+  const trimmed = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function formatPatrolMetaLabel(patrol: { patrol_code: string | null; category: string; sex: string } | null) {
@@ -559,6 +570,8 @@ function StationApp({
   const [pendingRecoveredWaitMinutes, setPendingRecoveredWaitMinutes] = useState<number | null>(null);
   const [points, setPoints] = useState('');
   const [note, setNote] = useState('');
+  const [calcTeamNameDraft, setCalcTeamNameDraft] = useState('');
+  const [calcPatrolMembersDraft, setCalcPatrolMembersDraft] = useState('');
   const [answersInput, setAnswersInput] = useState('');
   const [answersError, setAnswersError] = useState('');
   const [useTargetScoring, setUseTargetScoring] = useState(false);
@@ -1767,6 +1780,8 @@ function StationApp({
       const hasPrefilledAnswers = typeof options?.prefilledAnswers === 'string';
       setActivePatrol({ ...data });
       setScannerPatrol({ ...data });
+      setCalcTeamNameDraft(data.team_name ?? '');
+      setCalcPatrolMembersDraft(typeof data.patrol_members === 'string' ? data.patrol_members : '');
       setPoints(draft?.points ?? '');
       setNote(draft?.note ?? '');
       const initialAnswers = hasPrefilledAnswers ? options?.prefilledAnswers ?? '' : draft?.answersInput ?? '';
@@ -1843,21 +1858,48 @@ function StationApp({
       pushAlert('Nejprve načti hlídku.');
       return;
     }
-    initializeFormForPatrol(scannerPatrol, {
-      waitSeconds: pendingRecoveredWaitMinutes && pendingRecoveredWaitMinutes > 0
-        ? pendingRecoveredWaitMinutes * 60
-        : 0,
-    });
-    if (stationCode === 'T' && scannerSource === 'summary') {
-      setSelectedSummaryCategory(null);
-    }
-    pushAlert(`Hlídka ${scannerPatrol.team_name} je připravena k obsluze.`);
-    setShowPatrolChoice(false);
-    setPendingRecoveredWaitMinutes(null);
+    void (async () => {
+      let patrolForForm = scannerPatrol;
+      if (stationCode === 'T' && isOnline && !scannerPatrol.id.startsWith('manual-')) {
+        const { data, error, status } = await supabase
+          .from('patrols')
+          .select('team_name, note')
+          .eq('event_id', eventId)
+          .eq('id', scannerPatrol.id)
+          .maybeSingle();
+
+        if (error) {
+          reportSupabaseError('patrols.profile', error, status);
+        } else if (data) {
+          patrolForForm = {
+            ...scannerPatrol,
+            team_name: typeof data.team_name === 'string' && data.team_name.trim().length > 0
+              ? data.team_name.trim()
+              : scannerPatrol.team_name,
+            patrol_members: typeof data.note === 'string' ? data.note : null,
+          };
+        }
+      }
+
+      initializeFormForPatrol(patrolForForm, {
+        waitSeconds: pendingRecoveredWaitMinutes && pendingRecoveredWaitMinutes > 0
+          ? pendingRecoveredWaitMinutes * 60
+          : 0,
+      });
+      if (stationCode === 'T' && scannerSource === 'summary') {
+        setSelectedSummaryCategory(null);
+      }
+      pushAlert(`Hlídka ${patrolForForm.team_name} je připravena k obsluze.`);
+      setShowPatrolChoice(false);
+      setPendingRecoveredWaitMinutes(null);
+    })();
   }, [
     enableTicketQueue,
     handleAddTicket,
     initializeFormForPatrol,
+    isOnline,
+    eventId,
+    reportSupabaseError,
     pendingRecoveredWaitMinutes,
     pushAlert,
     scannerPatrol,
@@ -2605,6 +2647,8 @@ function StationApp({
     setShowPatrolChoice(false);
     setPoints('');
     setNote('');
+    setCalcTeamNameDraft('');
+    setCalcPatrolMembersDraft('');
     setAnswersInput('');
     setAnswersError('');
     setAutoScore({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
@@ -2815,7 +2859,7 @@ function StationApp({
           const variants = getPatrolCodeVariants(normalized);
           const { data: fetched, error, status } = await supabase
             .from('patrols')
-            .select('id, team_name, category, sex, patrol_code')
+            .select('id, team_name, category, sex, patrol_code, note')
             .eq('event_id', eventId)
             .in('patrol_code', variants.length ? variants : [normalized])
             .maybeSingle();
@@ -2841,7 +2885,14 @@ function StationApp({
               return false;
             }
           } else {
-            data = fetched as Patrol;
+            data = {
+              id: fetched.id,
+              team_name: fetched.team_name,
+              category: fetched.category,
+              sex: fetched.sex,
+              patrol_code: fetched.patrol_code,
+              patrol_members: typeof fetched.note === 'string' ? fetched.note : null,
+            } as Patrol;
           }
         } else if (options?.allowFallback) {
           const fallback = createManualPatrolFromCode(normalized);
@@ -3146,6 +3197,14 @@ function StationApp({
         };
       });
 
+      const normalizedCalcTeamName = calcTeamNameDraft.trim();
+      const effectiveTeamName = stationCode === 'T'
+        ? normalizedCalcTeamName || activePatrol.team_name
+        : activePatrol.team_name;
+      const normalizedCalcMembers = stationCode === 'T'
+        ? normalizePatrolMembersText(calcPatrolMembersDraft)
+        : null;
+
       try {
         const queued = await enqueueStationScore({
           event_id: eventId,
@@ -3161,7 +3220,8 @@ function StationApp({
           start_time: null,
           finish_time: null,
           patrol_code: resolvePatrolCode(activePatrol),
-          team_name: activePatrol.team_name,
+          team_name: effectiveTeamName,
+          patrol_members: stationCode === 'T' ? normalizedCalcMembers : undefined,
           sex: activePatrol.sex,
         });
         if (!queued) {
@@ -3223,6 +3283,8 @@ function StationApp({
     },
     [
       activePatrol,
+      calcPatrolMembersDraft,
+      calcTeamNameDraft,
       enqueueStationScore,
       eventId,
       loadScoreReview,
@@ -3230,6 +3292,7 @@ function StationApp({
       resolvePatrolCode,
       scoreReviewRows,
       scoreReviewState,
+      stationCode,
     ],
   );
 
@@ -3337,6 +3400,18 @@ function StationApp({
         })()
       : manualWaitMinutes;
 
+    const normalizedCalcTeamName = calcTeamNameDraft.trim();
+    const effectiveTeamName = stationCode === 'T'
+      ? normalizedCalcTeamName
+      : activePatrol.team_name;
+    if (stationCode === 'T' && effectiveTeamName.length === 0) {
+      pushAlert('Název oddílu nesmí být prázdný.');
+      return;
+    }
+    const effectivePatrolMembers = stationCode === 'T'
+      ? normalizePatrolMembersText(calcPatrolMembersDraft)
+      : null;
+
     const now = new Date().toISOString();
     const arrivalIso = arrivedAt || now;
     const effectivePatrolCode = resolvePatrolCode(activePatrol);
@@ -3347,8 +3422,9 @@ function StationApp({
       category: activePatrol.category,
       arrived_at: arrivalIso,
       patrol_code: effectivePatrolCode,
-      team_name: activePatrol.team_name,
+      team_name: effectiveTeamName,
       sex: activePatrol.sex,
+      patrol_members: stationCode === 'T' ? effectivePatrolMembers : undefined,
     };
 
     if (stationCode === 'T') {
@@ -3434,6 +3510,26 @@ function StationApp({
           return row;
         }),
       );
+      setActivePatrol((current) =>
+        current
+          ? {
+            ...current,
+            team_name: effectiveTeamName,
+            patrol_members: effectivePatrolMembers,
+          }
+          : current,
+      );
+      setScannerPatrol((current) =>
+        current && current.id === activePatrol.id
+          ? {
+            ...current,
+            team_name: effectiveTeamName,
+            patrol_members: effectivePatrolMembers,
+          }
+          : current,
+      );
+      setCalcTeamNameDraft(effectiveTeamName);
+      setCalcPatrolMembersDraft(effectivePatrolMembers ?? '');
     } else {
       const queued = await enqueueStationScore({
         ...baseSubmissionData,
@@ -3476,6 +3572,8 @@ function StationApp({
     }
   }, [
     autoScore,
+    calcPatrolMembersDraft,
+    calcTeamNameDraft,
     note,
     activePatrol,
     points,
@@ -4246,6 +4344,33 @@ function StationApp({
                   <strong>{activePatrol.team_name}</strong>
                   <span>{formatPatrolMetaLabel(activePatrol)}</span>
                 </div>
+                {stationCode === 'T' ? (
+                  <div className="calc-patrol-profile">
+                    <div className="calc-time-input">
+                      <label htmlFor="calc-team-name-input">Název oddílu</label>
+                      <input
+                        id="calc-team-name-input"
+                        type="text"
+                        value={calcTeamNameDraft}
+                        onChange={(event) => setCalcTeamNameDraft(event.target.value)}
+                        maxLength={120}
+                        placeholder="Např. 4. PTO Brno"
+                      />
+                    </div>
+                    <div className="calc-time-input">
+                      <label htmlFor="calc-members-input">Jména dětí</label>
+                      <textarea
+                        id="calc-members-input"
+                        value={calcPatrolMembersDraft}
+                        onChange={(event) => setCalcPatrolMembersDraft(event.target.value)}
+                        rows={3}
+                        maxLength={300}
+                        placeholder={'Jedno jméno na řádek\nnebo oddělené čárkou'}
+                      />
+                      <p className="card-hint">Uloží se do karty hlídky a výsledků.</p>
+                    </div>
+                  </div>
+                ) : null}
                 {stationCode !== 'T' ? (
                   <div className="wait-field">
                     <span className="wait-label">Čekání</span>

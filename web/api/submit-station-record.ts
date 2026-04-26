@@ -22,6 +22,7 @@ type SubmissionPayload = {
   finish_time: string | null;
   patrol_code: string;
   team_name?: string;
+  patrol_members?: string | null;
   sex?: string;
 };
 
@@ -80,6 +81,19 @@ function isValidDateString(value: string) {
   return Number.isFinite(Date.parse(value));
 }
 
+function normalizePatrolMembers(value: string | null | undefined) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.replace(/\r\n?/g, '\n');
+  const compact = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
+  return compact.length > 0 ? compact : null;
+}
+
 function ensurePayload(body: unknown): SubmissionPayload | null {
   if (!body || typeof body !== 'object') {
     return null;
@@ -125,6 +139,16 @@ function ensurePayload(body: unknown): SubmissionPayload | null {
     return null;
   }
   if (typeof payload.note !== 'string') {
+    return null;
+  }
+  if (payload.team_name !== undefined && typeof payload.team_name !== 'string') {
+    return null;
+  }
+  if (
+    payload.patrol_members !== undefined
+    && payload.patrol_members !== null
+    && typeof payload.patrol_members !== 'string'
+  ) {
     return null;
   }
   return payload;
@@ -382,6 +406,33 @@ export default async function handler(req: any, res: any) {
   if (submitError) {
     logError('submit_station_record failed', submitError);
     return respond(res, 500, 'Score insert failed', submitError.message);
+  }
+
+  if (hasCalcPrivileges) {
+    const patrolUpdates: Record<string, unknown> = {};
+    if (typeof body.team_name === 'string') {
+      const nextTeamName = body.team_name.trim();
+      if (nextTeamName.length === 0) {
+        return res.status(400).json({ error: 'Invalid team name' });
+      }
+      patrolUpdates.team_name = nextTeamName;
+    }
+    if (body.patrol_members !== undefined) {
+      patrolUpdates.note = normalizePatrolMembers(body.patrol_members);
+    }
+
+    if (Object.keys(patrolUpdates).length > 0) {
+      const { error: patrolUpdateError } = await supabaseAdmin
+        .from('patrols')
+        .update(patrolUpdates)
+        .eq('event_id', body.event_id)
+        .eq('id', resolvedPatrolId);
+
+      if (patrolUpdateError) {
+        logError('patrol update failed', patrolUpdateError);
+        return respond(res, 500, 'Patrol update failed', patrolUpdateError.message);
+      }
+    }
   }
 
   const { data: score, error: scoreError } = await supabaseAdmin

@@ -46,6 +46,7 @@ type SubmissionPayload = {
   finish_time: string | null;
   patrol_code: string;
   team_name?: string;
+  patrol_members?: string | null;
   sex?: string;
 };
 
@@ -107,6 +108,36 @@ function isValidDateString(value: string) {
   return Number.isFinite(Date.parse(value));
 }
 
+function normalizePatrolCodeVariants(raw: string) {
+  const cleaned = raw.trim().toUpperCase();
+  const match = cleaned.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  if (!match) {
+    return [cleaned];
+  }
+
+  const parsed = Number.parseInt(match[3], 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return [cleaned];
+  }
+
+  const noPad = `${match[1]}${match[2]}-${parsed}`;
+  const pad = `${match[1]}${match[2]}-${String(parsed).padStart(2, '0')}`;
+  return noPad === pad ? [noPad] : [noPad, pad];
+}
+
+function normalizePatrolMembers(value: string | null | undefined) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.replace(/\r\n?/g, '\n');
+  const compact = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
+  return compact.length > 0 ? compact : null;
+}
+
 function ensurePayload(body: unknown): SubmissionPayload | null {
   if (!body || typeof body !== 'object') {
     return null;
@@ -152,6 +183,16 @@ function ensurePayload(body: unknown): SubmissionPayload | null {
     return null;
   }
   if (typeof payload.note !== 'string') {
+    return null;
+  }
+  if (payload.team_name !== undefined && typeof payload.team_name !== 'string') {
+    return null;
+  }
+  if (
+    payload.patrol_members !== undefined
+    && payload.patrol_members !== null
+    && typeof payload.patrol_members !== 'string'
+  ) {
     return null;
   }
   return payload;
@@ -220,6 +261,28 @@ Deno.serve(async (req) => {
 
   if (tokenEventId !== body.event_id) {
     return jsonResponse({ error: 'Forbidden' }, 403);
+  }
+
+  let resolvedPatrolId = body.patrol_id;
+  if (!UUID_REGEX.test(resolvedPatrolId)) {
+    const patrolCodeVariants = normalizePatrolCodeVariants(body.patrol_code);
+    const { data: patrol, error: patrolError } = await supabaseAdmin
+      .from('patrols')
+      .select('id')
+      .eq('event_id', body.event_id)
+      .in('patrol_code', patrolCodeVariants)
+      .maybeSingle();
+
+    if (patrolError) {
+      logError('patrols lookup failed', patrolError);
+      return jsonResponse({ error: 'Patrol lookup failed' }, 500);
+    }
+
+    if (!patrol?.id) {
+      return jsonResponse({ error: 'Unknown patrol code' }, 400);
+    }
+
+    resolvedPatrolId = patrol.id;
   }
 
   const { data: tokenStation, error: tokenStationError } = await supabaseAdmin
@@ -306,7 +369,7 @@ Deno.serve(async (req) => {
   const { error: submitError } = await supabaseAdmin.rpc('submit_station_record', {
     p_event_id: body.event_id,
     p_station_id: body.station_id,
-    p_patrol_id: body.patrol_id,
+    p_patrol_id: resolvedPatrolId,
     p_category: body.category,
     p_arrived_at: body.arrived_at,
     p_wait_minutes: body.wait_minutes,
@@ -326,12 +389,39 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Score insert failed' }, 500);
   }
 
+  if (hasCalcPrivileges) {
+    const patrolUpdates: Record<string, unknown> = {};
+    if (typeof body.team_name === 'string') {
+      const nextTeamName = body.team_name.trim();
+      if (nextTeamName.length === 0) {
+        return jsonResponse({ error: 'Invalid team name' }, 400);
+      }
+      patrolUpdates.team_name = nextTeamName;
+    }
+    if (body.patrol_members !== undefined) {
+      patrolUpdates.note = normalizePatrolMembers(body.patrol_members);
+    }
+
+    if (Object.keys(patrolUpdates).length > 0) {
+      const { error: patrolUpdateError } = await supabaseAdmin
+        .from('patrols')
+        .update(patrolUpdates)
+        .eq('event_id', body.event_id)
+        .eq('id', resolvedPatrolId);
+
+      if (patrolUpdateError) {
+        logError('patrol update failed', patrolUpdateError);
+        return jsonResponse({ error: 'Patrol update failed' }, 500);
+      }
+    }
+  }
+
   const { data: score, error: scoreError } = await supabaseAdmin
     .from('station_scores')
     .select('*')
     .eq('event_id', body.event_id)
     .eq('station_id', body.station_id)
-    .eq('patrol_id', body.patrol_id)
+    .eq('patrol_id', resolvedPatrolId)
     .maybeSingle();
 
   if (scoreError) {

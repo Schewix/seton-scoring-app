@@ -793,6 +793,14 @@ body {
   box-shadow: 0 16px 36px rgba(44, 67, 52, 0.12);
 }
 
+.calc-patrol-profile {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  background: var(--surface);
+  box-shadow: 0 16px 36px rgba(44, 67, 52, 0.12);
+}
+
 .calc-time-header h3,
 .calc-checklist h3,
 .calc-auto h3 {
@@ -820,7 +828,33 @@ body {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.calc-time-input input[type='text'],
+.calc-time-input textarea {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface-alt);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.calc-time-input textarea {
+  resize: vertical;
+  min-height: 76px;
+  font-family: inherit;
+}
+
 .calc-time-input input[type='time']:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-color: var(--py-blue);
+}
+
+.calc-time-input input[type='text']:focus-visible,
+.calc-time-input textarea:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
   border-color: var(--py-blue);

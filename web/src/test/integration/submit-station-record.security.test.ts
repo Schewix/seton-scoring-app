@@ -224,6 +224,8 @@ describe('submit-station-record api security', () => {
       headers: { authorization: `Bearer ${token}` },
       body: basePayload(ctx, {
         station_id: stationOtherId,
+        team_name: '4. PTO Test',
+        patrol_members: 'Alice\nBob\nCyril',
       }),
     };
     const res = createMockRes();
@@ -239,6 +241,41 @@ describe('submit-station-record api security', () => {
       .eq('patrol_id', ctx.patrolId);
 
     expect(scores?.length ?? 0).toBe(1);
+
+    const { data: patrol } = await supabaseAdmin
+      .from('patrols')
+      .select('team_name, note')
+      .eq('event_id', ctx.eventId)
+      .eq('id', ctx.patrolId)
+      .maybeSingle();
+
+    expect(patrol?.team_name).toBe('4. PTO Test');
+    expect(patrol?.note).toBe('Alice\nBob\nCyril');
+  });
+
+  it('does not allow non-calc stations to update patrol profile fields', async () => {
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: `Bearer ${ctx.accessToken}` },
+      body: basePayload(ctx, {
+        team_name: 'Neplatná změna',
+        patrol_members: 'X\nY',
+      }),
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+
+    const { data: patrol } = await supabaseAdmin
+      .from('patrols')
+      .select('team_name, note')
+      .eq('event_id', ctx.eventId)
+      .eq('id', ctx.patrolId)
+      .maybeSingle();
+
+    expect(patrol?.team_name).toBe('Test patrol');
+    expect(patrol?.note ?? null).toBeNull();
   });
 
   it('rejects event/station mismatch combinations', async () => {

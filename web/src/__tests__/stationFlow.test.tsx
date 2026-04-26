@@ -834,6 +834,14 @@ describe('station workflow', () => {
 
     await screen.findByText('Správně: 12 / 12');
 
+    const teamNameInput = await screen.findByLabelText('Název oddílu');
+    await user.clear(teamNameInput);
+    await user.type(teamNameInput, '3. PTO Dubínek');
+
+    const membersInput = await screen.findByLabelText('Jména dětí');
+    await user.clear(membersInput);
+    await user.type(membersInput, 'Adam{enter}Bára{enter}Cyril');
+
     const startTimeInput = await screen.findByLabelText('Start (HH:MM)');
     fireEvent.change(startTimeInput, { target: { value: '08:05' } });
 
@@ -868,6 +876,8 @@ describe('station workflow', () => {
     expect(timePayload?.start_time).toBeTruthy();
     expect(timePayload?.finish_time).toBeTruthy();
     expect(timePayload?.client_event_id).toBeTruthy();
+    expect(timePayload?.team_name).toBe('3. PTO Dubínek');
+    expect(timePayload?.patrol_members).toBe('Adam\nBára\nCyril');
     const editedStartTime = new Date(String(timePayload?.start_time));
     expect(editedStartTime.getHours()).toBe(8);
     expect(editedStartTime.getMinutes()).toBe(5);
@@ -879,6 +889,8 @@ describe('station workflow', () => {
     expect(targetPayload?.points).toBe(12);
     expect(targetPayload?.finish_time).toBeNull();
     expect(targetPayload?.client_event_id).toBeTruthy();
+    expect(targetPayload?.team_name).toBe('3. PTO Dubínek');
+    expect(targetPayload?.patrol_members).toBe('Adam\nBára\nCyril');
 
     await waitFor(async () => {
       const storedQueue = await readOutbox();
