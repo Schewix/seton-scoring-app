@@ -564,6 +564,14 @@ function extractPtoTroopsFromPatrol(
   return Array.from(found.values()).sort(compareTroopSheetOrder);
 }
 
+function isForcedLeagueDisqualifiedTeam(teamName: string | null | undefined): boolean {
+  const normalized = normalizeTroopLookupKey(normalizeText(teamName));
+  if (!normalized) {
+    return false;
+  }
+  return normalized.includes('duha expedice');
+}
+
 function normalizeSheetNameKey(value: string): string | null {
   const normalized = normalizeText(value);
   if (!normalized) {
@@ -1325,6 +1333,7 @@ function AdminDashboard({
     try {
       type LeagueExportRow = {
         patrol_code: string | null;
+        team_name: string | null;
         category: string | null;
         sex: string | null;
         disqualified: boolean | null;
@@ -1351,7 +1360,7 @@ function AdminDashboard({
 
       const { data, error } = await supabase
         .from('results_ranked')
-        .select('patrol_code, category, sex, disqualified, rank_in_bracket, total_points, points_no_t, pure_seconds')
+        .select('patrol_code, team_name, category, sex, disqualified, rank_in_bracket, total_points, points_no_t, pure_seconds')
         .eq('event_id', eventId);
 
       if (error) {
@@ -1365,7 +1374,7 @@ function AdminDashboard({
           if (!bracketKey) {
             return null;
           }
-          const disqualifiedFlag = row.disqualified === true;
+          const disqualifiedFlag = row.disqualified === true || isForcedLeagueDisqualifiedTeam(row.team_name);
           const totalPoints = toNumeric(row.total_points);
           const pointsNoT = toNumeric(row.points_no_t ?? row.points_no_T ?? null);
           return {
@@ -1848,8 +1857,8 @@ function AdminDashboard({
         } else {
           rows.forEach((row, index) => {
             const displayRank = name.length === 1
-              ? (row.disqualified ? 'DSQ' : String(index + 1))
-              : (row.disqualified ? 'DSQ' : (toNumeric(row.rank_in_bracket) ?? ''));
+              ? (row.disqualifiedFlag ? 'DSQ' : String(index + 1))
+              : (row.disqualifiedFlag ? 'DSQ' : (toNumeric(row.rank_in_bracket) ?? ''));
             const worksheetRow = worksheet.addRow([
               displayRank,
               parsePatrolCodeParts(row.patrol_code).normalizedCode || '—',
