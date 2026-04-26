@@ -837,6 +837,16 @@ describe('station workflow', () => {
     const startTimeInput = await screen.findByLabelText('Start (HH:MM)');
     fireEvent.change(startTimeInput, { target: { value: '08:05' } });
 
+    const summaryHeading = await screen.findByRole('heading', { name: 'Přepis do karty hlídky' });
+    const summaryCard = summaryHeading.closest('.calc-points-summary');
+    if (!summaryCard) {
+      throw new Error('Missing calc points summary card');
+    }
+    await waitFor(() => {
+      expect(summaryCard).toHaveTextContent(/Body celkem:\s*24/);
+      expect(summaryCard).toHaveTextContent(/Body bez T:\s*12/);
+    });
+
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));

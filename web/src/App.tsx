@@ -3647,6 +3647,8 @@ function StationApp({
       return { total: null as number | null, withoutT: null as number | null };
     }
 
+    const hasTimeStationRow = scoreReviewRows.some((row) => row.stationCode === 'T');
+
     let hasAny = false;
     let total = 0;
     let withoutT = 0;
@@ -3678,6 +3680,11 @@ function StationApp({
         withoutT += pointsValue;
       }
     });
+
+    if (!hasTimeStationRow && typeof timePoints === 'number' && Number.isFinite(timePoints)) {
+      hasAny = true;
+      total += timePoints;
+    }
 
     if (!hasAny) {
       return { total: null as number | null, withoutT: null as number | null };
