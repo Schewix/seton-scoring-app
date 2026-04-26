@@ -56,5 +56,5 @@ export function computeTimePoints(
     return 12;
   }
   const penaltySteps = Math.ceil(overSeconds / (10 * 60));
-  return 12 - penaltySteps;
+  return Math.max(-12, 12 - penaltySteps);
 }

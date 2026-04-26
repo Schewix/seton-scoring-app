@@ -61,9 +61,16 @@ async function processSubmission(
   operation: z.infer<typeof operationSchema>,
   signed: SignedSubmissionPayload,
   judgeDisplayName: string,
+  options?: { allowNegativePoints?: boolean },
 ) {
   const submission = signed.data;
-  if (!Number.isInteger(submission.points) || submission.points < 0 || submission.points > 12) {
+  const allowNegativePoints = options?.allowNegativePoints === true;
+  const minPoints = allowNegativePoints ? -12 : 0;
+  if (
+    !Number.isInteger(submission.points) ||
+    submission.points < minPoints ||
+    submission.points > 12
+  ) {
     throw new Error('invalid-points');
   }
 
@@ -317,7 +324,9 @@ async function handleSyncRequest(req: Request, res: Response) {
         continue;
       }
 
-      const result = await processSubmission(operation, parsed, judge.display_name);
+      const result = await processSubmission(operation, parsed, judge.display_name, {
+        allowNegativePoints: (station.code ?? '').trim().toUpperCase() === 'T',
+      });
       results.push(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown-error';

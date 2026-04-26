@@ -33,6 +33,10 @@ describe('timeScoring', () => {
     expect(computeTimePoints('M', (3 * 60 + 57) * 60)).toBe(2);
   });
 
+  it('never goes below -12 points', () => {
+    expect(computeTimePoints('M', 1000 * 60)).toBe(-12);
+  });
+
   it('returns null for unsupported categories or missing time', () => {
     expect(computeTimePoints('X', 1000)).toBeNull();
     expect(computeTimePoints('N', null)).toBeNull();

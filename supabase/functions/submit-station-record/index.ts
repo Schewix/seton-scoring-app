@@ -214,9 +214,6 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Invalid payload' }, 400);
   }
 
-  if (body.points < 0 || body.points > 12) {
-    return jsonResponse({ error: 'Invalid points' }, 400);
-  }
   if (body.wait_minutes < 0) {
     return jsonResponse({ error: 'Invalid wait minutes' }, 400);
   }
@@ -260,7 +257,7 @@ Deno.serve(async (req) => {
 
   const { data: station, error: stationError } = await supabaseAdmin
     .from('stations')
-    .select('id')
+    .select('id, code')
     .eq('id', body.station_id)
     .eq('event_id', body.event_id)
     .maybeSingle();
@@ -270,6 +267,13 @@ Deno.serve(async (req) => {
   }
   if (!station) {
     return jsonResponse({ error: 'Invalid station for event' }, 400);
+  }
+
+  const stationCode = (station.code ?? '').trim().toUpperCase();
+  const allowNegativePoints = stationCode === 'T';
+  const minPoints = allowNegativePoints ? -12 : 0;
+  if (body.points < minPoints || body.points > 12) {
+    return jsonResponse({ error: 'Invalid points' }, 400);
   }
 
   const { data: eventState, error: eventError } = await supabaseAdmin

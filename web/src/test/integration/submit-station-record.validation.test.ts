@@ -119,6 +119,54 @@ describe('submit-station-record api validation', () => {
     await expectNoWrites(ctx.eventId);
   });
 
+  it('rejects negative points on non-time station', async () => {
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: `Bearer ${ctx.accessToken}` },
+      body: basePayload(ctx, { points: -1 }),
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+    expect(res.statusCode).toBe(400);
+    await expectNoWrites(ctx.eventId);
+  });
+
+  it('accepts -12 points on time station T', async () => {
+    await supabaseAdmin.from('stations').update({ code: 'T' }).eq('id', ctx.stationId);
+
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: `Bearer ${ctx.accessToken}` },
+      body: basePayload(ctx, { points: -12 }),
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+
+    const { data: scores } = await supabaseAdmin
+      .from('station_scores')
+      .select('points')
+      .eq('event_id', ctx.eventId);
+    expect(scores?.[0]?.points).toBe(-12);
+  });
+
+  it('rejects less than -12 points on time station T', async () => {
+    await supabaseAdmin.from('stations').update({ code: 'T' }).eq('id', ctx.stationId);
+
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: `Bearer ${ctx.accessToken}` },
+      body: basePayload(ctx, { points: -13 }),
+    };
+    const res = createMockRes();
+
+    await handler(req, res);
+    expect(res.statusCode).toBe(400);
+    await expectNoWrites(ctx.eventId);
+  });
+
   it('rejects missing required fields', async () => {
     const payload = basePayload(ctx);
     delete (payload as any).event_id;

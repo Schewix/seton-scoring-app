@@ -38,6 +38,7 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const EVENT_ID = Deno.env.get('SYNC_EVENT_ID') ?? Deno.env.get('EVENT_ID');
 const SHEET_CONFIG = Deno.env.get('SHEET_EXPORTS');
 const SYNC_SECRET = Deno.env.get('SYNC_SECRET');
+const SYNC_TIME_ZONE = Deno.env.get('SYNC_TIME_ZONE') ?? 'Europe/Prague';
 
 if (!SUPABASE_URL) {
   throw new Error('Missing SUPABASE_URL environment variable.');
@@ -100,6 +101,50 @@ function normalizeString(value: string | null | undefined): string {
   return String(value).trim();
 }
 
+function getDatePartsInTimeZone(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+  const parts = formatter.formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? '0');
+  return {
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    hour: get('hour'),
+    minute: get('minute'),
+    second: get('second'),
+  };
+}
+
+function zonedTimeToUtcIso(
+  timeZone: string,
+  parts: { year: number; month: number; day: number; hour: number; minute: number; second: number },
+) {
+  const utcGuess = new Date(
+    Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second),
+  );
+  const zoned = getDatePartsInTimeZone(utcGuess, timeZone);
+  const zonedAsUtcMs = Date.UTC(
+    zoned.year,
+    zoned.month - 1,
+    zoned.day,
+    zoned.hour,
+    zoned.minute,
+    zoned.second,
+  );
+  const shiftMs = zonedAsUtcMs - utcGuess.getTime();
+  return new Date(utcGuess.getTime() - shiftMs).toISOString();
+}
+
 function parseStartTime(value: string | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -108,16 +153,30 @@ function parseStartTime(value: string | undefined): string | null {
   const timeMatch = trimmed.match(/^([0-2]?\d):([0-5]\d)(?::([0-5]\d))?$/);
   if (timeMatch) {
     const [, hours, minutes, seconds = '00'] = timeMatch;
-    const today = new Date();
-    const iso = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate(),
-      Number.parseInt(hours, 10),
-      Number.parseInt(minutes, 10),
-      Number.parseInt(seconds, 10),
-    );
-    return iso.toISOString();
+    const today = getDatePartsInTimeZone(new Date(), SYNC_TIME_ZONE);
+    return zonedTimeToUtcIso(SYNC_TIME_ZONE, {
+      year: today.year,
+      month: today.month,
+      day: today.day,
+      hour: Number.parseInt(hours, 10),
+      minute: Number.parseInt(minutes, 10),
+      second: Number.parseInt(seconds, 10),
+    });
+  }
+
+  const fullDateTimeMatch = trimmed.match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T]([0-2]?\d):([0-5]\d)(?::([0-5]\d))?$/,
+  );
+  if (fullDateTimeMatch) {
+    const [, year, month, day, hours, minutes, seconds = '00'] = fullDateTimeMatch;
+    return zonedTimeToUtcIso(SYNC_TIME_ZONE, {
+      year: Number.parseInt(year, 10),
+      month: Number.parseInt(month, 10),
+      day: Number.parseInt(day, 10),
+      hour: Number.parseInt(hours, 10),
+      minute: Number.parseInt(minutes, 10),
+      second: Number.parseInt(seconds, 10),
+    });
   }
 
   const asDate = new Date(trimmed);

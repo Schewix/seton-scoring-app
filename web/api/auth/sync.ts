@@ -115,9 +115,12 @@ async function processSubmission(
   operation: OperationBody,
   signed: SignedSubmissionPayload,
   judgeDisplayName: string,
+  options?: { allowNegativePoints?: boolean },
 ) {
   const submission = signed.data;
-  if (!Number.isInteger(submission.points) || submission.points < 0 || submission.points > 12) {
+  const allowNegativePoints = options?.allowNegativePoints === true;
+  const minPoints = allowNegativePoints ? -12 : 0;
+  if (!Number.isInteger(submission.points) || submission.points < minPoints || submission.points > 12) {
     throw new Error('invalid-points');
   }
 
@@ -232,6 +235,7 @@ export default async function handler(req: any, res: any) {
   const results: OperationResult[] = [];
   const sessionCache = new Map<string, any>();
   const assignmentCache = new Map<string, any>();
+  const stationCodeCache = new Map<string, string>();
   const judgeCache = new Map<string, { id: string; display_name: string }>();
 
   for (const operation of operations) {
@@ -344,7 +348,30 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
-    const result = await processSubmission(operation, parsed, judge.display_name);
+      let stationCode = stationCodeCache.get(parsed.station_id);
+      if (!stationCode) {
+        const { data: stationRow, error: stationError } = await supabaseAdmin
+          .from('stations')
+          .select('id, code')
+          .eq('id', parsed.station_id)
+          .eq('event_id', parsed.event_id)
+          .maybeSingle();
+
+        if (stationError) {
+          throw stationError;
+        }
+        if (!stationRow) {
+          results.push({ id: operation.id, status: 'failed', error: 'station-not-found' });
+          continue;
+        }
+
+        stationCode = (stationRow.code ?? '').trim().toUpperCase();
+        stationCodeCache.set(parsed.station_id, stationCode);
+      }
+
+      const result = await processSubmission(operation, parsed, judge.display_name, {
+        allowNegativePoints: stationCode === 'T',
+      });
       results.push(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown-error';

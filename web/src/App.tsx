@@ -629,6 +629,7 @@ function StationApp({
   const ticketQueueRef = useRef<HTMLElement | null>(null);
   const pointsInputRef = useRef<HTMLInputElement | null>(null);
   const answersInputRef = useRef<HTMLInputElement | null>(null);
+  const activePatrolIdRef = useRef<string | null>(null);
   const [startTime, setStartTime] = useState<string | null>(null);
   const [startTimeInput, setStartTimeInput] = useState('');
   const [finishTimeInput, setFinishTimeInput] = useState('');
@@ -648,6 +649,10 @@ function StationApp({
     () => isChangePasswordPathname(currentPathname),
     [currentPathname],
   );
+
+  useEffect(() => {
+    activePatrolIdRef.current = activePatrol?.id ?? null;
+  }, [activePatrol]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1089,11 +1094,25 @@ function StationApp({
     setSavingOutboxEntryId(null);
   }, []);
 
+  const isTimeStationOutboxEntry = useCallback(
+    (entry: OutboxEntry) => stationCode === 'T' && entry.payload.station_id === stationId,
+    [stationCode, stationId],
+  );
+
   const handleSaveOutboxEntry = useCallback(
     async (entry: OutboxEntry) => {
       const pointsValue = Number(editingOutboxPoints.trim());
-      if (!Number.isInteger(pointsValue) || pointsValue < 0 || pointsValue > 12) {
-        setEditingOutboxError('Body musí být celé číslo 0–12.');
+      const allowNegativePoints = isTimeStationOutboxEntry(entry);
+      const hasValidPoints =
+        Number.isInteger(pointsValue) &&
+        pointsValue <= 12 &&
+        (allowNegativePoints ? pointsValue >= -12 : pointsValue >= 0);
+      if (!hasValidPoints) {
+        setEditingOutboxError(
+          allowNegativePoints
+            ? 'Body musí být celé číslo -12 až 12.'
+            : 'Body musí být celé číslo 0–12.',
+        );
         return;
       }
 
@@ -1153,6 +1172,7 @@ function StationApp({
       editingOutboxAnswers,
       editingOutboxPoints,
       editingOutboxWait,
+      isTimeStationOutboxEntry,
       outboxItems,
       pushAlert,
       updateOutboxState,
@@ -1471,6 +1491,35 @@ function StationApp({
     [eventId, reportSupabaseError, stationCode, stationId],
   );
 
+  const loadTargetAnswers = useCallback(
+    async (patrolId: string) => {
+      if (stationCode !== 'T') {
+        return null;
+      }
+
+      const { data, error, status } = await supabase
+        .from('station_quiz_responses')
+        .select('answers, updated_at')
+        .eq('event_id', eventId)
+        .eq('patrol_id', patrolId)
+        .order('updated_at', { ascending: false });
+
+      if (error) {
+        reportSupabaseError('station_quiz_responses.load', error, status);
+        console.error('Failed to load target answers', error);
+        return null;
+      }
+
+      const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
+      const answers = typeof row?.answers === 'string' ? row.answers : '';
+      if (!answers) {
+        return null;
+      }
+      return normalizeAnswersInput(answers);
+    },
+    [eventId, reportSupabaseError, stationCode],
+  );
+
   const loadScoreReview = useCallback(
     async (
       patrolId: string,
@@ -1707,14 +1756,21 @@ function StationApp({
   const initializeFormForPatrol = useCallback(
     (
       data: Patrol,
-      options?: { arrivedAt?: string | null; waitSeconds?: number | null; draft?: PatrolFormDraft | null },
+      options?: {
+        arrivedAt?: string | null;
+        waitSeconds?: number | null;
+        draft?: PatrolFormDraft | null;
+        prefilledAnswers?: string | null;
+      },
     ) => {
       const draft = options?.draft ?? null;
+      const hasPrefilledAnswers = typeof options?.prefilledAnswers === 'string';
       setActivePatrol({ ...data });
       setScannerPatrol({ ...data });
       setPoints(draft?.points ?? '');
       setNote(draft?.note ?? '');
-      setAnswersInput(draft?.answersInput ?? '');
+      const initialAnswers = hasPrefilledAnswers ? options?.prefilledAnswers ?? '' : draft?.answersInput ?? '';
+      setAnswersInput(normalizeAnswersInput(initialAnswers));
       setAnswersError('');
       setScanActive(false);
       setManualCodeDraft('');
@@ -1741,6 +1797,18 @@ function StationApp({
       if (!draft) {
         void loadTimingData(data.id);
       }
+      if (isTargetStation && !draft && !hasPrefilledAnswers) {
+        void (async () => {
+          const storedAnswers = await loadTargetAnswers(data.id);
+          if (!storedAnswers) {
+            return;
+          }
+          if (activePatrolIdRef.current !== data.id) {
+            return;
+          }
+          setAnswersInput((current) => (current.trim().length > 0 ? current : storedAnswers));
+        })();
+      }
       if (canReviewStationScores && !draft) {
         void loadScoreReview(data.id, data.patrol_code, data.category, data.sex);
       }
@@ -1759,6 +1827,7 @@ function StationApp({
     [
       categoryAnswers,
       isTargetStation,
+      loadTargetAnswers,
       loadTimingData,
       loadScoreReview,
       canReviewStationScores,
@@ -3302,7 +3371,7 @@ function StationApp({
 
       const computedPureSeconds = computePureCourseSeconds({ start, finish, waitMinutes });
       const computedTimePoints = computeTimePoints(normalizedCategory, computedPureSeconds);
-      if (!Number.isInteger(computedTimePoints) || computedTimePoints < 0 || computedTimePoints > 12) {
+      if (!Number.isInteger(computedTimePoints) || computedTimePoints < -12 || computedTimePoints > 12) {
         pushAlert('Body za čas se nepodařilo spočítat. Zkontroluj vyplněné časy.');
         return;
       }
@@ -3446,9 +3515,11 @@ function StationApp({
         patrol_code: payload.patrolCode,
       };
 
-      initializeFormForPatrol(patrol, { arrivedAt: payload.createdAt });
+      initializeFormForPatrol(patrol, {
+        arrivedAt: payload.createdAt,
+        prefilledAnswers: typeof payload.normalizedAnswers === 'string' ? payload.normalizedAnswers : undefined,
+      });
       setUseTargetScoring(true);
-      setAnswersInput(normalizeAnswersInput(payload.normalizedAnswers ?? ''));
       setAnswersError('');
       setNote(payload.note ?? '');
       setShowPendingDetails(false);
@@ -4554,6 +4625,7 @@ function StationApp({
                               <tbody>
                                 {currentSessionItems.map((item, index) => {
                                   const payload = item.payload;
+                                  const allowNegativePoints = stationCode === 'T' && payload.station_id === stationId;
                                   const answers = payload.use_target_scoring
                                     ? formatAnswersForInput(payload.normalized_answers || '')
                                     : '';
@@ -4657,7 +4729,7 @@ function StationApp({
                                                 Body
                                                 <input
                                                   type="number"
-                                                  min={0}
+                                                  min={allowNegativePoints ? -12 : 0}
                                                   max={12}
                                                   inputMode="numeric"
                                                   value={editingOutboxPoints}

@@ -215,9 +215,6 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: 'Invalid payload' });
   }
 
-  if (body.points < 0 || body.points > 12) {
-    return res.status(400).json({ error: 'Invalid points' });
-  }
   if (body.wait_minutes < 0) {
     return res.status(400).json({ error: 'Invalid wait minutes' });
   }
@@ -316,7 +313,7 @@ export default async function handler(req: any, res: any) {
 
   const { data: station, error: stationError } = await supabaseAdmin
     .from('stations')
-    .select('id')
+    .select('id, code')
     .eq('id', body.station_id)
     .eq('event_id', body.event_id)
     .maybeSingle();
@@ -328,6 +325,13 @@ export default async function handler(req: any, res: any) {
 
   if (!station) {
     return res.status(400).json({ error: 'Invalid station for event' });
+  }
+
+  const stationCode = (station.code ?? '').trim().toUpperCase();
+  const allowNegativePoints = stationCode === 'T';
+  const minPoints = allowNegativePoints ? -12 : 0;
+  if (body.points < minPoints || body.points > 12) {
+    return res.status(400).json({ error: 'Invalid points' });
   }
 
   const { data: eventState, error: eventError } = await supabaseAdmin
