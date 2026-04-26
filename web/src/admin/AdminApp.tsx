@@ -53,10 +53,16 @@ const PTO_TROOP_REGISTRY: ReadonlyArray<PtoTroopRegistryEntry> = [
   { canonicalName: '21. PTO Hády', numbers: [21], aliases: ['PTO Hády', 'Hady'] },
   {
     canonicalName: 'ZS PCV',
-    numbers: [24, 25, 26, 27],
+    numbers: [14, 24, 25, 26, 27],
     aliases: [
       'ZS PCV',
       'ZSPCV',
+      '14. TSP Zeměpisná společnost PCV',
+      '14. TSP Zemepisna spolecnost PCV',
+      'TSP Zeměpisná společnost PCV',
+      'TSP Zemepisna spolecnost PCV',
+      'Zeměpisná společnost PCV',
+      'Zemepisna spolecnost PCV',
       '24. PTO života v přírodě',
       '25. PTO Ochrany přírody',
       '26. PTO Kulturní historie',
@@ -2429,20 +2435,22 @@ function AdminDashboard({
       if (!contributionsByTroop.size) {
         zlWorksheet.addRow(['—', 'Žádný oddíl PTO', '', '', '', '', '']);
       } else {
+        const compareTroopContributionsByPoints = (a: TroopContribution, b: TroopContribution) => {
+          if (a.sourcePoints !== b.sourcePoints) {
+            return b.sourcePoints - a.sourcePoints;
+          }
+          if (a.points !== b.points) {
+            return b.points - a.points;
+          }
+          return comparePatrolOrder(
+            { patrol_code: a.patrolCode },
+            { patrol_code: b.patrolCode },
+          );
+        };
+
         const sortedTroopScores = Array.from(contributionsByTroop.entries())
           .map(([troopName, contributions]) => {
-            const sortedContributions = [...contributions].sort((a, b) => {
-              if (a.points !== b.points) {
-                return b.points - a.points;
-              }
-              if (a.sourcePoints !== b.sourcePoints) {
-                return b.sourcePoints - a.sourcePoints;
-              }
-              return comparePatrolOrder(
-                { patrol_code: a.patrolCode },
-                { patrol_code: b.patrolCode },
-              );
-            });
+            const sortedContributions = [...contributions].sort(compareTroopContributionsByPoints);
             const countedContributions = sortedContributions.slice(0, 4);
             const performancePoints = countedContributions.reduce((sum, item) => sum + item.points, 0);
             const totalPoints = (performancePoints + participationPoints) * setonCoefficient;
