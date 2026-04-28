@@ -564,14 +564,6 @@ function extractPtoTroopsFromPatrol(
   return Array.from(found.values()).sort(compareTroopSheetOrder);
 }
 
-function isForcedLeagueDisqualifiedTeam(teamName: string | null | undefined): boolean {
-  const normalized = normalizeTroopLookupKey(normalizeText(teamName));
-  if (!normalized) {
-    return false;
-  }
-  return normalized.includes('duha expedice');
-}
-
 function normalizeSheetNameKey(value: string): string | null {
   const normalized = normalizeText(value);
   if (!normalized) {
@@ -1374,7 +1366,7 @@ function AdminDashboard({
           if (!bracketKey) {
             return null;
           }
-          const disqualifiedFlag = row.disqualified === true || isForcedLeagueDisqualifiedTeam(row.team_name);
+          const disqualifiedFlag = row.disqualified === true;
           const totalPoints = toNumeric(row.total_points);
           const pointsNoT = toNumeric(row.points_no_t ?? row.points_no_T ?? null);
           return {
@@ -1807,12 +1799,16 @@ function AdminDashboard({
 
       scoredRows.forEach((row) => {
         const category = row.bracketKey.slice(0, 1);
-        if (mergeByCategory.get(category)) {
+        const mergedCategoryEnabled = mergeByCategory.get(category);
+        const keepSplitSheetsInMergedMode = category === 'S';
+        if (mergedCategoryEnabled) {
           if (!groupedByMergedCategory.has(category)) {
             groupedByMergedCategory.set(category, []);
           }
           groupedByMergedCategory.get(category)!.push(row);
-          return;
+          if (!keepSplitSheetsInMergedMode) {
+            return;
+          }
         }
         groupedByBracket.get(row.bracketKey)?.push(row);
       });
@@ -1826,17 +1822,22 @@ function AdminDashboard({
 
       const exportSheets: Array<{ name: string; rows: LeagueExportScoredRow[] }> = [];
       (['N', 'M', 'S', 'R'] as const).forEach((category) => {
-        if (mergeByCategory.get(category)) {
+        const boysKey = `${category}H`;
+        const girlsKey = `${category}D`;
+        const mergedCategoryEnabled = mergeByCategory.get(category) === true;
+        const includeSplitSheets = !mergedCategoryEnabled || category === 'S';
+
+        if (includeSplitSheets) {
+          exportSheets.push({ name: boysKey, rows: groupedByBracket.get(boysKey) ?? [] });
+          exportSheets.push({ name: girlsKey, rows: groupedByBracket.get(girlsKey) ?? [] });
+        }
+
+        if (mergedCategoryEnabled) {
           exportSheets.push({
             name: category,
             rows: groupedByMergedCategory.get(category) ?? [],
           });
-          return;
         }
-        const boysKey = `${category}H`;
-        const girlsKey = `${category}D`;
-        exportSheets.push({ name: boysKey, rows: groupedByBracket.get(boysKey) ?? [] });
-        exportSheets.push({ name: girlsKey, rows: groupedByBracket.get(girlsKey) ?? [] });
       });
 
       const workbook = new ExcelJS.Workbook();
@@ -1846,14 +1847,13 @@ function AdminDashboard({
           'Pořadí',
           'Číslo hlídky',
           'Body celkem',
-          'Body bez času',
           'Body ZL bez cut-off',
           'Body ZL s cut-off',
           'Body ZL gauss s cut-off',
           'Body ZL gauss otevřený cut-off',
         ]);
         if (rows.length === 0) {
-          worksheet.addRow(['—', '—', '', '', '', '', '', '']);
+          worksheet.addRow(['—', '—', '', '', '', '', '']);
         } else {
           rows.forEach((row, index) => {
             const displayRank = name.length === 1
@@ -1863,35 +1863,34 @@ function AdminDashboard({
               displayRank,
               parsePatrolCodeParts(row.patrol_code).normalizedCode || '—',
               toNumeric(row.total_points) ?? '',
-              toNumeric(row.points_no_t ?? row.points_no_T ?? null) ?? '',
               row.zlPointsNoCutoff,
               row.zlPointsWithCutoff,
               row.zlPointsGaussWithCutoff,
               row.zlPointsGaussOpenCutoff,
             ]);
             if (!row.disqualifiedFlag && !row.droppedFlag) {
-              const noCutoffCell = worksheetRow.getCell(5);
+              const noCutoffCell = worksheetRow.getCell(4);
               noCutoffCell.font = {
                 ...(noCutoffCell.font ?? {}),
                 bold: true,
               };
             }
             if (!row.disqualifiedFlag && !row.cutoffDropped) {
-              const withCutoffCell = worksheetRow.getCell(6);
+              const withCutoffCell = worksheetRow.getCell(5);
               withCutoffCell.font = {
                 ...(withCutoffCell.font ?? {}),
                 bold: true,
               };
             }
             if (!row.disqualifiedFlag && !row.gaussCutoffDropped) {
-              const gaussWithCutoffCell = worksheetRow.getCell(7);
+              const gaussWithCutoffCell = worksheetRow.getCell(6);
               gaussWithCutoffCell.font = {
                 ...(gaussWithCutoffCell.font ?? {}),
                 bold: true,
               };
             }
             if (!row.disqualifiedFlag && !row.gaussOpenCutoffDropped) {
-              const gaussOpenCutoffCell = worksheetRow.getCell(8);
+              const gaussOpenCutoffCell = worksheetRow.getCell(7);
               gaussOpenCutoffCell.font = {
                 ...(gaussOpenCutoffCell.font ?? {}),
                 bold: true,
@@ -1901,7 +1900,7 @@ function AdminDashboard({
           const cutoffStartIndex = rows.findIndex((row) => row.cutoffDropped && !row.disqualifiedFlag);
           if (cutoffStartIndex > 0) {
             const cutoffRow = worksheet.getRow(cutoffStartIndex + 2);
-            [5, 6].forEach((column) => {
+            [4, 5].forEach((column) => {
               const cell = cutoffRow.getCell(column);
               cell.border = {
                 ...cell.border,
@@ -1912,7 +1911,7 @@ function AdminDashboard({
           const gaussCutoffStartIndex = rows.findIndex((row) => row.gaussCutoffDropped && !row.disqualifiedFlag);
           if (gaussCutoffStartIndex > 0) {
             const gaussCutoffRow = worksheet.getRow(gaussCutoffStartIndex + 2);
-            const cell = gaussCutoffRow.getCell(7);
+            const cell = gaussCutoffRow.getCell(6);
             cell.border = {
               ...cell.border,
               top: { style: 'thick', color: { argb: 'FFE53935' } },
@@ -1923,7 +1922,7 @@ function AdminDashboard({
           );
           if (gaussOpenCutoffStartIndex > 0) {
             const gaussOpenCutoffRow = worksheet.getRow(gaussOpenCutoffStartIndex + 2);
-            const cell = gaussOpenCutoffRow.getCell(8);
+            const cell = gaussOpenCutoffRow.getCell(7);
             cell.border = {
               ...cell.border,
               top: { style: 'thick', color: { argb: 'FFE53935' } },
@@ -1934,7 +1933,6 @@ function AdminDashboard({
           { width: 10 },
           { width: 16 },
           { width: 14 },
-          { width: 16 },
           { width: 18 },
           { width: 16 },
           { width: 22 },
@@ -2047,12 +2045,18 @@ function AdminDashboard({
         });
 
         let patrolCodeColumn: number | null = null;
+        let zlPointsGaussCutoffColumn: number | null = null;
         let zlPointsColumn: number | null = null;
         let zlPointsFallbackColumn: number | null = null;
 
         headerByColumn.forEach((headerKey, columnNumber) => {
           if (headerKey.includes('cislohlidky') || headerKey === 'hlidka') {
             patrolCodeColumn = columnNumber;
+            return;
+          }
+
+          if (headerKey === 'bodyzlgaussscutoff' || headerKey === 'bodyzlgausscutoff') {
+            zlPointsGaussCutoffColumn = columnNumber;
             return;
           }
 
@@ -2071,7 +2075,7 @@ function AdminDashboard({
           }
         });
 
-        const pointsColumn = zlPointsColumn ?? zlPointsFallbackColumn;
+        const pointsColumn = zlPointsGaussCutoffColumn ?? zlPointsColumn ?? zlPointsFallbackColumn;
         if (patrolCodeColumn === null || pointsColumn === null) {
           return;
         }
