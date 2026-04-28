@@ -215,28 +215,47 @@ function extractPatrolMembers(rawNote: string | null | undefined): string[] {
   if (!normalizedNote) {
     return [];
   }
-  const firstLine = normalizedNote
-    .split(/\r?\n/)
+
+  const lines = normalizedNote
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
     .map((line) => line.trim())
-    .find((line) => line.length > 0);
-  if (!firstLine) {
+    .filter(Boolean);
+  if (!lines.length) {
     return [];
   }
-  const semicolonParts = firstLine
-    .split(/;|\|/g)
+
+  const splitLine = (line: string) => line
+    .split(/;|\||,/g)
     .map((value) => value.trim())
     .filter(Boolean);
-  if (semicolonParts.length > 1) {
-    return semicolonParts;
+
+  const firstLineMembers = splitLine(lines[0]);
+  if (lines.length === 1) {
+    return firstLineMembers;
   }
-  const commaParts = firstLine
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  if (commaParts.length > 1) {
-    return commaParts;
+
+  if (firstLineMembers.length > 1) {
+    return firstLineMembers;
   }
-  return [firstLine];
+
+  const allMembers = lines
+    .flatMap((line) => splitLine(line))
+    .filter((value) => value !== '—' && value !== '-');
+
+  if (allMembers.length === 0) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  return allMembers.filter((member) => {
+    const key = member.toLocaleLowerCase('cs');
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 function parseTroopNumber(value: string): number | null {
@@ -1433,7 +1452,8 @@ function AdminDashboard({
           (row) => row.bracketKey === girlsKey && !row.disqualifiedFlag && !row.droppedFlag,
         ).length;
         const totalCount = boysCount + girlsCount;
-        mergeByCategory.set(category, totalCount > 0 && (boysCount < 7 || girlsCount < 7));
+        const forceMergeCategory = category === 'S';
+        mergeByCategory.set(category, totalCount > 0 && (forceMergeCategory || boysCount < 7 || girlsCount < 7));
       });
 
       scoredRows.forEach((row) => {
