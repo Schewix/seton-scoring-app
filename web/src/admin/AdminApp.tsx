@@ -583,6 +583,71 @@ function extractPtoTroopsFromPatrol(
   return Array.from(found.values()).sort(compareTroopSheetOrder);
 }
 
+function extractTroopMemberWeights(
+  teamName: string | null | undefined,
+  members: readonly string[],
+): Array<{ troopName: string; memberWeight: number }> {
+  const patrolTroops = extractPtoTroopsFromPatrol(teamName, members);
+  const weights = new Map<string, { troopName: string; memberWeight: number }>();
+
+  const setWeight = (troopName: string, memberWeight: number) => {
+    const key = troopName.toLocaleLowerCase('cs');
+    const previous = weights.get(key);
+    weights.set(key, {
+      troopName: previous?.troopName ?? troopName,
+      memberWeight,
+    });
+  };
+
+  const addWeight = (troopName: string, memberWeight: number) => {
+    const key = troopName.toLocaleLowerCase('cs');
+    const previous = weights.get(key);
+    setWeight(troopName, (previous?.memberWeight ?? 0) + memberWeight);
+  };
+
+  members.forEach((member) => {
+    const detectedTroops = extractPtoTroopsFromText(member);
+    if (detectedTroops.length !== 1) {
+      return;
+    }
+    addWeight(detectedTroops[0], 1);
+  });
+
+  let totalWeight = Array.from(weights.values()).reduce((sum, item) => sum + item.memberWeight, 0);
+
+  if (totalWeight > 0 && totalWeight < 3) {
+    if (patrolTroops.length === 1) {
+      setWeight(patrolTroops[0], 3);
+      totalWeight = 3;
+    } else if (patrolTroops.length > 1) {
+      const missingTroops = patrolTroops.filter((troopName) => !weights.has(troopName.toLocaleLowerCase('cs')));
+      if (missingTroops.length === 1) {
+        addWeight(missingTroops[0], 3 - totalWeight);
+        totalWeight = 3;
+      }
+    }
+  }
+
+  if (totalWeight <= 0) {
+    if (!patrolTroops.length) {
+      return [];
+    }
+    const fallbackWeight = 3 / patrolTroops.length;
+    return patrolTroops.map((troopName) => ({ troopName, memberWeight: fallbackWeight }));
+  }
+
+  if (totalWeight > 3 + 1e-9) {
+    const scale = 3 / totalWeight;
+    Array.from(weights.values()).forEach((item) => {
+      setWeight(item.troopName, item.memberWeight * scale);
+    });
+  }
+
+  return Array.from(weights.values())
+    .filter((item) => item.memberWeight > 0)
+    .sort((a, b) => compareTroopSheetOrder(a.troopName, b.troopName));
+}
+
 function normalizeSheetNameKey(value: string): string | null {
   const normalized = normalizeText(value);
   if (!normalized) {
@@ -2252,6 +2317,13 @@ function AdminDashboard({
       const usedImportedCodes = new Set<string>();
 
       const scoredRows: ScoredExportRow[] = rows.map((row) => {
+        if (row.disqualified) {
+          return {
+            ...row,
+            zlPoints: 0,
+          };
+        }
+
         const candidateCodes = new Set<string>();
         buildPatrolCodeVariants(row.patrolCode).forEach((variant) => candidateCodes.add(variant));
         if (row.patrolCode) {
@@ -2433,14 +2505,16 @@ function AdminDashboard({
 
       const contributionsByTroop = new Map<string, TroopContribution[]>();
       scoredRows.forEach((row) => {
-        const uniqueTroops = extractPtoTroopsFromPatrol(row.teamName, row.members);
-
-        if (!uniqueTroops.length) {
+        if (row.disqualified) {
+          return;
+        }
+        const troopMemberWeights = extractTroopMemberWeights(row.teamName, row.members);
+        if (!troopMemberWeights.length) {
           return;
         }
 
-        const share = row.zlPoints / uniqueTroops.length;
-        uniqueTroops.forEach((troopName) => {
+        troopMemberWeights.forEach(({ troopName, memberWeight }) => {
+          const share = (row.zlPoints / 3) * memberWeight;
           if (!contributionsByTroop.has(troopName)) {
             contributionsByTroop.set(troopName, []);
           }
