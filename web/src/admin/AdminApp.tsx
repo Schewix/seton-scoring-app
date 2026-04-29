@@ -2318,6 +2318,16 @@ function AdminDashboard({
 
       const scoredRows: ScoredExportRow[] = rows.map((row) => {
         if (row.disqualified) {
+          const candidateCodes = new Set<string>();
+          buildPatrolCodeVariants(row.patrolCode).forEach((variant) => candidateCodes.add(variant));
+          if (row.patrolCode) {
+            candidateCodes.add(row.patrolCode);
+          }
+          candidateCodes.forEach((candidate) => {
+            if (importedPointsByPatrol.has(candidate)) {
+              usedImportedCodes.add(candidate);
+            }
+          });
           return {
             ...row,
             zlPoints: 0,
