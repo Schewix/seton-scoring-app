@@ -2553,11 +2553,11 @@ function AdminDashboard({
         zlWorksheet.addRow(['—', 'Žádný oddíl PTO', '', '', '', '', '']);
       } else {
         const compareTroopContributionsByPoints = (a: TroopContribution, b: TroopContribution) => {
-          if (a.sourcePoints !== b.sourcePoints) {
-            return b.sourcePoints - a.sourcePoints;
-          }
           if (a.points !== b.points) {
             return b.points - a.points;
+          }
+          if (a.sourcePoints !== b.sourcePoints) {
+            return b.sourcePoints - a.sourcePoints;
           }
           return comparePatrolOrder(
             { patrol_code: a.patrolCode },
