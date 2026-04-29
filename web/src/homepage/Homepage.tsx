@@ -1,5 +1,5 @@
 import './Homepage.css';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PortableText } from '@portabletext/react';
 import AppFooter from '../components/AppFooter';
 import logo from '../assets/znak_SPTO_transparent.png';
@@ -116,6 +116,47 @@ const LEAGUE_EVENTS = [
   { key: 'zls', label: 'Seton', name: 'Setonův závod' },
 ] as const;
 const LEAGUE_TOP_COUNT = 7;
+const AFTERPARTY_STORAGE_KEY = 'zl-afterparty-counter-v2';
+const AFTERPARTY_TRIGGER_CLICK_COUNT = 5;
+const AFTERPARTY_TRIGGER_WINDOW_MS = 2000;
+type PersonalDrinkKey = string;
+type PersonalDrinkCounts = Record<string, number>;
+type PersonalDrinkStorageState = {
+  selected: PersonalDrinkKey[];
+  counts: PersonalDrinkCounts;
+};
+
+const PERSONAL_DRINK_MENU = [
+  { category: 'Pivo', items: ['Radegast', 'Polička', 'Poutník'] },
+  { category: 'Panáky', items: ['Zelená', 'Vodka', 'Rum'] },
+  { category: 'Víno', items: ['Bílé', 'Červené'] },
+  { category: 'Drinky', items: ['GT', 'Cuba Libre', 'Skinny Bitch']},
+  { category: 'Nealko', items: ['Voda', 'Kofola','Džus'] },
+];
+
+const PERSONAL_DRINK_ITEMS: Array<{ key: PersonalDrinkKey; label: string; category: string }> = (() => {
+  const seen = new Map<string, number>();
+  return PERSONAL_DRINK_MENU.flatMap((section) =>
+    section.items.map((label) => {
+      const normalized = label
+        .trim()
+        .toLocaleLowerCase('cs')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      const base = normalized || 'drink';
+      const duplicateCount = (seen.get(base) ?? 0) + 1;
+      seen.set(base, duplicateCount);
+      const suffix = duplicateCount > 1 ? `-${duplicateCount}` : '';
+      return {
+        key: `drink-${base}${suffix}`,
+        label,
+        category: section.category,
+      };
+    }),
+  );
+})();
 
 type LeagueEvent = (typeof LEAGUE_EVENTS)[number]['key'];
 type LeagueScoresRecord = Record<string, Partial<Record<LeagueEvent, number | null>>>;
@@ -2461,6 +2502,299 @@ function resolveActiveNav(pathname: string) {
   return undefined;
 }
 
+function createEmptyPersonalDrinkCounts(): PersonalDrinkCounts {
+  return PERSONAL_DRINK_ITEMS.reduce<PersonalDrinkCounts>((acc, item) => {
+    acc[item.key] = 0;
+    return acc;
+  }, {});
+}
+
+function isPersonalDrinkKey(value: unknown): value is PersonalDrinkKey {
+  return PERSONAL_DRINK_ITEMS.some((item) => item.key === value);
+}
+
+function sanitizePersonalDrinkSelection(value: unknown): PersonalDrinkKey[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const selected: PersonalDrinkKey[] = [];
+  for (const candidate of value) {
+    if (isPersonalDrinkKey(candidate) && !selected.includes(candidate)) {
+      selected.push(candidate);
+    }
+  }
+  return selected;
+}
+
+function parseAfterpartyNonNegativeInt(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.round(value));
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, parsed);
+    }
+  }
+  return fallback;
+}
+
+function loadPersonalDrinkStateFromStorage(): PersonalDrinkStorageState {
+  const defaults = createEmptyPersonalDrinkCounts();
+  if (typeof window === 'undefined') {
+    return { selected: [], counts: defaults };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(AFTERPARTY_STORAGE_KEY);
+    if (!raw) {
+      return { selected: [], counts: defaults };
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    const parsedObject =
+      parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : ({} as Record<string, unknown>);
+    const parsedCounts =
+      parsedObject.counts && typeof parsedObject.counts === 'object'
+        ? (parsedObject.counts as Record<string, unknown>)
+        : parsedObject;
+    const counts: PersonalDrinkCounts = PERSONAL_DRINK_ITEMS.reduce<PersonalDrinkCounts>((acc, item) => {
+      acc[item.key] = parseAfterpartyNonNegativeInt(parsedCounts[item.key], defaults[item.key]);
+      return acc;
+    }, {});
+    const selected = sanitizePersonalDrinkSelection(parsedObject.selected);
+    if (selected.length > 0) {
+      return { selected, counts };
+    }
+
+    const selectedFromCounts = PERSONAL_DRINK_ITEMS.filter((item) => counts[item.key] > 0).map((item) => item.key);
+    return { selected: selectedFromCounts, counts };
+  } catch {
+    return { selected: [], counts: defaults };
+  }
+}
+
+function PersonalDrinkCounter({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const initialState = useMemo(() => loadPersonalDrinkStateFromStorage(), []);
+  const [selectedDrinks, setSelectedDrinks] = useState<PersonalDrinkKey[]>(initialState.selected);
+  const [counts, setCounts] = useState<PersonalDrinkCounts>(initialState.counts);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [activeDrinkCategory, setActiveDrinkCategory] = useState(PERSONAL_DRINK_MENU[0]?.category ?? '');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem(AFTERPARTY_STORAGE_KEY, JSON.stringify({ selected: selectedDrinks, counts }));
+    } catch {
+      // Ignore localStorage write errors in private browsing or blocked contexts.
+    }
+  }, [counts, selectedDrinks]);
+
+  useEffect(() => {
+    if (!open || typeof window === 'undefined') {
+      return;
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (menuOpen) {
+          setMenuOpen(false);
+          return;
+        }
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [menuOpen, open, onClose]);
+
+  const adjustDrinkCount = (drink: PersonalDrinkKey, delta: number) => {
+    if (!delta) {
+      return;
+    }
+    setCounts((prev) => ({
+      ...prev,
+      [drink]: Math.max(0, (prev[drink] ?? 0) + delta),
+    }));
+  };
+
+  const addDrinkOrder = (drink: PersonalDrinkKey) => {
+    setSelectedDrinks((prev) => (prev.includes(drink) ? prev : [...prev, drink]));
+    setCounts((prev) => ({
+      ...prev,
+      [drink]: Math.max(0, (prev[drink] ?? 0) + 1),
+    }));
+    setMenuOpen(false);
+  };
+
+  const removeDrink = (drink: PersonalDrinkKey) => {
+    setSelectedDrinks((prev) => prev.filter((key) => key !== drink));
+    setCounts((prev) => ({
+      ...prev,
+      [drink]: 0,
+    }));
+  };
+
+  const handleResetAll = () => {
+    const confirmed = window.confirm('Opravdu resetovat celé počítadlo?');
+    if (!confirmed) {
+      return;
+    }
+    setCounts(createEmptyPersonalDrinkCounts());
+    setSelectedDrinks([]);
+    setMenuOpen(false);
+  };
+
+  const selectedItems = PERSONAL_DRINK_ITEMS.filter((drink) => selectedDrinks.includes(drink.key));
+  const activeCategoryItems = PERSONAL_DRINK_ITEMS.filter((drink) => drink.category === activeDrinkCategory);
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div
+      className="homepage-afterparty-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="afterparty-counter-title"
+      onClick={onClose}
+    >
+      <div className="homepage-afterparty-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="homepage-afterparty-header">
+          <h2 id="afterparty-counter-title">Pivečko počítadlo</h2>
+          <button type="button" className="homepage-afterparty-close" onClick={onClose}>
+            Zavřít
+          </button>
+        </div>
+
+        <section className="homepage-afterparty-section homepage-afterparty-section-users">
+          <div className="homepage-afterparty-section-head">
+            <h3>Moje počítadlo</h3>
+            <button type="button" className="homepage-afterparty-add-order" onClick={() => setMenuOpen(true)}>
+              + Přidat objednávku
+            </button>
+          </div>
+          {selectedItems.length === 0 ? (
+            <p className="homepage-afterparty-empty">Zatím nic nepřidaného.</p>
+          ) : (
+            <div className="homepage-afterparty-drink-grid">
+              {selectedItems.map((drink) => (
+                <article
+                  key={drink.key}
+                  className="homepage-afterparty-drink-cell"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => adjustDrinkCount(drink.key, 1)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      adjustDrinkCount(drink.key, 1);
+                    }
+                  }}
+                >
+                  <div className="homepage-afterparty-drink-top">
+                    <h4>{drink.label}</h4>
+                    <strong>{counts[drink.key]}</strong>
+                  </div>
+                  <div className="homepage-afterparty-drink-actions">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        adjustDrinkCount(drink.key, -1);
+                      }}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        adjustDrinkCount(drink.key, 1);
+                      }}
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      className="homepage-afterparty-remove"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        removeDrink(drink.key);
+                      }}
+                    >
+                      Odebrat položku
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          <div className="homepage-afterparty-reset-wrap">
+            <button type="button" className="homepage-afterparty-reset" onClick={handleResetAll}>
+              Resetovat vše
+            </button>
+          </div>
+        </section>
+
+        {menuOpen ? (
+          <div className="homepage-afterparty-menu-backdrop" onClick={() => setMenuOpen(false)}>
+            <div
+              className="homepage-afterparty-menu-panel"
+              role="dialog"
+              aria-label="Přidat položku"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="homepage-afterparty-menu-header">
+                <h3>Přidat objednávku</h3>
+                <button type="button" className="homepage-afterparty-close" onClick={() => setMenuOpen(false)}>
+                  Zavřít
+                </button>
+              </div>
+
+              <div className="homepage-afterparty-category-tabs" role="tablist" aria-label="Kategorie položek">
+                {PERSONAL_DRINK_MENU.map((section) => {
+                  const isActive = section.category === activeDrinkCategory;
+                  return (
+                    <button
+                      key={section.category}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      className={`homepage-afterparty-category-tab${isActive ? ' is-active' : ''}`}
+                      onClick={() => setActiveDrinkCategory(section.category)}
+                    >
+                      {section.category}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="homepage-afterparty-menu-block">
+                <h4>{activeDrinkCategory}</h4>
+                <div className="homepage-afterparty-menu-grid">
+                  {activeCategoryItems.map((drink) => (
+                    <button
+                      key={drink.key}
+                      type="button"
+                      className="homepage-afterparty-menu-item"
+                      onClick={() => addDrinkOrder(drink.key)}
+                    >
+                      {drink.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function SiteHeader({
   activeSection,
   title,
@@ -2473,13 +2807,17 @@ function SiteHeader({
   lead?: string;
 }) {
   const [navOpen, setNavOpen] = useState(false);
+  const [afterpartyOpen, setAfterpartyOpen] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(min-width: 901px)').matches : true,
   );
   const [isDesktopCompact, setIsDesktopCompact] = useState(false);
+  const titleTapTimestampsRef = useRef<number[]>([]);
   const navPanelId = 'homepage-nav-panel';
   const useCompactNav = !isDesktopViewport || isDesktopCompact;
   const isNavPanelOpen = useCompactNav ? navOpen : true;
+  const resolvedTitle = title ?? 'SPTO a Zelená liga';
+  const resolvedSubtitle = subtitle ?? HEADER_SUBTITLE;
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -2526,6 +2864,17 @@ function SiteHeader({
     }
   };
 
+  const handleHeaderTitleClick = () => {
+    const now = Date.now();
+    const recent = titleTapTimestampsRef.current.filter((timestamp) => now - timestamp <= AFTERPARTY_TRIGGER_WINDOW_MS);
+    recent.push(now);
+    titleTapTimestampsRef.current = recent;
+    if (recent.length >= AFTERPARTY_TRIGGER_CLICK_COUNT) {
+      titleTapTimestampsRef.current = [];
+      setAfterpartyOpen(true);
+    }
+  };
+
   return (
     <>
       <header className="homepage-header">
@@ -2535,8 +2884,8 @@ function SiteHeader({
             <span className="homepage-logo-caption">SPTO Brno</span>
           </a>
           <div className="homepage-header-copy">
-            <h1>{title ?? 'SPTO a Zelená liga'}</h1>
-            <p className="homepage-subtitle">{subtitle ?? HEADER_SUBTITLE}</p>
+            <h1 onClick={handleHeaderTitleClick}>{resolvedTitle}</h1>
+            <p className="homepage-subtitle">{resolvedSubtitle}</p>
             {lead ? <p className="homepage-lead homepage-hero-lead">{lead}</p> : null}
           </div>
         </div>
@@ -2583,6 +2932,7 @@ function SiteHeader({
           </div>
         </div>
       </nav>
+      <PersonalDrinkCounter open={afterpartyOpen} onClose={() => setAfterpartyOpen(false)} />
     </>
   );
 }
