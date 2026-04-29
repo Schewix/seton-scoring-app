@@ -1517,8 +1517,8 @@ function AdminDashboard({
           (row) => row.bracketKey === girlsKey && !row.disqualifiedFlag && !row.droppedFlag,
         ).length;
         const totalCount = boysCount + girlsCount;
-        const forceMergeCategory = category === 'S';
-        mergeByCategory.set(category, totalCount > 0 && (forceMergeCategory || boysCount < 7 || girlsCount < 7));
+        const allowAutoMerge = category !== 'S';
+        mergeByCategory.set(category, allowAutoMerge && totalCount > 0 && (boysCount < 7 || girlsCount < 7));
       });
 
       scoredRows.forEach((row) => {
@@ -1885,15 +1885,12 @@ function AdminDashboard({
       scoredRows.forEach((row) => {
         const category = row.bracketKey.slice(0, 1);
         const mergedCategoryEnabled = mergeByCategory.get(category);
-        const keepSplitSheetsInMergedMode = category === 'S';
         if (mergedCategoryEnabled) {
           if (!groupedByMergedCategory.has(category)) {
             groupedByMergedCategory.set(category, []);
           }
           groupedByMergedCategory.get(category)!.push(row);
-          if (!keepSplitSheetsInMergedMode) {
-            return;
-          }
+          return;
         }
         groupedByBracket.get(row.bracketKey)?.push(row);
       });
@@ -1910,7 +1907,7 @@ function AdminDashboard({
         const boysKey = `${category}H`;
         const girlsKey = `${category}D`;
         const mergedCategoryEnabled = mergeByCategory.get(category) === true;
-        const includeSplitSheets = !mergedCategoryEnabled || category === 'S';
+        const includeSplitSheets = !mergedCategoryEnabled;
 
         if (includeSplitSheets) {
           exportSheets.push({ name: boysKey, rows: groupedByBracket.get(boysKey) ?? [] });
