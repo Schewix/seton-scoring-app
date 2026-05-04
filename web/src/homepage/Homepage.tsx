@@ -162,6 +162,10 @@ type AfterpartyOrderRow = {
   reviewed_at: string | null;
   afterparty_order_items?: AfterpartyOrderItemRow[];
 };
+type AfterpartyAdminOrderRow = AfterpartyOrderRow & {
+  receipt_signed_url?: string | null;
+  afterparty_participants?: AfterpartyParticipant | null;
+};
 type AfterpartyIndividualLeaderboardRow = {
   participant_id: string;
   display_name: string;
@@ -175,6 +179,8 @@ type AfterpartyTroopLeaderboardRow = {
   participants: number;
   approved_orders: number;
 };
+type AfterpartyCounterMode = 'counter' | 'league';
+type AfterpartyAdminSessionState = 'checking' | 'unauthorized' | 'authorized';
 
 type LeagueEvent = (typeof LEAGUE_EVENTS)[number]['key'];
 type LeagueScoresRecord = Record<string, Partial<Record<LeagueEvent, number | null>>>;
@@ -2611,6 +2617,21 @@ function formatAfterpartyStatus(status: AfterpartyOrderStatus) {
   return 'Čeká na kontrolu';
 }
 
+function afterpartyDraftKey(orderId: string, itemId: string): string {
+  return `${orderId}:${itemId}`;
+}
+
+function getAfterpartyAdminDraftQuantity(
+  draftQuantities: Record<string, string>,
+  orderId: string,
+  item: AfterpartyOrderItemRow,
+): number {
+  return parseAfterpartyNonNegativeInt(
+    draftQuantities[afterpartyDraftKey(orderId, item.id)],
+    item.approved_quantity ?? item.quantity ?? 0,
+  );
+}
+
 function createAfterpartyReceiptPath(participantId: string, file: File) {
   const extension = file.name.split('.').pop()?.toLocaleLowerCase('cs').replace(/[^a-z0-9]/g, '') || 'bin';
   const id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -2625,6 +2646,7 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
   const [counts, setCounts] = useState<PersonalDrinkCounts>(initialState.counts);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeDrinkCategory, setActiveDrinkCategory] = useState(AFTERPARTY_DRINK_MENU[0]?.category ?? '');
+  const [mode, setMode] = useState<AfterpartyCounterMode>('counter');
   const [participant, setParticipant] = useState<AfterpartyParticipant | null>(null);
   const [profileForm, setProfileForm] = useState({ displayName: '', troopName: '' });
   const [profileSaving, setProfileSaving] = useState(false);
@@ -2649,6 +2671,18 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
       // Ignore localStorage write errors in private browsing or blocked contexts.
     }
   }, [counts, selectedDrinks]);
+
+  useEffect(() => {
+    if (!open) {
+      setMode('counter');
+      setMenuOpen(false);
+      setAfterpartyError(null);
+      setAfterpartySuccess(null);
+      return;
+    }
+    setAfterpartyError(null);
+    setAfterpartySuccess(null);
+  }, [open]);
 
   const loadLeaderboards = useCallback(async () => {
     const [individualRes, troopRes] = await Promise.all([
@@ -2744,10 +2778,10 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
   }, [loadLeaderboards, loadParticipantOrders]);
 
   useEffect(() => {
-    if (open) {
+    if (open && mode === 'league') {
       void loadAfterpartyOnlineState();
     }
-  }, [loadAfterpartyOnlineState, open]);
+  }, [loadAfterpartyOnlineState, mode, open]);
 
   useEffect(() => {
     if (!open || typeof window === 'undefined') {
@@ -2801,6 +2835,12 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
     setCounts(createEmptyPersonalDrinkCounts());
     setSelectedDrinks([]);
     setMenuOpen(false);
+  };
+
+  const handleModeChange = (nextMode: AfterpartyCounterMode) => {
+    setMode(nextMode);
+    setAfterpartyError(null);
+    setAfterpartySuccess(null);
   };
 
   const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -2958,16 +2998,36 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
     >
       <div className="homepage-afterparty-panel" onClick={(event) => event.stopPropagation()}>
         <div className="homepage-afterparty-header">
-          <h2 id="afterparty-counter-title">Afterparty liga</h2>
+          <h2 id="afterparty-counter-title">Pivečko počítadlo</h2>
           <button type="button" className="homepage-afterparty-close" onClick={onClose}>
             Zavřít
           </button>
         </div>
 
+        <div className="homepage-afterparty-mode-switch homepage-afterparty-segmented" aria-label="Režim počítadla">
+          <button
+            type="button"
+            className={mode === 'counter' ? 'is-active' : ''}
+            onClick={() => handleModeChange('counter')}
+          >
+            Jen počítat
+          </button>
+          <button
+            type="button"
+            className={mode === 'league' ? 'is-active' : ''}
+            onClick={() => handleModeChange('league')}
+          >
+            Soutěžit
+          </button>
+        </div>
+
         {afterpartyError ? <p className="homepage-afterparty-alert is-error">{afterpartyError}</p> : null}
         {afterpartySuccess ? <p className="homepage-afterparty-alert is-success">{afterpartySuccess}</p> : null}
-        {loadingOnline ? <p className="homepage-afterparty-empty">Načítám online ligu…</p> : null}
+        {loadingOnline && mode === 'league' ? (
+          <p className="homepage-afterparty-empty">Načítám online ligu…</p>
+        ) : null}
 
+        {mode === 'league' ? (
         <section className="homepage-afterparty-section">
           <div className="homepage-afterparty-section-head">
             <h3>Profil</h3>
@@ -3008,12 +3068,13 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
             </form>
           )}
         </section>
+        ) : null}
 
         <section className="homepage-afterparty-section homepage-afterparty-section-users">
           <div className="homepage-afterparty-section-head">
-            <h3>Moje objednávka</h3>
+            <h3>Moje počítadlo</h3>
             <button type="button" className="homepage-afterparty-add-order" onClick={() => setMenuOpen(true)}>
-              + Přidat objednávku
+              + Přidat položku
             </button>
           </div>
           {selectedItems.length === 0 ? (
@@ -3038,7 +3099,9 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
                     <h4>{drink.label}</h4>
                     <strong>{counts[drink.key]}</strong>
                   </div>
-                  <p className="homepage-afterparty-card-meta">{drink.points} bodů za kus</p>
+                  {mode === 'league' ? (
+                    <p className="homepage-afterparty-card-meta">{drink.points} bodů za kus</p>
+                  ) : null}
                   <div className="homepage-afterparty-drink-actions">
                     <button
                       type="button"
@@ -3078,7 +3141,7 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
               Resetovat vše
             </button>
           </div>
-          {draftItemCount > 0 ? (
+          {mode === 'league' && draftItemCount > 0 ? (
             <div className="homepage-afterparty-submit-box">
               <p>
                 Aktuálně {draftItemCount} položek za <strong>{draftPoints} bodů</strong>.
@@ -3104,6 +3167,8 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
           ) : null}
         </section>
 
+        {mode === 'league' ? (
+        <>
         <section className="homepage-afterparty-section">
           <div className="homepage-afterparty-section-head">
             <h3>Moje účtenky</h3>
@@ -3193,6 +3258,8 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
             </ol>
           )}
         </section>
+        </>
+        ) : null}
 
         {menuOpen ? (
           <div className="homepage-afterparty-menu-backdrop" onClick={() => setMenuOpen(false)}>
@@ -3203,7 +3270,7 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
               onClick={(event) => event.stopPropagation()}
             >
               <div className="homepage-afterparty-menu-header">
-                <h3>Přidat objednávku</h3>
+                <h3>Přidat položku</h3>
                 <button type="button" className="homepage-afterparty-close" onClick={() => setMenuOpen(false)}>
                   Zavřít
                 </button>
@@ -3238,13 +3305,411 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
                       onClick={() => addDrinkOrder(drink.key)}
                     >
                       <span>{drink.label}</span>
-                      <small>{drink.points} bodů</small>
+                      {mode === 'league' ? <small>{drink.points} bodů</small> : null}
                     </button>
                   ))}
                 </div>
               </div>
             </div>
           </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AfterpartyAdminManager({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [sessionState, setSessionState] = useState<AfterpartyAdminSessionState>('checking');
+  const [password, setPassword] = useState('');
+  const [orders, setOrders] = useState<AfterpartyAdminOrderRow[]>([]);
+  const [draftQuantities, setDraftQuantities] = useState<Record<string, string>>({});
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const applyOrders = useCallback((nextOrders: AfterpartyAdminOrderRow[]) => {
+    setOrders(nextOrders);
+    const nextQuantities: Record<string, string> = {};
+    const nextNotes: Record<string, string> = {};
+    nextOrders.forEach((order) => {
+      nextNotes[order.id] = order.review_note ?? '';
+      (order.afterparty_order_items ?? []).forEach((item) => {
+        nextQuantities[afterpartyDraftKey(order.id, item.id)] = String(item.approved_quantity ?? item.quantity ?? 0);
+      });
+    });
+    setDraftQuantities(nextQuantities);
+    setReviewNotes(nextNotes);
+  }, []);
+
+  const loadOrders = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/content/admin/afterparty/orders', {
+        credentials: 'include',
+      });
+      if (response.status === 401) {
+        setSessionState('unauthorized');
+        return;
+      }
+      const body = (await response.json().catch(() => null)) as {
+        orders?: AfterpartyAdminOrderRow[];
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(body?.error || 'Nepodařilo se načíst účtenky.');
+      }
+      applyOrders(body?.orders ?? []);
+      setSessionState('authorized');
+    } catch (loadError) {
+      console.error('Failed to load afterparty admin orders', loadError);
+      setError(loadError instanceof Error && loadError.message ? loadError.message : 'Nepodařilo se načíst účtenky.');
+    } finally {
+      setLoading(false);
+    }
+  }, [applyOrders]);
+
+  const checkSession = useCallback(async () => {
+    setSessionState('checking');
+    setError(null);
+    try {
+      const response = await fetch('/api/content/admin/session', { credentials: 'include' });
+      if (!response.ok) {
+        setSessionState('unauthorized');
+        return;
+      }
+      setSessionState('authorized');
+      await loadOrders();
+    } catch (sessionError) {
+      console.error('Failed to check content admin session', sessionError);
+      setSessionState('unauthorized');
+    }
+  }, [loadOrders]);
+
+  useEffect(() => {
+    if (open) {
+      setSuccess(null);
+      void checkSession();
+    }
+  }, [checkSession, open]);
+
+  useEffect(() => {
+    if (!open || typeof window === 'undefined') {
+      return;
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [open, onClose]);
+
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await fetch('/api/content/admin/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        throw new Error(body?.error || 'Přihlášení se nepodařilo.');
+      }
+      setPassword('');
+      setSessionState('authorized');
+      await loadOrders();
+    } catch (loginError) {
+      console.error('Failed to log in to afterparty manager', loginError);
+      setSessionState('unauthorized');
+      setError(loginError instanceof Error && loginError.message ? loginError.message : 'Přihlášení se nepodařilo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuantityChange = (orderId: string, itemId: string, value: string) => {
+    setDraftQuantities((prev) => ({
+      ...prev,
+      [afterpartyDraftKey(orderId, itemId)]: value,
+    }));
+  };
+
+  const reviewOrder = async (order: AfterpartyAdminOrderRow, action: 'approve' | 'reject') => {
+    if (action === 'reject' && !window.confirm('Opravdu zamítnout tuto účtenku?')) {
+      return;
+    }
+
+    setSavingOrderId(order.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await fetch(`/api/content/admin/afterparty/orders/${order.id}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          review_note: reviewNotes[order.id] ?? '',
+          items: (order.afterparty_order_items ?? []).map((item) => ({
+            id: item.id,
+            approved_quantity: getAfterpartyAdminDraftQuantity(draftQuantities, order.id, item),
+          })),
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (response.status === 401) {
+        setSessionState('unauthorized');
+        throw new Error('Přihlášení vypršelo.');
+      }
+      if (!response.ok) {
+        throw new Error(body?.error || 'Uložení kontroly se nepodařilo.');
+      }
+      setSuccess(action === 'approve' ? 'Účtenka byla potvrzena.' : 'Účtenka byla zamítnuta.');
+      await loadOrders();
+    } catch (reviewError) {
+      console.error('Failed to review afterparty order', reviewError);
+      setError(
+        reviewError instanceof Error && reviewError.message
+          ? reviewError.message
+          : 'Uložení kontroly se nepodařilo.',
+      );
+    } finally {
+      setSavingOrderId(null);
+    }
+  };
+
+  const handleResetLeague = async () => {
+    const confirmed = window.confirm(
+      'Opravdu resetovat celou pivečko ligu? Smaže se pořadí, účastníci, účtenky i nahrané soubory.',
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setResetting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await fetch('/api/content/admin/afterparty/reset', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (response.status === 401) {
+        setSessionState('unauthorized');
+        throw new Error('Přihlášení vypršelo.');
+      }
+      if (!response.ok) {
+        throw new Error(body?.error || 'Reset ligy se nepodařil.');
+      }
+      applyOrders([]);
+      setSuccess('Pivečko liga byla resetována.');
+    } catch (resetError) {
+      console.error('Failed to reset afterparty league', resetError);
+      setError(resetError instanceof Error && resetError.message ? resetError.message : 'Reset ligy se nepodařil.');
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div
+      className="homepage-afterparty-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="afterparty-admin-title"
+      onClick={onClose}
+    >
+      <div className="homepage-afterparty-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="homepage-afterparty-header">
+          <h2 id="afterparty-admin-title">Správa pivečko ligy</h2>
+          <button type="button" className="homepage-afterparty-close" onClick={onClose}>
+            Zavřít
+          </button>
+        </div>
+
+        {error ? <p className="homepage-afterparty-alert is-error">{error}</p> : null}
+        {success ? <p className="homepage-afterparty-alert is-success">{success}</p> : null}
+
+        {sessionState === 'checking' ? (
+          <section className="homepage-afterparty-section">
+            <p className="homepage-afterparty-empty">Ověřuji přihlášení…</p>
+          </section>
+        ) : null}
+
+        {sessionState === 'unauthorized' ? (
+          <section className="homepage-afterparty-section">
+            <h3>Přihlášení</h3>
+            <form className="homepage-afterparty-profile-form" onSubmit={handleLogin}>
+              <label>
+                <span>Heslo do redakce</span>
+                <input
+                  type="password"
+                  value={password}
+                  autoComplete="current-password"
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+              </label>
+              <button type="submit" className="homepage-afterparty-add-order" disabled={loading}>
+                {loading ? 'Přihlašuji…' : 'Přihlásit'}
+              </button>
+            </form>
+          </section>
+        ) : null}
+
+        {sessionState === 'authorized' ? (
+          <>
+            <section className="homepage-afterparty-section">
+              <div className="homepage-afterparty-admin-toolbar">
+                <button type="button" className="homepage-afterparty-inline-button" onClick={loadOrders} disabled={loading}>
+                  {loading ? 'Načítám…' : 'Obnovit účtenky'}
+                </button>
+                <button
+                  type="button"
+                  className="homepage-afterparty-reset"
+                  onClick={handleResetLeague}
+                  disabled={resetting}
+                >
+                  {resetting ? 'Resetuji…' : 'Resetovat ligu'}
+                </button>
+              </div>
+            </section>
+
+            {orders.length === 0 && !loading ? (
+              <section className="homepage-afterparty-section">
+                <p className="homepage-afterparty-empty">Žádné účtenky ke kontrole.</p>
+              </section>
+            ) : null}
+
+            <div className="homepage-afterparty-admin-list">
+              {orders.map((order) => {
+                const participant = order.afterparty_participants ?? null;
+                const items = order.afterparty_order_items ?? [];
+                const isSaving = savingOrderId === order.id;
+                const signedUrl = order.receipt_signed_url ?? '';
+                const receiptLooksLikeImage = /\.(?:jpe?g|png|webp)(?:\?|$)/i.test(signedUrl || order.receipt_path);
+                const previewPoints = items.reduce(
+                  (sum, item) =>
+                    sum
+                    + getAfterpartyAdminDraftQuantity(draftQuantities, order.id, item)
+                    * Math.max(0, Math.round(item.points_each ?? 0)),
+                  0,
+                );
+
+                return (
+                  <article key={order.id} className={`homepage-afterparty-admin-order is-${order.status}`}>
+                    <div className="homepage-afterparty-admin-order-head">
+                      <div>
+                        <h3>{participant?.display_name ?? 'Neznámý účastník'}</h3>
+                        <p>
+                          {participant?.troop_name ?? 'Bez oddílu'} · {formatAfterpartyDate(order.submitted_at)}
+                        </p>
+                      </div>
+                      <span className={`homepage-afterparty-admin-status is-${order.status}`}>
+                        {formatAfterpartyStatus(order.status)}
+                      </span>
+                    </div>
+
+                    <div className="homepage-afterparty-admin-receipt">
+                      {signedUrl && receiptLooksLikeImage ? (
+                        <a href={signedUrl} target="_blank" rel="noreferrer">
+                          <img src={signedUrl} alt="Nahraná účtenka" />
+                        </a>
+                      ) : signedUrl ? (
+                        <a className="homepage-afterparty-inline-button" href={signedUrl} target="_blank" rel="noreferrer">
+                          Otevřít účtenku
+                        </a>
+                      ) : (
+                        <span className="homepage-afterparty-empty">Náhled účtenky není dostupný.</span>
+                      )}
+                    </div>
+
+                    <div className="homepage-afterparty-admin-items">
+                      {items.map((item) => {
+                        const inputId = `afterparty-admin-${order.id}-${item.id}`;
+                        return (
+                          <label key={item.id} className="homepage-afterparty-admin-item" htmlFor={inputId}>
+                            <span>
+                              <strong>{item.label}</strong>
+                              <small>
+                                {item.category} · nahlášeno {item.quantity} · {item.points_each} bodů za kus
+                              </small>
+                            </span>
+                            <input
+                              id={inputId}
+                              type="number"
+                              min="0"
+                              step="1"
+                              inputMode="numeric"
+                              value={draftQuantities[afterpartyDraftKey(order.id, item.id)] ?? String(item.quantity)}
+                              onChange={(event) => handleQuantityChange(order.id, item.id, event.target.value)}
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <label className="homepage-afterparty-admin-note" htmlFor={`afterparty-admin-note-${order.id}`}>
+                      <span>Poznámka pro účastníka</span>
+                      <textarea
+                        id={`afterparty-admin-note-${order.id}`}
+                        value={reviewNotes[order.id] ?? ''}
+                        onChange={(event) =>
+                          setReviewNotes((prev) => ({
+                            ...prev,
+                            [order.id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Volitelné, např. upraven počet podle účtenky"
+                      />
+                    </label>
+
+                    <div className="homepage-afterparty-admin-total">
+                      <span>
+                        Body po kontrole: <strong>{previewPoints}</strong>
+                      </span>
+                      <span>
+                        Aktuálně uloženo: <strong>{order.total_points}</strong>
+                      </span>
+                    </div>
+
+                    <div className="homepage-afterparty-admin-actions">
+                      <button
+                        type="button"
+                        className="homepage-afterparty-inline-button"
+                        onClick={() => reviewOrder(order, 'reject')}
+                        disabled={isSaving}
+                      >
+                        {isSaving ? 'Ukládám…' : 'Zamítnout'}
+                      </button>
+                      <button
+                        type="button"
+                        className="homepage-afterparty-add-order"
+                        onClick={() => reviewOrder(order, 'approve')}
+                        disabled={isSaving}
+                      >
+                        {isSaving ? 'Ukládám…' : 'Potvrdit body'}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </>
         ) : null}
       </div>
     </div>
@@ -3406,6 +3871,7 @@ function SiteShell({
   headerSubtitle?: string;
   headerLead?: string;
 }) {
+  const [afterpartyAdminOpen, setAfterpartyAdminOpen] = useState(false);
   const resolvedActiveSection =
     activeSection ?? (typeof window !== 'undefined' ? resolveActiveNav(window.location.pathname) : undefined);
   return (
@@ -3417,7 +3883,8 @@ function SiteShell({
         lead={headerLead}
       />
       {children}
-      <AppFooter className="homepage-footer" />
+      <AppFooter className="homepage-footer" onSecretTrigger={() => setAfterpartyAdminOpen(true)} />
+      <AfterpartyAdminManager open={afterpartyAdminOpen} onClose={() => setAfterpartyAdminOpen(false)} />
     </div>
   );
 }
