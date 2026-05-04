@@ -3522,6 +3522,36 @@ function AfterpartyAdminManager({ open, onClose }: { open: boolean; onClose: () 
     }
   };
 
+  const pendingOrders = orders.filter((order) => order.status === 'pending');
+  const reviewedOrders = orders
+    .filter((order) => order.status !== 'pending')
+    .sort((a, b) => {
+      const dateA = Date.parse(a.reviewed_at ?? a.submitted_at);
+      const dateB = Date.parse(b.reviewed_at ?? b.submitted_at);
+      return (Number.isFinite(dateB) ? dateB : 0) - (Number.isFinite(dateA) ? dateA : 0);
+    });
+
+  const renderAdminReceipt = (order: AfterpartyAdminOrderRow) => {
+    const signedUrl = order.receipt_signed_url ?? '';
+    const receiptLooksLikeImage = /\.(?:jpe?g|png|webp)(?:\?|$)/i.test(signedUrl || order.receipt_path);
+
+    if (signedUrl && receiptLooksLikeImage) {
+      return (
+        <a href={signedUrl} target="_blank" rel="noreferrer">
+          <img src={signedUrl} alt="Nahraná účtenka" />
+        </a>
+      );
+    }
+    if (signedUrl) {
+      return (
+        <a className="homepage-afterparty-inline-button" href={signedUrl} target="_blank" rel="noreferrer">
+          Otevřít účtenku
+        </a>
+      );
+    }
+    return <span className="homepage-afterparty-empty">Náhled účtenky není dostupný.</span>;
+  };
+
   if (!open) {
     return null;
   }
@@ -3589,19 +3619,19 @@ function AfterpartyAdminManager({ open, onClose }: { open: boolean; onClose: () 
               </div>
             </section>
 
-            {orders.length === 0 && !loading ? (
-              <section className="homepage-afterparty-section">
+            <section className="homepage-afterparty-section">
+              <div className="homepage-afterparty-section-head">
+                <h3>Ke kontrole</h3>
+              </div>
+              {pendingOrders.length === 0 && !loading ? (
                 <p className="homepage-afterparty-empty">Žádné účtenky ke kontrole.</p>
-              </section>
-            ) : null}
-
-            <div className="homepage-afterparty-admin-list">
-              {orders.map((order) => {
+              ) : null}
+              {pendingOrders.length > 0 ? (
+                <div className="homepage-afterparty-admin-list">
+                  {pendingOrders.map((order) => {
                 const participant = order.afterparty_participants ?? null;
                 const items = order.afterparty_order_items ?? [];
                 const isSaving = savingOrderId === order.id;
-                const signedUrl = order.receipt_signed_url ?? '';
-                const receiptLooksLikeImage = /\.(?:jpe?g|png|webp)(?:\?|$)/i.test(signedUrl || order.receipt_path);
                 const previewPoints = items.reduce(
                   (sum, item) =>
                     sum
@@ -3625,17 +3655,7 @@ function AfterpartyAdminManager({ open, onClose }: { open: boolean; onClose: () 
                     </div>
 
                     <div className="homepage-afterparty-admin-receipt">
-                      {signedUrl && receiptLooksLikeImage ? (
-                        <a href={signedUrl} target="_blank" rel="noreferrer">
-                          <img src={signedUrl} alt="Nahraná účtenka" />
-                        </a>
-                      ) : signedUrl ? (
-                        <a className="homepage-afterparty-inline-button" href={signedUrl} target="_blank" rel="noreferrer">
-                          Otevřít účtenku
-                        </a>
-                      ) : (
-                        <span className="homepage-afterparty-empty">Náhled účtenky není dostupný.</span>
-                      )}
+                      {renderAdminReceipt(order)}
                     </div>
 
                     <div className="homepage-afterparty-admin-items">
@@ -3707,8 +3727,73 @@ function AfterpartyAdminManager({ open, onClose }: { open: boolean; onClose: () 
                     </div>
                   </article>
                 );
-              })}
-            </div>
+                  })}
+                </div>
+              ) : null}
+            </section>
+
+            {reviewedOrders.length > 0 ? (
+              <section className="homepage-afterparty-section">
+                <div className="homepage-afterparty-section-head">
+                  <h3>Historie</h3>
+                </div>
+                <div className="homepage-afterparty-admin-list">
+                  {reviewedOrders.map((order) => {
+                    const participant = order.afterparty_participants ?? null;
+                    const items = order.afterparty_order_items ?? [];
+
+                    return (
+                      <article
+                        key={order.id}
+                        className={`homepage-afterparty-admin-order homepage-afterparty-admin-order--history is-${order.status}`}
+                      >
+                        <div className="homepage-afterparty-admin-order-head">
+                          <div>
+                            <h3>{participant?.display_name ?? 'Neznámý účastník'}</h3>
+                            <p>
+                              {participant?.troop_name ?? 'Bez oddílu'} · {formatAfterpartyDate(order.submitted_at)}
+                            </p>
+                          </div>
+                          <span className={`homepage-afterparty-admin-status is-${order.status}`}>
+                            {formatAfterpartyStatus(order.status)}
+                          </span>
+                        </div>
+
+                        <div className="homepage-afterparty-admin-receipt">
+                          {renderAdminReceipt(order)}
+                        </div>
+
+                        <div className="homepage-afterparty-admin-history-items">
+                          {items.map((item) => (
+                            <span key={item.id}>
+                              <strong>{item.label}</strong>
+                              <small>
+                                nahlášeno {item.quantity} · uznáno {item.approved_quantity} · {item.points_total} bodů
+                              </small>
+                            </span>
+                          ))}
+                        </div>
+
+                        {order.review_note ? (
+                          <p className="homepage-afterparty-admin-history-note">{order.review_note}</p>
+                        ) : null}
+
+                        <div className="homepage-afterparty-admin-total">
+                          <span>
+                            Uloženo: <strong>{order.total_points} bodů</strong>
+                          </span>
+                          {order.reviewed_at ? (
+                            <span>
+                              Zkontrolováno: <strong>{formatAfterpartyDate(order.reviewed_at)}</strong>
+                            </span>
+                          ) : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
           </>
         ) : null}
       </div>

@@ -2828,6 +2828,10 @@
   border-color: rgba(122, 31, 31, 0.28);
 }
 
+.homepage-afterparty-admin-order--history {
+  background: rgba(255, 255, 255, 0.72);
+}
+
 .homepage-afterparty-admin-order-head {
   display: grid;
   gap: 10px;
@@ -2932,6 +2936,29 @@
   display: grid;
   gap: 10px;
   margin-top: 12px;
+}
+
+.homepage-afterparty-admin-history-items {
+  display: grid;
+  gap: 8px;
+}
+
+.homepage-afterparty-admin-history-items span {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(4, 55, 44, 0.12);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+}
+
+.homepage-afterparty-admin-history-items small,
+.homepage-afterparty-admin-history-note {
+  color: rgba(29, 51, 40, 0.68);
+}
+
+.homepage-afterparty-admin-history-note {
+  margin: 10px 0 0;
 }
 
 .homepage-afterparty-leaderboard {
