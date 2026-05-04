@@ -2572,6 +2572,68 @@
   color: rgba(29, 51, 40, 0.75);
 }
 
+.homepage-afterparty-alert {
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+
+.homepage-afterparty-alert.is-error {
+  color: #7a1f1f;
+  background: #fff0ed;
+  border: 1px solid rgba(122, 31, 31, 0.24);
+}
+
+.homepage-afterparty-alert.is-success {
+  color: #0b6534;
+  background: #edf8ef;
+  border: 1px solid rgba(11, 101, 52, 0.22);
+}
+
+.homepage-afterparty-profile-summary {
+  display: grid;
+  gap: 4px;
+}
+
+.homepage-afterparty-profile-summary strong {
+  font-size: 1.15rem;
+}
+
+.homepage-afterparty-profile-summary span {
+  color: rgba(29, 51, 40, 0.72);
+}
+
+.homepage-afterparty-profile-form {
+  display: grid;
+  gap: 10px;
+}
+
+.homepage-afterparty-profile-form label,
+.homepage-afterparty-file-field {
+  display: grid;
+  gap: 5px;
+  font-weight: 600;
+}
+
+.homepage-afterparty-profile-form input,
+.homepage-afterparty-file-field input {
+  border: 1px solid rgba(4, 55, 44, 0.22);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.homepage-afterparty-inline-button {
+  border: 1px solid rgba(4, 55, 44, 0.2);
+  background: #fff;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .homepage-afterparty-drink-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -2608,6 +2670,12 @@
   color: #0b7e3f;
 }
 
+.homepage-afterparty-card-meta {
+  margin: 7px 0 0;
+  color: rgba(29, 51, 40, 0.68);
+  font-size: 0.92rem;
+}
+
 .homepage-afterparty-drink-actions {
   margin-top: 12px;
   display: grid;
@@ -2638,6 +2706,126 @@
   width: 100%;
   color: #7a1f1f;
   border-color: rgba(122, 31, 31, 0.3);
+}
+
+.homepage-afterparty-submit-box {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid rgba(4, 55, 44, 0.1);
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.homepage-afterparty-submit-box p {
+  margin: 0;
+}
+
+.homepage-afterparty-order-list {
+  display: grid;
+  gap: 10px;
+}
+
+.homepage-afterparty-order {
+  border: 1px solid rgba(4, 55, 44, 0.16);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+}
+
+.homepage-afterparty-order.is-approved {
+  border-color: rgba(11, 126, 63, 0.32);
+}
+
+.homepage-afterparty-order.is-rejected {
+  border-color: rgba(122, 31, 31, 0.28);
+}
+
+.homepage-afterparty-order-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.homepage-afterparty-order-head span,
+.homepage-afterparty-order p {
+  color: rgba(29, 51, 40, 0.7);
+}
+
+.homepage-afterparty-order p {
+  margin: 8px 0 0;
+}
+
+.homepage-afterparty-order-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.homepage-afterparty-order-items span {
+  border-radius: 999px;
+  background: #eef6ed;
+  padding: 5px 8px;
+  font-size: 0.88rem;
+}
+
+.homepage-afterparty-segmented {
+  display: flex;
+  border: 1px solid rgba(4, 55, 44, 0.18);
+  border-radius: 999px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.homepage-afterparty-segmented button {
+  border: 0;
+  background: transparent;
+  padding: 8px 11px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.homepage-afterparty-segmented button.is-active {
+  color: #fff;
+  background: #0b7e3f;
+}
+
+.homepage-afterparty-leaderboard {
+  list-style: none;
+  counter-reset: afterparty-rank;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.homepage-afterparty-leaderboard li {
+  counter-increment: afterparty-rank;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(4, 55, 44, 0.12);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+}
+
+.homepage-afterparty-leaderboard li::before {
+  content: counter(afterparty-rank) ".";
+  font-weight: 800;
+  color: #0b7e3f;
+}
+
+.homepage-afterparty-leaderboard span {
+  display: grid;
+  gap: 2px;
+}
+
+.homepage-afterparty-leaderboard small {
+  color: rgba(29, 51, 40, 0.65);
 }
 
 .homepage-afterparty-menu-backdrop {
@@ -2692,10 +2880,17 @@
 }
 
 .homepage-afterparty-menu-item {
+  display: grid;
+  gap: 4px;
   min-height: 54px;
   text-align: left;
   font-size: 1rem;
   line-height: 1.2;
+}
+
+.homepage-afterparty-menu-item small {
+  color: rgba(29, 51, 40, 0.66);
+  font-weight: 600;
 }
 
 .homepage-afterparty-category-tabs {

@@ -36,6 +36,7 @@ const ZL_GAUSS_CENTER_INDEX = 2;
 const ZL_GAUSS_SIGMA = 1.35;
 const ZL_GAUSS_RATIO_PENALTY_WEIGHT = 0.35;
 const ZL_GAUSS_DROPPED_PENALTY_WEIGHT = 0.08;
+const AFTERPARTY_RECEIPTS_BUCKET = 'afterparty-receipts';
 
 type PtoTroopRegistryEntry = {
   canonicalName: string;
@@ -138,6 +139,38 @@ type MissingDialogState = {
   category: StationCategoryKey | 'TOTAL';
   missing: PatrolSummary[];
   expected: number;
+};
+
+type AfterpartyAdminOrderStatus = 'pending' | 'approved' | 'rejected';
+
+type AfterpartyAdminParticipant = {
+  id: string;
+  display_name: string;
+  troop_name: string;
+};
+
+type AfterpartyAdminOrderItem = {
+  id: string;
+  drink_key: string;
+  label: string;
+  category: string;
+  quantity: number;
+  approved_quantity: number;
+  points_each: number;
+  points_total: number;
+};
+
+type AfterpartyAdminOrder = {
+  id: string;
+  participant_id: string;
+  status: AfterpartyAdminOrderStatus;
+  receipt_path: string;
+  total_points: number;
+  review_note: string | null;
+  submitted_at: string;
+  reviewed_at: string | null;
+  afterparty_participants?: AfterpartyAdminParticipant | null;
+  afterparty_order_items?: AfterpartyAdminOrderItem[];
 };
 
 function normalizeText(value: string | null | undefined): string {
@@ -488,6 +521,57 @@ function formatDateTimeForExport(value: string | null | undefined): string {
   });
 }
 
+function formatAfterpartyAdminDate(value: string | null | undefined): string {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return '—';
+  }
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    return '—';
+  }
+  return parsed.toLocaleString('cs-CZ', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatAfterpartyAdminStatus(status: AfterpartyAdminOrderStatus): string {
+  if (status === 'approved') {
+    return 'Potvrzeno';
+  }
+  if (status === 'rejected') {
+    return 'Zamítnuto';
+  }
+  return 'Čeká na kontrolu';
+}
+
+function afterpartyDraftKey(orderId: string, itemId: string): string {
+  return `${orderId}:${itemId}`;
+}
+
+function parseAfterpartyAdminQuantity(value: unknown, fallback = 0): number {
+  const rawValue = typeof value === 'string' && value.trim() === '' ? fallback : value;
+  const numericValue = toNumeric(rawValue);
+  if (numericValue === null) {
+    return Math.max(0, Math.round(fallback));
+  }
+  return Math.max(0, Math.round(numericValue));
+}
+
+function getAfterpartyAdminDraftQuantity(
+  draftQuantities: Record<string, string>,
+  orderId: string,
+  item: AfterpartyAdminOrderItem,
+): number {
+  return parseAfterpartyAdminQuantity(
+    draftQuantities[afterpartyDraftKey(orderId, item.id)],
+    item.approved_quantity ?? item.quantity ?? 0,
+  );
+}
+
 function stripDiacritics(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
@@ -794,6 +878,14 @@ function AdminDashboard({
   const [processingLeagueImport, setProcessingLeagueImport] = useState(false);
   const [leagueImportError, setLeagueImportError] = useState<string | null>(null);
   const [leagueImportSuccess, setLeagueImportSuccess] = useState<string | null>(null);
+  const [afterpartyOrders, setAfterpartyOrders] = useState<AfterpartyAdminOrder[]>([]);
+  const [afterpartyLoading, setAfterpartyLoading] = useState(false);
+  const [afterpartySavingOrderId, setAfterpartySavingOrderId] = useState<string | null>(null);
+  const [afterpartyError, setAfterpartyError] = useState<string | null>(null);
+  const [afterpartySuccess, setAfterpartySuccess] = useState<string | null>(null);
+  const [afterpartySignedUrls, setAfterpartySignedUrls] = useState<Record<string, string>>({});
+  const [afterpartyDraftQuantities, setAfterpartyDraftQuantities] = useState<Record<string, string>>({});
+  const [afterpartyReviewNotes, setAfterpartyReviewNotes] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setEventState({ name: manifest.event.name, scoringLocked: manifest.event.scoringLocked });
@@ -1165,6 +1257,218 @@ function AdminDashboard({
     }
   }, [accessToken, disqualifyTarget]);
 
+  const loadAfterpartyOrders = useCallback(async () => {
+    setAfterpartyLoading(true);
+    setAfterpartyError(null);
+    try {
+      const { data, error } = await supabase
+        .from('afterparty_orders')
+        .select(
+          'id, participant_id, status, receipt_path, total_points, review_note, submitted_at, reviewed_at, afterparty_participants(id, display_name, troop_name), afterparty_order_items(id, drink_key, label, category, quantity, approved_quantity, points_each, points_total)',
+        )
+        .order('submitted_at', { ascending: false })
+        .limit(100);
+
+      if (error) {
+        throw error;
+      }
+
+      const statusOrder: Record<AfterpartyAdminOrderStatus, number> = {
+        pending: 0,
+        approved: 1,
+        rejected: 2,
+      };
+      const orders = ((data ?? []) as unknown as AfterpartyAdminOrder[])
+        .map((order) => ({
+          ...order,
+          afterparty_order_items: [...(order.afterparty_order_items ?? [])].sort((a, b) =>
+            a.category.localeCompare(b.category, 'cs') || a.label.localeCompare(b.label, 'cs'),
+          ),
+        }))
+        .sort((a, b) => {
+          const statusDiff = statusOrder[a.status] - statusOrder[b.status];
+          if (statusDiff !== 0) {
+            return statusDiff;
+          }
+          return new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime();
+        });
+
+      setAfterpartyOrders(orders);
+
+      const draftQuantities: Record<string, string> = {};
+      const reviewNotes: Record<string, string> = {};
+      orders.forEach((order) => {
+        reviewNotes[order.id] = order.review_note ?? '';
+        (order.afterparty_order_items ?? []).forEach((item) => {
+          draftQuantities[afterpartyDraftKey(order.id, item.id)] = String(item.approved_quantity ?? item.quantity ?? 0);
+        });
+      });
+      setAfterpartyDraftQuantities(draftQuantities);
+      setAfterpartyReviewNotes(reviewNotes);
+
+      const signedUrlPairs = await Promise.all(
+        orders.map(async (order) => {
+          if (!order.receipt_path) {
+            return [order.id, ''] as const;
+          }
+          const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+            .from(AFTERPARTY_RECEIPTS_BUCKET)
+            .createSignedUrl(order.receipt_path, 60 * 60);
+          if (signedUrlError) {
+            console.error('Failed to create afterparty receipt signed URL', signedUrlError);
+            return [order.id, ''] as const;
+          }
+          return [order.id, signedUrlData?.signedUrl ?? ''] as const;
+        }),
+      );
+      setAfterpartySignedUrls(
+        signedUrlPairs.reduce<Record<string, string>>((acc, [orderId, signedUrl]) => {
+          if (signedUrl) {
+            acc[orderId] = signedUrl;
+          }
+          return acc;
+        }, {}),
+      );
+    } catch (error) {
+      console.error('Failed to load afterparty orders', error);
+      setAfterpartyError('Nepodařilo se načíst účtenky afterparty ligy.');
+      setAfterpartyOrders([]);
+      setAfterpartySignedUrls({});
+    } finally {
+      setAfterpartyLoading(false);
+    }
+  }, []);
+
+  const handleAfterpartyQuantityChange = useCallback((orderId: string, itemId: string, value: string) => {
+    setAfterpartyDraftQuantities((prev) => ({
+      ...prev,
+      [afterpartyDraftKey(orderId, itemId)]: value,
+    }));
+  }, []);
+
+  const handleApproveAfterpartyOrder = useCallback(
+    async (order: AfterpartyAdminOrder) => {
+      const items = order.afterparty_order_items ?? [];
+      if (!items.length) {
+        setAfterpartyError('Účtenka nemá žádné položky.');
+        return;
+      }
+
+      setAfterpartySavingOrderId(order.id);
+      setAfterpartyError(null);
+      setAfterpartySuccess(null);
+      try {
+        const approvedItems = items.map((item) => {
+          const approvedQuantity = getAfterpartyAdminDraftQuantity(afterpartyDraftQuantities, order.id, item);
+          const pointsEach = Math.max(0, Math.round(item.points_each ?? 0));
+          return {
+            item,
+            approvedQuantity,
+            pointsEach,
+            pointsTotal: approvedQuantity * pointsEach,
+          };
+        });
+        const totalPoints = approvedItems.reduce((sum, item) => sum + item.pointsTotal, 0);
+
+        const itemUpdates = await Promise.all(
+          approvedItems.map(({ item, approvedQuantity, pointsTotal }) =>
+            supabase
+              .from('afterparty_order_items')
+              .update({
+                approved_quantity: approvedQuantity,
+                points_total: pointsTotal,
+              })
+              .eq('id', item.id),
+          ),
+        );
+        const itemUpdateError = itemUpdates.find((result) => result.error)?.error;
+        if (itemUpdateError) {
+          throw itemUpdateError;
+        }
+
+        const reviewNote = normalizeText(afterpartyReviewNotes[order.id]);
+        const { error: orderError } = await supabase
+          .from('afterparty_orders')
+          .update({
+            status: 'approved',
+            total_points: totalPoints,
+            review_note: reviewNote || null,
+            reviewed_at: new Date().toISOString(),
+            reviewed_by: manifest.judge.id,
+          })
+          .eq('id', order.id);
+
+        if (orderError) {
+          throw orderError;
+        }
+
+        setAfterpartySuccess('Účtenka byla potvrzena.');
+        await loadAfterpartyOrders();
+      } catch (error) {
+        console.error('Failed to approve afterparty order', error);
+        setAfterpartyError('Účtenku se nepodařilo potvrdit.');
+      } finally {
+        setAfterpartySavingOrderId(null);
+      }
+    },
+    [afterpartyDraftQuantities, afterpartyReviewNotes, loadAfterpartyOrders, manifest.judge.id],
+  );
+
+  const handleRejectAfterpartyOrder = useCallback(
+    async (order: AfterpartyAdminOrder) => {
+      const confirmed = window.confirm('Opravdu zamítnout tuto účtenku?');
+      if (!confirmed) {
+        return;
+      }
+
+      setAfterpartySavingOrderId(order.id);
+      setAfterpartyError(null);
+      setAfterpartySuccess(null);
+      try {
+        const itemUpdates = await Promise.all(
+          (order.afterparty_order_items ?? []).map((item) =>
+            supabase
+              .from('afterparty_order_items')
+              .update({
+                approved_quantity: 0,
+                points_total: 0,
+              })
+              .eq('id', item.id),
+          ),
+        );
+        const itemUpdateError = itemUpdates.find((result) => result.error)?.error;
+        if (itemUpdateError) {
+          throw itemUpdateError;
+        }
+
+        const reviewNote = normalizeText(afterpartyReviewNotes[order.id]);
+        const { error: orderError } = await supabase
+          .from('afterparty_orders')
+          .update({
+            status: 'rejected',
+            total_points: 0,
+            review_note: reviewNote || null,
+            reviewed_at: new Date().toISOString(),
+            reviewed_by: manifest.judge.id,
+          })
+          .eq('id', order.id);
+
+        if (orderError) {
+          throw orderError;
+        }
+
+        setAfterpartySuccess('Účtenka byla zamítnuta.');
+        await loadAfterpartyOrders();
+      } catch (error) {
+        console.error('Failed to reject afterparty order', error);
+        setAfterpartyError('Účtenku se nepodařilo zamítnout.');
+      } finally {
+        setAfterpartySavingOrderId(null);
+      }
+    },
+    [afterpartyReviewNotes, loadAfterpartyOrders, manifest.judge.id],
+  );
+
   useEffect(() => {
     if (!isCalcStation) {
       return;
@@ -1172,7 +1476,8 @@ function AdminDashboard({
     loadAnswers();
     loadStationStats();
     loadEventState();
-  }, [isCalcStation, loadAnswers, loadStationStats, loadEventState]);
+    loadAfterpartyOrders();
+  }, [isCalcStation, loadAnswers, loadStationStats, loadEventState, loadAfterpartyOrders]);
 
   const handleSaveAnswers = useCallback(async () => {
     setAnswersError(null);
@@ -1284,11 +1589,17 @@ function AdminDashboard({
 
   const handleRefreshAll = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([loadAnswers(), loadStationStats(), loadEventState(), refreshManifest()]).catch((error) => {
+    await Promise.all([
+      loadAnswers(),
+      loadStationStats(),
+      loadEventState(),
+      loadAfterpartyOrders(),
+      refreshManifest(),
+    ]).catch((error) => {
       console.error('Admin refresh failed', error);
     });
     setRefreshing(false);
-  }, [loadAnswers, loadStationStats, loadEventState, refreshManifest]);
+  }, [loadAnswers, loadStationStats, loadEventState, loadAfterpartyOrders, refreshManifest]);
 
   const handleExportNameCheck = useCallback(async () => {
     if (exportingNames) {
@@ -2770,6 +3081,157 @@ function AdminDashboard({
           </header>
           {eventError ? <p className="admin-error">{eventError}</p> : null}
           {lockMessage ? <p className="admin-notice">{lockMessage}</p> : null}
+        </section>
+
+        <section className="admin-card admin-card--with-divider">
+          <header className="admin-card-header">
+            <div>
+              <h2>Afterparty liga</h2>
+              <p className="admin-card-subtitle">
+                Kontrola nahraných účtenek. Po potvrzení se body připíšou do pořadí lidí i oddílů.
+              </p>
+            </div>
+            <div className="admin-card-actions">
+              <button
+                type="button"
+                className="admin-button admin-button--secondary"
+                onClick={loadAfterpartyOrders}
+                disabled={afterpartyLoading}
+              >
+                {afterpartyLoading ? 'Načítám…' : 'Obnovit účtenky'}
+              </button>
+            </div>
+          </header>
+          {afterpartyError ? <p className="admin-error">{afterpartyError}</p> : null}
+          {afterpartySuccess ? <p className="admin-success">{afterpartySuccess}</p> : null}
+          {afterpartyLoading ? <p className="admin-notice">Načítám účtenky…</p> : null}
+          {afterpartyOrders.length === 0 && !afterpartyLoading ? (
+            <p>Žádné účtenky ke kontrole.</p>
+          ) : null}
+          {afterpartyOrders.length > 0 ? (
+            <div className="admin-afterparty-list">
+              {afterpartyOrders.map((order) => {
+                const participant = order.afterparty_participants ?? null;
+                const items = order.afterparty_order_items ?? [];
+                const isSaving = afterpartySavingOrderId === order.id;
+                const signedUrl = afterpartySignedUrls[order.id];
+                const receiptLooksLikeImage = /\.(?:jpe?g|png|webp)$/i.test(order.receipt_path);
+                const previewPoints = items.reduce(
+                  (sum, item) =>
+                    sum
+                    + getAfterpartyAdminDraftQuantity(afterpartyDraftQuantities, order.id, item)
+                    * Math.max(0, Math.round(item.points_each ?? 0)),
+                  0,
+                );
+
+                return (
+                  <article key={order.id} className={`admin-afterparty-order admin-afterparty-order--${order.status}`}>
+                    <div className="admin-afterparty-order-head">
+                      <div>
+                        <h3>{participant?.display_name ?? 'Neznámý účastník'}</h3>
+                        <p>
+                          {participant?.troop_name ?? 'Bez oddílu'} · {formatAfterpartyAdminDate(order.submitted_at)}
+                        </p>
+                      </div>
+                      <span className={`admin-afterparty-status admin-afterparty-status--${order.status}`}>
+                        {formatAfterpartyAdminStatus(order.status)}
+                      </span>
+                    </div>
+
+                    <div className="admin-afterparty-receipt">
+                      {signedUrl && receiptLooksLikeImage ? (
+                        <a href={signedUrl} target="_blank" rel="noreferrer">
+                          <img src={signedUrl} alt="Nahraná účtenka" />
+                        </a>
+                      ) : signedUrl ? (
+                        <a
+                          className="admin-button admin-button--secondary"
+                          href={signedUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Otevřít účtenku
+                        </a>
+                      ) : (
+                        <span className="admin-afterparty-muted">Náhled účtenky není dostupný.</span>
+                      )}
+                    </div>
+
+                    <div className="admin-afterparty-items">
+                      {items.map((item) => {
+                        const inputId = `afterparty-${order.id}-${item.id}`;
+                        const draftKey = afterpartyDraftKey(order.id, item.id);
+                        return (
+                          <label key={item.id} className="admin-afterparty-item" htmlFor={inputId}>
+                            <span>
+                              <strong>{item.label}</strong>
+                              <small>
+                                {item.category} · nahlášeno {item.quantity} · {item.points_each} bodů za kus
+                              </small>
+                            </span>
+                            <input
+                              id={inputId}
+                              type="number"
+                              min="0"
+                              step="1"
+                              inputMode="numeric"
+                              value={afterpartyDraftQuantities[draftKey] ?? String(item.approved_quantity)}
+                              onChange={(event) =>
+                                handleAfterpartyQuantityChange(order.id, item.id, event.target.value)
+                              }
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <label className="admin-field admin-afterparty-note" htmlFor={`afterparty-note-${order.id}`}>
+                      <span>Poznámka pro účastníka</span>
+                      <textarea
+                        id={`afterparty-note-${order.id}`}
+                        value={afterpartyReviewNotes[order.id] ?? ''}
+                        onChange={(event) =>
+                          setAfterpartyReviewNotes((prev) => ({
+                            ...prev,
+                            [order.id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Volitelné, např. upraven počet položek podle účtenky"
+                      />
+                    </label>
+
+                    <div className="admin-afterparty-total">
+                      <span>
+                        Body po kontrole: <strong>{previewPoints}</strong>
+                      </span>
+                      <span>
+                        Aktuálně uloženo: <strong>{order.total_points}</strong>
+                      </span>
+                    </div>
+
+                    <div className="admin-card-actions admin-card-actions--end">
+                      <button
+                        type="button"
+                        className="admin-button admin-button--secondary"
+                        onClick={() => handleRejectAfterpartyOrder(order)}
+                        disabled={isSaving}
+                      >
+                        {isSaving ? 'Ukládám…' : 'Zamítnout'}
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-button admin-button--primary"
+                        onClick={() => handleApproveAfterpartyOrder(order)}
+                        disabled={isSaving}
+                      >
+                        {isSaving ? 'Ukládám…' : 'Potvrdit body'}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : null}
         </section>
 
         <section className="admin-card admin-card--with-divider">

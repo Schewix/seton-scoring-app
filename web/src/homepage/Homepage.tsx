@@ -1,11 +1,19 @@
 import './Homepage.css';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { PortableText } from '@portabletext/react';
 import AppFooter from '../components/AppFooter';
 import logo from '../assets/znak_SPTO_transparent.png';
 import { fetchContentArticle, fetchContentArticles, type ContentArticle } from '../data/content';
 import { fetchHomepage, hasSanityConfig, type SanityHomepage } from '../data/sanity';
 import { fetchAlbumPreview, type GalleryPreview as CachedGalleryPreview } from '../utils/galleryCache';
+import { supabase } from '../supabaseClient';
+import {
+  AFTERPARTY_DRINK_BY_KEY,
+  AFTERPARTY_DRINK_ITEMS,
+  AFTERPARTY_DRINK_MENU,
+  calculateAfterpartyPoints,
+  createEmptyAfterpartyCounts,
+} from '../afterparty';
 
 const HOMEPAGE_GALLERY_PREFETCH_LIMIT = 3;
 const HOMEPAGE_GALLERY_PREFETCH_DELAY_MS = 900;
@@ -117,6 +125,8 @@ const LEAGUE_EVENTS = [
 ] as const;
 const LEAGUE_TOP_COUNT = 7;
 const AFTERPARTY_STORAGE_KEY = 'zl-afterparty-counter-v2';
+const AFTERPARTY_PARTICIPANT_STORAGE_KEY = 'zl-afterparty-participant-v1';
+const AFTERPARTY_RECEIPTS_BUCKET = 'afterparty-receipts';
 const AFTERPARTY_TRIGGER_CLICK_COUNT = 5;
 const AFTERPARTY_TRIGGER_WINDOW_MS = 2000;
 type PersonalDrinkKey = string;
@@ -125,38 +135,46 @@ type PersonalDrinkStorageState = {
   selected: PersonalDrinkKey[];
   counts: PersonalDrinkCounts;
 };
-
-const PERSONAL_DRINK_MENU = [
-  { category: 'Pivo', items: ['Radegast', 'Polička', 'Poutník'] },
-  { category: 'Panáky', items: ['Zelená', 'Vodka', 'Rum'] },
-  { category: 'Víno', items: ['Bílé', 'Červené'] },
-  { category: 'Drinky', items: ['GT', 'Cuba Libre', 'Skinny Bitch']},
-  { category: 'Nealko', items: ['Voda', 'Kofola','Džus'] },
-];
-
-const PERSONAL_DRINK_ITEMS: Array<{ key: PersonalDrinkKey; label: string; category: string }> = (() => {
-  const seen = new Map<string, number>();
-  return PERSONAL_DRINK_MENU.flatMap((section) =>
-    section.items.map((label) => {
-      const normalized = label
-        .trim()
-        .toLocaleLowerCase('cs')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '');
-      const base = normalized || 'drink';
-      const duplicateCount = (seen.get(base) ?? 0) + 1;
-      seen.set(base, duplicateCount);
-      const suffix = duplicateCount > 1 ? `-${duplicateCount}` : '';
-      return {
-        key: `drink-${base}${suffix}`,
-        label,
-        category: section.category,
-      };
-    }),
-  );
-})();
+type AfterpartyParticipant = {
+  id: string;
+  display_name: string;
+  troop_name: string;
+};
+type AfterpartyOrderStatus = 'pending' | 'approved' | 'rejected';
+type AfterpartyOrderItemRow = {
+  id: string;
+  drink_key: string;
+  label: string;
+  category: string;
+  quantity: number;
+  approved_quantity: number;
+  points_each: number;
+  points_total: number;
+};
+type AfterpartyOrderRow = {
+  id: string;
+  participant_id: string;
+  status: AfterpartyOrderStatus;
+  receipt_path: string;
+  total_points: number;
+  review_note: string | null;
+  submitted_at: string;
+  reviewed_at: string | null;
+  afterparty_order_items?: AfterpartyOrderItemRow[];
+};
+type AfterpartyIndividualLeaderboardRow = {
+  participant_id: string;
+  display_name: string;
+  troop_name: string;
+  total_points: number;
+  approved_orders: number;
+};
+type AfterpartyTroopLeaderboardRow = {
+  troop_name: string;
+  total_points: number;
+  participants: number;
+  approved_orders: number;
+};
 
 type LeagueEvent = (typeof LEAGUE_EVENTS)[number]['key'];
 type LeagueScoresRecord = Record<string, Partial<Record<LeagueEvent, number | null>>>;
@@ -1362,7 +1380,7 @@ function RedakcePage() {
     };
   }, []);
 
-  const handleLogin = (event: React.FormEvent) => {
+  const handleLogin = (event: FormEvent) => {
     event.preventDefault();
     setMessage(null);
     fetch('/api/content/admin/login', {
@@ -2503,14 +2521,11 @@ function resolveActiveNav(pathname: string) {
 }
 
 function createEmptyPersonalDrinkCounts(): PersonalDrinkCounts {
-  return PERSONAL_DRINK_ITEMS.reduce<PersonalDrinkCounts>((acc, item) => {
-    acc[item.key] = 0;
-    return acc;
-  }, {});
+  return createEmptyAfterpartyCounts();
 }
 
 function isPersonalDrinkKey(value: unknown): value is PersonalDrinkKey {
-  return PERSONAL_DRINK_ITEMS.some((item) => item.key === value);
+  return typeof value === 'string' && AFTERPARTY_DRINK_BY_KEY.has(value);
 }
 
 function sanitizePersonalDrinkSelection(value: unknown): PersonalDrinkKey[] {
@@ -2558,7 +2573,7 @@ function loadPersonalDrinkStateFromStorage(): PersonalDrinkStorageState {
       parsedObject.counts && typeof parsedObject.counts === 'object'
         ? (parsedObject.counts as Record<string, unknown>)
         : parsedObject;
-    const counts: PersonalDrinkCounts = PERSONAL_DRINK_ITEMS.reduce<PersonalDrinkCounts>((acc, item) => {
+    const counts: PersonalDrinkCounts = AFTERPARTY_DRINK_ITEMS.reduce<PersonalDrinkCounts>((acc, item) => {
       acc[item.key] = parseAfterpartyNonNegativeInt(parsedCounts[item.key], defaults[item.key]);
       return acc;
     }, {});
@@ -2567,19 +2582,62 @@ function loadPersonalDrinkStateFromStorage(): PersonalDrinkStorageState {
       return { selected, counts };
     }
 
-    const selectedFromCounts = PERSONAL_DRINK_ITEMS.filter((item) => counts[item.key] > 0).map((item) => item.key);
+    const selectedFromCounts = AFTERPARTY_DRINK_ITEMS.filter((item) => counts[item.key] > 0).map((item) => item.key);
     return { selected: selectedFromCounts, counts };
   } catch {
     return { selected: [], counts: defaults };
   }
 }
 
-function PersonalDrinkCounter({ open, onClose }: { open: boolean; onClose: () => void }) {
+function formatAfterpartyDate(value: string | null | undefined) {
+  if (!value) {
+    return '';
+  }
+  return new Date(value).toLocaleString('cs-CZ', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatAfterpartyStatus(status: AfterpartyOrderStatus) {
+  if (status === 'approved') {
+    return 'Potvrzeno';
+  }
+  if (status === 'rejected') {
+    return 'Zamítnuto';
+  }
+  return 'Čeká na kontrolu';
+}
+
+function createAfterpartyReceiptPath(participantId: string, file: File) {
+  const extension = file.name.split('.').pop()?.toLocaleLowerCase('cs').replace(/[^a-z0-9]/g, '') || 'bin';
+  const id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${participantId}/${id}.${extension}`;
+}
+
+function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => void }) {
   const initialState = useMemo(() => loadPersonalDrinkStateFromStorage(), []);
   const [selectedDrinks, setSelectedDrinks] = useState<PersonalDrinkKey[]>(initialState.selected);
   const [counts, setCounts] = useState<PersonalDrinkCounts>(initialState.counts);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeDrinkCategory, setActiveDrinkCategory] = useState(PERSONAL_DRINK_MENU[0]?.category ?? '');
+  const [activeDrinkCategory, setActiveDrinkCategory] = useState(AFTERPARTY_DRINK_MENU[0]?.category ?? '');
+  const [participant, setParticipant] = useState<AfterpartyParticipant | null>(null);
+  const [profileForm, setProfileForm] = useState({ displayName: '', troopName: '' });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileEditing, setProfileEditing] = useState(false);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [orders, setOrders] = useState<AfterpartyOrderRow[]>([]);
+  const [individualLeaderboard, setIndividualLeaderboard] = useState<AfterpartyIndividualLeaderboardRow[]>([]);
+  const [troopLeaderboard, setTroopLeaderboard] = useState<AfterpartyTroopLeaderboardRow[]>([]);
+  const [leaderboardMode, setLeaderboardMode] = useState<'individuals' | 'troops'>('individuals');
+  const [loadingOnline, setLoadingOnline] = useState(false);
+  const [submittingOrder, setSubmittingOrder] = useState(false);
+  const [afterpartyError, setAfterpartyError] = useState<string | null>(null);
+  const [afterpartySuccess, setAfterpartySuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -2591,6 +2649,105 @@ function PersonalDrinkCounter({ open, onClose }: { open: boolean; onClose: () =>
       // Ignore localStorage write errors in private browsing or blocked contexts.
     }
   }, [counts, selectedDrinks]);
+
+  const loadLeaderboards = useCallback(async () => {
+    const [individualRes, troopRes] = await Promise.all([
+      supabase
+        .from('afterparty_individual_leaderboard')
+        .select('participant_id, display_name, troop_name, total_points, approved_orders')
+        .gt('total_points', 0)
+        .order('total_points', { ascending: false })
+        .order('display_name', { ascending: true })
+        .limit(50),
+      supabase
+        .from('afterparty_troop_leaderboard')
+        .select('troop_name, total_points, participants, approved_orders')
+        .gt('total_points', 0)
+        .order('total_points', { ascending: false })
+        .order('troop_name', { ascending: true })
+        .limit(50),
+    ]);
+
+    if (individualRes.error) {
+      throw individualRes.error;
+    }
+    if (troopRes.error) {
+      throw troopRes.error;
+    }
+
+    setIndividualLeaderboard((individualRes.data ?? []) as AfterpartyIndividualLeaderboardRow[]);
+    setTroopLeaderboard((troopRes.data ?? []) as AfterpartyTroopLeaderboardRow[]);
+  }, []);
+
+  const loadParticipantOrders = useCallback(async (participantId: string) => {
+    const { data, error } = await supabase
+      .from('afterparty_orders')
+      .select(
+        'id, participant_id, status, receipt_path, total_points, review_note, submitted_at, reviewed_at, afterparty_order_items(id, drink_key, label, category, quantity, approved_quantity, points_each, points_total)',
+      )
+      .eq('participant_id', participantId)
+      .order('submitted_at', { ascending: false })
+      .limit(20);
+
+    if (error) {
+      throw error;
+    }
+    setOrders((data ?? []) as AfterpartyOrderRow[]);
+  }, []);
+
+  const loadAfterpartyOnlineState = useCallback(async () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    setLoadingOnline(true);
+    setAfterpartyError(null);
+    try {
+      const participantId = window.localStorage.getItem(AFTERPARTY_PARTICIPANT_STORAGE_KEY);
+      let loadedParticipant: AfterpartyParticipant | null = null;
+
+      if (participantId) {
+        const { data, error } = await supabase
+          .from('afterparty_participants')
+          .select('id, display_name, troop_name')
+          .eq('id', participantId)
+          .maybeSingle();
+
+        if (error) {
+          throw error;
+        }
+        if (data) {
+          loadedParticipant = data as AfterpartyParticipant;
+          setParticipant(loadedParticipant);
+          setProfileForm({ displayName: loadedParticipant.display_name, troopName: loadedParticipant.troop_name });
+          setProfileEditing(false);
+          await loadParticipantOrders(loadedParticipant.id);
+        } else {
+          window.localStorage.removeItem(AFTERPARTY_PARTICIPANT_STORAGE_KEY);
+          setParticipant(null);
+          setOrders([]);
+          setProfileEditing(true);
+        }
+      } else {
+        setParticipant(null);
+        setOrders([]);
+        setProfileEditing(true);
+      }
+
+      await loadLeaderboards();
+    } catch (error) {
+      console.error('Failed to load afterparty league', error);
+      setAfterpartyError('Online liga se nepodařila načíst. Zkontroluj připojení a zkus to znovu.');
+    } finally {
+      setLoadingOnline(false);
+    }
+  }, [loadLeaderboards, loadParticipantOrders]);
+
+  useEffect(() => {
+    if (open) {
+      void loadAfterpartyOnlineState();
+    }
+  }, [loadAfterpartyOnlineState, open]);
 
   useEffect(() => {
     if (!open || typeof window === 'undefined') {
@@ -2646,8 +2803,146 @@ function PersonalDrinkCounter({ open, onClose }: { open: boolean; onClose: () =>
     setMenuOpen(false);
   };
 
-  const selectedItems = PERSONAL_DRINK_ITEMS.filter((drink) => selectedDrinks.includes(drink.key));
-  const activeCategoryItems = PERSONAL_DRINK_ITEMS.filter((drink) => drink.category === activeDrinkCategory);
+  const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const displayName = profileForm.displayName.trim();
+    const troopName = profileForm.troopName.trim();
+    if (!displayName || !troopName) {
+      setAfterpartyError('Vyplň jméno i oddíl.');
+      return;
+    }
+
+    setProfileSaving(true);
+    setAfterpartyError(null);
+    setAfterpartySuccess(null);
+    try {
+      const payload = {
+        display_name: displayName,
+        troop_name: troopName,
+      };
+      const result = participant
+        ? await supabase
+          .from('afterparty_participants')
+          .update(payload)
+          .eq('id', participant.id)
+          .select('id, display_name, troop_name')
+          .single()
+        : await supabase
+          .from('afterparty_participants')
+          .insert(payload)
+          .select('id, display_name, troop_name')
+          .single();
+
+      if (result.error) {
+        throw result.error;
+      }
+      const saved = result.data as AfterpartyParticipant;
+      setParticipant(saved);
+      setProfileForm({ displayName: saved.display_name, troopName: saved.troop_name });
+      setProfileEditing(false);
+      window.localStorage.setItem(AFTERPARTY_PARTICIPANT_STORAGE_KEY, saved.id);
+      setAfterpartySuccess('Profil je uložený.');
+      await loadParticipantOrders(saved.id);
+      await loadLeaderboards();
+    } catch (error) {
+      console.error('Failed to save afterparty participant', error);
+      setAfterpartyError('Profil se nepodařilo uložit.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleSubmitOrder = async () => {
+    if (!participant) {
+      setAfterpartyError('Nejdřív ulož jméno a oddíl.');
+      setProfileEditing(true);
+      return;
+    }
+    const orderItems = AFTERPARTY_DRINK_ITEMS
+      .map((drink) => ({
+        drink,
+        quantity: Math.max(0, counts[drink.key] ?? 0),
+      }))
+      .filter((item) => item.quantity > 0);
+    if (!orderItems.length) {
+      setAfterpartyError('Přidej aspoň jednu položku.');
+      return;
+    }
+    if (!receiptFile) {
+      setAfterpartyError('Nahraj fotku nebo PDF účtenky.');
+      return;
+    }
+    const allowedReceipt = receiptFile.type.startsWith('image/') || receiptFile.type === 'application/pdf';
+    if (!allowedReceipt) {
+      setAfterpartyError('Účtenka musí být obrázek nebo PDF.');
+      return;
+    }
+
+    setSubmittingOrder(true);
+    setAfterpartyError(null);
+    setAfterpartySuccess(null);
+    try {
+      const receiptPath = createAfterpartyReceiptPath(participant.id, receiptFile);
+      const { error: uploadError } = await supabase.storage
+        .from(AFTERPARTY_RECEIPTS_BUCKET)
+        .upload(receiptPath, receiptFile, {
+          contentType: receiptFile.type || undefined,
+          upsert: false,
+        });
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data: order, error: orderError } = await supabase
+        .from('afterparty_orders')
+        .insert({
+          participant_id: participant.id,
+          receipt_path: receiptPath,
+          status: 'pending',
+          total_points: 0,
+        })
+        .select('id')
+        .single();
+      if (orderError) {
+        throw orderError;
+      }
+
+      const orderId = (order as { id: string }).id;
+      const rows = orderItems.map(({ drink, quantity }) => ({
+        order_id: orderId,
+        drink_key: drink.key,
+        label: drink.label,
+        category: drink.category,
+        quantity,
+        approved_quantity: quantity,
+        points_each: drink.points,
+        points_total: quantity * drink.points,
+      }));
+      const { error: itemsError } = await supabase.from('afterparty_order_items').insert(rows);
+      if (itemsError) {
+        throw itemsError;
+      }
+
+      setCounts(createEmptyPersonalDrinkCounts());
+      setSelectedDrinks([]);
+      setReceiptFile(null);
+      setAfterpartySuccess('Objednávka je odeslaná ke kontrole.');
+      await loadParticipantOrders(participant.id);
+      await loadLeaderboards();
+    } catch (error) {
+      console.error('Failed to submit afterparty order', error);
+      setAfterpartyError('Objednávku se nepodařilo odeslat.');
+    } finally {
+      setSubmittingOrder(false);
+    }
+  };
+
+  const selectedItems = AFTERPARTY_DRINK_ITEMS.filter((drink) => selectedDrinks.includes(drink.key));
+  const activeCategoryItems = AFTERPARTY_DRINK_ITEMS.filter((drink) => drink.category === activeDrinkCategory);
+  const draftPoints = calculateAfterpartyPoints(counts);
+  const draftItemCount = selectedItems.reduce((sum, drink) => sum + Math.max(0, counts[drink.key] ?? 0), 0);
+  const activeLeaderboard =
+    leaderboardMode === 'individuals' ? individualLeaderboard : troopLeaderboard;
 
   if (!open) {
     return null;
@@ -2663,15 +2958,60 @@ function PersonalDrinkCounter({ open, onClose }: { open: boolean; onClose: () =>
     >
       <div className="homepage-afterparty-panel" onClick={(event) => event.stopPropagation()}>
         <div className="homepage-afterparty-header">
-          <h2 id="afterparty-counter-title">Pivečko počítadlo</h2>
+          <h2 id="afterparty-counter-title">Afterparty liga</h2>
           <button type="button" className="homepage-afterparty-close" onClick={onClose}>
             Zavřít
           </button>
         </div>
 
+        {afterpartyError ? <p className="homepage-afterparty-alert is-error">{afterpartyError}</p> : null}
+        {afterpartySuccess ? <p className="homepage-afterparty-alert is-success">{afterpartySuccess}</p> : null}
+        {loadingOnline ? <p className="homepage-afterparty-empty">Načítám online ligu…</p> : null}
+
+        <section className="homepage-afterparty-section">
+          <div className="homepage-afterparty-section-head">
+            <h3>Profil</h3>
+            {participant && !profileEditing ? (
+              <button type="button" className="homepage-afterparty-inline-button" onClick={() => setProfileEditing(true)}>
+                Upravit
+              </button>
+            ) : null}
+          </div>
+          {participant && !profileEditing ? (
+            <div className="homepage-afterparty-profile-summary">
+              <strong>{participant.display_name}</strong>
+              <span>{participant.troop_name}</span>
+            </div>
+          ) : (
+            <form className="homepage-afterparty-profile-form" onSubmit={handleProfileSubmit}>
+              <label>
+                <span>Jméno</span>
+                <input
+                  type="text"
+                  value={profileForm.displayName}
+                  maxLength={80}
+                  onChange={(event) => setProfileForm((prev) => ({ ...prev, displayName: event.target.value }))}
+                />
+              </label>
+              <label>
+                <span>Oddíl</span>
+                <input
+                  type="text"
+                  value={profileForm.troopName}
+                  maxLength={120}
+                  onChange={(event) => setProfileForm((prev) => ({ ...prev, troopName: event.target.value }))}
+                />
+              </label>
+              <button type="submit" className="homepage-afterparty-add-order" disabled={profileSaving}>
+                {profileSaving ? 'Ukládám…' : 'Uložit profil'}
+              </button>
+            </form>
+          )}
+        </section>
+
         <section className="homepage-afterparty-section homepage-afterparty-section-users">
           <div className="homepage-afterparty-section-head">
-            <h3>Moje počítadlo</h3>
+            <h3>Moje objednávka</h3>
             <button type="button" className="homepage-afterparty-add-order" onClick={() => setMenuOpen(true)}>
               + Přidat objednávku
             </button>
@@ -2698,6 +3038,7 @@ function PersonalDrinkCounter({ open, onClose }: { open: boolean; onClose: () =>
                     <h4>{drink.label}</h4>
                     <strong>{counts[drink.key]}</strong>
                   </div>
+                  <p className="homepage-afterparty-card-meta">{drink.points} bodů za kus</p>
                   <div className="homepage-afterparty-drink-actions">
                     <button
                       type="button"
@@ -2737,6 +3078,120 @@ function PersonalDrinkCounter({ open, onClose }: { open: boolean; onClose: () =>
               Resetovat vše
             </button>
           </div>
+          {draftItemCount > 0 ? (
+            <div className="homepage-afterparty-submit-box">
+              <p>
+                Aktuálně {draftItemCount} položek za <strong>{draftPoints} bodů</strong>.
+              </p>
+              <label className="homepage-afterparty-file-field">
+                <span>Účtenka</span>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(event) => setReceiptFile(event.target.files?.[0] ?? null)}
+                />
+              </label>
+              {receiptFile ? <p className="homepage-afterparty-empty">Vybráno: {receiptFile.name}</p> : null}
+              <button
+                type="button"
+                className="homepage-afterparty-add-order"
+                onClick={handleSubmitOrder}
+                disabled={submittingOrder}
+              >
+                {submittingOrder ? 'Odesílám…' : 'Zaplaceno a odeslat ke kontrole'}
+              </button>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="homepage-afterparty-section">
+          <div className="homepage-afterparty-section-head">
+            <h3>Moje účtenky</h3>
+            <button
+              type="button"
+              className="homepage-afterparty-inline-button"
+              onClick={loadAfterpartyOnlineState}
+              disabled={loadingOnline}
+            >
+              {loadingOnline ? 'Načítám…' : 'Obnovit'}
+            </button>
+          </div>
+          {orders.length === 0 ? (
+            <p className="homepage-afterparty-empty">Zatím nemáš žádnou odeslanou účtenku.</p>
+          ) : (
+            <div className="homepage-afterparty-order-list">
+              {orders.map((order) => (
+                <article key={order.id} className={`homepage-afterparty-order is-${order.status}`}>
+                  <div className="homepage-afterparty-order-head">
+                    <strong>{formatAfterpartyStatus(order.status)}</strong>
+                    <span>{formatAfterpartyDate(order.submitted_at)}</span>
+                  </div>
+                  <p>
+                    {order.status === 'approved'
+                      ? `${order.total_points} bodů`
+                      : order.status === 'rejected'
+                        ? 'Bez bodů'
+                        : 'Body se připíšou po kontrole'}
+                  </p>
+                  <div className="homepage-afterparty-order-items">
+                    {(order.afterparty_order_items ?? []).map((item) => (
+                      <span key={item.id}>
+                        {item.label} × {order.status === 'approved' ? item.approved_quantity : item.quantity}
+                      </span>
+                    ))}
+                  </div>
+                  {order.review_note ? <p className="homepage-afterparty-empty">{order.review_note}</p> : null}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="homepage-afterparty-section">
+          <div className="homepage-afterparty-section-head">
+            <h3>Pořadí</h3>
+            <div className="homepage-afterparty-segmented">
+              <button
+                type="button"
+                className={leaderboardMode === 'individuals' ? 'is-active' : ''}
+                onClick={() => setLeaderboardMode('individuals')}
+              >
+                Lidi
+              </button>
+              <button
+                type="button"
+                className={leaderboardMode === 'troops' ? 'is-active' : ''}
+                onClick={() => setLeaderboardMode('troops')}
+              >
+                Oddíly
+              </button>
+            </div>
+          </div>
+          {activeLeaderboard.length === 0 ? (
+            <p className="homepage-afterparty-empty">Zatím nejsou potvrzené žádné body.</p>
+          ) : (
+            <ol className="homepage-afterparty-leaderboard">
+              {leaderboardMode === 'individuals'
+                ? (activeLeaderboard as AfterpartyIndividualLeaderboardRow[]).map((row) => (
+                  <li key={row.participant_id}>
+                    <span>
+                      <strong>{row.display_name}</strong>
+                      <small>{row.troop_name}</small>
+                    </span>
+                    <strong>{row.total_points}</strong>
+                  </li>
+                ))
+                : (activeLeaderboard as AfterpartyTroopLeaderboardRow[]).map((row) => (
+                  <li key={row.troop_name}>
+                    <span>
+                      <strong>{row.troop_name}</strong>
+                      <small>{row.participants} lidí</small>
+                    </span>
+                    <strong>{row.total_points}</strong>
+                  </li>
+                ))}
+            </ol>
+          )}
         </section>
 
         {menuOpen ? (
@@ -2755,7 +3210,7 @@ function PersonalDrinkCounter({ open, onClose }: { open: boolean; onClose: () =>
               </div>
 
               <div className="homepage-afterparty-category-tabs" role="tablist" aria-label="Kategorie položek">
-                {PERSONAL_DRINK_MENU.map((section) => {
+                {AFTERPARTY_DRINK_MENU.map((section) => {
                   const isActive = section.category === activeDrinkCategory;
                   return (
                     <button
@@ -2782,7 +3237,8 @@ function PersonalDrinkCounter({ open, onClose }: { open: boolean; onClose: () =>
                       className="homepage-afterparty-menu-item"
                       onClick={() => addDrinkOrder(drink.key)}
                     >
-                      {drink.label}
+                      <span>{drink.label}</span>
+                      <small>{drink.points} bodů</small>
                     </button>
                   ))}
                 </div>
@@ -2932,7 +3388,7 @@ function SiteHeader({
           </div>
         </div>
       </nav>
-      <PersonalDrinkCounter open={afterpartyOpen} onClose={() => setAfterpartyOpen(false)} />
+      <AfterpartyCounter open={afterpartyOpen} onClose={() => setAfterpartyOpen(false)} />
     </>
   );
 }
