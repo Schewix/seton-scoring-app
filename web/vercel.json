@@ -35,7 +35,7 @@
     },
     {
       "source": "/sitemap.xml",
-      "destination": "/api/sitemap.xml"
+      "destination": "/api/content?path=sitemap"
     },
     {
       "source": "/auth/login",
