@@ -34,6 +34,10 @@
       "destination": "/api/content?path=:path*"
     },
     {
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap.xml"
+    },
+    {
       "source": "/auth/login",
       "destination": "/api/auth/login"
     },
