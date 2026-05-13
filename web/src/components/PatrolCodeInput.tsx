@@ -475,9 +475,9 @@ export default function PatrolCodeInput({
     if (resolvedRegistryMatch.ambiguous) {
       return {
         code: canonical,
-        valid: false,
-        reason: 'ambiguous',
-        message: 'Číslo je duplicitní mezi H/D. Zadej kód se sexem (např. NH-1).',
+        valid: true,
+        reason: 'valid',
+        message: 'Sdílené číslo H/D: body se uloží oběma hlídkám.',
       };
     }
     if (!entry) {

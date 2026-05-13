@@ -4,7 +4,17 @@ select
   e.id,
   e.name,
   e.starts_at,
-  e.ends_at
+  e.ends_at,
+  e.announced_places_n,
+  e.announced_places_m,
+  e.announced_places_s,
+  e.announced_places_r,
+  e.time_limit_n_minutes,
+  e.time_limit_m_minutes,
+  e.time_limit_s_minutes,
+  e.time_limit_r_minutes,
+  e.time_penalty_step_minutes,
+  e.participating_troops
 from events e;
 
 grant select on events_public to anon, authenticated;

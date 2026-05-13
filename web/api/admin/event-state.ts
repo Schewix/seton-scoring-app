@@ -16,8 +16,24 @@ type TokenClaims = {
 type StationCategoryKey = 'NH' | 'ND' | 'MH' | 'MD' | 'SH' | 'SD' | 'RH' | 'RD';
 
 const CATEGORY_KEYS = ['N', 'M', 'S', 'R'] as const;
+type BaseCategoryKey = (typeof CATEGORY_KEYS)[number];
 const STATION_CATEGORY_KEYS: StationCategoryKey[] = ['NH', 'ND', 'MH', 'MD', 'SH', 'SD', 'RH', 'RD'];
 const MAX_PATROLS_PER_CATEGORY = 300;
+const DEFAULT_ANNOUNCED_PLACES: Record<BaseCategoryKey, number> = {
+  N: 5,
+  M: 6,
+  S: 6,
+  R: 3,
+};
+const DEFAULT_TIME_LIMIT_MINUTES: Record<BaseCategoryKey, number> = {
+  N: 110,
+  M: 140,
+  S: 140,
+  R: 140,
+};
+const DEFAULT_TIME_PENALTY_STEP_MINUTES = 20;
+const EVENT_SCORING_SETTINGS_SELECT =
+  'announced_places_n,announced_places_m,announced_places_s,announced_places_r,time_limit_n_minutes,time_limit_m_minutes,time_limit_s_minutes,time_limit_r_minutes,time_penalty_step_minutes,participating_troops';
 
 const PRAGUE_TIME_ZONE = 'Europe/Prague';
 
@@ -95,6 +111,62 @@ function toNonNegativeInt(value: unknown, fallback = 0): number {
     }
   }
   return Math.max(0, Math.round(fallback));
+}
+
+function toPositiveInt(value: unknown, fallback: number, max = 1_000): number {
+  const next = toNonNegativeInt(value, fallback);
+  if (!Number.isFinite(next)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(1, next));
+}
+
+type EventScoringSettings = {
+  announced_places_n: number;
+  announced_places_m: number;
+  announced_places_s: number;
+  announced_places_r: number;
+  time_limit_n_minutes: number;
+  time_limit_m_minutes: number;
+  time_limit_s_minutes: number;
+  time_limit_r_minutes: number;
+  time_penalty_step_minutes: number;
+  participating_troops: string[];
+};
+
+function normalizeTroopList(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  values.forEach((entry) => {
+    const troopName = normalizeText(entry).replace(/\s+/g, ' ');
+    if (!troopName) {
+      return;
+    }
+    const key = troopName.toLocaleLowerCase('cs');
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    result.push(troopName.slice(0, 120));
+  });
+  return result.sort((a, b) => a.localeCompare(b, 'cs', { sensitivity: 'base' }));
+}
+
+function normalizeEventScoringSettings(source: Record<string, unknown> | null | undefined): EventScoringSettings {
+  const values = source ?? {};
+  return {
+    announced_places_n: toPositiveInt(values.announced_places_n, DEFAULT_ANNOUNCED_PLACES.N, 100),
+    announced_places_m: toPositiveInt(values.announced_places_m, DEFAULT_ANNOUNCED_PLACES.M, 100),
+    announced_places_s: toPositiveInt(values.announced_places_s, DEFAULT_ANNOUNCED_PLACES.S, 100),
+    announced_places_r: toPositiveInt(values.announced_places_r, DEFAULT_ANNOUNCED_PLACES.R, 100),
+    time_limit_n_minutes: toPositiveInt(values.time_limit_n_minutes, DEFAULT_TIME_LIMIT_MINUTES.N, 24 * 60),
+    time_limit_m_minutes: toPositiveInt(values.time_limit_m_minutes, DEFAULT_TIME_LIMIT_MINUTES.M, 24 * 60),
+    time_limit_s_minutes: toPositiveInt(values.time_limit_s_minutes, DEFAULT_TIME_LIMIT_MINUTES.S, 24 * 60),
+    time_limit_r_minutes: toPositiveInt(values.time_limit_r_minutes, DEFAULT_TIME_LIMIT_MINUTES.R, 24 * 60),
+    time_penalty_step_minutes: toPositiveInt(values.time_penalty_step_minutes, DEFAULT_TIME_PENALTY_STEP_MINUTES, 24 * 60),
+    participating_troops: normalizeTroopList(values.participating_troops),
+  };
 }
 
 function isBoolean(value: unknown): value is boolean {
@@ -260,6 +332,32 @@ function buildPatrolCodeLookupVariants(rawCode: unknown): string[] {
   push(`${category}D-${noPad}`);
   push(`${category}D-${pad2}`);
   return variants;
+}
+
+function parseSexedPatrolCode(rawCode: unknown): { category: string; sex: string; number: number } | null {
+  const code = normalizeStationCode(rawCode);
+  const match = code.match(/^([NMSR])([HD])[- ]?(\d{1,3})$/);
+  if (!match) {
+    return null;
+  }
+  const number = Number.parseInt(match[3], 10);
+  if (!Number.isFinite(number) || number <= 0) {
+    return null;
+  }
+  return {
+    category: match[1],
+    sex: match[2],
+    number,
+  };
+}
+
+function buildCounterpartPatrolCode(rawCode: unknown): string | null {
+  const parsed = parseSexedPatrolCode(rawCode);
+  if (!parsed) {
+    return null;
+  }
+  const oppositeSex = parsed.sex === 'H' ? 'D' : 'H';
+  return `${parsed.category}${oppositeSex}-${parsed.number}`;
 }
 
 async function resolvePatrolByCode(
@@ -517,7 +615,7 @@ async function loadSetupData(supabaseAdmin: any, currentEventId: string, res: an
   const [eventsRes, stationsRes, judgesRes, assignmentsRes, orderRes] = await Promise.all([
     supabaseAdmin
       .from('events')
-      .select('id,name,starts_at,ends_at,scoring_locked')
+      .select(`id,name,starts_at,ends_at,scoring_locked,${EVENT_SCORING_SETTINGS_SELECT}`)
       .order('starts_at', { ascending: false, nullsFirst: false })
       .order('name', { ascending: true }),
     supabaseAdmin
@@ -581,6 +679,28 @@ async function handleSetupAction(
     const sourceEventId = hasSourceEventId
       ? normalizeText(payload.copy_stations_from_event_id)
       : currentEventId;
+    let nextEventSettings = normalizeEventScoringSettings(null);
+
+    if (sourceEventId) {
+      const { data: sourceEventSettings, error: sourceEventSettingsError } = await supabaseAdmin
+        .from('events')
+        .select(EVENT_SCORING_SETTINGS_SELECT)
+        .eq('id', sourceEventId)
+        .maybeSingle();
+
+      if (sourceEventSettingsError) {
+        return respond(
+          res,
+          500,
+          'Failed to load source event scoring settings',
+          sourceEventSettingsError.message,
+        );
+      }
+
+      if (sourceEventSettings) {
+        nextEventSettings = normalizeEventScoringSettings(sourceEventSettings as Record<string, unknown>);
+      }
+    }
 
     const { data: insertedEvent, error: insertEventError } = await supabaseAdmin
       .from('events')
@@ -590,8 +710,9 @@ async function handleSetupAction(
         ends_at: endsAt,
         scoring_locked: false,
         scoring_locked_at: null,
+        ...nextEventSettings,
       })
-      .select('id,name,starts_at,ends_at,scoring_locked')
+      .select(`id,name,starts_at,ends_at,scoring_locked,${EVENT_SCORING_SETTINGS_SELECT}`)
       .single();
 
     if (insertEventError || !insertedEvent) {
@@ -677,6 +798,46 @@ async function handleSetupAction(
       event_id: targetEventId,
       category_orders: normalized.categoryOrders,
       separator_before_by_category: normalized.separatorBeforeByCategory,
+    });
+  }
+
+  if (action === 'save_event_scoring_config') {
+    const targetEventId = normalizeText(payload.event_id);
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'Missing event_id.' });
+    }
+
+    const { data: existingSettings, error: existingSettingsError } = await supabaseAdmin
+      .from('events')
+      .select(EVENT_SCORING_SETTINGS_SELECT)
+      .eq('id', targetEventId)
+      .maybeSingle();
+
+    if (existingSettingsError) {
+      return respond(res, 500, 'Failed to load current event scoring settings', existingSettingsError.message);
+    }
+    if (!existingSettings) {
+      return res.status(404).json({ error: 'Event not found.' });
+    }
+
+    const normalizedSettings = normalizeEventScoringSettings({
+      ...(existingSettings as Record<string, unknown>),
+      ...payload,
+    });
+
+    const { error: updateSettingsError } = await supabaseAdmin
+      .from('events')
+      .update(normalizedSettings)
+      .eq('id', targetEventId);
+
+    if (updateSettingsError) {
+      return respond(res, 500, 'Failed to save event scoring settings', updateSettingsError.message);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      event_id: targetEventId,
+      ...normalizedSettings,
     });
   }
 
@@ -800,6 +961,8 @@ async function handleSetupAction(
     const targetEventId = normalizeText(payload.event_id);
     const patrolId = normalizeText(payload.patrol_id);
     const patrolCode = normalizeText(payload.patrol_code);
+    const patrolCodeInput = normalizeText(payload.patrol_code_input);
+    const cleanupSharedNumber = payload.cleanup_shared_number === true;
     const teamName = normalizeText(payload.team_name);
     const patrolMembers = normalizePatrolMembers(payload.patrol_members);
 
@@ -852,9 +1015,62 @@ async function handleSetupAction(
       return res.status(404).json({ error: 'Patrol not found for this event.' });
     }
 
+    let removedSharedPatrolId: string | null = null;
+    if (cleanupSharedNumber) {
+      const cleanupReferenceCode = patrolCodeInput || updatedPatrol.patrol_code || patrolCode;
+      const counterpartCode = buildCounterpartPatrolCode(cleanupReferenceCode);
+      if (counterpartCode) {
+        const counterpartVariants = buildPatrolCodeLookupVariants(counterpartCode);
+        if (counterpartVariants.length > 0) {
+          const expectedCounterpart = parseSexedPatrolCode(counterpartCode);
+          const { data: counterpartRows, error: counterpartLookupError } = await supabaseAdmin
+            .from('patrols')
+            .select('id, patrol_code, active')
+            .eq('event_id', targetEventId)
+            .in('patrol_code', counterpartVariants)
+            .neq('id', resolvedPatrolId);
+
+          if (counterpartLookupError) {
+            return respond(res, 500, 'Failed to find counterpart patrol', counterpartLookupError.message);
+          }
+
+          const exactCounterpart = ((counterpartRows ?? []) as Array<{
+            id: string;
+            patrol_code?: string | null;
+            active?: boolean | null;
+          }>)
+            .filter((row) => row.active !== false)
+            .find((row) => {
+              const parsed = parseSexedPatrolCode(row.patrol_code);
+              return Boolean(
+                parsed
+                && expectedCounterpart
+                && parsed.category === expectedCounterpart.category
+                && parsed.sex === expectedCounterpart.sex
+                && parsed.number === expectedCounterpart.number,
+              );
+            });
+
+          if (exactCounterpart?.id) {
+            const { error: deleteCounterpartError } = await supabaseAdmin
+              .from('patrols')
+              .delete()
+              .eq('event_id', targetEventId)
+              .eq('id', exactCounterpart.id);
+
+            if (deleteCounterpartError) {
+              return respond(res, 500, 'Failed to remove counterpart patrol', deleteCounterpartError.message);
+            }
+            removedSharedPatrolId = exactCounterpart.id;
+          }
+        }
+      }
+    }
+
     return res.status(200).json({
       ok: true,
       patrol: updatedPatrol,
+      removed_shared_patrol_id: removedSharedPatrolId,
     });
   }
 

@@ -39,6 +39,12 @@ export interface StationManifest {
     id: string;
     name: string;
     scoringLocked: boolean;
+    announcedPlaces?: Partial<Record<'N' | 'M' | 'S' | 'R', number>>;
+    timeScoring?: {
+      limitMinutesByCategory?: Partial<Record<'N' | 'M' | 'S' | 'R', number>>;
+      penaltyStepMinutes?: number;
+    };
+    participatingTroops?: string[];
   };
   allowedCategories: string[];
   allowedTasks: string[];

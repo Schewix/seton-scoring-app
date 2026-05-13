@@ -23,7 +23,12 @@ import { registerPendingSync, setupSyncListener } from './backgroundSync';
 import { appendScanRecord } from './storage/scanHistory';
 import { getManualPatrols, upsertManualPatrol } from './storage/manualPatrols';
 import { loadStoredPatrolWaitMinutes, saveStoredPatrolWaitMinutes } from './storage/patrolWaitMemory';
-import { computePureCourseSeconds, computeTimePoints, isTimeScoringCategory } from './timeScoring';
+import {
+  buildTimeScoringConfig,
+  computePureCourseSeconds,
+  computeTimePoints,
+  isTimeScoringCategory,
+} from './timeScoring';
 import { triggerHaptic } from './utils/haptics';
 import {
   CHANGE_PASSWORD_ROUTE,
@@ -34,7 +39,6 @@ import {
   isStationAppPath,
 } from './routing';
 import {
-  createStationCategoryRecord,
   getAllowedStationCategories,
   getStationAllowedBaseCategories,
   STATION_PASSAGE_CATEGORIES,
@@ -98,6 +102,7 @@ interface Patrol {
   sex: string;
   patrol_code: string | null;
   patrol_members?: string | null;
+  input_patrol_code?: string | null;
 }
 
 type OutboxState = OutboxEntry['state'];
@@ -134,6 +139,13 @@ interface PatrolFormDraft {
   finishAt: string | null;
 }
 
+type PatrolProfileChildRow = {
+  firstName: string;
+  lastName: string;
+  nickname: string;
+  troop: string;
+};
+
 interface StationSummaryPatrol {
   id: string;
   code: string;
@@ -144,7 +156,7 @@ interface StationSummaryPatrol {
 }
 
 interface StationCategorySummaryItem {
-  key: StationCategoryKey;
+  key: CategoryKey;
   expected: number;
   visited: number;
   missing: StationSummaryPatrol[];
@@ -162,6 +174,7 @@ type AuthenticatedState = Extract<AuthStatus, { state: 'authenticated' }>;
 
 const WAIT_MINUTES_MAX = 180;
 const OUTBOX_BATCH_SIZE = 5;
+const PATROL_PROFILE_CHILD_ROW_COUNT = 3;
 const SCORE_REVIEW_TASK_KEYS = new Set([
   'score-review',
   'score_review',
@@ -171,6 +184,190 @@ const SCORE_REVIEW_TASK_KEYS = new Set([
   'manage-results',
   'manage-wait-times',
 ]);
+
+function normalizeProfileText(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeTroopName(value: string) {
+  return normalizeProfileText(value);
+}
+
+function buildUniqueTroopList(values: readonly string[]) {
+  const next: string[] = [];
+  const seen = new Set<string>();
+  values.forEach((value) => {
+    const normalized = normalizeTroopName(value);
+    if (!normalized) {
+      return;
+    }
+    const key = normalized.toLocaleLowerCase('cs');
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    next.push(normalized);
+  });
+  return next;
+}
+
+function parseTroopsFromTeamName(value: string | null | undefined) {
+  const normalized = normalizeProfileText(value ?? '');
+  if (!normalized) {
+    return [] as string[];
+  }
+  const parts = normalized
+    .split(/\s*(?:\+|\/|;|\||&)\s*|\s+\ba\b\s+/i)
+    .map((part) => normalizeTroopName(part))
+    .filter(Boolean);
+  return buildUniqueTroopList(parts.length > 0 ? parts : [normalized]);
+}
+
+function createEmptyPatrolProfileRows(): PatrolProfileChildRow[] {
+  return Array.from({ length: PATROL_PROFILE_CHILD_ROW_COUNT }, () => ({
+    firstName: '',
+    lastName: '',
+    nickname: '',
+    troop: '',
+  }));
+}
+
+function splitProfileNameParts(value: string) {
+  const parts = normalizeProfileText(value).split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { firstName: '', lastName: '' };
+  }
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: '' };
+  }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  };
+}
+
+function parsePatrolProfileRows(value: string | null | undefined, fallbackTroop: string) {
+  const lines = (value ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const parsedRows = lines.slice(0, PATROL_PROFILE_CHILD_ROW_COUNT).map((line) => {
+    let working = line;
+    let troop = '';
+    const troopMatch = working.match(/\{oddil:([^}]+)\}\s*$/i);
+    if (troopMatch) {
+      troop = normalizeTroopName(troopMatch[1] ?? '');
+      working = working.slice(0, troopMatch.index).trim();
+    }
+
+    let nickname = '';
+    const nicknameMatch = working.match(/\(([^)]+)\)\s*$/);
+    if (nicknameMatch) {
+      nickname = normalizeProfileText(nicknameMatch[1] ?? '');
+      working = working.slice(0, nicknameMatch.index).trim();
+    }
+
+    const name = splitProfileNameParts(working);
+    return {
+      firstName: name.firstName,
+      lastName: name.lastName,
+      nickname,
+      troop: troop || fallbackTroop,
+    };
+  });
+
+  while (parsedRows.length < PATROL_PROFILE_CHILD_ROW_COUNT) {
+    parsedRows.push({
+      firstName: '',
+      lastName: '',
+      nickname: '',
+      troop: '',
+    });
+  }
+
+  return parsedRows;
+}
+
+function stringifyPatrolProfileRows(
+  rows: readonly PatrolProfileChildRow[],
+  options: { requiresTroopPerChild: boolean },
+) {
+  const lines: string[] = [];
+  rows.forEach((row) => {
+    const firstName = normalizeProfileText(row.firstName);
+    const lastName = normalizeProfileText(row.lastName);
+    const nickname = normalizeProfileText(row.nickname);
+    const troop = normalizeTroopName(row.troop);
+    if (!firstName && !lastName && !nickname && !troop) {
+      return;
+    }
+
+    const fullName = normalizeProfileText(`${firstName} ${lastName}`.trim());
+    if (!fullName) {
+      return;
+    }
+
+    let line = fullName;
+    if (nickname) {
+      line += ` (${nickname})`;
+    }
+    if (options.requiresTroopPerChild && troop) {
+      line += ` {oddil:${troop}}`;
+    }
+    lines.push(line);
+  });
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+function parsePatrolProfileDraft(teamName: string | null | undefined, members: string | null | undefined) {
+  const troops = buildUniqueTroopList(parseTroopsFromTeamName(teamName));
+  const fallbackTroop = troops.length === 1 ? troops[0] : '';
+  const rows = parsePatrolProfileRows(members, fallbackTroop);
+  return { troops, rows };
+}
+
+function buildPatrolTeamNameFromTroops(troops: readonly string[]) {
+  return buildUniqueTroopList(troops).join(' + ');
+}
+
+function validatePatrolProfileDraft(
+  troops: readonly string[],
+  rows: readonly PatrolProfileChildRow[],
+) {
+  const normalizedTroops = buildUniqueTroopList(troops);
+  if (normalizedTroops.length === 0) {
+    return 'Vyber alespoň jeden oddíl.';
+  }
+
+  let hasAtLeastOneChild = false;
+  const requiresTroopPerChild = normalizedTroops.length > 1;
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const firstName = normalizeProfileText(row.firstName);
+    const lastName = normalizeProfileText(row.lastName);
+    const nickname = normalizeProfileText(row.nickname);
+    const troop = normalizeTroopName(row.troop);
+    const hasAny = Boolean(firstName || lastName || nickname || troop);
+    if (!hasAny) {
+      continue;
+    }
+    if (!firstName || !lastName) {
+      return `Dítě ${index + 1}: vyplň jméno i příjmení.`;
+    }
+    if (requiresTroopPerChild && !troop) {
+      return `Dítě ${index + 1}: vyber oddíl.`;
+    }
+    hasAtLeastOneChild = true;
+  }
+
+  if (!hasAtLeastOneChild) {
+    return 'Vyplň alespoň jedno dítě.';
+  }
+
+  return null;
+}
 
 
 function formatWaitMinutes(totalMinutes: number) {
@@ -280,21 +477,11 @@ function normalizeWaitInput(value: string, fallback: string) {
   return formatWaitMinutes(hours * 60 + minutes);
 }
 
-function normalizePatrolMembersText(value: string) {
-  const normalized = value.replace(/\r\n?/g, '\n');
-  const trimmed = normalized
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .join('\n');
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 function formatPatrolMetaLabel(patrol: { patrol_code: string | null; category: string; sex: string } | null) {
   if (!patrol) {
     return '';
   }
-  const code = patrol.patrol_code?.trim();
+  const code = formatMergedPatrolCode(patrol.patrol_code);
   if (code) {
     return code;
   }
@@ -307,7 +494,78 @@ function formatPatrolMetaLabel(patrol: { patrol_code: string | null; category: s
 }
 
 function formatSummaryPatrolLabel(patrol: StationSummaryPatrol) {
-  return patrol.code || `${patrol.baseCategory}/${patrol.sex}`;
+  const mergedCode = formatMergedPatrolCode(patrol.code);
+  return mergedCode || `${patrol.baseCategory}/${patrol.sex}`;
+}
+
+function formatMergedPatrolCode(rawCode: string | null | undefined) {
+  const normalized = normalisePatrolCode(rawCode ?? '');
+  if (!normalized) {
+    return '';
+  }
+  const match = normalized.match(/^([NMSR])(?:[HD])?-(\d{1,3})$/);
+  if (!match) {
+    return normalized;
+  }
+  const number = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(number) || number <= 0) {
+    return normalized;
+  }
+  return `${match[1]}-${number}`;
+}
+
+function isMergedPatrolCode(rawCode: string) {
+  const normalized = normalisePatrolCode(rawCode);
+  return /^([NMSR])-(\d{1,3})$/.test(normalized);
+}
+
+function hasExplicitSexPatrolCode(rawCode: string) {
+  const normalized = normalisePatrolCode(rawCode);
+  return /^([NMSR])([HD])-(\d{1,3})$/.test(normalized);
+}
+
+function comparePatrolCandidates(
+  a: Pick<Patrol, 'id' | 'patrol_code'>,
+  b: Pick<Patrol, 'id' | 'patrol_code'>,
+) {
+  const aCode = (a.patrol_code ?? '').trim().toUpperCase();
+  const bCode = (b.patrol_code ?? '').trim().toUpperCase();
+  if (aCode !== bCode) {
+    return aCode.localeCompare(bCode, 'cs');
+  }
+  return a.id.localeCompare(b.id, 'cs');
+}
+
+function pickPatrolCandidate(candidates: Patrol[], requestedCode: string): Patrol | null {
+  if (candidates.length === 0) {
+    return null;
+  }
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  const normalizedRequested = normalisePatrolCode(requestedCode);
+  const exactMatches = candidates.filter(
+    (candidate) => normalisePatrolCode(candidate.patrol_code ?? '') === normalizedRequested,
+  );
+  if (exactMatches.length === 1) {
+    return exactMatches[0];
+  }
+
+  if (isMergedPatrolCode(normalizedRequested)) {
+    const mergedMatches = candidates.filter(
+      (candidate) => formatMergedPatrolCode(candidate.patrol_code ?? '') === normalizedRequested,
+    );
+    if (mergedMatches.length > 0) {
+      return mergedMatches.slice().sort(comparePatrolCandidates)[0];
+    }
+  }
+
+  if (exactMatches.length > 1) {
+    return exactMatches.slice().sort(comparePatrolCandidates)[0];
+  }
+
+  return candidates.slice().sort(comparePatrolCandidates)[0];
 }
 
 function createManualPatrolFromCode(code: string): Patrol | null {
@@ -328,6 +586,7 @@ function createManualPatrolFromCode(code: string): Patrol | null {
     category: match[1],
     sex,
     patrol_code: padded,
+    input_patrol_code: normalisePatrolCode(code),
   };
 }
 
@@ -378,14 +637,12 @@ function getPatrolCodeVariants(raw: string) {
 
 function getSummaryPatrolSortKey(patrol: StationSummaryPatrol) {
   const normalized = normalisePatrolCode(patrol.code || '');
-  const match = normalized.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  const match = normalized.match(/^([NMSR])(?:[HD])?-(\d{1,3})$/);
   const category = match?.[1] ?? patrol.baseCategory;
-  const sex = match?.[2] ?? patrol.sex;
-  const numberValue = match ? Number(match[3]) : NaN;
+  const numberValue = match ? Number(match[2]) : NaN;
   const label = formatSummaryPatrolLabel(patrol).toUpperCase();
   return {
     category,
-    sex,
     numberValue,
     label,
   };
@@ -396,9 +653,6 @@ function compareSummaryPatrols(a: StationSummaryPatrol, b: StationSummaryPatrol)
   const keyB = getSummaryPatrolSortKey(b);
   if (keyA.category !== keyB.category) {
     return keyA.category.localeCompare(keyB.category, 'cs');
-  }
-  if (keyA.sex !== keyB.sex) {
-    return keyA.sex.localeCompare(keyB.sex, 'cs');
   }
   const aHasNumber = Number.isFinite(keyA.numberValue);
   const bHasNumber = Number.isFinite(keyB.numberValue);
@@ -517,23 +771,23 @@ function getStationDisplayName(name: string, code: string | null | undefined): s
   return code?.trim().toUpperCase() === 'T' ? 'Výpočetka' : name;
 }
 
-const STATION_CATEGORY_LABELS: Record<StationCategoryKey, { chip: string; detail: string }> = {
-  NH: { chip: 'NH', detail: 'N – hoši' },
-  ND: { chip: 'ND', detail: 'N – dívky' },
-  MH: { chip: 'MH', detail: 'M – hoši' },
-  MD: { chip: 'MD', detail: 'M – dívky' },
-  SH: { chip: 'SH', detail: 'S – hoši' },
-  SD: { chip: 'SD', detail: 'S – dívky' },
-  RH: { chip: 'RH', detail: 'R – hoši' },
-  RD: { chip: 'RD', detail: 'R – dívky' },
-};
-
-function formatStationCategoryChipLabel(category: StationCategoryKey): string {
-  return STATION_CATEGORY_LABELS[category]?.chip ?? category;
+function formatBaseCategoryDetailLabel(category: CategoryKey): string {
+  if (category === 'N') return 'N';
+  if (category === 'M') return 'M';
+  if (category === 'S') return 'S';
+  if (category === 'R') return 'R';
+  return category;
 }
 
-function formatStationCategoryDetailLabel(category: StationCategoryKey): string {
-  return STATION_CATEGORY_LABELS[category]?.detail ?? category;
+const BASE_CATEGORY_ORDER: readonly CategoryKey[] = ['N', 'M', 'S', 'R'];
+
+function createBaseCategoryRecord<T>(factory: () => T): Record<CategoryKey, T> {
+  return {
+    N: factory(),
+    M: factory(),
+    S: factory(),
+    R: factory(),
+  };
 }
 
 const NO_SESSION_ERROR = 'NO_SESSION';
@@ -645,6 +899,7 @@ function StationApp({
   const canReviewStationScores =
     isTargetStation || manifest.allowedTasks.some((task) => SCORE_REVIEW_TASK_KEYS.has(task));
   const scoringDisabled = scoringLocked && !isTargetStation;
+  const timeScoringConfig = useMemo(() => buildTimeScoringConfig(manifest.event), [manifest.event]);
   const [activePatrol, setActivePatrol] = useState<Patrol | null>(null);
   const [scannerPatrol, setScannerPatrol] = useState<Patrol | null>(null);
   const [scannerSource, setScannerSource] = useState<'manual' | 'scan' | 'summary' | null>(null);
@@ -654,6 +909,10 @@ function StationApp({
   const [note, setNote] = useState('');
   const [calcTeamNameDraft, setCalcTeamNameDraft] = useState('');
   const [calcPatrolMembersDraft, setCalcPatrolMembersDraft] = useState('');
+  const [calcSelectedTroops, setCalcSelectedTroops] = useState<string[]>([]);
+  const [calcTroopSelectDraft, setCalcTroopSelectDraft] = useState('');
+  const [calcCustomTroopDraft, setCalcCustomTroopDraft] = useState('');
+  const [calcMemberRows, setCalcMemberRows] = useState<PatrolProfileChildRow[]>(() => createEmptyPatrolProfileRows());
   const [savingPatrolProfile, setSavingPatrolProfile] = useState(false);
   const [patrolProfileMessage, setPatrolProfileMessage] = useState<string | null>(null);
   const [patrolProfileError, setPatrolProfileError] = useState<string | null>(null);
@@ -739,10 +998,10 @@ function StationApp({
   const [stationPassageLoading, setStationPassageLoading] = useState(false);
   const [stationPassageError, setStationPassageError] = useState<string | null>(null);
   const [patrolFormDrafts, setPatrolFormDrafts] = useState<Record<string, PatrolFormDraft>>({});
-  const [selectedSummaryCategory, setSelectedSummaryCategory] = useState<StationCategoryKey | null>(null);
+  const [selectedSummaryCategory, setSelectedSummaryCategory] = useState<CategoryKey | null>(null);
   const [showCompletedSummary, setShowCompletedSummary] = useState(false);
   const [showScannerPanel, setShowScannerPanel] = useState(false);
-  const lastSummaryScrollRef = useRef<StationCategoryKey | null>(null);
+  const lastSummaryScrollRef = useRef<CategoryKey | null>(null);
   const isChangePasswordView = useMemo(
     () => isChangePasswordPathname(currentPathname),
     [currentPathname],
@@ -883,17 +1142,23 @@ function StationApp({
     () => new Set<StationCategoryKey>(allowedStationCategories),
     [allowedStationCategories],
   );
+  const allowedBaseCategories = useMemo(
+    () => BASE_CATEGORY_ORDER.filter((category) => allowedCategorySet.has(category)),
+    [allowedCategorySet],
+  );
   const allowedStationCategoryLabel = useMemo(() => {
-    if (!allowedStationCategories.length) {
+    if (!allowedBaseCategories.length) {
       return '—';
     }
-    return allowedStationCategories.map((category) => formatStationCategoryChipLabel(category)).join(', ');
-  }, [allowedStationCategories]);
+    return allowedBaseCategories.join(', ');
+  }, [allowedBaseCategories]);
   const stationRules = useMemo(() => {
     const rules: string[] = [];
     if (isTargetStation) {
       rules.push('Zapiš čas doběhu ve formátu HH:MM.');
-      rules.push('12 bodů je za limitní čas dle kategorie, za každých započatých 10 minut navíc se odečte 1 bod.');
+      rules.push(
+        `12 bodů je za limitní čas dle kategorie, za každých započatých ${timeScoringConfig.penaltyStepMinutes} minut navíc se odečte 1 bod.`,
+      );
       rules.push('Zadej odpovědi v terčovém úseku, body se spočítají automaticky.');
     } else {
       rules.push('Zapisuj body v rozsahu 0–12.');
@@ -903,15 +1168,15 @@ function StationApp({
       }
     }
     return rules;
-  }, [enableTicketQueue, isTargetStation]);
+  }, [enableTicketQueue, isTargetStation, timeScoringConfig.penaltyStepMinutes]);
   useEffect(() => {
     setSelectedSummaryCategory((previous) => {
       if (!previous) {
         return null;
       }
-      return allowedStationCategorySet.has(previous) ? previous : null;
+      return allowedCategorySet.has(previous) ? previous : null;
     });
-  }, [allowedStationCategorySet]);
+  }, [allowedCategorySet]);
 
   useEffect(() => {
     setShowCompletedSummary(false);
@@ -944,6 +1209,80 @@ function StationApp({
     },
     [],
   );
+
+  const calcTroopOptions = useMemo(() => {
+    const all: string[] = [];
+
+    const configuredTroops = buildUniqueTroopList(
+      (manifest.event.participatingTroops ?? [])
+        .map((troop) => normalizeTroopName(troop)),
+    );
+    const hasConfiguredTroops = configuredTroops.length > 0;
+
+    if (hasConfiguredTroops) {
+      configuredTroops.forEach((troop) => all.push(troop));
+    } else {
+      auth.patrols.forEach((patrol) => {
+        parseTroopsFromTeamName(patrol.team_name).forEach((troop) => {
+          all.push(troop);
+        });
+      });
+    }
+    parseTroopsFromTeamName(activePatrol?.team_name).forEach((troop) => {
+      all.push(troop);
+    });
+    calcSelectedTroops.forEach((troop) => {
+      all.push(troop);
+    });
+    calcMemberRows.forEach((row) => {
+      if (row.troop) {
+        all.push(row.troop);
+      }
+    });
+    return buildUniqueTroopList(all).sort((a, b) => a.localeCompare(b, 'cs'));
+  }, [activePatrol?.team_name, auth.patrols, calcMemberRows, calcSelectedTroops, manifest.event.participatingTroops]);
+
+  const calcProfileDraft = useMemo(() => {
+    const troops = buildUniqueTroopList(calcSelectedTroops);
+    const requiresTroopPerChild = troops.length > 1;
+    const rows = calcMemberRows.map((row) => ({
+      firstName: normalizeProfileText(row.firstName),
+      lastName: normalizeProfileText(row.lastName),
+      nickname: normalizeProfileText(row.nickname),
+      troop: normalizeTroopName(row.troop),
+    }));
+    const teamName = buildPatrolTeamNameFromTroops(troops);
+    const membersText = stringifyPatrolProfileRows(rows, { requiresTroopPerChild });
+    return {
+      troops,
+      rows,
+      teamName,
+      membersText,
+      requiresTroopPerChild,
+    };
+  }, [calcMemberRows, calcSelectedTroops]);
+
+  useEffect(() => {
+    setCalcTeamNameDraft((previous) => (previous === calcProfileDraft.teamName ? previous : calcProfileDraft.teamName));
+    setCalcPatrolMembersDraft((previous) => {
+      const next = calcProfileDraft.membersText ?? '';
+      return previous === next ? previous : next;
+    });
+  }, [calcProfileDraft.membersText, calcProfileDraft.teamName]);
+
+  useEffect(() => {
+    if (!calcTroopOptions.length) {
+      if (calcTroopSelectDraft) {
+        setCalcTroopSelectDraft('');
+      }
+      return;
+    }
+    const current = normalizeTroopName(calcTroopSelectDraft);
+    if (current && calcTroopOptions.includes(current)) {
+      return;
+    }
+    setCalcTroopSelectDraft(calcTroopOptions[0]);
+  }, [calcTroopOptions, calcTroopSelectDraft]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1288,6 +1627,10 @@ function StationApp({
     (currentPatrol: Patrol | null) => {
       if (!currentPatrol) {
         return '';
+      }
+      const inputCode = normalisePatrolCode(currentPatrol.input_patrol_code ?? '');
+      if (inputCode) {
+        return inputCode.toUpperCase();
       }
       const raw = (currentPatrol.patrol_code ?? '').trim().toUpperCase();
       if (raw) {
@@ -1866,10 +2209,17 @@ function StationApp({
     ) => {
       const draft = options?.draft ?? null;
       const hasPrefilledAnswers = typeof options?.prefilledAnswers === 'string';
+      const initialTeamName = data.team_name ?? '';
+      const initialMembers = typeof data.patrol_members === 'string' ? data.patrol_members : '';
+      const parsedProfile = parsePatrolProfileDraft(initialTeamName, initialMembers);
       setActivePatrol({ ...data });
       setScannerPatrol({ ...data });
-      setCalcTeamNameDraft(data.team_name ?? '');
-      setCalcPatrolMembersDraft(typeof data.patrol_members === 'string' ? data.patrol_members : '');
+      setCalcTeamNameDraft(initialTeamName);
+      setCalcPatrolMembersDraft(initialMembers);
+      setCalcSelectedTroops(parsedProfile.troops);
+      setCalcMemberRows(parsedProfile.rows);
+      setCalcCustomTroopDraft('');
+      setCalcTroopSelectDraft(parsedProfile.troops[0] ?? '');
       setPatrolProfileMessage(null);
       setPatrolProfileError(null);
       setPoints(draft?.points ?? '');
@@ -2020,14 +2370,20 @@ function StationApp({
       return;
     }
 
-    const nextTeamName = calcTeamNameDraft.trim();
-    if (!nextTeamName) {
-      setPatrolProfileError('Název oddílu nesmí být prázdný.');
+    const profileValidationError = validatePatrolProfileDraft(
+      calcProfileDraft.troops,
+      calcProfileDraft.rows,
+    );
+    if (profileValidationError) {
+      setPatrolProfileError(profileValidationError);
       setPatrolProfileMessage(null);
       return;
     }
 
-    const nextMembers = normalizePatrolMembersText(calcPatrolMembersDraft);
+    const nextTeamName = calcProfileDraft.teamName;
+    const nextMembers = calcProfileDraft.membersText;
+    const inputPatrolCode = normalisePatrolCode(activePatrol.input_patrol_code ?? '');
+    const shouldCleanupSharedNumber = hasExplicitSexPatrolCode(inputPatrolCode);
 
     setSavingPatrolProfile(true);
     setPatrolProfileError(null);
@@ -2045,6 +2401,8 @@ function StationApp({
           patrol_id: activePatrol.id,
           team_name: nextTeamName,
           patrol_members: nextMembers,
+          patrol_code_input: inputPatrolCode,
+          cleanup_shared_number: shouldCleanupSharedNumber,
         }),
       });
 
@@ -2060,6 +2418,9 @@ function StationApp({
       const updatedMembers = typeof updatedPatrol?.patrol_members === 'string'
         ? updatedPatrol.patrol_members
         : nextMembers;
+      const removedSharedPatrolId = typeof body?.removed_shared_patrol_id === 'string'
+        ? body.removed_shared_patrol_id
+        : null;
 
       setActivePatrol((current) =>
         current && current.id === activePatrol.id
@@ -2071,9 +2432,16 @@ function StationApp({
           ? { ...current, team_name: updatedTeamName, patrol_members: updatedMembers }
           : current,
       );
-      setCalcTeamNameDraft(updatedTeamName);
-      setCalcPatrolMembersDraft(updatedMembers ?? '');
-      setPatrolProfileMessage('Profil hlídky byl uložen.');
+      const parsed = parsePatrolProfileDraft(updatedTeamName, updatedMembers ?? '');
+      setCalcSelectedTroops(parsed.troops);
+      setCalcMemberRows(parsed.rows);
+      setCalcCustomTroopDraft('');
+      setCalcTroopSelectDraft(parsed.troops[0] ?? '');
+      setPatrolProfileMessage(
+        removedSharedPatrolId
+          ? 'Profil hlídky byl uložen. Protějšek se stejným číslem byl odstraněn.'
+          : 'Profil hlídky byl uložen.',
+      );
     } catch (error) {
       console.error('Failed to save patrol profile', error);
       setPatrolProfileError(
@@ -2085,11 +2453,91 @@ function StationApp({
   }, [
     activePatrol,
     auth.tokens.accessToken,
-    calcPatrolMembersDraft,
-    calcTeamNameDraft,
+    calcProfileDraft.membersText,
+    calcProfileDraft.rows,
+    calcProfileDraft.teamName,
+    calcProfileDraft.troops,
     eventId,
     isTargetStation,
   ]);
+
+  const clearPatrolProfileFeedback = useCallback(() => {
+    setPatrolProfileMessage(null);
+    setPatrolProfileError(null);
+  }, []);
+
+  const appendTroopToProfile = useCallback(
+    (rawTroop: string) => {
+      const troop = normalizeTroopName(rawTroop);
+      if (!troop) {
+        return;
+      }
+      setCalcSelectedTroops((previous) => buildUniqueTroopList([...previous, troop]));
+      clearPatrolProfileFeedback();
+    },
+    [clearPatrolProfileFeedback],
+  );
+
+  const handleAddSelectedTroop = useCallback(() => {
+    appendTroopToProfile(calcTroopSelectDraft);
+  }, [appendTroopToProfile, calcTroopSelectDraft]);
+
+  const handleAddCustomTroop = useCallback(() => {
+    const nextTroop = normalizeTroopName(calcCustomTroopDraft);
+    if (!nextTroop) {
+      return;
+    }
+    appendTroopToProfile(nextTroop);
+    setCalcCustomTroopDraft('');
+    setCalcTroopSelectDraft(nextTroop);
+  }, [appendTroopToProfile, calcCustomTroopDraft]);
+
+  const handleRemoveTroop = useCallback(
+    (troopToRemove: string) => {
+      const normalized = normalizeTroopName(troopToRemove);
+      if (!normalized) {
+        return;
+      }
+      setCalcSelectedTroops((previous) => {
+        const next = previous.filter(
+          (troop) => troop.toLocaleLowerCase('cs') !== normalized.toLocaleLowerCase('cs'),
+        );
+        return buildUniqueTroopList(next);
+      });
+      setCalcMemberRows((previous) =>
+        previous.map((row) => {
+          const currentTroop = normalizeTroopName(row.troop);
+          if (!currentTroop) {
+            return row;
+          }
+          if (currentTroop.toLocaleLowerCase('cs') !== normalized.toLocaleLowerCase('cs')) {
+            return row;
+          }
+          return { ...row, troop: '' };
+        }),
+      );
+      clearPatrolProfileFeedback();
+    },
+    [clearPatrolProfileFeedback],
+  );
+
+  const handleProfileRowChange = useCallback(
+    (
+      rowIndex: number,
+      field: keyof PatrolProfileChildRow,
+      value: string,
+    ) => {
+      setCalcMemberRows((previous) =>
+        previous.map((row, index) =>
+          index === rowIndex
+            ? { ...row, [field]: value }
+            : row,
+        ),
+      );
+      clearPatrolProfileFeedback();
+    },
+    [clearPatrolProfileFeedback],
+  );
 
   const handleScoreOkToggle = useCallback(
     (stationId: string, ok: boolean) => {
@@ -2351,7 +2799,7 @@ function StationApp({
   }, [eventId, reportSupabaseError, stationId]);
 
   const stationCategorySummary = useMemo<StationCategorySummary>(() => {
-    const record = createStationCategoryRecord(() => ({
+    const record = createBaseCategoryRecord(() => ({
       expected: 0,
       visited: 0,
       missing: [] as StationSummaryPatrol[],
@@ -2365,8 +2813,8 @@ function StationApp({
       if (!isCategoryAllowed(patrolSummary.category)) {
         return;
       }
-      const stationCategory = toStationCategoryKey(patrolSummary.category, patrolSummary.sex);
-      if (!stationCategory || !allowedStationCategorySet.has(stationCategory)) {
+      const baseCategory = patrolSummary.category.trim().toUpperCase();
+      if (!isCategoryKey(baseCategory) || !allowedCategorySet.has(baseCategory)) {
         return;
       }
       const normalizedCode = normalisePatrolCode(patrolSummary.patrol_code ?? '');
@@ -2384,15 +2832,15 @@ function StationApp({
         visited: stationPassageVisitedSet.has(patrolSummary.id),
       };
 
-      record[stationCategory].expected += 1;
+      record[baseCategory].expected += 1;
       totalExpected += 1;
 
       if (detail.visited) {
-        record[stationCategory].visited += 1;
+        record[baseCategory].visited += 1;
         totalVisited += 1;
-        record[stationCategory].completed.push(detail);
+        record[baseCategory].completed.push(detail);
       } else {
-        record[stationCategory].missing.push(detail);
+        record[baseCategory].missing.push(detail);
       }
     });
 
@@ -2400,8 +2848,8 @@ function StationApp({
       if (!isCategoryAllowed(manual.category)) {
         return;
       }
-      const stationCategory = toStationCategoryKey(manual.category, manual.sex);
-      if (!stationCategory || !allowedStationCategorySet.has(stationCategory)) {
+      const baseCategory = manual.category.trim().toUpperCase();
+      if (!isCategoryKey(baseCategory) || !allowedCategorySet.has(baseCategory)) {
         return;
       }
       const normalizedCode = normalisePatrolCode(manual.patrol_code ?? '');
@@ -2417,18 +2865,18 @@ function StationApp({
         sex: manual.sex,
         visited,
       };
-      record[stationCategory].expected += 1;
+      record[baseCategory].expected += 1;
       totalExpected += 1;
       if (detail.visited) {
-        record[stationCategory].visited += 1;
+        record[baseCategory].visited += 1;
         totalVisited += 1;
-        record[stationCategory].completed.push(detail);
+        record[baseCategory].completed.push(detail);
       } else {
-        record[stationCategory].missing.push(detail);
+        record[baseCategory].missing.push(detail);
       }
     });
 
-    const items = allowedStationCategories.map<StationCategorySummaryItem>((category) => {
+    const items = allowedBaseCategories.map<StationCategorySummaryItem>((category) => {
       const entry = record[category];
       const missing = [...entry.missing].sort(compareSummaryPatrols);
       const completed = [...entry.completed].sort(compareSummaryPatrols);
@@ -2450,8 +2898,8 @@ function StationApp({
       totalMissing,
     };
   }, [
-    allowedStationCategories,
-    allowedStationCategorySet,
+    allowedBaseCategories,
+    allowedCategorySet,
     auth.patrols,
     isCategoryAllowed,
     manualPatrols,
@@ -2488,7 +2936,7 @@ function StationApp({
     lastSummaryScrollRef.current = selectedSummaryCategory;
   }, [selectedSummaryCategory]);
 
-  const handleSelectSummaryCategory = useCallback((category: StationCategoryKey) => {
+  const handleSelectSummaryCategory = useCallback((category: CategoryKey) => {
     setSelectedSummaryCategory((previous) => (previous === category ? null : category));
   }, []);
 
@@ -2524,13 +2972,15 @@ function StationApp({
           recoveredWaitMinutes = storedWaitMinutes;
         }
       }
+      const summaryCode = normalisePatrolCode(patrol.code ? patrol.code.toUpperCase() : '');
       setPendingRecoveredWaitMinutes(recoveredWaitMinutes);
-      setScannerPatrol({ ...data });
+      setScannerPatrol({ ...data, input_patrol_code: summaryCode || null });
       setScannerSource('summary');
       setShowPatrolChoice(true);
       setScanActive(false);
       setManualCodeDraft('');
-      setConfirmedManualCode(patrol.code ? patrol.code.toUpperCase() : '');
+      setConfirmedManualCode(summaryCode);
+      setSelectedSummaryCategory(null);
     },
     [
       activePatrol,
@@ -2546,6 +2996,7 @@ function StationApp({
       setScanActive,
       setScannerPatrol,
       setScannerSource,
+      setSelectedSummaryCategory,
       setShowPatrolChoice,
       stationCode,
     ],
@@ -3008,7 +3459,7 @@ function StationApp({
   );
 
   const cachedPatrolMap = useMemo(() => {
-    const map = new Map<string, Patrol>();
+    const map = new Map<string, Patrol[]>();
     auth.patrols.forEach((activePatrol) => {
       if (activePatrol.patrol_code) {
         if (!isCategoryAllowed(activePatrol.category)) {
@@ -3016,13 +3467,22 @@ function StationApp({
         }
         const variants = getPatrolCodeVariants(activePatrol.patrol_code);
         variants.forEach((variant) => {
-          map.set(variant.trim().toUpperCase(), {
+          const key = variant.trim().toUpperCase();
+          const candidate: Patrol = {
             id: activePatrol.id,
             team_name: activePatrol.team_name,
             category: activePatrol.category,
             sex: activePatrol.sex,
             patrol_code: activePatrol.patrol_code,
-          });
+          };
+          const existing = map.get(key);
+          if (!existing) {
+            map.set(key, [candidate]);
+            return;
+          }
+          if (!existing.some((row) => row.id === candidate.id)) {
+            existing.push(candidate);
+          }
         });
       }
     });
@@ -3036,7 +3496,13 @@ function StationApp({
         pushAlert('Neplatný kód hlídky.');
         return false;
       }
-      let data = cachedPatrolMap.get(normalized) || null;
+      const cachedCandidates = cachedPatrolMap.get(normalized) ?? [];
+      let data = pickPatrolCandidate(cachedCandidates, normalized);
+      let sharedNumberCandidateCount = isMergedPatrolCode(normalized)
+        ? cachedCandidates.filter(
+          (candidate) => formatMergedPatrolCode(candidate.patrol_code ?? '') === normalized,
+        ).length
+        : 0;
       let usedFallback = false;
 
       if (!data) {
@@ -3046,8 +3512,7 @@ function StationApp({
             .from('patrols')
             .select('id, team_name, category, sex, patrol_code, patrol_members, note')
             .eq('event_id', eventId)
-            .in('patrol_code', variants.length ? variants : [normalized])
-            .limit(2);
+            .in('patrol_code', variants.length ? variants : [normalized]);
 
           if (error || !fetched || fetched.length === 0) {
             if (error) {
@@ -3070,13 +3535,7 @@ function StationApp({
               return false;
             }
           } else {
-            const exact = fetched.find((candidate) => normalisePatrolCode(candidate.patrol_code ?? '') === normalized);
-            if (!exact && fetched.length > 1) {
-              pushAlert('Číslo hlídky je duplicitní mezi H/D. Zadej přesný kód (např. NH-1 nebo ND-1).');
-              return false;
-            }
-            const selected = exact ?? fetched[0];
-            data = {
+            const fetchedCandidates = fetched.map((selected) => ({
               id: selected.id,
               team_name: selected.team_name,
               category: selected.category,
@@ -3088,7 +3547,23 @@ function StationApp({
                   : typeof selected.note === 'string'
                     ? selected.note
                     : null,
-            } as Patrol;
+            })) as Patrol[];
+            data = pickPatrolCandidate(fetchedCandidates, normalized);
+            if (isMergedPatrolCode(normalized)) {
+              sharedNumberCandidateCount = fetchedCandidates.filter(
+                (candidate) => formatMergedPatrolCode(candidate.patrol_code ?? '') === normalized,
+              ).length;
+            }
+            if (!data) {
+              pushAlert('Hlídka nenalezena.');
+              void appendScanRecord(eventId, stationId, {
+                code: normalized,
+                scannedAt: new Date().toISOString(),
+                status: 'failed',
+                reason: 'not-found',
+              }).catch((err) => console.debug('scan history store failed', err));
+              return false;
+            }
           }
         } else if (options?.allowFallback) {
           const fallback = createManualPatrolFromCode(normalized);
@@ -3106,6 +3581,8 @@ function StationApp({
         pushAlert('Hlídka nenalezena.');
         return false;
       }
+
+      const patrolForScanner: Patrol = { ...data, input_patrol_code: normalized };
 
       if (!isCategoryAllowed(data.category)) {
         pushAlert('Hlídka této kategorie na stanoviště nepatří.');
@@ -3158,7 +3635,7 @@ function StationApp({
       }
 
       setPendingRecoveredWaitMinutes(recoveredWaitMinutes);
-      setScannerPatrol({ ...data });
+      setScannerPatrol(patrolForScanner);
       setShowPatrolChoice(true);
       setScanActive(false);
       setManualCodeDraft('');
@@ -3166,14 +3643,16 @@ function StationApp({
 
       if (usedFallback) {
         pushAlert('Hlídka není v cache. Pokračuji s ručním záznamem.');
+      } else if (sharedNumberCandidateCount > 1 && isMergedPatrolCode(normalized)) {
+        pushAlert(`Sdílené číslo ${normalized}: body se zapíší oběma hlídkám (${sharedNumberCandidateCount}).`);
       }
 
       void appendScanRecord(eventId, stationId, {
         code: normalized,
         scannedAt: new Date().toISOString(),
         status: 'success',
-        patrolId: data.id,
-        teamName: data.team_name,
+        patrolId: patrolForScanner.id,
+        teamName: patrolForScanner.team_name,
       }).catch((err) => console.debug('scan history store failed', err));
 
       return true;
@@ -3393,12 +3872,12 @@ function StationApp({
         };
       });
 
-      const normalizedCalcTeamName = calcTeamNameDraft.trim();
+      const normalizedCalcTeamName = calcProfileDraft.teamName.trim();
       const effectiveTeamName = stationCode === 'T'
         ? normalizedCalcTeamName || activePatrol.team_name
         : activePatrol.team_name;
       const normalizedCalcMembers = stationCode === 'T'
-        ? normalizePatrolMembersText(calcPatrolMembersDraft)
+        ? calcProfileDraft.membersText
         : null;
 
       try {
@@ -3479,8 +3958,8 @@ function StationApp({
     },
     [
       activePatrol,
-      calcPatrolMembersDraft,
-      calcTeamNameDraft,
+      calcProfileDraft.membersText,
+      calcProfileDraft.teamName,
       enqueueStationScore,
       eventId,
       loadScoreReview,
@@ -3596,16 +4075,22 @@ function StationApp({
         })()
       : manualWaitMinutes;
 
-    const normalizedCalcTeamName = calcTeamNameDraft.trim();
+    const normalizedCalcTeamName = calcProfileDraft.teamName.trim();
     const effectiveTeamName = stationCode === 'T'
       ? normalizedCalcTeamName
       : activePatrol.team_name;
-    if (stationCode === 'T' && effectiveTeamName.length === 0) {
-      pushAlert('Název oddílu nesmí být prázdný.');
-      return;
+    if (stationCode === 'T') {
+      const profileValidationError = validatePatrolProfileDraft(
+        calcProfileDraft.troops,
+        calcProfileDraft.rows,
+      );
+      if (profileValidationError) {
+        pushAlert(profileValidationError);
+        return;
+      }
     }
     const effectivePatrolMembers = stationCode === 'T'
-      ? normalizePatrolMembersText(calcPatrolMembersDraft)
+      ? calcProfileDraft.membersText
       : null;
 
     const now = new Date().toISOString();
@@ -3642,7 +4127,7 @@ function StationApp({
       }
 
       const computedPureSeconds = computePureCourseSeconds({ start, finish, waitMinutes });
-      const computedTimePoints = computeTimePoints(normalizedCategory, computedPureSeconds);
+      const computedTimePoints = computeTimePoints(normalizedCategory, computedPureSeconds, timeScoringConfig);
       if (
         typeof computedTimePoints !== 'number'
         || !Number.isInteger(computedTimePoints)
@@ -3730,8 +4215,11 @@ function StationApp({
           }
           : current,
       );
-      setCalcTeamNameDraft(effectiveTeamName);
-      setCalcPatrolMembersDraft(effectivePatrolMembers ?? '');
+      const parsed = parsePatrolProfileDraft(effectiveTeamName, effectivePatrolMembers ?? '');
+      setCalcSelectedTroops(parsed.troops);
+      setCalcMemberRows(parsed.rows);
+      setCalcCustomTroopDraft('');
+      setCalcTroopSelectDraft(parsed.troops[0] ?? '');
     } else {
       const queued = await enqueueStationScore({
         ...baseSubmissionData,
@@ -3774,8 +4262,10 @@ function StationApp({
     }
   }, [
     autoScore,
-    calcPatrolMembersDraft,
-    calcTeamNameDraft,
+    calcProfileDraft.membersText,
+    calcProfileDraft.rows,
+    calcProfileDraft.teamName,
+    calcProfileDraft.troops,
     note,
     activePatrol,
     points,
@@ -3795,6 +4285,7 @@ function StationApp({
     scoreReviewRows,
     scoringDisabled,
     stationCode,
+    timeScoringConfig,
     scrollToQueue,
     scrollToSummary,
     enableTicketQueue,
@@ -3813,6 +4304,7 @@ function StationApp({
         category: payload.category,
         sex: payload.sex,
         patrol_code: payload.patrolCode,
+        input_patrol_code: normalisePatrolCode(payload.patrolCode ?? ''),
       };
 
       initializeFormForPatrol(patrol, {
@@ -3921,8 +4413,8 @@ function StationApp({
     if (!isTimeScoringCategory(category)) {
       return null;
     }
-    return computeTimePoints(category, pureCourseSeconds);
-  }, [activePatrol, pureCourseSeconds]);
+    return computeTimePoints(category, pureCourseSeconds, timeScoringConfig);
+  }, [activePatrol, pureCourseSeconds, timeScoringConfig]);
 
   const targetAnswersReady = useMemo(
     () => autoScore.total > 0 && autoScore.given === autoScore.total,
@@ -4377,7 +4869,7 @@ function StationApp({
                         onClick={() => handleSelectSummaryCategory(item.key)}
                       >
                         <span className="station-summary-chip-label">
-                          {formatStationCategoryChipLabel(item.key)}
+                          {item.key}
                         </span>
                         <span className="station-summary-chip-value">
                           {item.visited}/{item.expected}
@@ -4407,7 +4899,7 @@ function StationApp({
                 aria-live="polite"
               >
                 <div className="station-summary-detail-header">
-                  <h3>{formatStationCategoryDetailLabel(selectedSummaryDetail.key)}</h3>
+                  <h3>{formatBaseCategoryDetailLabel(selectedSummaryDetail.key)}</h3>
                   <button
                     type="button"
                     className="ghost"
@@ -4537,35 +5029,157 @@ function StationApp({
                 </button>
               </header>
               <div className="calc-patrol-profile">
-                <div className="calc-time-input">
-                  <label htmlFor="calc-team-name-input">Název oddílu</label>
-                  <input
-                    id="calc-team-name-input"
-                    type="text"
-                    value={calcTeamNameDraft}
-                    onChange={(event) => {
-                      setCalcTeamNameDraft(event.target.value);
-                      setPatrolProfileMessage(null);
-                      setPatrolProfileError(null);
-                    }}
-                    maxLength={120}
-                    placeholder="Např. 4. PTO Brno"
-                  />
+                <div className="calc-profile-troops">
+                  <div className="calc-time-input">
+                    <label htmlFor="calc-troop-select">Oddíl z nabídky</label>
+                    <div className="calc-profile-inline">
+                      <select
+                        id="calc-troop-select"
+                        value={calcTroopSelectDraft}
+                        onChange={(event) => {
+                          setCalcTroopSelectDraft(event.target.value);
+                          clearPatrolProfileFeedback();
+                        }}
+                      >
+                        {calcTroopOptions.map((troop) => (
+                          <option key={troop} value={troop}>
+                            {troop}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={handleAddSelectedTroop}
+                        disabled={!calcTroopOptions.length}
+                      >
+                        Přidat oddíl
+                      </button>
+                    </div>
+                  </div>
+                  <div className="calc-time-input">
+                    <label htmlFor="calc-troop-custom">Přidat nový oddíl</label>
+                    <div className="calc-profile-inline">
+                      <input
+                        id="calc-troop-custom"
+                        type="text"
+                        value={calcCustomTroopDraft}
+                        onChange={(event) => {
+                          setCalcCustomTroopDraft(event.target.value);
+                          clearPatrolProfileFeedback();
+                        }}
+                        maxLength={120}
+                        placeholder="Např. 4. PTO Brno"
+                      />
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={handleAddCustomTroop}
+                        disabled={!normalizeTroopName(calcCustomTroopDraft)}
+                      >
+                        Přidat
+                      </button>
+                    </div>
+                  </div>
+                  <div className="calc-profile-troop-list">
+                    {calcSelectedTroops.length ? (
+                      calcSelectedTroops.map((troop) => (
+                        <span key={troop} className="calc-profile-troop-chip">
+                          <span>{troop}</span>
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={() => handleRemoveTroop(troop)}
+                            aria-label={`Odebrat oddíl ${troop}`}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))
+                    ) : (
+                      <p className="card-hint">Vyber alespoň jeden oddíl.</p>
+                    )}
+                  </div>
                 </div>
-                <div className="calc-time-input">
-                  <label htmlFor="calc-members-input">Jména a příjmení dětí</label>
-                  <textarea
-                    id="calc-members-input"
-                    value={calcPatrolMembersDraft}
-                    onChange={(event) => {
-                      setCalcPatrolMembersDraft(event.target.value);
-                      setPatrolProfileMessage(null);
-                      setPatrolProfileError(null);
-                    }}
-                    rows={4}
-                    maxLength={500}
-                    placeholder={'Jedno jméno na řádek\nnapř. Jan Novák'}
-                  />
+                <div className="calc-profile-children">
+                  <h3>Děti v hlídce</h3>
+                  <div className="calc-profile-table-wrapper">
+                    <table className="calc-profile-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Jméno</th>
+                          <th>Příjmení</th>
+                          <th>Přezdívka</th>
+                          <th>Oddíl</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {calcMemberRows.map((row, index) => {
+                          const requiresTroop = calcProfileDraft.requiresTroopPerChild;
+                          const rowTroopValue = calcSelectedTroops.includes(row.troop) ? row.troop : '';
+                          return (
+                            <tr key={`calc-member-row-${index}`}>
+                              <td>{index + 1}</td>
+                              <td>
+                                <input
+                                  type="text"
+                                  value={row.firstName}
+                                  onChange={(event) => handleProfileRowChange(index, 'firstName', event.target.value)}
+                                  placeholder="Jméno"
+                                  maxLength={80}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="text"
+                                  value={row.lastName}
+                                  onChange={(event) => handleProfileRowChange(index, 'lastName', event.target.value)}
+                                  placeholder="Příjmení"
+                                  maxLength={80}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="text"
+                                  value={row.nickname}
+                                  onChange={(event) => handleProfileRowChange(index, 'nickname', event.target.value)}
+                                  placeholder="Nepovinné"
+                                  maxLength={80}
+                                />
+                              </td>
+                              <td>
+                                {requiresTroop ? (
+                                  <select
+                                    value={rowTroopValue}
+                                    onChange={(event) => handleProfileRowChange(index, 'troop', event.target.value)}
+                                  >
+                                    <option value="">Vyber oddíl</option>
+                                    {calcSelectedTroops.map((troop) => (
+                                      <option key={`${index}-${troop}`} value={troop}>
+                                        {troop}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={calcSelectedTroops[0] ?? ''}
+                                    readOnly
+                                    disabled
+                                    placeholder="Oddíl"
+                                  />
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="card-hint">
+                    Vyplň maximálně 3 děti. Přezdívka je volitelná. Při více oddílech je oddíl u dítěte povinný.
+                  </p>
                 </div>
               </div>
               {patrolProfileError ? <p className="error-text">{patrolProfileError}</p> : null}

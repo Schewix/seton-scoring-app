@@ -110,7 +110,7 @@ function isValidDateString(value: string) {
 
 function normalizePatrolCodeVariants(raw: string) {
   const cleaned = raw.trim().toUpperCase();
-  const match = cleaned.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  const match = cleaned.match(/^([NMSR])([HD])?[- ]?(\d{1,3})$/);
   if (!match) {
     return [cleaned];
   }
@@ -120,9 +120,162 @@ function normalizePatrolCodeVariants(raw: string) {
     return [cleaned];
   }
 
-  const noPad = `${match[1]}${match[2]}-${parsed}`;
-  const pad = `${match[1]}${match[2]}-${String(parsed).padStart(2, '0')}`;
-  return noPad === pad ? [noPad] : [noPad, pad];
+  const category = match[1];
+  const sex = match[2] ? match[2] : '';
+  const noPad = String(parsed);
+  const pad2 = noPad.padStart(2, '0');
+  const variants: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string) => {
+    const normalized = value.trim().toUpperCase();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    variants.push(normalized);
+  };
+
+  if (sex) {
+    push(`${category}${sex}-${noPad}`);
+    push(`${category}${sex}-${pad2}`);
+    push(`${category}-${noPad}`);
+    push(`${category}-${pad2}`);
+    return variants;
+  }
+
+  push(`${category}-${noPad}`);
+  push(`${category}-${pad2}`);
+  push(`${category}H-${noPad}`);
+  push(`${category}H-${pad2}`);
+  push(`${category}D-${noPad}`);
+  push(`${category}D-${pad2}`);
+  return variants;
+}
+
+type PatrolLookupRow = {
+  id: string;
+  patrol_code: string | null;
+  active?: boolean | null;
+};
+
+type ParsedPatrolCode = {
+  category: string;
+  sex: string;
+  number: number;
+};
+
+type PatrolTargetResolution =
+  | { status: 'resolved'; patrolIds: string[]; primaryPatrolId: string }
+  | { status: 'not-found' };
+
+function parsePatrolCode(raw: string): ParsedPatrolCode | null {
+  const cleaned = raw.trim().toUpperCase();
+  const match = cleaned.match(/^([NMSR])([HD])?[- ]?(\d{1,3})$/);
+  if (!match) {
+    return null;
+  }
+  const number = Number.parseInt(match[3], 10);
+  if (!Number.isFinite(number) || number <= 0) {
+    return null;
+  }
+  return {
+    category: match[1],
+    sex: match[2] ? match[2] : '',
+    number,
+  };
+}
+
+function normalizePatrolCode(raw: string) {
+  const parsed = parsePatrolCode(raw);
+  if (!parsed) {
+    return raw.trim().toUpperCase();
+  }
+  return `${parsed.category}${parsed.sex ? parsed.sex : ''}-${parsed.number}`;
+}
+
+function toMergedPatrolCode(raw: string) {
+  const parsed = parsePatrolCode(raw);
+  if (!parsed) {
+    return '';
+  }
+  return `${parsed.category}-${parsed.number}`;
+}
+
+function comparePatrolRows(a: PatrolLookupRow, b: PatrolLookupRow) {
+  const aCode = normalizePatrolCode(a.patrol_code ?? '');
+  const bCode = normalizePatrolCode(b.patrol_code ?? '');
+  if (aCode !== bCode) {
+    return aCode.localeCompare(bCode, 'cs');
+  }
+  return a.id.localeCompare(b.id, 'cs');
+}
+
+function deriveClientEventId(baseClientEventId: string, patrolId: string) {
+  const source = `${baseClientEventId}:${patrolId}`;
+  let h1 = 0x811c9dc5;
+  let h2 = 0x9e3779b9;
+  let h3 = 0x85ebca6b;
+  let h4 = 0xc2b2ae35;
+  for (let index = 0; index < source.length; index += 1) {
+    const code = source.charCodeAt(index);
+    h1 = Math.imul(h1 ^ code, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ (code + index), 0x85ebca6b) >>> 0;
+    h3 = Math.imul(h3 ^ (code + h1), 0xc2b2ae35) >>> 0;
+    h4 = Math.imul(h4 ^ (code + h2), 0x27d4eb2f) >>> 0;
+  }
+  const hex = [h1, h2, h3, h4]
+    .map((value) => value.toString(16).padStart(8, '0'))
+    .join('')
+    .slice(0, 32)
+    .split('');
+  hex[12] = '5';
+  const variant = Number.parseInt(hex[16], 16);
+  hex[16] = ((variant & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0, 8).join('')}-${hex.slice(8, 12).join('')}-${hex.slice(12, 16).join('')}-${hex.slice(16, 20).join('')}-${hex.slice(20, 32).join('')}`;
+}
+
+function resolvePatrolTargets(rawCode: string, requestedPatrolId: string, rows: PatrolLookupRow[]): PatrolTargetResolution {
+  const activeRows = rows.filter((row) => row.active !== false).sort(comparePatrolRows);
+  if (activeRows.length === 0) {
+    return { status: 'not-found' };
+  }
+
+  const parsedInput = parsePatrolCode(rawCode);
+  if (parsedInput && !parsedInput.sex) {
+    const mergedCode = `${parsedInput.category}-${parsedInput.number}`;
+    const mergedMatches = activeRows.filter((row) => toMergedPatrolCode(row.patrol_code ?? '') === mergedCode);
+    if (mergedMatches.length > 0) {
+      const patrolIds = mergedMatches.map((row) => row.id);
+      const primaryPatrolId =
+        UUID_REGEX.test(requestedPatrolId) && patrolIds.includes(requestedPatrolId)
+          ? requestedPatrolId
+          : patrolIds[0];
+      return { status: 'resolved', patrolIds, primaryPatrolId };
+    }
+  }
+
+  const normalizedInput = normalizePatrolCode(rawCode);
+  const exactMatches = activeRows.filter((row) => normalizePatrolCode(row.patrol_code ?? '') === normalizedInput);
+  if (exactMatches.length > 0) {
+    const chosen =
+      UUID_REGEX.test(requestedPatrolId) && exactMatches.some((row) => row.id === requestedPatrolId)
+        ? requestedPatrolId
+        : exactMatches[0].id;
+    return { status: 'resolved', patrolIds: [chosen], primaryPatrolId: chosen };
+  }
+
+  if (UUID_REGEX.test(requestedPatrolId)) {
+    const byId = activeRows.find((row) => row.id === requestedPatrolId);
+    if (byId) {
+      return { status: 'resolved', patrolIds: [byId.id], primaryPatrolId: byId.id };
+    }
+  }
+
+  if (activeRows.length === 1) {
+    return { status: 'resolved', patrolIds: [activeRows[0].id], primaryPatrolId: activeRows[0].id };
+  }
+
+  return { status: 'not-found' };
 }
 
 function normalizePatrolMembers(value: string | null | undefined) {
@@ -263,27 +416,48 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Forbidden' }, 403);
   }
 
-  let resolvedPatrolId = body.patrol_id;
-  if (!UUID_REGEX.test(resolvedPatrolId)) {
-    const patrolCodeVariants = normalizePatrolCodeVariants(body.patrol_code);
-    const { data: patrol, error: patrolError } = await supabaseAdmin
+  const patrolCodeVariants = normalizePatrolCodeVariants(body.patrol_code);
+  const { data: patrols, error: patrolError } = await supabaseAdmin
+    .from('patrols')
+    .select('id, patrol_code, active')
+    .eq('event_id', body.event_id)
+    .in('patrol_code', patrolCodeVariants);
+
+  if (patrolError) {
+    logError('patrols lookup failed', patrolError);
+    return jsonResponse({ error: 'Patrol lookup failed' }, 500);
+  }
+
+  let resolvedTargets = resolvePatrolTargets(
+    body.patrol_code,
+    body.patrol_id,
+    (patrols ?? []) as PatrolLookupRow[],
+  );
+
+  if (resolvedTargets.status === 'not-found' && UUID_REGEX.test(body.patrol_id)) {
+    const { data: patrolById, error: patrolByIdError } = await supabaseAdmin
       .from('patrols')
-      .select('id')
+      .select('id, active')
       .eq('event_id', body.event_id)
-      .in('patrol_code', patrolCodeVariants)
+      .eq('id', body.patrol_id)
       .maybeSingle();
 
-    if (patrolError) {
-      logError('patrols lookup failed', patrolError);
+    if (patrolByIdError) {
+      logError('patrol fallback-by-id lookup failed', patrolByIdError);
       return jsonResponse({ error: 'Patrol lookup failed' }, 500);
     }
 
-    if (!patrol?.id) {
-      return jsonResponse({ error: 'Unknown patrol code' }, 400);
+    if (patrolById?.id && patrolById.active !== false) {
+      resolvedTargets = { status: 'resolved', patrolIds: [patrolById.id], primaryPatrolId: patrolById.id };
     }
-
-    resolvedPatrolId = patrol.id;
   }
+
+  if (resolvedTargets.status === 'not-found') {
+    return jsonResponse({ error: 'Unknown patrol code' }, 400);
+  }
+
+  const targetPatrolIds = resolvedTargets.patrolIds;
+  const primaryPatrolId = resolvedTargets.primaryPatrolId;
 
   const { data: tokenStation, error: tokenStationError } = await supabaseAdmin
     .from('stations')
@@ -366,27 +540,33 @@ Deno.serve(async (req) => {
   }
 
   const submittedBy = judgeId;
-  const { error: submitError } = await supabaseAdmin.rpc('submit_station_record', {
-    p_event_id: body.event_id,
-    p_station_id: body.station_id,
-    p_patrol_id: resolvedPatrolId,
-    p_category: body.category,
-    p_arrived_at: body.arrived_at,
-    p_wait_minutes: body.wait_minutes,
-    p_points: body.points,
-    p_note: body.note,
-    p_use_target_scoring: body.use_target_scoring,
-    p_normalized_answers: body.normalized_answers,
-    p_start_time: body.start_time ?? null,
-    p_finish_time: body.finish_time,
-    p_client_event_id: body.client_event_id,
-    p_client_created_at: body.client_created_at,
-    p_submitted_by: submittedBy,
-  });
+  const stationRecordTargets = targetPatrolIds.map((patrolId, index) => ({
+    patrolId,
+    clientEventId: index === 0 ? body.client_event_id : deriveClientEventId(body.client_event_id, patrolId),
+  }));
+  for (const target of stationRecordTargets) {
+    const { error: submitError } = await supabaseAdmin.rpc('submit_station_record', {
+      p_event_id: body.event_id,
+      p_station_id: body.station_id,
+      p_patrol_id: target.patrolId,
+      p_category: body.category,
+      p_arrived_at: body.arrived_at,
+      p_wait_minutes: body.wait_minutes,
+      p_points: body.points,
+      p_note: body.note,
+      p_use_target_scoring: body.use_target_scoring,
+      p_normalized_answers: body.normalized_answers,
+      p_start_time: body.start_time ?? null,
+      p_finish_time: body.finish_time,
+      p_client_event_id: target.clientEventId,
+      p_client_created_at: body.client_created_at,
+      p_submitted_by: submittedBy,
+    });
 
-  if (submitError) {
-    logError('submit_station_record failed', submitError);
-    return jsonResponse({ error: 'Score insert failed' }, 500);
+    if (submitError) {
+      logError('submit_station_record failed', submitError);
+      return jsonResponse({ error: 'Score insert failed' }, 500);
+    }
   }
 
   if (hasCalcPrivileges) {
@@ -399,15 +579,31 @@ Deno.serve(async (req) => {
       patrolUpdates.team_name = nextTeamName;
     }
     if (body.patrol_members !== undefined) {
-      patrolUpdates.note = normalizePatrolMembers(body.patrol_members);
+      patrolUpdates.patrol_members = normalizePatrolMembers(body.patrol_members);
     }
 
     if (Object.keys(patrolUpdates).length > 0) {
-      const { error: patrolUpdateError } = await supabaseAdmin
+      let { error: patrolUpdateError } = await supabaseAdmin
         .from('patrols')
         .update(patrolUpdates)
         .eq('event_id', body.event_id)
-        .eq('id', resolvedPatrolId);
+        .in('id', targetPatrolIds);
+
+      if (
+        patrolUpdateError
+        && Object.prototype.hasOwnProperty.call(patrolUpdates, 'patrol_members')
+        && /patrol_members/i.test(patrolUpdateError.message ?? '')
+      ) {
+        const fallbackUpdates: Record<string, unknown> = { ...patrolUpdates };
+        fallbackUpdates.note = fallbackUpdates.patrol_members ?? null;
+        delete fallbackUpdates.patrol_members;
+        const retry = await supabaseAdmin
+          .from('patrols')
+          .update(fallbackUpdates)
+          .eq('event_id', body.event_id)
+          .in('id', targetPatrolIds);
+        patrolUpdateError = retry.error;
+      }
 
       if (patrolUpdateError) {
         logError('patrol update failed', patrolUpdateError);
@@ -421,12 +617,18 @@ Deno.serve(async (req) => {
     .select('*')
     .eq('event_id', body.event_id)
     .eq('station_id', body.station_id)
-    .eq('patrol_id', resolvedPatrolId)
+    .eq('patrol_id', primaryPatrolId)
     .maybeSingle();
 
   if (scoreError) {
     logError('station_scores lookup failed', scoreError);
   }
 
-  return jsonResponse({ score }, 200);
+  return jsonResponse(
+    {
+      score,
+      mirrored_patrol_ids: targetPatrolIds.length > 1 ? targetPatrolIds : undefined,
+    },
+    200,
+  );
 });

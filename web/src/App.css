@@ -799,6 +799,9 @@ body {
   padding: 16px;
   background: var(--surface);
   box-shadow: 0 16px 36px rgba(44, 67, 52, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .calc-time-header h3,
@@ -829,6 +832,7 @@ body {
 }
 
 .calc-time-input input[type='text'],
+.calc-time-input select,
 .calc-time-input textarea {
   appearance: none;
   border: 1px solid var(--border);
@@ -854,7 +858,111 @@ body {
 }
 
 .calc-time-input input[type='text']:focus-visible,
+.calc-time-input select:focus-visible,
 .calc-time-input textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-color: var(--py-blue);
+}
+
+.calc-profile-troops {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.calc-profile-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.calc-profile-inline .ghost {
+  white-space: nowrap;
+}
+
+.calc-profile-troop-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.calc-profile-troop-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  padding: 4px 8px 4px 10px;
+  font-size: 0.9rem;
+}
+
+.calc-profile-troop-chip .ghost {
+  padding: 0 6px;
+  min-height: 24px;
+  line-height: 1;
+}
+
+.calc-profile-children {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.calc-profile-children h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.calc-profile-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.calc-profile-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.calc-profile-table th,
+.calc-profile-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.calc-profile-table th {
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.calc-profile-table td:first-child {
+  width: 34px;
+  color: var(--text-muted);
+}
+
+.calc-profile-table td input,
+.calc-profile-table td select {
+  width: 100%;
+  box-sizing: border-box;
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--surface-alt);
+}
+
+.calc-profile-table td input:focus-visible,
+.calc-profile-table td select:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
   border-color: var(--py-blue);
@@ -1691,6 +1799,12 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  position: sticky;
+  top: 12px;
+  z-index: 3;
+  padding: 8px 0;
+  background: #ffffff;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
 }
 
 .station-summary-detail-header h3 {

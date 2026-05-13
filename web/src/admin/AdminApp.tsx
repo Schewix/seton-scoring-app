@@ -146,6 +146,16 @@ type SetupEventRow = {
   starts_at: string | null;
   ends_at: string | null;
   scoring_locked?: boolean | null;
+  announced_places_n?: number | null;
+  announced_places_m?: number | null;
+  announced_places_s?: number | null;
+  announced_places_r?: number | null;
+  time_limit_n_minutes?: number | null;
+  time_limit_m_minutes?: number | null;
+  time_limit_s_minutes?: number | null;
+  time_limit_r_minutes?: number | null;
+  time_penalty_step_minutes?: number | null;
+  participating_troops?: string[] | null;
 };
 
 type SetupStationRow = {
@@ -188,6 +198,12 @@ type SetupStationOrderPayload = {
 type PatrolCountsState = Record<StationCategoryKey, number>;
 type PatrolStartsState = Record<StationCategoryKey, number>;
 type CategoryToggleState = Record<CategoryKey, boolean>;
+type SetupEventScoringConfig = {
+  announcedPlaces: Record<CategoryKey, number>;
+  timeLimitMinutes: Record<CategoryKey, number>;
+  timePenaltyStepMinutes: number;
+  participatingTroops: string[];
+};
 
 const SETUP_CATEGORY_ORDER_DEFAULTS: Record<StationCategoryKey, readonly string[]> = {
   NH: ['F', 'U', 'C', 'O', 'B', 'Z', 'K', 'P', 'J', 'R'],
@@ -209,6 +225,23 @@ const SETUP_SEPARATOR_DEFAULTS: Partial<Record<StationCategoryKey, string>> = {
   SD: 'J',
 };
 
+const DEFAULT_SETUP_ANNOUNCED_PLACES: Record<CategoryKey, number> = {
+  N: 5,
+  M: 6,
+  S: 6,
+  R: 3,
+};
+
+const DEFAULT_SETUP_TIME_LIMITS_MINUTES: Record<CategoryKey, number> = {
+  N: 110,
+  M: 140,
+  S: 140,
+  R: 140,
+};
+
+const DEFAULT_SETUP_TIME_PENALTY_STEP_MINUTES = 20;
+const DEFAULT_SETUP_TROOP_OPTIONS = PTO_TROOP_REGISTRY.map((entry) => entry.canonicalName).sort(compareTroopSheetOrder);
+
 function normalizeText(value: string | null | undefined): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -226,6 +259,73 @@ function toNumeric(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function toPositiveInt(value: unknown, fallback: number, max = 1000): number {
+  const parsed = toNumeric(value);
+  if (parsed === null) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(1, Math.round(parsed)));
+}
+
+function normalizeTroopName(value: string | null | undefined): string {
+  return normalizeText(value).replace(/\s+/g, ' ');
+}
+
+function normalizeTroopList(value: unknown): string[] {
+  const list = Array.isArray(value) ? value : [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  list.forEach((entry) => {
+    const troopName = normalizeTroopName(typeof entry === 'string' ? entry : '');
+    if (!troopName) {
+      return;
+    }
+    const key = troopName.toLocaleLowerCase('cs');
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    result.push(troopName.slice(0, 120));
+  });
+  return result.sort(compareTroopSheetOrder);
+}
+
+function createDefaultSetupEventScoringConfig(): SetupEventScoringConfig {
+  return {
+    announcedPlaces: { ...DEFAULT_SETUP_ANNOUNCED_PLACES },
+    timeLimitMinutes: { ...DEFAULT_SETUP_TIME_LIMITS_MINUTES },
+    timePenaltyStepMinutes: DEFAULT_SETUP_TIME_PENALTY_STEP_MINUTES,
+    participatingTroops: [],
+  };
+}
+
+function normalizeSetupEventScoringConfig(source: SetupEventRow | null | undefined): SetupEventScoringConfig {
+  const defaults = createDefaultSetupEventScoringConfig();
+  if (!source) {
+    return defaults;
+  }
+  return {
+    announcedPlaces: {
+      N: toPositiveInt(source.announced_places_n, defaults.announcedPlaces.N, 100),
+      M: toPositiveInt(source.announced_places_m, defaults.announcedPlaces.M, 100),
+      S: toPositiveInt(source.announced_places_s, defaults.announcedPlaces.S, 100),
+      R: toPositiveInt(source.announced_places_r, defaults.announcedPlaces.R, 100),
+    },
+    timeLimitMinutes: {
+      N: toPositiveInt(source.time_limit_n_minutes, defaults.timeLimitMinutes.N, 24 * 60),
+      M: toPositiveInt(source.time_limit_m_minutes, defaults.timeLimitMinutes.M, 24 * 60),
+      S: toPositiveInt(source.time_limit_s_minutes, defaults.timeLimitMinutes.S, 24 * 60),
+      R: toPositiveInt(source.time_limit_r_minutes, defaults.timeLimitMinutes.R, 24 * 60),
+    },
+    timePenaltyStepMinutes: toPositiveInt(
+      source.time_penalty_step_minutes,
+      defaults.timePenaltyStepMinutes,
+      24 * 60,
+    ),
+    participatingTroops: normalizeTroopList(source.participating_troops),
+  };
 }
 
 function toBracketKey(category: string | null | undefined, sex: string | null | undefined): string | null {
@@ -279,6 +379,10 @@ function comparePatrolOrder(
   return aCode.normalizedCode.localeCompare(bCode.normalizedCode, 'cs');
 }
 
+function stripTroopMetadataFromMember(value: string) {
+  return value.replace(/\s*\{oddil:[^}]+\}\s*$/i, '').trim();
+}
+
 function extractPatrolMembers(rawNote: string | null | undefined): string[] {
   const normalizedNote = normalizeText(rawNote);
   if (!normalizedNote) {
@@ -296,7 +400,7 @@ function extractPatrolMembers(rawNote: string | null | undefined): string[] {
 
   const splitLine = (line: string) => line
     .split(/;|\||,/g)
-    .map((value) => value.trim())
+    .map((value) => stripTroopMetadataFromMember(value))
     .filter(Boolean);
 
   const firstLineMembers = splitLine(lines[0]);
@@ -511,7 +615,7 @@ function parsePatrolMembersForExport(rawMembers: string | null | undefined): str
 
   const semicolonParts = normalized
     .split(/;|\r?\n/g)
-    .map((value) => value.trim())
+    .map((value) => stripTroopMetadataFromMember(value))
     .filter(Boolean);
 
   if (semicolonParts.length > 1) {
@@ -520,14 +624,14 @@ function parsePatrolMembersForExport(rawMembers: string | null | undefined): str
 
   const commaParts = normalized
     .split(',')
-    .map((value) => value.trim())
+    .map((value) => stripTroopMetadataFromMember(value))
     .filter(Boolean);
 
   if (commaParts.length > 1) {
     return commaParts;
   }
 
-  return [normalized];
+  return [stripTroopMetadataFromMember(normalized)];
 }
 
 function formatSecondsForExport(seconds: number | null): string {
@@ -974,6 +1078,11 @@ function AdminDashboard({
   const [setupAssignments, setSetupAssignments] = useState<SetupAssignmentRow[]>([]);
   const [setupOrders, setSetupOrders] = useState<Record<string, SetupStationOrderPayload>>({});
   const [selectedSetupEventId, setSelectedSetupEventId] = useState(eventId);
+  const [showPreRaceSetup, setShowPreRaceSetup] = useState(true);
+  const [setupEventScoringConfig, setSetupEventScoringConfig] = useState<SetupEventScoringConfig>(
+    () => createDefaultSetupEventScoringConfig(),
+  );
+  const [setupTroopDraft, setSetupTroopDraft] = useState('');
 
   const [createEventName, setCreateEventName] = useState('');
   const [createEventStartsAt, setCreateEventStartsAt] = useState('');
@@ -1389,6 +1498,19 @@ function AdminDashboard({
     [selectedSetupEventId, setupStations],
   );
 
+  const selectedSetupEvent = useMemo(
+    () => setupEvents.find((row) => row.id === selectedSetupEventId) ?? null,
+    [selectedSetupEventId, setupEvents],
+  );
+
+  const setupTroopOptions = useMemo(() => {
+    const merged = normalizeTroopList([
+      ...DEFAULT_SETUP_TROOP_OPTIONS,
+      ...setupEventScoringConfig.participatingTroops,
+    ]);
+    return merged;
+  }, [setupEventScoringConfig.participatingTroops]);
+
   const selectedSetupAssignments = useMemo(() => {
     const judgeById = new Map(setupJudges.map((judge) => [judge.id, judge]));
     const stationById = new Map(
@@ -1418,6 +1540,11 @@ function AdminDashboard({
       })
       .sort((a, b) => a.stationCode.localeCompare(b.stationCode, 'cs') || a.displayName.localeCompare(b.displayName, 'cs'));
   }, [selectedSetupEventId, setupAssignments, setupJudges, setupStations]);
+
+  useEffect(() => {
+    setSetupEventScoringConfig(normalizeSetupEventScoringConfig(selectedSetupEvent));
+    setSetupTroopDraft('');
+  }, [selectedSetupEvent]);
 
   useEffect(() => {
     const order = setupOrders[selectedSetupEventId];
@@ -1783,6 +1910,74 @@ function AdminDashboard({
     }
   }, [loadSetupData, orderInputs, postSetupAction, selectedSetupEventId, separatorInputs]);
 
+  const handleSaveEventScoringConfig = useCallback(async () => {
+    setSetupError(null);
+    setSetupSuccess(null);
+    setJudgeTemporaryPassword(null);
+
+    if (!selectedSetupEventId) {
+      setSetupError('Vyber ročník.');
+      return;
+    }
+
+    setSetupSaving(true);
+    try {
+      await postSetupAction('save_event_scoring_config', {
+        event_id: selectedSetupEventId,
+        announced_places_n: setupEventScoringConfig.announcedPlaces.N,
+        announced_places_m: setupEventScoringConfig.announcedPlaces.M,
+        announced_places_s: setupEventScoringConfig.announcedPlaces.S,
+        announced_places_r: setupEventScoringConfig.announcedPlaces.R,
+        time_limit_n_minutes: setupEventScoringConfig.timeLimitMinutes.N,
+        time_limit_m_minutes: setupEventScoringConfig.timeLimitMinutes.M,
+        time_limit_s_minutes: setupEventScoringConfig.timeLimitMinutes.S,
+        time_limit_r_minutes: setupEventScoringConfig.timeLimitMinutes.R,
+        time_penalty_step_minutes: setupEventScoringConfig.timePenaltyStepMinutes,
+        participating_troops: setupEventScoringConfig.participatingTroops,
+      });
+      setSetupSuccess('Nastavení vyhlašovaných míst a času bylo uloženo.');
+      await loadSetupData();
+    } catch (error) {
+      console.error('Failed to save event scoring config', error);
+      setSetupError(error instanceof Error ? error.message : 'Uložení nastavení selhalo.');
+    } finally {
+      setSetupSaving(false);
+    }
+  }, [loadSetupData, postSetupAction, selectedSetupEventId, setupEventScoringConfig]);
+
+  const handleToggleSetupTroop = useCallback((troopName: string) => {
+    const normalized = normalizeTroopName(troopName);
+    if (!normalized) {
+      return;
+    }
+    setSetupEventScoringConfig((prev) => {
+      const hasTroop = prev.participatingTroops.some(
+        (item) => item.toLocaleLowerCase('cs') === normalized.toLocaleLowerCase('cs'),
+      );
+      const nextTroops = hasTroop
+        ? prev.participatingTroops.filter(
+            (item) => item.toLocaleLowerCase('cs') !== normalized.toLocaleLowerCase('cs'),
+          )
+        : [...prev.participatingTroops, normalized];
+      return {
+        ...prev,
+        participatingTroops: normalizeTroopList(nextTroops),
+      };
+    });
+  }, []);
+
+  const handleAddSetupTroop = useCallback(() => {
+    const normalized = normalizeTroopName(setupTroopDraft);
+    if (!normalized) {
+      return;
+    }
+    setSetupEventScoringConfig((prev) => ({
+      ...prev,
+      participatingTroops: normalizeTroopList([...prev.participatingTroops, normalized]),
+    }));
+    setSetupTroopDraft('');
+  }, [setupTroopDraft]);
+
   const handleAssignJudgeToEvent = useCallback(async () => {
     setSetupError(null);
     setSetupSuccess(null);
@@ -1895,9 +2090,8 @@ function AdminDashboard({
       return;
     }
 
-    const selectedEvent = setupEvents.find((row) => row.id === selectedSetupEventId);
     const confirmed = window.confirm(
-      `Opravdu smazat všechny body a průchody pro ročník "${selectedEvent?.name ?? selectedSetupEventId}"?`,
+      `Opravdu smazat všechny body a průchody pro ročník "${selectedSetupEvent?.name ?? selectedSetupEventId}"?`,
     );
     if (!confirmed) {
       return;
@@ -1913,7 +2107,7 @@ function AdminDashboard({
     } finally {
       setSetupSaving(false);
     }
-  }, [postSetupAction, selectedSetupEventId, setupEvents]);
+  }, [postSetupAction, selectedSetupEvent, selectedSetupEventId]);
 
   const handleCleanupIncompletePatrols = useCallback(async () => {
     setSetupError(null);
@@ -1925,9 +2119,8 @@ function AdminDashboard({
       return;
     }
 
-    const selectedEvent = setupEvents.find((row) => row.id === selectedSetupEventId);
     const confirmed = window.confirm(
-      `Opravdu smazat hlídky bez vyplněného jména a příjmení člena v ročníku "${selectedEvent?.name ?? selectedSetupEventId}"?`,
+      `Opravdu smazat hlídky bez vyplněného jména a příjmení člena v ročníku "${selectedSetupEvent?.name ?? selectedSetupEventId}"?`,
     );
     if (!confirmed) {
       return;
@@ -1946,7 +2139,7 @@ function AdminDashboard({
     } finally {
       setSetupSaving(false);
     }
-  }, [loadSetupData, postSetupAction, selectedSetupEventId, setupEvents]);
+  }, [loadSetupData, postSetupAction, selectedSetupEvent, selectedSetupEventId]);
 
   const handleExportNameCheck = useCallback(async () => {
     if (exportingNames) {
@@ -3479,6 +3672,144 @@ function AdminDashboard({
           </div>
 
           <div className="admin-setup-block">
+            <h3>Nastavení výsledků a času</h3>
+            <p className="admin-card-subtitle">
+              Kolik míst se zvýrazní ve výsledcích a do jakého času je za kategorii plných 12 bodů.
+            </p>
+            <div className="admin-setup-scoring-grid">
+              {BASE_CATEGORY_ORDER.map((category) => (
+                <div key={category} className="admin-setup-scoring-row">
+                  <strong>{category}</strong>
+                  <label className="admin-field" htmlFor={`admin-announced-places-${category}`}>
+                    <span>Vyhlašovaná místa</span>
+                    <input
+                      id={`admin-announced-places-${category}`}
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={setupEventScoringConfig.announcedPlaces[category]}
+                      onChange={(event) =>
+                        setSetupEventScoringConfig((prev) => ({
+                          ...prev,
+                          announcedPlaces: {
+                            ...prev.announcedPlaces,
+                            [category]: toPositiveInt(event.target.value, prev.announcedPlaces[category], 100),
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="admin-field" htmlFor={`admin-time-limit-${category}`}>
+                    <span>Čas pro 12 bodů (min)</span>
+                    <input
+                      id={`admin-time-limit-${category}`}
+                      type="number"
+                      min={1}
+                      max={1440}
+                      value={setupEventScoringConfig.timeLimitMinutes[category]}
+                      onChange={(event) =>
+                        setSetupEventScoringConfig((prev) => ({
+                          ...prev,
+                          timeLimitMinutes: {
+                            ...prev.timeLimitMinutes,
+                            [category]: toPositiveInt(event.target.value, prev.timeLimitMinutes[category], 24 * 60),
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+            <div className="admin-disqualify-form">
+              <label className="admin-field" htmlFor="admin-time-step-minutes">
+                <span>Penalizace po (min)</span>
+                <input
+                  id="admin-time-step-minutes"
+                  type="number"
+                  min={1}
+                  max={1440}
+                  value={setupEventScoringConfig.timePenaltyStepMinutes}
+                  onChange={(event) =>
+                    setSetupEventScoringConfig((prev) => ({
+                      ...prev,
+                      timePenaltyStepMinutes: toPositiveInt(event.target.value, prev.timePenaltyStepMinutes, 24 * 60),
+                    }))
+                  }
+                />
+              </label>
+            </div>
+            <div className="admin-setup-troops">
+              <div>
+                <h4>Účastnící se oddíly</h4>
+                <p className="admin-card-subtitle">
+                  Označ oddíly, které se účastní ročníku. Seznam se použije ve výpočetce při úpravě profilu hlídky.
+                </p>
+              </div>
+              <div className="admin-setup-troop-grid">
+                {setupTroopOptions.map((troopName) => (
+                  <label key={troopName} className="admin-check">
+                    <input
+                      type="checkbox"
+                      checked={setupEventScoringConfig.participatingTroops.some(
+                        (item) => item.toLocaleLowerCase('cs') === troopName.toLocaleLowerCase('cs'),
+                      )}
+                      onChange={() => handleToggleSetupTroop(troopName)}
+                    />
+                    <span>{troopName}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="admin-disqualify-form">
+                <label className="admin-field" htmlFor="admin-add-troop">
+                  <span>Přidat další oddíl</span>
+                  <div className="admin-setup-troop-inline">
+                    <input
+                      id="admin-add-troop"
+                      value={setupTroopDraft}
+                      onChange={(event) => setSetupTroopDraft(event.target.value)}
+                      placeholder="Např. 4. PTO Brno"
+                      maxLength={120}
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      className="admin-button admin-button--secondary"
+                      onClick={handleAddSetupTroop}
+                      disabled={!normalizeTroopName(setupTroopDraft)}
+                    >
+                      Přidat oddíl
+                    </button>
+                  </div>
+                </label>
+              </div>
+            </div>
+            <div className="admin-card-actions admin-card-actions--end">
+              <button
+                type="button"
+                className="admin-button admin-button--secondary"
+                onClick={() => void handleSaveEventScoringConfig()}
+                disabled={setupSaving}
+              >
+                {setupSaving ? 'Ukládám…' : 'Uložit nastavení výsledků'}
+              </button>
+            </div>
+          </div>
+
+          <div className="admin-card-actions">
+            <button
+              type="button"
+              className="admin-button admin-button--secondary"
+              onClick={() => setShowPreRaceSetup((prev) => !prev)}
+            >
+              {showPreRaceSetup ? 'Skrýt předzávodní nastavení' : 'Zobrazit předzávodní nastavení'}
+            </button>
+          </div>
+
+          {showPreRaceSetup ? (
+            <>
+
+          <div className="admin-setup-block">
             <h3>Vytvořit nový ročník</h3>
             <div className="admin-disqualify-form">
               <label className="admin-field" htmlFor="admin-create-event-name">
@@ -3770,6 +4101,12 @@ function AdminDashboard({
               </button>
             </div>
           </div>
+            </>
+          ) : (
+            <p className="admin-card-subtitle admin-setup-collapsed-note">
+              Předzávodní nastavení je skryté. Klikni na tlačítko výše pro zobrazení.
+            </p>
+          )}
         </section>
 
         <section className="admin-card admin-card--with-divider">

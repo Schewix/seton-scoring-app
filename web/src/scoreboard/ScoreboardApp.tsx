@@ -84,19 +84,14 @@ const BRACKET_ORDER = ['N__H', 'N__D', 'M__H', 'M__D', 'S__H', 'S__D', 'R__H', '
 
 const BRACKET_ORDER_INDEX = new Map(BRACKET_ORDER.map((key, index) => [key, index] as const));
 
-const HIGHLIGHT_LIMIT_BY_BRACKET: Record<(typeof BRACKET_ORDER)[number], number> = {
-  N__H: 5,
-  N__D: 5,
-  M__H: 6,
-  M__D: 6,
-  S__H: 6,
-  S__D: 6,
-  R__H: 3,
-  R__D: 3,
-};
-
 const CATEGORY_CODES = ['N', 'M', 'S', 'R'] as const;
 type CategoryCode = (typeof CATEGORY_CODES)[number];
+const DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY: Record<CategoryCode, number> = {
+  N: 5,
+  M: 6,
+  S: 6,
+  R: 3,
+};
 
 const STATION_CATEGORY_REQUIREMENTS: Record<string, readonly CategoryCode[]> = {
   A: ['M', 'S', 'R'],
@@ -210,6 +205,24 @@ function parseNumber(
     return Number.isFinite(parsed) ? parsed : fallback;
   }
   return fallback;
+}
+
+function toPositiveInt(value: unknown, fallback: number, max = 100): number {
+  const parsed = parseNumber((value as number | string | null | undefined) ?? null, null);
+  if (parsed === null) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(1, Math.round(parsed)));
+}
+
+function parseAnnouncedPlacesByCategory(source: Record<string, unknown> | null | undefined): Record<CategoryCode, number> {
+  const values = source ?? {};
+  return {
+    N: toPositiveInt(values.announced_places_n, DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.N),
+    M: toPositiveInt(values.announced_places_m, DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.M),
+    S: toPositiveInt(values.announced_places_s, DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.S),
+    R: toPositiveInt(values.announced_places_r, DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.R),
+  };
 }
 
 function parseStationPointsBreakdown(value: RawResult['station_points_breakdown']): Record<string, number> {
@@ -346,11 +359,15 @@ function formatDateTime(value: string | null) {
   });
 }
 
+function stripTroopMetadataFromMember(value: string) {
+  return value.replace(/\s*\{oddil:[^}]+\}\s*$/i, '').trim();
+}
+
 function parsePatrolMembersList(members: string | null) {
   if (!members) return [] as string[];
   const parts = members
     .split(/;|\n/g)
-    .map((part) => part.trim())
+    .map((part) => stripTroopMetadataFromMember(part))
     .filter((part) => part.length > 0);
 
   if (parts.length > 1) {
@@ -359,7 +376,7 @@ function parsePatrolMembersList(members: string | null) {
 
   const commaParts = members
     .split(',')
-    .map((part) => part.trim())
+    .map((part) => stripTroopMetadataFromMember(part))
     .filter((part) => part.length > 0);
 
   if (commaParts.length > 1) {
@@ -468,10 +485,15 @@ function compareBrackets(aCategory: string, aSex: string, bCategory: string, bSe
   return aKey.localeCompare(bKey);
 }
 
-function getHighlightLimitForBracket(category: string, sex: string) {
-  const key = normaliseBracketKey(category, sex);
-  const configured = HIGHLIGHT_LIMIT_BY_BRACKET[key as keyof typeof HIGHLIGHT_LIMIT_BY_BRACKET];
-  return typeof configured === 'number' ? configured : 3;
+function getHighlightLimitForCategory(
+  category: string,
+  announcedPlacesByCategory: Record<CategoryCode, number>,
+) {
+  const normalizedCategory = normaliseCategoryKey(category);
+  if (!isCategoryCode(normalizedCategory)) {
+    return 3;
+  }
+  return announcedPlacesByCategory[normalizedCategory];
 }
 
 function formatCategoryLabel(category: string, sex?: string) {
@@ -530,6 +552,9 @@ function ScoreboardApp() {
   const [eventName, setEventName] = useState<string>(() => {
     return normaliseText((import.meta.env.VITE_EVENT_NAME as string | undefined) ?? null) ?? '';
   });
+  const [announcedPlacesByCategory, setAnnouncedPlacesByCategory] = useState<Record<CategoryCode, number>>(
+    DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY,
+  );
   const [exporting, setExporting] = useState(false);
   const [stationCodes, setStationCodes] = useState<string[]>([]);
   const [expandedPatrolId, setExpandedPatrolId] = useState<string | null>(null);
@@ -556,39 +581,36 @@ function ScoreboardApp() {
   }, []);
 
   useEffect(() => {
-    if (normaliseText(eventName)) {
-      return;
-    }
-
     let cancelled = false;
 
     (async () => {
       try {
         const { data, error } = await supabase
           .from('events_public')
-          .select('name')
+          .select('name,announced_places_n,announced_places_m,announced_places_s,announced_places_r')
           .eq('id', rawEventId)
           .maybeSingle();
         if (!isMountedRef.current || cancelled) return;
         if (error) {
-          console.error('Failed to load event name', error);
+          console.error('Failed to load event metadata', error);
           return;
         }
-        const row = data as { name?: string | null } | null;
+        const row = data as (Record<string, unknown> & { name?: string | null }) | null;
         const fetchedName = normaliseText(row?.name ?? null);
         if (fetchedName) {
-          setEventName(fetchedName);
+          setEventName((prev) => prev || fetchedName);
         }
+        setAnnouncedPlacesByCategory(parseAnnouncedPlacesByCategory(row));
       } catch (err) {
         if (!isMountedRef.current || cancelled) return;
-        console.error('Failed to load event name', err);
+        console.error('Failed to load event metadata', err);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [eventName, rawEventId]);
+  }, [rawEventId]);
 
   const togglePatrolDetails = useCallback((patrolId: string) => {
     setExpandedPatrolId((prev) => (prev === patrolId ? null : patrolId));
@@ -1064,7 +1086,10 @@ function ScoreboardApp() {
               <div className="scoreboard-groups">
                 {groupedRanked.map((group) => {
                   const displayRows = group.visibleItems;
-                  const highlightLimit = getHighlightLimitForBracket(group.category, group.sex);
+                  const highlightLimit = getHighlightLimitForCategory(
+                    group.category,
+                    announcedPlacesByCategory,
+                  );
                   return (
                     <div key={group.key} className="scoreboard-group">
                       <h3>{formatCategoryLabel(group.category, group.sex)}</h3>

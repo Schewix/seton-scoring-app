@@ -66,6 +66,16 @@ type EventRow = {
   id: string;
   name: string;
   scoring_locked: boolean | null;
+  announced_places_n?: number | null;
+  announced_places_m?: number | null;
+  announced_places_s?: number | null;
+  announced_places_r?: number | null;
+  time_limit_n_minutes?: number | null;
+  time_limit_m_minutes?: number | null;
+  time_limit_s_minutes?: number | null;
+  time_limit_r_minutes?: number | null;
+  time_penalty_step_minutes?: number | null;
+  participating_troops?: string[] | null;
 };
 
 type JudgeRow = {
@@ -85,11 +95,65 @@ type PatrolRow = {
 type StationManifest = {
   judge: { id: string; email: string; displayName: string };
   station: { id: string; code: string; name: string };
-  event: { id: string; name: string; scoringLocked: boolean };
+  event: {
+    id: string;
+    name: string;
+    scoringLocked: boolean;
+    announcedPlaces: { N: number; M: number; S: number; R: number };
+    timeScoring: {
+      limitMinutesByCategory: { N: number; M: number; S: number; R: number };
+      penaltyStepMinutes: number;
+    };
+    participatingTroops: string[];
+  };
   allowedCategories: string[];
   allowedTasks: string[];
   manifestVersion: number;
 };
+
+const DEFAULT_ANNOUNCED_PLACES = { N: 5, M: 6, S: 6, R: 3 } as const;
+const DEFAULT_TIME_LIMIT_MINUTES = { N: 110, M: 140, S: 140, R: 140 } as const;
+const DEFAULT_TIME_PENALTY_STEP_MINUTES = 20;
+
+function toPositiveInt(value: unknown, fallback: number, max = 1_000) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.min(max, Math.max(1, Math.round(value)));
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number.parseInt(value.trim(), 10);
+    if (Number.isFinite(parsed)) {
+      return Math.min(max, Math.max(1, parsed));
+    }
+  }
+  return fallback;
+}
+
+function toEventManifestSettings(event: EventRow) {
+  const participatingTroops = Array.isArray(event.participating_troops)
+    ? event.participating_troops
+        .map((item) => (typeof item === 'string' ? item.trim().replace(/\s+/g, ' ') : ''))
+        .filter((item) => item.length > 0)
+    : [];
+
+  return {
+    announcedPlaces: {
+      N: toPositiveInt(event.announced_places_n, DEFAULT_ANNOUNCED_PLACES.N, 100),
+      M: toPositiveInt(event.announced_places_m, DEFAULT_ANNOUNCED_PLACES.M, 100),
+      S: toPositiveInt(event.announced_places_s, DEFAULT_ANNOUNCED_PLACES.S, 100),
+      R: toPositiveInt(event.announced_places_r, DEFAULT_ANNOUNCED_PLACES.R, 100),
+    },
+    timeScoring: {
+      limitMinutesByCategory: {
+        N: toPositiveInt(event.time_limit_n_minutes, DEFAULT_TIME_LIMIT_MINUTES.N, 24 * 60),
+        M: toPositiveInt(event.time_limit_m_minutes, DEFAULT_TIME_LIMIT_MINUTES.M, 24 * 60),
+        S: toPositiveInt(event.time_limit_s_minutes, DEFAULT_TIME_LIMIT_MINUTES.S, 24 * 60),
+        R: toPositiveInt(event.time_limit_r_minutes, DEFAULT_TIME_LIMIT_MINUTES.R, 24 * 60),
+      },
+      penaltyStepMinutes: toPositiveInt(event.time_penalty_step_minutes, DEFAULT_TIME_PENALTY_STEP_MINUTES, 24 * 60),
+    },
+    participatingTroops,
+  };
+}
 
 function applyCors(res: any) {
   for (const [key, value] of Object.entries(corsHeaders)) {
@@ -237,7 +301,9 @@ async function handleManifestRequest(req: any, res: any) {
       .maybeSingle(),
     supabase
       .from('events')
-      .select('id, name, scoring_locked')
+      .select(
+        'id, name, scoring_locked, announced_places_n, announced_places_m, announced_places_s, announced_places_r, time_limit_n_minutes, time_limit_m_minutes, time_limit_s_minutes, time_limit_r_minutes, time_penalty_step_minutes, participating_troops',
+      )
       .eq('id', eventId)
       .maybeSingle(),
     supabase.from('judges').select('id, email, display_name').eq('id', judgeId).maybeSingle(),
@@ -277,6 +343,7 @@ async function handleManifestRequest(req: any, res: any) {
       id: event.id,
       name: event.name,
       scoringLocked: Boolean(event.scoring_locked),
+      ...toEventManifestSettings(event),
     },
     allowedCategories,
     allowedTasks: assignment.allowed_tasks ?? [],

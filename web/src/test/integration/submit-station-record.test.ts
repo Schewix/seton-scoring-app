@@ -222,8 +222,8 @@ describe('submit-station-record api', () => {
     expect(quiz?.length ?? 0).toBe(0);
   });
 
-  it('does not write partial data on failure', async () => {
-    const payload = basePayload({ patrol_id: crypto.randomUUID() });
+  it('does not write data when patrol reference is unknown', async () => {
+    const payload = basePayload({ patrol_id: crypto.randomUUID(), patrol_code: 'M-999' });
     const req: any = {
       method: 'POST',
       headers: { authorization: `Bearer ${ctx.accessToken}` },
@@ -232,7 +232,7 @@ describe('submit-station-record api', () => {
     const res = createMockRes();
 
     await handler(req, res);
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(400);
 
     const { data: scores } = await supabaseAdmin
       .from('station_scores')
@@ -289,6 +289,46 @@ describe('submit-station-record api', () => {
       .select('*')
       .eq('event_id', ctx.eventId);
     expect(scores?.length).toBe(1);
+  });
+
+  it('shared category code writes score to both H and D patrols', async () => {
+    const secondPatrolId = crypto.randomUUID();
+    const { error: secondPatrolError } = await supabaseAdmin.from('patrols').insert({
+      id: secondPatrolId,
+      event_id: ctx.eventId,
+      team_name: 'Test patrol D',
+      category: 'M',
+      sex: 'D',
+      patrol_code: 'MD-1',
+      active: true,
+    });
+    expect(secondPatrolError).toBeNull();
+
+    const sharedClientEventId = crypto.randomUUID();
+    const payload = basePayload({
+      patrol_id: ctx.patrolId,
+      patrol_code: 'M-1',
+      client_event_id: sharedClientEventId,
+    });
+
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: `Bearer ${ctx.accessToken}` },
+      body: payload,
+    };
+
+    await handler(req, createMockRes());
+    await handler(req, createMockRes());
+
+    const { data: scores } = await supabaseAdmin
+      .from('station_scores')
+      .select('patrol_id')
+      .eq('event_id', ctx.eventId);
+
+    const patrolIds = new Set((scores ?? []).map((row) => row.patrol_id));
+    expect(scores?.length).toBe(2);
+    expect(patrolIds.has(ctx.patrolId)).toBe(true);
+    expect(patrolIds.has(secondPatrolId)).toBe(true);
   });
 
   it('invalid patrol_code returns 400 and writes nothing', async () => {

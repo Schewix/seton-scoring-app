@@ -263,6 +263,54 @@
   gap: 10px;
 }
 
+.admin-setup-scoring-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-setup-scoring-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 1fr;
+  gap: 10px;
+  align-items: end;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.admin-setup-troops {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-setup-troops h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.admin-setup-troop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.admin-setup-troop-inline {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.admin-setup-troop-inline .admin-button {
+  min-height: 46px;
+  white-space: nowrap;
+}
+
 .admin-setup-patrol-row {
   display: grid;
   grid-template-columns: 72px 1fr 1fr;
@@ -272,6 +320,11 @@
   border-radius: 12px;
   padding: 10px 12px;
   background: #ffffff;
+}
+
+.admin-setup-collapsed-note {
+  margin: 0;
+  padding-top: 4px;
 }
 
 .admin-field {
@@ -836,7 +889,25 @@
     gap: 8px;
   }
 
+  .admin-setup-scoring-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .admin-setup-troop-inline {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-setup-troop-inline .admin-button {
+    width: 100%;
+  }
+
   .admin-setup-patrol-row strong {
+    margin-bottom: 4px;
+  }
+
+  .admin-setup-scoring-row strong {
     margin-bottom: 4px;
   }
 

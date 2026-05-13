@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
+import { createHash } from 'node:crypto';
 import { getAuthConfig } from '../api-lib/authTokens.js';
 
 const UUID_REGEX =
@@ -78,30 +79,117 @@ type PatrolLookupRow = {
   active?: boolean | null;
 };
 
-function resolvePatrolFromMatches(rawCode: string, rows: PatrolLookupRow[]): PatrolLookupRow | null {
-  const normalizedCode = rawCode.trim().toUpperCase();
-  const activeRows = rows.filter((row) => row.active !== false);
-  if (activeRows.length === 0) {
+type ParsedPatrolCode = {
+  category: string;
+  sex: string;
+  number: number;
+};
+
+type PatrolTargetResolution =
+  | { status: 'resolved'; patrolIds: string[]; primaryPatrolId: string }
+  | { status: 'not-found' };
+
+function parsePatrolCode(raw: string): ParsedPatrolCode | null {
+  const cleaned = raw.trim().toUpperCase();
+  const match = cleaned.match(/^([NMSR])([HD])?[- ]?(\d{1,3})$/);
+  if (!match) {
     return null;
   }
-
-  const exactMatches = activeRows.filter((row) => (row.patrol_code ?? '').trim().toUpperCase() === normalizedCode);
-  if (exactMatches.length === 1) {
-    return exactMatches[0];
+  const number = Number.parseInt(match[3], 10);
+  if (!Number.isFinite(number) || number <= 0) {
+    return null;
   }
+  return {
+    category: match[1],
+    sex: match[2] ? match[2] : '',
+    number,
+  };
+}
+
+function normalizePatrolCode(raw: string): string {
+  const parsed = parsePatrolCode(raw);
+  if (!parsed) {
+    return raw.trim().toUpperCase();
+  }
+  return `${parsed.category}${parsed.sex ? parsed.sex : ''}-${parsed.number}`;
+}
+
+function toMergedPatrolCode(raw: string): string {
+  const parsed = parsePatrolCode(raw);
+  if (!parsed) {
+    return '';
+  }
+  return `${parsed.category}-${parsed.number}`;
+}
+
+function comparePatrolRows(a: PatrolLookupRow, b: PatrolLookupRow) {
+  const aCode = normalizePatrolCode(a.patrol_code ?? '');
+  const bCode = normalizePatrolCode(b.patrol_code ?? '');
+  if (aCode !== bCode) {
+    return aCode.localeCompare(bCode, 'cs');
+  }
+  return a.id.localeCompare(b.id, 'cs');
+}
+
+function deriveClientEventId(baseClientEventId: string, patrolId: string): string {
+  const hash = createHash('sha256').update(`${baseClientEventId}:${patrolId}`).digest('hex').slice(0, 32).split('');
+  hash[12] = '5';
+  const variant = Number.parseInt(hash[16], 16);
+  hash[16] = ((variant & 0x3) | 0x8).toString(16);
+  return `${hash.slice(0, 8).join('')}-${hash.slice(8, 12).join('')}-${hash.slice(12, 16).join('')}-${hash.slice(16, 20).join('')}-${hash.slice(20, 32).join('')}`;
+}
+
+function resolvePatrolTargets(
+  rawCode: string,
+  requestedPatrolId: string,
+  rows: PatrolLookupRow[],
+): PatrolTargetResolution {
+  const activeRows = rows.filter((row) => row.active !== false).sort(comparePatrolRows);
+  if (activeRows.length === 0) {
+    return { status: 'not-found' };
+  }
+
+  const parsedInput = parsePatrolCode(rawCode);
+  if (parsedInput && !parsedInput.sex) {
+    const mergedCode = `${parsedInput.category}-${parsedInput.number}`;
+    const mergedMatches = activeRows.filter(
+      (row) => toMergedPatrolCode(row.patrol_code ?? '') === mergedCode,
+    );
+    if (mergedMatches.length > 0) {
+      const patrolIds = mergedMatches.map((row) => row.id);
+      const primaryPatrolId =
+        UUID_REGEX.test(requestedPatrolId) && patrolIds.includes(requestedPatrolId)
+          ? requestedPatrolId
+          : patrolIds[0];
+      return { status: 'resolved', patrolIds, primaryPatrolId };
+    }
+  }
+
+  const normalizedInput = normalizePatrolCode(rawCode);
+  const exactMatches = activeRows.filter(
+    (row) => normalizePatrolCode(row.patrol_code ?? '') === normalizedInput,
+  );
+  if (exactMatches.length > 0) {
+    const chosen =
+      UUID_REGEX.test(requestedPatrolId)
+      && exactMatches.some((row) => row.id === requestedPatrolId)
+        ? requestedPatrolId
+        : exactMatches[0].id;
+    return { status: 'resolved', patrolIds: [chosen], primaryPatrolId: chosen };
+  }
+
+  if (UUID_REGEX.test(requestedPatrolId)) {
+    const byId = activeRows.find((row) => row.id === requestedPatrolId);
+    if (byId) {
+      return { status: 'resolved', patrolIds: [byId.id], primaryPatrolId: byId.id };
+    }
+  }
+
   if (activeRows.length === 1) {
-    return activeRows[0];
+    return { status: 'resolved', patrolIds: [activeRows[0].id], primaryPatrolId: activeRows[0].id };
   }
 
-  const withMembers = activeRows.filter((row) => {
-    const members = normalizePatrolMembers(row.patrol_members ?? row.note ?? null);
-    return members !== null;
-  });
-  if (withMembers.length === 1) {
-    return withMembers[0];
-  }
-
-  return null;
+  return { status: 'not-found' };
 }
 
 function logError(context: string, error: unknown) {
@@ -320,27 +408,46 @@ export default async function handler(req: any, res: any) {
     auth: { persistSession: false },
   });
 
-  let resolvedPatrolId = body.patrol_id;
-  if (!UUID_REGEX.test(resolvedPatrolId)) {
-    const patrolCodeVariants = buildPatrolCodeVariants(body.patrol_code);
-    const { data: patrols, error: patrolError } = await supabaseAdmin
-      .from('patrols')
-      .select('id, patrol_code, patrol_members, note, active')
-      .eq('event_id', body.event_id)
-      .in('patrol_code', patrolCodeVariants);
+  const patrolCodeVariants = buildPatrolCodeVariants(body.patrol_code);
+  const { data: patrols, error: patrolError } = await supabaseAdmin
+    .from('patrols')
+    .select('id, patrol_code, active')
+    .eq('event_id', body.event_id)
+    .in('patrol_code', patrolCodeVariants);
 
-    if (patrolError) {
-      logError('patrols lookup failed', patrolError);
-      return respond(res, 500, 'Patrol lookup failed', patrolError.message);
-    }
-
-    const resolvedPatrol = resolvePatrolFromMatches(body.patrol_code, (patrols ?? []) as PatrolLookupRow[]);
-    if (!resolvedPatrol?.id) {
-      return respond(res, 400, 'Unknown patrol code', body.patrol_code);
-    }
-
-    resolvedPatrolId = resolvedPatrol.id;
+  if (patrolError) {
+    logError('patrols lookup failed', patrolError);
+    return respond(res, 500, 'Patrol lookup failed', patrolError.message);
   }
+
+  let resolvedTargets = resolvePatrolTargets(
+    body.patrol_code,
+    body.patrol_id,
+    (patrols ?? []) as PatrolLookupRow[],
+  );
+
+  if (resolvedTargets.status === 'not-found' && UUID_REGEX.test(body.patrol_id)) {
+    const { data: patrolById, error: patrolByIdError } = await supabaseAdmin
+      .from('patrols')
+      .select('id, active')
+      .eq('event_id', body.event_id)
+      .eq('id', body.patrol_id)
+      .maybeSingle();
+    if (patrolByIdError) {
+      logError('patrol fallback-by-id lookup failed', patrolByIdError);
+      return respond(res, 500, 'Patrol lookup failed', patrolByIdError.message);
+    }
+    if (patrolById?.id && patrolById.active !== false) {
+      resolvedTargets = { status: 'resolved', patrolIds: [patrolById.id], primaryPatrolId: patrolById.id };
+    }
+  }
+
+  if (resolvedTargets.status === 'not-found') {
+    return respond(res, 400, 'Unknown patrol code', body.patrol_code);
+  }
+
+  const targetPatrolIds = resolvedTargets.patrolIds;
+  const primaryPatrolId = resolvedTargets.primaryPatrolId;
 
   const { data: session, error: sessionError } = await supabaseAdmin
     .from('judge_sessions')
@@ -446,27 +553,33 @@ export default async function handler(req: any, res: any) {
   }
 
   const submittedBy = judgeId;
-  const { error: submitError } = await supabaseAdmin.rpc('submit_station_record', {
-    p_event_id: body.event_id,
-    p_station_id: body.station_id,
-    p_patrol_id: resolvedPatrolId,
-    p_category: body.category,
-    p_arrived_at: body.arrived_at,
-    p_wait_minutes: body.wait_minutes,
-    p_points: body.points,
-    p_note: body.note,
-    p_use_target_scoring: body.use_target_scoring,
-    p_normalized_answers: body.normalized_answers,
-    p_start_time: body.start_time ?? null,
-    p_finish_time: body.finish_time,
-    p_client_event_id: body.client_event_id,
-    p_client_created_at: body.client_created_at,
-    p_submitted_by: submittedBy,
-  });
+  const stationRecordTargets = targetPatrolIds.map((patrolId, index) => ({
+    patrolId,
+    clientEventId: index === 0 ? body.client_event_id : deriveClientEventId(body.client_event_id, patrolId),
+  }));
+  for (const target of stationRecordTargets) {
+    const { error: submitError } = await supabaseAdmin.rpc('submit_station_record', {
+      p_event_id: body.event_id,
+      p_station_id: body.station_id,
+      p_patrol_id: target.patrolId,
+      p_category: body.category,
+      p_arrived_at: body.arrived_at,
+      p_wait_minutes: body.wait_minutes,
+      p_points: body.points,
+      p_note: body.note,
+      p_use_target_scoring: body.use_target_scoring,
+      p_normalized_answers: body.normalized_answers,
+      p_start_time: body.start_time ?? null,
+      p_finish_time: body.finish_time,
+      p_client_event_id: target.clientEventId,
+      p_client_created_at: body.client_created_at,
+      p_submitted_by: submittedBy,
+    });
 
-  if (submitError) {
-    logError('submit_station_record failed', submitError);
-    return respond(res, 500, 'Score insert failed', submitError.message);
+    if (submitError) {
+      logError('submit_station_record failed', submitError);
+      return respond(res, 500, 'Score insert failed', submitError.message);
+    }
   }
 
   if (hasCalcPrivileges) {
@@ -483,11 +596,27 @@ export default async function handler(req: any, res: any) {
     }
 
     if (Object.keys(patrolUpdates).length > 0) {
-      const { error: patrolUpdateError } = await supabaseAdmin
+      let { error: patrolUpdateError } = await supabaseAdmin
         .from('patrols')
         .update(patrolUpdates)
         .eq('event_id', body.event_id)
-        .eq('id', resolvedPatrolId);
+        .in('id', targetPatrolIds);
+
+      if (
+        patrolUpdateError
+        && Object.prototype.hasOwnProperty.call(patrolUpdates, 'patrol_members')
+        && /patrol_members/i.test(patrolUpdateError.message ?? '')
+      ) {
+        const fallbackUpdates: Record<string, unknown> = { ...patrolUpdates };
+        fallbackUpdates.note = fallbackUpdates.patrol_members ?? null;
+        delete fallbackUpdates.patrol_members;
+        const retry = await supabaseAdmin
+          .from('patrols')
+          .update(fallbackUpdates)
+          .eq('event_id', body.event_id)
+          .in('id', targetPatrolIds);
+        patrolUpdateError = retry.error;
+      }
 
       if (patrolUpdateError) {
         logError('patrol update failed', patrolUpdateError);
@@ -501,12 +630,15 @@ export default async function handler(req: any, res: any) {
     .select('*')
     .eq('event_id', body.event_id)
     .eq('station_id', body.station_id)
-    .eq('patrol_id', resolvedPatrolId)
+    .eq('patrol_id', primaryPatrolId)
     .maybeSingle();
 
   if (scoreError) {
     logError('station_scores lookup failed', scoreError);
   }
 
-  return res.status(200).json({ score });
+  return res.status(200).json({
+    score,
+    mirrored_patrol_ids: targetPatrolIds.length > 1 ? targetPatrolIds : undefined,
+  });
 }

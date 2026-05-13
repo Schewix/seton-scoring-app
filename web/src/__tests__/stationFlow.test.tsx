@@ -426,6 +426,27 @@ async function loadPatrolAndOpenForm(
   }
 }
 
+async function fillCalcProfileChildren(
+  user: ReturnType<typeof userEvent.setup>,
+  children: Array<{ firstName: string; lastName: string }>,
+) {
+  const firstNameInputs = await screen.findAllByPlaceholderText('Jméno');
+  const lastNameInputs = await screen.findAllByPlaceholderText('Příjmení');
+
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children[index];
+    const firstNameInput = firstNameInputs[index];
+    const lastNameInput = lastNameInputs[index];
+    if (!firstNameInput || !lastNameInput) {
+      continue;
+    }
+    await user.clear(firstNameInput);
+    await user.type(firstNameInput, child.firstName);
+    await user.clear(lastNameInput);
+    await user.type(lastNameInput, child.lastName);
+  }
+}
+
 type TableFactory = () => unknown;
 
 interface SupabaseTestClient {
@@ -834,13 +855,11 @@ describe('station workflow', () => {
 
     await screen.findByText('Správně: 12 / 12');
 
-    const teamNameInput = await screen.findByLabelText('Název oddílu');
-    await user.clear(teamNameInput);
-    await user.type(teamNameInput, '3. PTO Dubínek');
-
-    const membersInput = await screen.findByLabelText('Jména dětí');
-    await user.clear(membersInput);
-    await user.type(membersInput, 'Adam{enter}Bára{enter}Cyril');
+    await fillCalcProfileChildren(user, [
+      { firstName: 'Adam', lastName: 'Alfa' },
+      { firstName: 'Bára', lastName: 'Beta' },
+      { firstName: 'Cyril', lastName: 'Gama' },
+    ]);
 
     const startTimeInput = await screen.findByLabelText('Start (HH:MM)');
     fireEvent.change(startTimeInput, { target: { value: '08:05' } });
@@ -876,8 +895,8 @@ describe('station workflow', () => {
     expect(timePayload?.start_time).toBeTruthy();
     expect(timePayload?.finish_time).toBeTruthy();
     expect(timePayload?.client_event_id).toBeTruthy();
-    expect(timePayload?.team_name).toBe('3. PTO Dubínek');
-    expect(timePayload?.patrol_members).toBe('Adam\nBára\nCyril');
+    expect(timePayload?.team_name).toBe('Vlci');
+    expect(timePayload?.patrol_members).toBe('Adam Alfa\nBára Beta\nCyril Gama');
     const editedStartTime = new Date(String(timePayload?.start_time));
     expect(editedStartTime.getHours()).toBe(8);
     expect(editedStartTime.getMinutes()).toBe(5);
@@ -889,8 +908,8 @@ describe('station workflow', () => {
     expect(targetPayload?.points).toBe(12);
     expect(targetPayload?.finish_time).toBeNull();
     expect(targetPayload?.client_event_id).toBeTruthy();
-    expect(targetPayload?.team_name).toBe('3. PTO Dubínek');
-    expect(targetPayload?.patrol_members).toBe('Adam\nBára\nCyril');
+    expect(targetPayload?.team_name).toBe('Vlci');
+    expect(targetPayload?.patrol_members).toBe('Adam Alfa\nBára Beta\nCyril Gama');
 
     await waitFor(async () => {
       const storedQueue = await readOutbox();
@@ -952,6 +971,7 @@ describe('station workflow', () => {
     await user.type(answersInput, 'A B C D A B C D A B C D');
 
     await screen.findByText('Správně: 12 / 12');
+    await fillCalcProfileChildren(user, [{ firstName: 'Adam', lastName: 'Alfa' }]);
 
     await user.click(screen.getByRole('button', { name: 'Uložit záznam' }));
 
@@ -1136,7 +1156,7 @@ describe('station workflow', () => {
 
     await user.click(quickAddButton);
 
-    expect(await screen.findByText('TMP-001')).toBeInTheDocument();
+    expect(await screen.findByText('NH-1')).toBeInTheDocument();
   });
 
   it('opens change-password screen from menu and submits authenticated request', async () => {
