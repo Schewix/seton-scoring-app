@@ -71,11 +71,12 @@ export function mapPatrolRegistryRows(
 
   rows.forEach((row) => {
     const normalized = normalisePatrolCode(row.patrol_code ?? '');
-    const match = normalized.match(/^([NMSR])([HD])-(\d{1,2})$/);
+    const match = normalized.match(/^([NMSR])([HD])?-(\d{1,3})$/);
     if (!match) {
       return;
     }
-    const [, category, gender, digits] = match;
+    const [, category, rawGender, digits] = match;
+    const gender = rawGender ? rawGender : '';
     if (!isCategoryAllowed(category)) {
       return;
     }
@@ -83,7 +84,7 @@ export function mapPatrolRegistryRows(
     if (!Number.isFinite(numeric)) {
       return;
     }
-    const statsKey = `${category}-${gender}`;
+    const statsKey = `${category}-${gender || '*'}`;
     const stats = availabilityStats.get(statsKey) ?? { total: 0, inactive: 0 };
     stats.total += 1;
     const isActive = row.active !== false;

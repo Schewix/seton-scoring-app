@@ -26,9 +26,9 @@ type SubmissionPayload = {
   sex?: string;
 };
 
-function normalizePatrolCodeVariants(raw: string) {
+function buildPatrolCodeVariants(raw: string) {
   const cleaned = raw.trim().toUpperCase();
-  const match = cleaned.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  const match = cleaned.match(/^([NMSR])([HD])?[- ]?(\d{1,3})$/);
   if (!match) {
     return [cleaned];
   }
@@ -38,9 +38,70 @@ function normalizePatrolCodeVariants(raw: string) {
     return [cleaned];
   }
 
-  const noPad = `${match[1]}${match[2]}-${parsed}`;
-  const pad = `${match[1]}${match[2]}-${String(parsed).padStart(2, '0')}`;
-  return noPad === pad ? [noPad] : [noPad, pad];
+  const category = match[1];
+  const sex = match[2] ? match[2] : '';
+  const noPad = String(parsed);
+  const pad2 = noPad.padStart(2, '0');
+  const variants: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string) => {
+    const normalized = value.trim().toUpperCase();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    variants.push(normalized);
+  };
+
+  if (sex) {
+    push(`${category}${sex}-${noPad}`);
+    push(`${category}${sex}-${pad2}`);
+    push(`${category}-${noPad}`);
+    push(`${category}-${pad2}`);
+    return variants;
+  }
+
+  push(`${category}-${noPad}`);
+  push(`${category}-${pad2}`);
+  push(`${category}H-${noPad}`);
+  push(`${category}H-${pad2}`);
+  push(`${category}D-${noPad}`);
+  push(`${category}D-${pad2}`);
+  return variants;
+}
+
+type PatrolLookupRow = {
+  id: string;
+  patrol_code: string | null;
+  patrol_members?: string | null;
+  note?: string | null;
+  active?: boolean | null;
+};
+
+function resolvePatrolFromMatches(rawCode: string, rows: PatrolLookupRow[]): PatrolLookupRow | null {
+  const normalizedCode = rawCode.trim().toUpperCase();
+  const activeRows = rows.filter((row) => row.active !== false);
+  if (activeRows.length === 0) {
+    return null;
+  }
+
+  const exactMatches = activeRows.filter((row) => (row.patrol_code ?? '').trim().toUpperCase() === normalizedCode);
+  if (exactMatches.length === 1) {
+    return exactMatches[0];
+  }
+  if (activeRows.length === 1) {
+    return activeRows[0];
+  }
+
+  const withMembers = activeRows.filter((row) => {
+    const members = normalizePatrolMembers(row.patrol_members ?? row.note ?? null);
+    return members !== null;
+  });
+  if (withMembers.length === 1) {
+    return withMembers[0];
+  }
+
+  return null;
 }
 
 function logError(context: string, error: unknown) {
@@ -261,24 +322,24 @@ export default async function handler(req: any, res: any) {
 
   let resolvedPatrolId = body.patrol_id;
   if (!UUID_REGEX.test(resolvedPatrolId)) {
-    const patrolCodeVariants = normalizePatrolCodeVariants(body.patrol_code);
-    const { data: patrol, error: patrolError } = await supabaseAdmin
+    const patrolCodeVariants = buildPatrolCodeVariants(body.patrol_code);
+    const { data: patrols, error: patrolError } = await supabaseAdmin
       .from('patrols')
-      .select('id')
+      .select('id, patrol_code, patrol_members, note, active')
       .eq('event_id', body.event_id)
-      .in('patrol_code', patrolCodeVariants)
-      .maybeSingle();
+      .in('patrol_code', patrolCodeVariants);
 
     if (patrolError) {
       logError('patrols lookup failed', patrolError);
       return respond(res, 500, 'Patrol lookup failed', patrolError.message);
     }
 
-    if (!patrol?.id) {
+    const resolvedPatrol = resolvePatrolFromMatches(body.patrol_code, (patrols ?? []) as PatrolLookupRow[]);
+    if (!resolvedPatrol?.id) {
       return respond(res, 400, 'Unknown patrol code', body.patrol_code);
     }
 
-    resolvedPatrolId = patrol.id;
+    resolvedPatrolId = resolvedPatrol.id;
   }
 
   const { data: session, error: sessionError } = await supabaseAdmin
@@ -418,7 +479,7 @@ export default async function handler(req: any, res: any) {
       patrolUpdates.team_name = nextTeamName;
     }
     if (body.patrol_members !== undefined) {
-      patrolUpdates.note = normalizePatrolMembers(body.patrol_members);
+      patrolUpdates.patrol_members = normalizePatrolMembers(body.patrol_members);
     }
 
     if (Object.keys(patrolUpdates).length > 0) {

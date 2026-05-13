@@ -37,6 +37,7 @@ import {
   createStationCategoryRecord,
   getAllowedStationCategories,
   getStationAllowedBaseCategories,
+  STATION_PASSAGE_CATEGORIES,
   StationCategoryKey,
   toStationCategoryKey,
 } from './utils/stationCategories';
@@ -81,6 +82,7 @@ const SUBMIT_STATION_RECORD_URL = import.meta.env.PROD
   ? '/api/submit-station-record'
   : `${SUPABASE_BASE_URL}/functions/v1/submit-station-record`;
 const SCORE_REVIEW_URL = import.meta.env.PROD ? '/api/station-score-review' : '';
+const AUTH_API_BASE_URL = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
 const OUTBOX_FLUSH_LOCK_TTL_MS = 30 * 1000;
 
@@ -310,7 +312,7 @@ function formatSummaryPatrolLabel(patrol: StationSummaryPatrol) {
 
 function createManualPatrolFromCode(code: string): Patrol | null {
   const normalized = code.trim().toUpperCase();
-  const match = normalized.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  const match = normalized.match(/^([NMSR])([HD])?[- ]?(\d{1,3})$/);
   if (!match) {
     return null;
   }
@@ -318,12 +320,13 @@ function createManualPatrolFromCode(code: string): Patrol | null {
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return null;
   }
-  const padded = `${match[1]}${match[2]}-${String(parsed).padStart(2, '0')}`;
+  const sex = match[2] ? match[2] : 'H';
+  const padded = `${match[1]}${sex}-${String(parsed).padStart(2, '0')}`;
   return {
     id: `manual-${padded}`,
     team_name: 'Ruční hlídka',
     category: match[1],
-    sex: match[2],
+    sex,
     patrol_code: padded,
   };
 }
@@ -333,7 +336,7 @@ function getPatrolCodeVariants(raw: string) {
   if (!normalized) {
     return [];
   }
-  const match = normalized.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  const match = normalized.match(/^([NMSR])([HD])?-(\d{1,3})$/);
   if (!match) {
     return [normalized];
   }
@@ -341,9 +344,36 @@ function getPatrolCodeVariants(raw: string) {
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return [normalized];
   }
-  const noPad = `${match[1]}${match[2]}-${parsed}`;
-  const pad = `${match[1]}${match[2]}-${String(parsed).padStart(2, '0')}`;
-  return noPad === pad ? [noPad] : [noPad, pad];
+  const category = match[1];
+  const sex = match[2] ? match[2] : '';
+  const noPad = String(parsed);
+  const pad2 = noPad.padStart(2, '0');
+  const variants: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string) => {
+    const code = value.trim().toUpperCase();
+    if (!code || seen.has(code)) {
+      return;
+    }
+    seen.add(code);
+    variants.push(code);
+  };
+
+  if (sex) {
+    push(`${category}${sex}-${noPad}`);
+    push(`${category}${sex}-${pad2}`);
+    push(`${category}-${noPad}`);
+    push(`${category}-${pad2}`);
+    return variants;
+  }
+
+  push(`${category}-${noPad}`);
+  push(`${category}-${pad2}`);
+  push(`${category}H-${noPad}`);
+  push(`${category}H-${pad2}`);
+  push(`${category}D-${noPad}`);
+  push(`${category}D-${pad2}`);
+  return variants;
 }
 
 function getSummaryPatrolSortKey(patrol: StationSummaryPatrol) {
@@ -528,6 +558,58 @@ const CALC_SCORE_REVIEW_SEPARATOR_BEFORE_BY_CATEGORY: Partial<Record<StationCate
   SD: 'J',
 };
 
+type StationOrderOverrides = {
+  categoryOrders: Partial<Record<StationCategoryKey, string[]>>;
+  separatorBeforeByCategory: Partial<Record<StationCategoryKey, string>>;
+};
+
+function normalizeStationOrderOverrides(raw: unknown): StationOrderOverrides | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  const payload = raw as {
+    category_orders?: unknown;
+    separator_before_by_category?: unknown;
+  };
+  const rawOrders =
+    payload.category_orders && typeof payload.category_orders === 'object'
+      ? (payload.category_orders as Record<string, unknown>)
+      : {};
+  const rawSeparators =
+    payload.separator_before_by_category && typeof payload.separator_before_by_category === 'object'
+      ? (payload.separator_before_by_category as Record<string, unknown>)
+      : {};
+
+  const categoryOrders: Partial<Record<StationCategoryKey, string[]>> = {};
+  const separatorBeforeByCategory: Partial<Record<StationCategoryKey, string>> = {};
+
+  STATION_PASSAGE_CATEGORIES.forEach((category) => {
+    const entries = Array.isArray(rawOrders[category]) ? (rawOrders[category] as unknown[]) : [];
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    entries.forEach((entry) => {
+      const code = typeof entry === 'string' ? entry.trim().toUpperCase() : '';
+      if (!code || seen.has(code)) {
+        return;
+      }
+      seen.add(code);
+      normalized.push(code);
+    });
+    if (normalized.length > 0) {
+      categoryOrders[category] = normalized;
+    }
+
+    const separator = typeof rawSeparators[category] === 'string'
+      ? rawSeparators[category].trim().toUpperCase()
+      : '';
+    if (separator) {
+      separatorBeforeByCategory[category] = separator;
+    }
+  });
+
+  return { categoryOrders, separatorBeforeByCategory };
+}
+
 function requireAccessToken(accessToken: string | null) {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return { accessToken: null, error: 'OFFLINE', shouldBlock: false };
@@ -572,6 +654,9 @@ function StationApp({
   const [note, setNote] = useState('');
   const [calcTeamNameDraft, setCalcTeamNameDraft] = useState('');
   const [calcPatrolMembersDraft, setCalcPatrolMembersDraft] = useState('');
+  const [savingPatrolProfile, setSavingPatrolProfile] = useState(false);
+  const [patrolProfileMessage, setPatrolProfileMessage] = useState<string | null>(null);
+  const [patrolProfileError, setPatrolProfileError] = useState<string | null>(null);
   const [answersInput, setAnswersInput] = useState('');
   const [answersError, setAnswersError] = useState('');
   const [useTargetScoring, setUseTargetScoring] = useState(false);
@@ -1253,9 +1338,6 @@ function StationApp({
             // uses the latest auth context callbacks and token values.
             return;
           }
-          if (navigator.onLine === false) {
-            scheduleRetryOnOnline();
-          }
           return;
         }
 
@@ -1555,6 +1637,7 @@ function StationApp({
         let stationsData: { id: string; code: string; name: string }[] = [];
         let scoresData: { station_id: string; points: number | null; judge: string | null; note: string | null }[] = [];
         let waitsData: { station_id: string; wait_minutes: number | null }[] = [];
+        let stationOrderOverrides: StationOrderOverrides | null = null;
 
         if (SCORE_REVIEW_URL) {
           const response = await fetch(SCORE_REVIEW_URL, {
@@ -1582,16 +1665,18 @@ function StationApp({
           }
 
           const payload = (await response.json().catch(() => null)) as
-            | {
-                stations?: { id: string; code: string; name: string }[];
-                scores?: { station_id: string; points: number | null; judge: string | null; note: string | null }[];
-                waits?: { station_id: string; wait_minutes: number | null }[];
-              }
-            | null;
+              | {
+                  stations?: { id: string; code: string; name: string }[];
+                  scores?: { station_id: string; points: number | null; judge: string | null; note: string | null }[];
+                  waits?: { station_id: string; wait_minutes: number | null }[];
+                  station_order?: unknown;
+                }
+              | null;
 
           stationsData = payload?.stations ?? [];
           scoresData = payload?.scores ?? [];
           waitsData = payload?.waits ?? [];
+          stationOrderOverrides = normalizeStationOrderOverrides(payload?.station_order ?? null);
         } else {
           const [stationsRes, scoresRes, waitsRes] = await Promise.all([
             supabase
@@ -1641,13 +1726,16 @@ function StationApp({
         const patrolStationCategory = toStationCategoryKey(patrolCategory, patrolSex);
         const hideTimeStation = stationCode === 'T';
         const categoryOrder = patrolStationCategory
-          ? CALC_SCORE_REVIEW_ORDER_BY_CATEGORY[patrolStationCategory]
+          ? stationOrderOverrides?.categoryOrders[patrolStationCategory] ??
+            CALC_SCORE_REVIEW_ORDER_BY_CATEGORY[patrolStationCategory]
           : null;
         const orderIndex = new Map<string, number>(
           (categoryOrder ?? []).map((code, index) => [code, index] as const),
         );
         const separatorBeforeCode = patrolStationCategory
-          ? CALC_SCORE_REVIEW_SEPARATOR_BEFORE_BY_CATEGORY[patrolStationCategory] ?? null
+          ? stationOrderOverrides?.separatorBeforeByCategory[patrolStationCategory] ??
+            CALC_SCORE_REVIEW_SEPARATOR_BEFORE_BY_CATEGORY[patrolStationCategory] ??
+            null
           : null;
 
         const stations = stationsData
@@ -1782,6 +1870,8 @@ function StationApp({
       setScannerPatrol({ ...data });
       setCalcTeamNameDraft(data.team_name ?? '');
       setCalcPatrolMembersDraft(typeof data.patrol_members === 'string' ? data.patrol_members : '');
+      setPatrolProfileMessage(null);
+      setPatrolProfileError(null);
       setPoints(draft?.points ?? '');
       setNote(draft?.note ?? '');
       const initialAnswers = hasPrefilledAnswers ? options?.prefilledAnswers ?? '' : draft?.answersInput ?? '';
@@ -1863,7 +1953,7 @@ function StationApp({
       if (stationCode === 'T' && isOnline && !scannerPatrol.id.startsWith('manual-')) {
         const { data, error, status } = await supabase
           .from('patrols')
-          .select('team_name, note')
+          .select('team_name, patrol_members, note')
           .eq('event_id', eventId)
           .eq('id', scannerPatrol.id)
           .maybeSingle();
@@ -1876,7 +1966,12 @@ function StationApp({
             team_name: typeof data.team_name === 'string' && data.team_name.trim().length > 0
               ? data.team_name.trim()
               : scannerPatrol.team_name,
-            patrol_members: typeof data.note === 'string' ? data.note : null,
+            patrol_members:
+              typeof data.patrol_members === 'string'
+                ? data.patrol_members
+                : typeof data.note === 'string'
+                  ? data.note
+                  : null,
           };
         }
       }
@@ -1906,6 +2001,94 @@ function StationApp({
     scannerSource,
     setSelectedSummaryCategory,
     stationCode,
+  ]);
+
+  const handleSavePatrolProfile = useCallback(async () => {
+    if (!isTargetStation || !activePatrol) {
+      return;
+    }
+    if (!AUTH_API_BASE_URL) {
+      setPatrolProfileError('Chybí konfigurace API (VITE_AUTH_API_URL).');
+      setPatrolProfileMessage(null);
+      return;
+    }
+
+    const sessionResult = requireAccessToken(auth.tokens.accessToken);
+    if (!sessionResult.accessToken) {
+      setPatrolProfileError('Chybí přístupový token. Přihlas se znovu.');
+      setPatrolProfileMessage(null);
+      return;
+    }
+
+    const nextTeamName = calcTeamNameDraft.trim();
+    if (!nextTeamName) {
+      setPatrolProfileError('Název oddílu nesmí být prázdný.');
+      setPatrolProfileMessage(null);
+      return;
+    }
+
+    const nextMembers = normalizePatrolMembersText(calcPatrolMembersDraft);
+
+    setSavingPatrolProfile(true);
+    setPatrolProfileError(null);
+    setPatrolProfileMessage(null);
+    try {
+      const response = await fetch(`${AUTH_API_BASE_URL}/admin/event-state?setup=1`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${sessionResult.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'upsert_patrol_profile',
+          event_id: eventId,
+          patrol_id: activePatrol.id,
+          team_name: nextTeamName,
+          patrol_members: nextMembers,
+        }),
+      });
+
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(body?.error || 'Uložení profilu hlídky se nepodařilo.');
+      }
+
+      const updatedPatrol = body?.patrol as { team_name?: string | null; patrol_members?: string | null } | undefined;
+      const updatedTeamName = typeof updatedPatrol?.team_name === 'string' && updatedPatrol.team_name.trim().length > 0
+        ? updatedPatrol.team_name.trim()
+        : nextTeamName;
+      const updatedMembers = typeof updatedPatrol?.patrol_members === 'string'
+        ? updatedPatrol.patrol_members
+        : nextMembers;
+
+      setActivePatrol((current) =>
+        current && current.id === activePatrol.id
+          ? { ...current, team_name: updatedTeamName, patrol_members: updatedMembers }
+          : current,
+      );
+      setScannerPatrol((current) =>
+        current && current.id === activePatrol.id
+          ? { ...current, team_name: updatedTeamName, patrol_members: updatedMembers }
+          : current,
+      );
+      setCalcTeamNameDraft(updatedTeamName);
+      setCalcPatrolMembersDraft(updatedMembers ?? '');
+      setPatrolProfileMessage('Profil hlídky byl uložen.');
+    } catch (error) {
+      console.error('Failed to save patrol profile', error);
+      setPatrolProfileError(
+        error instanceof Error && error.message ? error.message : 'Uložení profilu hlídky se nepodařilo.',
+      );
+    } finally {
+      setSavingPatrolProfile(false);
+    }
+  }, [
+    activePatrol,
+    auth.tokens.accessToken,
+    calcPatrolMembersDraft,
+    calcTeamNameDraft,
+    eventId,
+    isTargetStation,
   ]);
 
   const handleScoreOkToggle = useCallback(
@@ -2649,6 +2832,8 @@ function StationApp({
     setNote('');
     setCalcTeamNameDraft('');
     setCalcPatrolMembersDraft('');
+    setPatrolProfileMessage(null);
+    setPatrolProfileError(null);
     setAnswersInput('');
     setAnswersError('');
     setAutoScore({ correct: 0, total: 0, given: 0, normalizedGiven: '' });
@@ -2859,12 +3044,12 @@ function StationApp({
           const variants = getPatrolCodeVariants(normalized);
           const { data: fetched, error, status } = await supabase
             .from('patrols')
-            .select('id, team_name, category, sex, patrol_code, note')
+            .select('id, team_name, category, sex, patrol_code, patrol_members, note')
             .eq('event_id', eventId)
             .in('patrol_code', variants.length ? variants : [normalized])
-            .maybeSingle();
+            .limit(2);
 
-          if (error || !fetched) {
+          if (error || !fetched || fetched.length === 0) {
             if (error) {
               reportSupabaseError('patrols.fetch', error, status);
             }
@@ -2885,13 +3070,24 @@ function StationApp({
               return false;
             }
           } else {
+            const exact = fetched.find((candidate) => normalisePatrolCode(candidate.patrol_code ?? '') === normalized);
+            if (!exact && fetched.length > 1) {
+              pushAlert('Číslo hlídky je duplicitní mezi H/D. Zadej přesný kód (např. NH-1 nebo ND-1).');
+              return false;
+            }
+            const selected = exact ?? fetched[0];
             data = {
-              id: fetched.id,
-              team_name: fetched.team_name,
-              category: fetched.category,
-              sex: fetched.sex,
-              patrol_code: fetched.patrol_code,
-              patrol_members: typeof fetched.note === 'string' ? fetched.note : null,
+              id: selected.id,
+              team_name: selected.team_name,
+              category: selected.category,
+              sex: selected.sex,
+              patrol_code: selected.patrol_code,
+              patrol_members:
+                typeof selected.patrol_members === 'string'
+                  ? selected.patrol_members
+                  : typeof selected.note === 'string'
+                    ? selected.note
+                    : null,
             } as Patrol;
           }
         } else if (options?.allowFallback) {
@@ -3447,10 +3643,16 @@ function StationApp({
 
       const computedPureSeconds = computePureCourseSeconds({ start, finish, waitMinutes });
       const computedTimePoints = computeTimePoints(normalizedCategory, computedPureSeconds);
-      if (!Number.isInteger(computedTimePoints) || computedTimePoints < -12 || computedTimePoints > 12) {
+      if (
+        typeof computedTimePoints !== 'number'
+        || !Number.isInteger(computedTimePoints)
+        || computedTimePoints < -12
+        || computedTimePoints > 12
+      ) {
         pushAlert('Body za čas se nepodařilo spočítat. Zkontroluj vyplněné časy.');
         return;
       }
+      const timePointsValue = computedTimePoints;
 
       const targetRow = scoreReviewRows.find((row) => row.stationCode === 'R');
       if (!targetRow) {
@@ -3462,7 +3664,7 @@ function StationApp({
         ...baseSubmissionData,
         station_id: stationId,
         wait_minutes: waitMinutes,
-        points: computedTimePoints,
+        points: timePointsValue,
         note,
         use_target_scoring: false,
         normalized_answers: null,
@@ -3494,7 +3696,7 @@ function StationApp({
           if (row.stationCode === 'T') {
             return {
               ...row,
-              points: computedTimePoints,
+              points: timePointsValue,
               waitMinutes,
               hasScore: true,
               hasWait: true,
@@ -4110,7 +4312,7 @@ function StationApp({
                   {showScannerPreview ? (
                     <div className="scanner-preview">
                       <>
-                        <strong>{scannerPatrol.team_name}</strong>
+                        <strong>{scannerPatrol?.team_name ?? 'Hlídka'}</strong>
                         {previewPatrolCode ? (
                           <span
                             className="scanner-code"
@@ -4318,6 +4520,59 @@ function StationApp({
             />
           ) : null}
 
+          {stationCode === 'T' && activePatrol ? (
+            <section className="card calc-profile-card">
+              <header className="card-header">
+                <div>
+                  <h2>Profil hlídky</h2>
+                  <p className="card-subtitle">Vyplň oddíl a členy zvlášť. Údaje se uloží do karty hlídky.</p>
+                </div>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => void handleSavePatrolProfile()}
+                  disabled={savingPatrolProfile}
+                >
+                  {savingPatrolProfile ? 'Ukládám…' : 'Uložit profil'}
+                </button>
+              </header>
+              <div className="calc-patrol-profile">
+                <div className="calc-time-input">
+                  <label htmlFor="calc-team-name-input">Název oddílu</label>
+                  <input
+                    id="calc-team-name-input"
+                    type="text"
+                    value={calcTeamNameDraft}
+                    onChange={(event) => {
+                      setCalcTeamNameDraft(event.target.value);
+                      setPatrolProfileMessage(null);
+                      setPatrolProfileError(null);
+                    }}
+                    maxLength={120}
+                    placeholder="Např. 4. PTO Brno"
+                  />
+                </div>
+                <div className="calc-time-input">
+                  <label htmlFor="calc-members-input">Jména a příjmení dětí</label>
+                  <textarea
+                    id="calc-members-input"
+                    value={calcPatrolMembersDraft}
+                    onChange={(event) => {
+                      setCalcPatrolMembersDraft(event.target.value);
+                      setPatrolProfileMessage(null);
+                      setPatrolProfileError(null);
+                    }}
+                    rows={4}
+                    maxLength={500}
+                    placeholder={'Jedno jméno na řádek\nnapř. Jan Novák'}
+                  />
+                </div>
+              </div>
+              {patrolProfileError ? <p className="error-text">{patrolProfileError}</p> : null}
+              {patrolProfileMessage ? <p className="success-text">{patrolProfileMessage}</p> : null}
+            </section>
+          ) : null}
+
           <section ref={formRef} className="card form-card">
             <header className="card-header">
               <div>
@@ -4344,33 +4599,6 @@ function StationApp({
                   <strong>{activePatrol.team_name}</strong>
                   <span>{formatPatrolMetaLabel(activePatrol)}</span>
                 </div>
-                {stationCode === 'T' ? (
-                  <div className="calc-patrol-profile">
-                    <div className="calc-time-input">
-                      <label htmlFor="calc-team-name-input">Název oddílu</label>
-                      <input
-                        id="calc-team-name-input"
-                        type="text"
-                        value={calcTeamNameDraft}
-                        onChange={(event) => setCalcTeamNameDraft(event.target.value)}
-                        maxLength={120}
-                        placeholder="Např. 4. PTO Brno"
-                      />
-                    </div>
-                    <div className="calc-time-input">
-                      <label htmlFor="calc-members-input">Jména dětí</label>
-                      <textarea
-                        id="calc-members-input"
-                        value={calcPatrolMembersDraft}
-                        onChange={(event) => setCalcPatrolMembersDraft(event.target.value)}
-                        rows={3}
-                        maxLength={300}
-                        placeholder={'Jedno jméno na řádek\nnebo oddělené čárkou'}
-                      />
-                      <p className="card-hint">Uloží se do karty hlídky a výsledků.</p>
-                    </div>
-                  </div>
-                ) : null}
                 {stationCode !== 'T' ? (
                   <div className="wait-field">
                     <span className="wait-label">Čekání</span>

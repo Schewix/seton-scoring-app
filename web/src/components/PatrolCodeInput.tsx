@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import Picker from 'react-mobile-picker';
 
-const PATROL_CODE_REGEX = /^(N|M|S|R)(H|D)-(0?[1-9]|[1-4][0-9]|50)$/;
-const PARTIAL_PATROL_CODE_REGEX = /^(?:[NMSR]|[NMSR]-|[NMSR][HD](?:-\d{0,2})?)$/;
+const PATROL_CODE_REGEX = /^(N|M|S|R)(H|D)?-(0?[1-9]|[1-9][0-9]{1,2})$/;
+const PARTIAL_PATROL_CODE_REGEX = /^(?:[NMSR]|[NMSR]-|[NMSR][HD]?|[NMSR][HD]?-\d{0,3})$/;
 
 const CATEGORY_OPTIONS = ['N', 'M', 'S', 'R'] as const;
 const GENDER_OPTIONS = ['H', 'D'] as const;
@@ -43,6 +43,7 @@ export type PatrolValidationReason =
   | 'incomplete'
   | 'format'
   | 'category-not-allowed'
+  | 'ambiguous'
   | 'not-found'
   | 'inactive'
   | 'valid';
@@ -276,6 +277,36 @@ export default function PatrolCodeInput({
     return map;
   }, [registryEntries]);
 
+  const resolvedRegistryMatch = useMemo(() => {
+    const direct = registryMap.get(normalisedValue);
+    if (direct) {
+      return { entry: direct, ambiguous: false };
+    }
+    const baseMatch = normalisedValue.match(/^([NMSR])-(\d{1,3})$/);
+    if (!baseMatch) {
+      return { entry: null as PatrolRegistryEntry | null, ambiguous: false };
+    }
+    const category = baseMatch[1];
+    const number = String(Number.parseInt(baseMatch[2], 10));
+    const candidates = registryEntries.filter((entry) => {
+      const entryCategory = (entry.category ?? '').trim().toUpperCase();
+      if (entryCategory !== category) {
+        return false;
+      }
+      const entryNumber = String(Number.parseInt(entry.number ?? '', 10));
+      return entryNumber === number;
+    });
+    const active = candidates.filter((entry) => entry.active !== false);
+    const scoped = active.length > 0 ? active : candidates;
+    if (scoped.length === 1) {
+      return { entry: scoped[0], ambiguous: false };
+    }
+    if (scoped.length > 1) {
+      return { entry: null as PatrolRegistryEntry | null, ambiguous: true };
+    }
+    return { entry: null as PatrolRegistryEntry | null, ambiguous: false };
+  }, [normalisedValue, registryEntries, registryMap]);
+
   const isCategoryAllowed = useCallback(
     (category: string) => {
       if (!allowedCategories || allowedCategories.size === 0) {
@@ -382,7 +413,6 @@ export default function PatrolCodeInput({
 
   const validationState = useMemo<PatrolValidationState>(() => {
     const canonical = canonicalValue;
-    const registryKey = normalisedValue;
     if (validationMode === 'registry') {
       if (registry.loading) {
         return {
@@ -417,7 +447,7 @@ export default function PatrolCodeInput({
         message: 'Hlídka této kategorie na stanoviště nepatří.',
       };
     }
-    if (!manualCategory || !manualGender || !manualNumber) {
+    if (!manualCategory || !manualNumber) {
       return {
         code: canonical,
         valid: false,
@@ -441,7 +471,15 @@ export default function PatrolCodeInput({
         message: 'Kód je platný',
       };
     }
-    const entry = registryMap.get(registryKey);
+    const entry = resolvedRegistryMatch.entry;
+    if (resolvedRegistryMatch.ambiguous) {
+      return {
+        code: canonical,
+        valid: false,
+        reason: 'ambiguous',
+        message: 'Číslo je duplicitní mezi H/D. Zadej kód se sexem (např. NH-1).',
+      };
+    }
     if (!entry) {
       return {
         code: canonical,
@@ -472,9 +510,8 @@ export default function PatrolCodeInput({
     normalisedValue,
     registry.error,
     registry.loading,
-    registryMap,
+    resolvedRegistryMatch,
     manualCategory,
-    manualGender,
     manualNumber,
     validationMode,
   ]);

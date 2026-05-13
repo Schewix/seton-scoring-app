@@ -14,6 +14,10 @@ const SCORE_REVIEW_TASK_KEYS = new Set([
   'manage-wait-times',
 ]);
 
+const STATION_CATEGORY_KEYS = ['NH', 'ND', 'MH', 'MD', 'SH', 'SD', 'RH', 'RD'] as const;
+
+type StationCategoryKey = (typeof STATION_CATEGORY_KEYS)[number];
+
 type ReviewPayload = {
   event_id: string;
   patrol_id: string;
@@ -30,9 +34,14 @@ type TokenClaims = {
   type?: string;
 };
 
-function normalizePatrolCodeVariants(raw: string) {
+type StationOrderPayload = {
+  category_orders: Partial<Record<StationCategoryKey, string[]>>;
+  separator_before_by_category: Partial<Record<StationCategoryKey, string>>;
+};
+
+function buildPatrolCodeVariants(raw: string) {
   const cleaned = raw.trim().toUpperCase();
-  const match = cleaned.match(/^([NMSR])([HD])-(\d{1,2})$/);
+  const match = cleaned.match(/^([NMSR])([HD])?[- ]?(\d{1,3})$/);
   if (!match) {
     return [cleaned];
   }
@@ -42,9 +51,59 @@ function normalizePatrolCodeVariants(raw: string) {
     return [cleaned];
   }
 
-  const noPad = `${match[1]}${match[2]}-${parsed}`;
-  const pad = `${match[1]}${match[2]}-${String(parsed).padStart(2, '0')}`;
-  return noPad === pad ? [noPad] : [noPad, pad];
+  const category = match[1];
+  const sex = match[2] ? match[2] : '';
+  const noPad = String(parsed);
+  const pad2 = noPad.padStart(2, '0');
+  const variants: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string) => {
+    const normalized = value.trim().toUpperCase();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    variants.push(normalized);
+  };
+
+  if (sex) {
+    push(`${category}${sex}-${noPad}`);
+    push(`${category}${sex}-${pad2}`);
+    push(`${category}-${noPad}`);
+    push(`${category}-${pad2}`);
+    return variants;
+  }
+
+  push(`${category}-${noPad}`);
+  push(`${category}-${pad2}`);
+  push(`${category}H-${noPad}`);
+  push(`${category}H-${pad2}`);
+  push(`${category}D-${noPad}`);
+  push(`${category}D-${pad2}`);
+  return variants;
+}
+
+type PatrolLookupRow = {
+  id: string;
+  patrol_code: string | null;
+  active?: boolean | null;
+};
+
+function resolvePatrolFromMatches(rawCode: string, rows: PatrolLookupRow[]): PatrolLookupRow | null {
+  const normalizedCode = rawCode.trim().toUpperCase();
+  const activeRows = rows.filter((row) => row.active !== false);
+  if (activeRows.length === 0) {
+    return null;
+  }
+
+  const exact = activeRows.filter((row) => (row.patrol_code ?? '').trim().toUpperCase() === normalizedCode);
+  if (exact.length === 1) {
+    return exact[0];
+  }
+  if (activeRows.length === 1) {
+    return activeRows[0];
+  }
+  return null;
 }
 
 function getSupabaseAdminConfig() {
@@ -71,6 +130,59 @@ function respond(res: any, status: number, message: string, detail?: string) {
 
 function isString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function normalizeStationCode(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toUpperCase() : '';
+}
+
+function normalizeStationOrderPayload(raw: unknown): StationOrderPayload | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+
+  const source = raw as {
+    category_orders?: unknown;
+    separator_before_by_category?: unknown;
+  };
+
+  const rawOrders =
+    source.category_orders && typeof source.category_orders === 'object'
+      ? (source.category_orders as Record<string, unknown>)
+      : {};
+  const rawSeparators =
+    source.separator_before_by_category && typeof source.separator_before_by_category === 'object'
+      ? (source.separator_before_by_category as Record<string, unknown>)
+      : {};
+
+  const categoryOrders: Partial<Record<StationCategoryKey, string[]>> = {};
+  const separatorBeforeByCategory: Partial<Record<StationCategoryKey, string>> = {};
+
+  STATION_CATEGORY_KEYS.forEach((key) => {
+    const values = Array.isArray(rawOrders[key]) ? (rawOrders[key] as unknown[]) : [];
+    const dedup = new Set<string>();
+    const normalizedValues: string[] = [];
+    values.forEach((entry) => {
+      const code = normalizeStationCode(entry);
+      if (!code || dedup.has(code)) {
+        return;
+      }
+      dedup.add(code);
+      normalizedValues.push(code);
+    });
+    if (normalizedValues.length > 0) {
+      categoryOrders[key] = normalizedValues;
+    }
+    const separator = normalizeStationCode(rawSeparators[key]);
+    if (separator) {
+      separatorBeforeByCategory[key] = separator;
+    }
+  });
+
+  return {
+    category_orders: categoryOrders,
+    separator_before_by_category: separatorBeforeByCategory,
+  };
 }
 
 function ensurePayload(body: unknown): ReviewPayload | null {
@@ -219,23 +331,23 @@ export default async function handler(req: any, res: any) {
     if (!isString(body.patrol_code)) {
       return res.status(400).json({ error: 'Invalid patrol code' });
     }
-    const patrolCodeVariants = normalizePatrolCodeVariants(body.patrol_code);
-    const { data: patrol, error: patrolError } = await supabaseAdmin
+    const patrolCodeVariants = buildPatrolCodeVariants(body.patrol_code);
+    const { data: patrols, error: patrolError } = await supabaseAdmin
       .from('patrols')
-      .select('id')
+      .select('id, patrol_code, active')
       .eq('event_id', body.event_id)
-      .in('patrol_code', patrolCodeVariants)
-      .maybeSingle();
+      .in('patrol_code', patrolCodeVariants);
 
     if (patrolError) {
       return respond(res, 500, 'Patrol lookup failed', patrolError.message);
     }
 
-    if (!patrol?.id) {
+    const resolvedPatrol = resolvePatrolFromMatches(body.patrol_code, (patrols ?? []) as PatrolLookupRow[]);
+    if (!resolvedPatrol?.id) {
       return respond(res, 400, 'Unknown patrol code', body.patrol_code);
     }
 
-    resolvedPatrolId = patrol.id;
+    resolvedPatrolId = resolvedPatrol.id;
   }
 
   const [stationsRes, scoresRes, waitsRes] = await Promise.all([
@@ -262,9 +374,25 @@ export default async function handler(req: any, res: any) {
       .join(' | '));
   }
 
+  let stationOrder: StationOrderPayload | null = null;
+  const orderRes = await supabaseAdmin
+    .from('event_station_orders')
+    .select('category_orders,separator_before_by_category')
+    .eq('event_id', body.event_id)
+    .maybeSingle();
+  if (!orderRes.error && orderRes.data) {
+    stationOrder = normalizeStationOrderPayload(orderRes.data);
+  } else if (orderRes.error) {
+    console.warn('[api/station-score-review] failed to load event station order', {
+      eventId: body.event_id,
+      detail: orderRes.error.message,
+    });
+  }
+
   return res.status(200).json({
     stations: stationsRes.data ?? [],
     scores: scoresRes.data ?? [],
     waits: waitsRes.data ?? [],
+    station_order: stationOrder,
   });
 }

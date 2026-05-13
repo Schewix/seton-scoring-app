@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import ExcelJS from 'exceljs';
 import './AdminApp.css';
 import { useAuth } from '../auth/context';
@@ -102,7 +102,7 @@ type PatrolSummary = {
   id: string;
   code: string;
   teamName: string;
-  category: StationCategoryKey;
+  category: CategoryKey;
 };
 
 type DisqualifyPatrol = {
@@ -118,12 +118,12 @@ type StationPassageRow = {
   stationId: string;
   stationCode: string;
   stationName: string;
-  categories: StationCategoryKey[];
-  totals: Record<StationCategoryKey, number>;
-  expectedTotals: Record<StationCategoryKey, number>;
+  categories: CategoryKey[];
+  totals: Record<CategoryKey, number>;
+  expectedTotals: Record<CategoryKey, number>;
   totalPassed: number;
   totalExpected: number;
-  missing: Record<StationCategoryKey, PatrolSummary[]>;
+  missing: Record<CategoryKey, PatrolSummary[]>;
   totalMissing: PatrolSummary[];
 };
 
@@ -135,9 +135,78 @@ type EventState = {
 type MissingDialogState = {
   stationCode: string;
   stationName: string;
-  category: StationCategoryKey | 'TOTAL';
+  category: CategoryKey | 'TOTAL';
   missing: PatrolSummary[];
   expected: number;
+};
+
+type SetupEventRow = {
+  id: string;
+  name: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  scoring_locked?: boolean | null;
+};
+
+type SetupStationRow = {
+  id: string;
+  event_id: string;
+  code: string | null;
+  name: string | null;
+};
+
+type SetupJudgeRow = {
+  id: string;
+  email: string | null;
+  display_name: string | null;
+  created_at?: string | null;
+};
+
+type SetupAssignmentRow = {
+  id: string;
+  judge_id: string;
+  station_id: string;
+  event_id: string;
+  allowed_categories: string[] | null;
+  allowed_tasks?: string[] | null;
+  judge_display_name?: string | null;
+  created_at?: string | null;
+};
+
+type SetupStationOrderRow = {
+  event_id: string;
+  category_orders?: Record<string, unknown> | null;
+  separator_before_by_category?: Record<string, unknown> | null;
+  updated_at?: string | null;
+};
+
+type SetupStationOrderPayload = {
+  category_orders: Partial<Record<StationCategoryKey, string[]>>;
+  separator_before_by_category: Partial<Record<StationCategoryKey, string>>;
+};
+
+type PatrolCountsState = Record<StationCategoryKey, number>;
+type PatrolStartsState = Record<StationCategoryKey, number>;
+type CategoryToggleState = Record<CategoryKey, boolean>;
+
+const SETUP_CATEGORY_ORDER_DEFAULTS: Record<StationCategoryKey, readonly string[]> = {
+  NH: ['F', 'U', 'C', 'O', 'B', 'Z', 'K', 'P', 'J', 'R'],
+  ND: ['F', 'U', 'C', 'O', 'B', 'Z', 'K', 'P', 'J', 'R'],
+  MH: ['F', 'U', 'C', 'O', 'B', 'S', 'Z', 'M', 'A', 'K', 'P', 'J', 'R'],
+  MD: ['R', 'J', 'P', 'K', 'A', 'M', 'Z', 'S', 'B', 'O', 'C', 'U', 'F'],
+  SH: ['F', 'U', 'C', 'B', 'S', 'Z', 'M', 'V', 'N', 'O', 'A', 'P', 'J', 'R'],
+  SD: ['R', 'J', 'P', 'A', 'O', 'N', 'V', 'M', 'Z', 'S', 'B', 'C', 'U', 'F'],
+  RH: ['A', 'B', 'C', 'D', 'F', 'J', 'M', 'N', 'O', 'P', 'R', 'S', 'U', 'V', 'Z'],
+  RD: ['A', 'B', 'C', 'D', 'F', 'J', 'M', 'N', 'O', 'P', 'R', 'S', 'U', 'V', 'Z'],
+};
+
+const SETUP_SEPARATOR_DEFAULTS: Partial<Record<StationCategoryKey, string>> = {
+  NH: 'R',
+  ND: 'R',
+  MH: 'R',
+  MD: 'J',
+  SH: 'R',
+  SD: 'J',
 };
 
 function normalizeText(value: string | null | undefined): string {
@@ -745,6 +814,106 @@ function createEmptySummary(): AnswersSummary {
   };
 }
 
+function createDefaultOrderTextState(): Record<StationCategoryKey, string> {
+  return STATION_PASSAGE_CATEGORIES.reduce(
+    (acc, category) => {
+      acc[category] = SETUP_CATEGORY_ORDER_DEFAULTS[category].join(', ');
+      return acc;
+    },
+    {} as Record<StationCategoryKey, string>,
+  );
+}
+
+function createDefaultSeparatorState(): Partial<Record<StationCategoryKey, string>> {
+  return { ...SETUP_SEPARATOR_DEFAULTS };
+}
+
+function createDefaultPatrolCounts(): PatrolCountsState {
+  return STATION_PASSAGE_CATEGORIES.reduce(
+    (acc, category) => {
+      acc[category] = 0;
+      return acc;
+    },
+    {} as PatrolCountsState,
+  );
+}
+
+function createDefaultPatrolStarts(): PatrolStartsState {
+  return STATION_PASSAGE_CATEGORIES.reduce(
+    (acc, category) => {
+      acc[category] = 1;
+      return acc;
+    },
+    {} as PatrolStartsState,
+  );
+}
+
+function createDefaultCategoryToggleState(): CategoryToggleState {
+  return {
+    N: true,
+    M: true,
+    S: true,
+    R: true,
+  };
+}
+
+function createBaseCategoryRecord<T>(factory: () => T): Record<CategoryKey, T> {
+  return {
+    N: factory(),
+    M: factory(),
+    S: factory(),
+    R: factory(),
+  };
+}
+
+function normalizeSetupStationOrder(raw: unknown): SetupStationOrderPayload | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  const source = raw as {
+    category_orders?: unknown;
+    separator_before_by_category?: unknown;
+  };
+  const rawOrders =
+    source.category_orders && typeof source.category_orders === 'object'
+      ? (source.category_orders as Record<string, unknown>)
+      : {};
+  const rawSeparators =
+    source.separator_before_by_category && typeof source.separator_before_by_category === 'object'
+      ? (source.separator_before_by_category as Record<string, unknown>)
+      : {};
+
+  const categoryOrders: Partial<Record<StationCategoryKey, string[]>> = {};
+  const separatorBeforeByCategory: Partial<Record<StationCategoryKey, string>> = {};
+
+  STATION_PASSAGE_CATEGORIES.forEach((category) => {
+    const list = Array.isArray(rawOrders[category]) ? rawOrders[category] : [];
+    const seen = new Set<string>();
+    const normalizedList: string[] = [];
+    list.forEach((entry) => {
+      const code = normalizeText(typeof entry === 'string' ? entry : '').toUpperCase();
+      if (!code || seen.has(code)) {
+        return;
+      }
+      seen.add(code);
+      normalizedList.push(code);
+    });
+    if (normalizedList.length > 0) {
+      categoryOrders[category] = normalizedList;
+    }
+
+    const separator = normalizeText(typeof rawSeparators[category] === 'string' ? rawSeparators[category] : '').toUpperCase();
+    if (separator) {
+      separatorBeforeByCategory[category] = separator;
+    }
+  });
+
+  return {
+    category_orders: categoryOrders,
+    separator_before_by_category: separatorBeforeByCategory,
+  };
+}
+
 function AdminDashboard({
   auth,
   refreshManifest,
@@ -794,6 +963,37 @@ function AdminDashboard({
   const [processingLeagueImport, setProcessingLeagueImport] = useState(false);
   const [leagueImportError, setLeagueImportError] = useState<string | null>(null);
   const [leagueImportSuccess, setLeagueImportSuccess] = useState<string | null>(null);
+
+  const [setupLoading, setSetupLoading] = useState(false);
+  const [setupSaving, setSetupSaving] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [setupSuccess, setSetupSuccess] = useState<string | null>(null);
+  const [setupEvents, setSetupEvents] = useState<SetupEventRow[]>([]);
+  const [setupStations, setSetupStations] = useState<SetupStationRow[]>([]);
+  const [setupJudges, setSetupJudges] = useState<SetupJudgeRow[]>([]);
+  const [setupAssignments, setSetupAssignments] = useState<SetupAssignmentRow[]>([]);
+  const [setupOrders, setSetupOrders] = useState<Record<string, SetupStationOrderPayload>>({});
+  const [selectedSetupEventId, setSelectedSetupEventId] = useState(eventId);
+
+  const [createEventName, setCreateEventName] = useState('');
+  const [createEventStartsAt, setCreateEventStartsAt] = useState('');
+  const [createEventEndsAt, setCreateEventEndsAt] = useState('');
+  const [copyStationsFromCurrentEvent, setCopyStationsFromCurrentEvent] = useState(true);
+
+  const [orderInputs, setOrderInputs] = useState<Record<StationCategoryKey, string>>(() => createDefaultOrderTextState());
+  const [separatorInputs, setSeparatorInputs] = useState<Partial<Record<StationCategoryKey, string>>>(
+    () => createDefaultSeparatorState(),
+  );
+
+  const [judgeEmailInput, setJudgeEmailInput] = useState('');
+  const [judgeDisplayNameInput, setJudgeDisplayNameInput] = useState('');
+  const [judgeStationCodeInput, setJudgeStationCodeInput] = useState('');
+  const [judgeCategoryToggle, setJudgeCategoryToggle] = useState<CategoryToggleState>(() => createDefaultCategoryToggleState());
+  const [judgeTasksInput, setJudgeTasksInput] = useState('score-review');
+  const [judgeTemporaryPassword, setJudgeTemporaryPassword] = useState<string | null>(null);
+
+  const [patrolCounts, setPatrolCounts] = useState<PatrolCountsState>(() => createDefaultPatrolCounts());
+  const [patrolStarts, setPatrolStarts] = useState<PatrolStartsState>(() => createDefaultPatrolStarts());
 
   useEffect(() => {
     setEventState({ name: manifest.event.name, scoringLocked: manifest.event.scoringLocked });
@@ -885,7 +1085,7 @@ function AdminDashboard({
       });
     });
 
-    const categoryPatrols = createStationCategoryRecord<PatrolSummary[]>(() => []);
+    const categoryPatrols = createBaseCategoryRecord<PatrolSummary[]>(() => []);
     const allPatrols: PatrolSummary[] = [];
 
     type PatrolRow = {
@@ -909,13 +1109,13 @@ function AdminDashboard({
         id: patrol.id,
         code: normalizeText(patrol.patrol_code).toUpperCase(),
         teamName: normalizeText(patrol.team_name),
-        category: stationCategory,
+        category: stationCategory.slice(0, 1) as CategoryKey,
       };
-      categoryPatrols[stationCategory].push(summary);
+      categoryPatrols[summary.category].push(summary);
       allPatrols.push(summary);
     });
 
-    STATION_PASSAGE_CATEGORIES.forEach((category) => {
+    BASE_CATEGORY_ORDER.forEach((category) => {
       categoryPatrols[category].sort((a, b) => a.code.localeCompare(b.code, 'cs'));
     });
 
@@ -923,8 +1123,8 @@ function AdminDashboard({
       stationId: string;
       stationCode: string;
       stationName: string;
-      totals: Record<StationCategoryKey, number>;
-      passed: Record<StationCategoryKey, Set<string>>;
+      totals: Record<CategoryKey, number>;
+      passed: Record<CategoryKey, Set<string>>;
     };
 
     const totals = new Map<string, StationAccumulator>();
@@ -933,8 +1133,8 @@ function AdminDashboard({
         stationId: id,
         stationCode: station.code,
         stationName: station.name,
-        totals: createStationCategoryRecord<number>(() => 0),
-        passed: createStationCategoryRecord<Set<string>>(() => new Set<string>()),
+        totals: createBaseCategoryRecord<number>(() => 0),
+        passed: createBaseCategoryRecord<Set<string>>(() => new Set<string>()),
       });
     });
 
@@ -953,8 +1153,9 @@ function AdminDashboard({
       if (!stationCategory) {
         return;
       }
-      station.totals[stationCategory] += 1;
-      station.passed[stationCategory].add(row.patrol_id);
+      const baseCategory = stationCategory.slice(0, 1) as CategoryKey;
+      station.totals[baseCategory] += 1;
+      station.passed[baseCategory].add(row.patrol_id);
     });
 
     const sorted = Array.from(totals.values()).sort((a, b) =>
@@ -962,10 +1163,16 @@ function AdminDashboard({
     );
 
     const rows: StationPassageRow[] = sorted.map((station) => {
-      const categories = getAllowedStationCategories(station.stationCode);
-      const allowedCategorySet = new Set(categories);
-      const missing = createStationCategoryRecord<PatrolSummary[]>(() => []);
-      const expectedTotals = createStationCategoryRecord<number>(() => 0);
+      const categories = Array.from(
+        new Set(
+          getAllowedStationCategories(station.stationCode).map(
+            (stationCategory) => stationCategory.slice(0, 1) as CategoryKey,
+          ),
+        ),
+      );
+      const allowedCategorySet = new Set<CategoryKey>(categories);
+      const missing = createBaseCategoryRecord<PatrolSummary[]>(() => []);
+      const expectedTotals = createBaseCategoryRecord<number>(() => 0);
       const passedOverall = new Set<string>();
 
       categories.forEach((category) => {
@@ -1000,7 +1207,7 @@ function AdminDashboard({
   }, [eventId]);
 
   const handleOpenStationMissing = useCallback(
-    (row: StationPassageRow, category: StationCategoryKey | 'TOTAL') => {
+    (row: StationPassageRow, category: CategoryKey | 'TOTAL') => {
       if (category === 'TOTAL') {
         setMissingDialog({
           stationCode: row.stationCode,
@@ -1062,6 +1269,189 @@ function AdminDashboard({
       setEventLoading(false);
     }
   }, [accessToken]);
+
+  const loadSetupData = useCallback(async () => {
+    if (!API_BASE_URL) {
+      setSetupError('Chybí konfigurace API (VITE_AUTH_API_URL).');
+      return;
+    }
+    if (!accessToken) {
+      setSetupError('Chybí přístupový token.');
+      return;
+    }
+
+    setSetupLoading(true);
+    setSetupError(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/event-state?setup=1`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        const message = body?.error || 'Nepodařilo se načíst nastavení ročníků.';
+        throw new Error(message);
+      }
+
+      const payload = (await response.json()) as {
+        current_event_id?: string;
+        events?: SetupEventRow[];
+        stations?: SetupStationRow[];
+        judges?: SetupJudgeRow[];
+        assignments?: SetupAssignmentRow[];
+        station_orders?: SetupStationOrderRow[];
+      };
+
+      const events = Array.isArray(payload.events) ? payload.events : [];
+      const stations = Array.isArray(payload.stations) ? payload.stations : [];
+      const judges = Array.isArray(payload.judges) ? payload.judges : [];
+      const assignments = Array.isArray(payload.assignments) ? payload.assignments : [];
+      const stationOrders = Array.isArray(payload.station_orders) ? payload.station_orders : [];
+      const currentEventId = normalizeText(payload.current_event_id) || eventId;
+
+      const orderByEvent: Record<string, SetupStationOrderPayload> = {};
+      stationOrders.forEach((row) => {
+        const targetEventId = normalizeText(row.event_id);
+        if (!targetEventId) {
+          return;
+        }
+        const normalized = normalizeSetupStationOrder({
+          category_orders: row.category_orders ?? {},
+          separator_before_by_category: row.separator_before_by_category ?? {},
+        });
+        if (normalized) {
+          orderByEvent[targetEventId] = normalized;
+        }
+      });
+
+      setSetupEvents(events);
+      setSetupStations(stations);
+      setSetupJudges(judges);
+      setSetupAssignments(assignments);
+      setSetupOrders(orderByEvent);
+      setSelectedSetupEventId((prev) => {
+        if (prev && events.some((eventRow) => eventRow.id === prev)) {
+          return prev;
+        }
+        if (events.some((eventRow) => eventRow.id === currentEventId)) {
+          return currentEventId;
+        }
+        return events[0]?.id ?? currentEventId;
+      });
+    } catch (error) {
+      console.error('Failed to load event setup data', error);
+      setSetupError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Nepodařilo se načíst nastavení ročníků.',
+      );
+    } finally {
+      setSetupLoading(false);
+    }
+  }, [accessToken, eventId]);
+
+  const postSetupAction = useCallback(
+    async (action: string, payload: Record<string, unknown>) => {
+      if (!API_BASE_URL) {
+        throw new Error('Chybí konfigurace API (VITE_AUTH_API_URL).');
+      }
+      if (!accessToken) {
+        throw new Error('Chybí přístupový token.');
+      }
+      const response = await fetch(`${API_BASE_URL}/admin/event-state?setup=1`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action, ...payload }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = body?.error || `Akce ${action} selhala.`;
+        throw new Error(message);
+      }
+      return body;
+    },
+    [accessToken],
+  );
+
+  const selectedSetupStations = useMemo(
+    () =>
+      setupStations
+        .filter((station) => station.event_id === selectedSetupEventId)
+        .map((station) => ({
+          id: station.id,
+          code: normalizeText(station.code).toUpperCase(),
+          name: normalizeText(station.name),
+        }))
+        .filter((station) => station.code),
+    [selectedSetupEventId, setupStations],
+  );
+
+  const selectedSetupAssignments = useMemo(() => {
+    const judgeById = new Map(setupJudges.map((judge) => [judge.id, judge]));
+    const stationById = new Map(
+      setupStations
+        .filter((station) => station.event_id === selectedSetupEventId)
+        .map((station) => [station.id, station]),
+    );
+    return setupAssignments
+      .filter((assignment) => assignment.event_id === selectedSetupEventId)
+      .map((assignment) => {
+        const judge = judgeById.get(assignment.judge_id);
+        const station = stationById.get(assignment.station_id);
+        return {
+          id: assignment.id,
+          email: normalizeText(judge?.email),
+          displayName:
+            normalizeText(assignment.judge_display_name) ||
+            normalizeText(judge?.display_name) ||
+            normalizeText(judge?.email),
+          stationCode: normalizeText(station?.code).toUpperCase(),
+          stationName: normalizeText(station?.name),
+          categories: Array.isArray(assignment.allowed_categories)
+            ? assignment.allowed_categories.filter((value) => typeof value === 'string')
+            : [],
+          createdAt: normalizeText(assignment.created_at),
+        };
+      })
+      .sort((a, b) => a.stationCode.localeCompare(b.stationCode, 'cs') || a.displayName.localeCompare(b.displayName, 'cs'));
+  }, [selectedSetupEventId, setupAssignments, setupJudges, setupStations]);
+
+  useEffect(() => {
+    const order = setupOrders[selectedSetupEventId];
+    const defaults = createDefaultOrderTextState();
+    const nextOrderInputs = { ...defaults };
+    STATION_PASSAGE_CATEGORIES.forEach((category) => {
+      const list = order?.category_orders?.[category];
+      if (Array.isArray(list) && list.length > 0) {
+        nextOrderInputs[category] = list.join(', ');
+      }
+    });
+    setOrderInputs(nextOrderInputs);
+
+    const nextSeparators = createDefaultSeparatorState();
+    STATION_PASSAGE_CATEGORIES.forEach((category) => {
+      const separator = order?.separator_before_by_category?.[category];
+      if (separator) {
+        nextSeparators[category] = separator;
+      }
+    });
+    setSeparatorInputs(nextSeparators);
+  }, [selectedSetupEventId, setupOrders]);
+
+  useEffect(() => {
+    if (!selectedSetupStations.length) {
+      setJudgeStationCodeInput('');
+      return;
+    }
+    const currentCode = judgeStationCodeInput.trim().toUpperCase();
+    if (currentCode && selectedSetupStations.some((station) => station.code === currentCode)) {
+      return;
+    }
+    setJudgeStationCodeInput(selectedSetupStations[0].code);
+  }, [judgeStationCodeInput, selectedSetupStations]);
 
   const handleLookupPatrol = useCallback(async () => {
     setDisqualifyError(null);
@@ -1172,7 +1562,8 @@ function AdminDashboard({
     loadAnswers();
     loadStationStats();
     loadEventState();
-  }, [isCalcStation, loadAnswers, loadStationStats, loadEventState]);
+    loadSetupData();
+  }, [isCalcStation, loadAnswers, loadStationStats, loadEventState, loadSetupData]);
 
   const handleSaveAnswers = useCallback(async () => {
     setAnswersError(null);
@@ -1288,12 +1679,274 @@ function AdminDashboard({
       loadAnswers(),
       loadStationStats(),
       loadEventState(),
+      loadSetupData(),
       refreshManifest(),
     ]).catch((error) => {
       console.error('Admin refresh failed', error);
     });
     setRefreshing(false);
-  }, [loadAnswers, loadStationStats, loadEventState, refreshManifest]);
+  }, [loadAnswers, loadStationStats, loadEventState, loadSetupData, refreshManifest]);
+
+  const handleCreateEvent = useCallback(async () => {
+    setSetupError(null);
+    setSetupSuccess(null);
+    setJudgeTemporaryPassword(null);
+
+    if (!createEventName.trim()) {
+      setSetupError('Název ročníku je povinný.');
+      return;
+    }
+
+    setSetupSaving(true);
+    try {
+      const payload = await postSetupAction('create_event', {
+        name: createEventName.trim(),
+        starts_at: createEventStartsAt || null,
+        ends_at: createEventEndsAt || null,
+        copy_stations_from_event_id: copyStationsFromCurrentEvent ? eventId : null,
+      });
+      setSetupSuccess(`Ročník ${payload?.event?.name ?? createEventName.trim()} byl vytvořen.`);
+      setCreateEventName('');
+      setCreateEventStartsAt('');
+      setCreateEventEndsAt('');
+      await loadSetupData();
+      const nextEventId = normalizeText(payload?.event?.id);
+      if (nextEventId) {
+        setSelectedSetupEventId(nextEventId);
+      }
+    } catch (error) {
+      console.error('Failed to create event', error);
+      setSetupError(error instanceof Error ? error.message : 'Vytvoření ročníku selhalo.');
+    } finally {
+      setSetupSaving(false);
+    }
+  }, [
+    copyStationsFromCurrentEvent,
+    createEventEndsAt,
+    createEventName,
+    createEventStartsAt,
+    eventId,
+    loadSetupData,
+    postSetupAction,
+  ]);
+
+  const handleSaveStationOrder = useCallback(async () => {
+    setSetupError(null);
+    setSetupSuccess(null);
+    setJudgeTemporaryPassword(null);
+
+    if (!selectedSetupEventId) {
+      setSetupError('Vyber ročník, pro který se má pořadí uložit.');
+      return;
+    }
+
+    const categoryOrders: Record<StationCategoryKey, string[]> = {
+      NH: [],
+      ND: [],
+      MH: [],
+      MD: [],
+      SH: [],
+      SD: [],
+      RH: [],
+      RD: [],
+    };
+    const separatorBeforeByCategory: Partial<Record<StationCategoryKey, string>> = {};
+
+    STATION_PASSAGE_CATEGORIES.forEach((category) => {
+      const values = orderInputs[category]
+        .split(/[^A-Za-z0-9]+/)
+        .map((item) => item.trim().toUpperCase())
+        .filter(Boolean);
+      const dedup = Array.from(new Set(values));
+      categoryOrders[category] = dedup;
+
+      const separator = normalizeText(separatorInputs[category]).toUpperCase();
+      if (separator) {
+        separatorBeforeByCategory[category] = separator;
+      }
+    });
+
+    setSetupSaving(true);
+    try {
+      await postSetupAction('save_station_order', {
+        event_id: selectedSetupEventId,
+        category_orders: categoryOrders,
+        separator_before_by_category: separatorBeforeByCategory,
+      });
+      setSetupSuccess('Pořadí stanovišť bylo uloženo.');
+      await loadSetupData();
+    } catch (error) {
+      console.error('Failed to save station order', error);
+      setSetupError(error instanceof Error ? error.message : 'Uložení pořadí selhalo.');
+    } finally {
+      setSetupSaving(false);
+    }
+  }, [loadSetupData, orderInputs, postSetupAction, selectedSetupEventId, separatorInputs]);
+
+  const handleAssignJudgeToEvent = useCallback(async () => {
+    setSetupError(null);
+    setSetupSuccess(null);
+    setJudgeTemporaryPassword(null);
+
+    if (!selectedSetupEventId) {
+      setSetupError('Vyber ročník.');
+      return;
+    }
+    if (!judgeEmailInput.trim()) {
+      setSetupError('E-mail rozhodčího je povinný.');
+      return;
+    }
+    if (!judgeStationCodeInput.trim()) {
+      setSetupError('Vyber stanoviště.');
+      return;
+    }
+
+    const allowedCategories = (Object.entries(judgeCategoryToggle) as Array<[CategoryKey, boolean]>)
+      .filter(([, enabled]) => enabled)
+      .map(([category]) => category);
+    if (allowedCategories.length === 0) {
+      setSetupError('Vyber alespoň jednu kategorii.');
+      return;
+    }
+
+    const allowedTasks = judgeTasksInput
+      .split(/[,\n;]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    setSetupSaving(true);
+    try {
+      const result = await postSetupAction('assign_judge', {
+        event_id: selectedSetupEventId,
+        email: judgeEmailInput.trim(),
+        display_name: judgeDisplayNameInput.trim(),
+        station_code: judgeStationCodeInput.trim().toUpperCase(),
+        allowed_categories: allowedCategories,
+        allowed_tasks: allowedTasks,
+      });
+      if (result?.temporary_password) {
+        setJudgeTemporaryPassword(String(result.temporary_password));
+      } else {
+        setJudgeTemporaryPassword(null);
+      }
+      setSetupSuccess(
+        result?.created_judge
+          ? `Rozhodčí byl vytvořen a přiřazen.`
+          : `Rozhodčí byl přiřazen k vybranému ročníku.`,
+      );
+      await loadSetupData();
+    } catch (error) {
+      console.error('Failed to assign judge', error);
+      setSetupError(error instanceof Error ? error.message : 'Přiřazení rozhodčího selhalo.');
+    } finally {
+      setSetupSaving(false);
+    }
+  }, [
+    judgeCategoryToggle,
+    judgeDisplayNameInput,
+    judgeEmailInput,
+    judgeStationCodeInput,
+    judgeTasksInput,
+    loadSetupData,
+    postSetupAction,
+    selectedSetupEventId,
+  ]);
+
+  const handleCreatePatrols = useCallback(async () => {
+    setSetupError(null);
+    setSetupSuccess(null);
+    setJudgeTemporaryPassword(null);
+
+    if (!selectedSetupEventId) {
+      setSetupError('Vyber ročník.');
+      return;
+    }
+
+    const total = STATION_PASSAGE_CATEGORIES.reduce((sum, category) => sum + Math.max(0, patrolCounts[category] ?? 0), 0);
+    if (total <= 0) {
+      setSetupError('Zadej počty hlídek alespoň pro jednu kategorii.');
+      return;
+    }
+
+    setSetupSaving(true);
+    try {
+      const result = await postSetupAction('create_patrols', {
+        event_id: selectedSetupEventId,
+        counts: patrolCounts,
+        start_numbers: patrolStarts,
+      });
+      setSetupSuccess(`Vytvořeno hlídek: ${Number(result?.created ?? 0)}.`);
+      await loadSetupData();
+    } catch (error) {
+      console.error('Failed to create patrols', error);
+      setSetupError(error instanceof Error ? error.message : 'Vytvoření hlídek selhalo.');
+    } finally {
+      setSetupSaving(false);
+    }
+  }, [loadSetupData, patrolCounts, patrolStarts, postSetupAction, selectedSetupEventId]);
+
+  const handleClearEventPoints = useCallback(async () => {
+    setSetupError(null);
+    setSetupSuccess(null);
+    setJudgeTemporaryPassword(null);
+
+    if (!selectedSetupEventId) {
+      setSetupError('Vyber ročník.');
+      return;
+    }
+
+    const selectedEvent = setupEvents.find((row) => row.id === selectedSetupEventId);
+    const confirmed = window.confirm(
+      `Opravdu smazat všechny body a průchody pro ročník "${selectedEvent?.name ?? selectedSetupEventId}"?`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setSetupSaving(true);
+    try {
+      await postSetupAction('clear_event_points', { event_id: selectedSetupEventId });
+      setSetupSuccess('Body, průchody, čekání a terčové odpovědi byly smazány.');
+    } catch (error) {
+      console.error('Failed to clear event points', error);
+      setSetupError(error instanceof Error ? error.message : 'Smazání bodů selhalo.');
+    } finally {
+      setSetupSaving(false);
+    }
+  }, [postSetupAction, selectedSetupEventId, setupEvents]);
+
+  const handleCleanupIncompletePatrols = useCallback(async () => {
+    setSetupError(null);
+    setSetupSuccess(null);
+    setJudgeTemporaryPassword(null);
+
+    if (!selectedSetupEventId) {
+      setSetupError('Vyber ročník.');
+      return;
+    }
+
+    const selectedEvent = setupEvents.find((row) => row.id === selectedSetupEventId);
+    const confirmed = window.confirm(
+      `Opravdu smazat hlídky bez vyplněného jména a příjmení člena v ročníku "${selectedEvent?.name ?? selectedSetupEventId}"?`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setSetupSaving(true);
+    try {
+      const result = await postSetupAction('cleanup_incomplete_patrols', { event_id: selectedSetupEventId });
+      const deleted = Number(result?.deleted ?? 0);
+      const skipped = Number(result?.skipped ?? 0);
+      setSetupSuccess(`Smazáno hlídek: ${deleted}. Přeskočeno (už s body/průchody): ${skipped}.`);
+      await loadSetupData();
+    } catch (error) {
+      console.error('Failed to cleanup incomplete patrols', error);
+      setSetupError(error instanceof Error ? error.message : 'Mazání nevyplněných hlídek selhalo.');
+    } finally {
+      setSetupSaving(false);
+    }
+  }, [loadSetupData, postSetupAction, selectedSetupEventId, setupEvents]);
 
   const handleExportNameCheck = useCallback(async () => {
     if (exportingNames) {
@@ -1307,13 +1960,14 @@ function AdminDashboard({
         team_name: string | null;
         category: string | null;
         sex: string | null;
+        patrol_members: string | null;
         note: string | null;
         active: boolean | null;
       };
 
       const { data, error } = await supabase
         .from('patrols')
-        .select('patrol_code, team_name, category, sex, note, active')
+        .select('patrol_code, team_name, category, sex, patrol_members, note, active')
         .eq('event_id', eventId)
         .eq('active', true);
 
@@ -1380,7 +2034,7 @@ function AdminDashboard({
         const sheetName = toUniqueWorksheetName(baseSheetName, usedSheetNames);
         const worksheet = workbook.addWorksheet(sheetName);
         patrols.sort(comparePatrolOrder);
-        const memberLists = patrols.map((patrol) => extractPatrolMembers(patrol.note));
+        const memberLists = patrols.map((patrol) => extractPatrolMembers(patrol.patrol_members ?? patrol.note));
         const memberColumnCount = Math.max(
           1,
           memberLists.reduce((max, members) => Math.max(max, members.length), 0),
@@ -1805,36 +2459,38 @@ function AdminDashboard({
           }
         }
 
-        const gaussCutoffCandidates = Array.from(
-          new Set(collectAutomaticCutoffCandidates(pool).map((candidate) => candidate.cutoffIndex)),
+        const gaussCutoffCandidates: number[] = Array.from(
+          new Set<number>(collectAutomaticCutoffCandidates(pool).map((candidate) => candidate.cutoffIndex)),
         ).sort((a, b) => a - b);
-        const bestGaussCutoffIndex = pickBestGaussCutoffIndex(pool, gaussCutoffCandidates);
+        const bestGaussCutoffIndex: number | null = pickBestGaussCutoffIndex(pool, gaussCutoffCandidates);
 
         const gaussScoredPool = bestGaussCutoffIndex === null ? pool : pool.slice(0, bestGaussCutoffIndex);
         assignBandPoints(gaussScoredPool, (row, points) => {
           row.zlPointsGaussWithCutoff = points;
           row.gaussCutoffDropped = false;
         });
-        if (bestGaussCutoffIndex !== null) {
-          for (let index = bestGaussCutoffIndex; index < pool.length; index += 1) {
+        const gaussCutoffStartIndex = bestGaussCutoffIndex ?? pool.length;
+        if (gaussCutoffStartIndex < pool.length) {
+          for (let index = gaussCutoffStartIndex; index < pool.length; index += 1) {
             const row = pool[index];
             row.zlPointsGaussWithCutoff = 1;
             row.gaussCutoffDropped = true;
           }
         }
 
-        const gaussOpenCutoffCandidates = Array.from(
-          new Set(collectGaussOpenCutoffCandidates(pool).map((candidate) => candidate.cutoffIndex)),
+        const gaussOpenCutoffCandidates: number[] = Array.from(
+          new Set<number>(collectGaussOpenCutoffCandidates(pool).map((candidate) => candidate.cutoffIndex)),
         ).sort((a, b) => a - b);
-        const bestGaussOpenCutoffIndex = pickBestGaussCutoffIndex(pool, gaussOpenCutoffCandidates);
+        const bestGaussOpenCutoffIndex: number | null = pickBestGaussCutoffIndex(pool, gaussOpenCutoffCandidates);
 
         const gaussOpenScoredPool = bestGaussOpenCutoffIndex === null ? pool : pool.slice(0, bestGaussOpenCutoffIndex);
         assignBandPoints(gaussOpenScoredPool, (row, points) => {
           row.zlPointsGaussOpenCutoff = points;
           row.gaussOpenCutoffDropped = false;
         });
-        if (bestGaussOpenCutoffIndex !== null) {
-          for (let index = bestGaussOpenCutoffIndex; index < pool.length; index += 1) {
+        const gaussOpenCutoffStartIndex = bestGaussOpenCutoffIndex ?? pool.length;
+        if (gaussOpenCutoffStartIndex < pool.length) {
+          for (let index = gaussOpenCutoffStartIndex; index < pool.length; index += 1) {
             const row = pool[index];
             row.zlPointsGaussOpenCutoff = 1;
             row.gaussOpenCutoffDropped = true;
@@ -2780,6 +3436,345 @@ function AdminDashboard({
         <section className="admin-card admin-card--with-divider">
           <header className="admin-card-header">
             <div>
+              <h2>Nastavení ročníků</h2>
+              <p className="admin-card-subtitle">
+                Správa budoucích ročníků: eventy, pořadí stanovišť, rozhodčí a hlídky.
+              </p>
+            </div>
+            <div className="admin-card-actions">
+              <button
+                type="button"
+                className="admin-button admin-button--secondary"
+                onClick={() => void loadSetupData()}
+                disabled={setupLoading || setupSaving}
+              >
+                {setupLoading ? 'Načítám…' : 'Obnovit nastavení'}
+              </button>
+            </div>
+          </header>
+          {setupError ? <p className="admin-error">{setupError}</p> : null}
+          {setupSuccess ? <p className="admin-success">{setupSuccess}</p> : null}
+          {judgeTemporaryPassword ? (
+            <p className="admin-notice">
+              Nový účet rozhodčího byl vytvořen. Dočasné heslo: <strong>{judgeTemporaryPassword}</strong>
+            </p>
+          ) : null}
+          <div className="admin-disqualify-form">
+            <label className="admin-field" htmlFor="admin-setup-event">
+              <span>Spravovaný ročník</span>
+              <select
+                id="admin-setup-event"
+                value={selectedSetupEventId}
+                onChange={(event) => setSelectedSetupEventId(event.target.value)}
+                disabled={setupLoading || setupSaving || setupEvents.length === 0}
+              >
+                {setupEvents.length === 0 ? <option value="">Žádné ročníky</option> : null}
+                {setupEvents.map((setupEvent) => (
+                  <option key={setupEvent.id} value={setupEvent.id}>
+                    {setupEvent.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="admin-setup-block">
+            <h3>Vytvořit nový ročník</h3>
+            <div className="admin-disqualify-form">
+              <label className="admin-field" htmlFor="admin-create-event-name">
+                <span>Název ročníku</span>
+                <input
+                  id="admin-create-event-name"
+                  value={createEventName}
+                  onChange={(event) => setCreateEventName(event.target.value)}
+                  placeholder="např. Setonův závod 2027"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="admin-field" htmlFor="admin-create-event-start">
+                <span>Začátek (volitelné)</span>
+                <input
+                  id="admin-create-event-start"
+                  type="datetime-local"
+                  value={createEventStartsAt}
+                  onChange={(event) => setCreateEventStartsAt(event.target.value)}
+                />
+              </label>
+              <label className="admin-field" htmlFor="admin-create-event-end">
+                <span>Konec (volitelné)</span>
+                <input
+                  id="admin-create-event-end"
+                  type="datetime-local"
+                  value={createEventEndsAt}
+                  onChange={(event) => setCreateEventEndsAt(event.target.value)}
+                />
+              </label>
+              <label className="admin-check" htmlFor="admin-copy-stations">
+                <input
+                  id="admin-copy-stations"
+                  type="checkbox"
+                  checked={copyStationsFromCurrentEvent}
+                  onChange={(event) => setCopyStationsFromCurrentEvent(event.target.checked)}
+                />
+                <span>Kopírovat stanoviště z aktuálního ročníku</span>
+              </label>
+              <button
+                type="button"
+                className="admin-button admin-button--primary"
+                onClick={() => void handleCreateEvent()}
+                disabled={setupSaving}
+              >
+                {setupSaving ? 'Ukládám…' : 'Vytvořit ročník'}
+              </button>
+            </div>
+          </div>
+
+          <div className="admin-setup-block">
+            <h3>Pořadí stanovišť podle kategorie</h3>
+            <p className="admin-card-subtitle">
+              Pro každou kategorii zadej pořadí kódů stanovišť oddělené čárkou (např. F, U, C…).
+            </p>
+            <div className="admin-setup-order-grid">
+              {STATION_PASSAGE_CATEGORIES.map((category) => (
+                <div key={category} className="admin-setup-order-row">
+                  <label className="admin-field" htmlFor={`admin-order-${category}`}>
+                    <span>{category} – pořadí stanovišť</span>
+                    <textarea
+                      id={`admin-order-${category}`}
+                      value={orderInputs[category]}
+                      onChange={(event) =>
+                        setOrderInputs((prev) => ({
+                          ...prev,
+                          [category]: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="admin-field" htmlFor={`admin-separator-${category}`}>
+                    <span>{category} – oddělovač (volitelné)</span>
+                    <input
+                      id={`admin-separator-${category}`}
+                      value={separatorInputs[category] ?? ''}
+                      onChange={(event) =>
+                        setSeparatorInputs((prev) => ({
+                          ...prev,
+                          [category]: event.target.value.trim().toUpperCase(),
+                        }))
+                      }
+                      placeholder="např. R"
+                      autoComplete="off"
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+            <div className="admin-card-actions admin-card-actions--end">
+              <button
+                type="button"
+                className="admin-button admin-button--secondary"
+                onClick={() => void handleSaveStationOrder()}
+                disabled={setupSaving}
+              >
+                {setupSaving ? 'Ukládám…' : 'Uložit pořadí stanovišť'}
+              </button>
+            </div>
+          </div>
+
+          <div className="admin-setup-block">
+            <h3>Rozhodčí a přiřazení</h3>
+            <p className="admin-card-subtitle">
+              Pokud už e-mail existuje, účet se jen přiřadí k vybranému ročníku a stanovišti.
+            </p>
+            <div className="admin-disqualify-form">
+              <label className="admin-field" htmlFor="admin-judge-email">
+                <span>E-mail</span>
+                <input
+                  id="admin-judge-email"
+                  type="email"
+                  value={judgeEmailInput}
+                  onChange={(event) => setJudgeEmailInput(event.target.value)}
+                  placeholder="rozhodci@example.com"
+                  autoComplete="email"
+                />
+              </label>
+              <label className="admin-field" htmlFor="admin-judge-display-name">
+                <span>Jméno (volitelné)</span>
+                <input
+                  id="admin-judge-display-name"
+                  value={judgeDisplayNameInput}
+                  onChange={(event) => setJudgeDisplayNameInput(event.target.value)}
+                  placeholder="Jan Novák"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="admin-field" htmlFor="admin-judge-station">
+                <span>Stanoviště</span>
+                <select
+                  id="admin-judge-station"
+                  value={judgeStationCodeInput}
+                  onChange={(event) => setJudgeStationCodeInput(event.target.value)}
+                >
+                  {selectedSetupStations.map((station) => (
+                    <option key={station.id} value={station.code}>
+                      {station.code} – {station.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="admin-field" htmlFor="admin-judge-tasks">
+                <span>Oprávnění (allowed tasks)</span>
+                <input
+                  id="admin-judge-tasks"
+                  value={judgeTasksInput}
+                  onChange={(event) => setJudgeTasksInput(event.target.value)}
+                  placeholder="score-review, manage-results"
+                  autoComplete="off"
+                />
+              </label>
+            </div>
+            <div className="admin-category-toggle-list">
+              {(['N', 'M', 'S', 'R'] as const).map((category) => (
+                <label key={category} className="admin-check">
+                  <input
+                    type="checkbox"
+                    checked={judgeCategoryToggle[category]}
+                    onChange={(event) =>
+                      setJudgeCategoryToggle((prev) => ({
+                        ...prev,
+                        [category]: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>{category}</span>
+                </label>
+              ))}
+            </div>
+            <div className="admin-card-actions admin-card-actions--end">
+              <button
+                type="button"
+                className="admin-button admin-button--secondary"
+                onClick={() => void handleAssignJudgeToEvent()}
+                disabled={setupSaving}
+              >
+                {setupSaving ? 'Ukládám…' : 'Vytvořit/Přiřadit rozhodčího'}
+              </button>
+            </div>
+            <div className="admin-table-wrapper">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Stanoviště</th>
+                    <th>Rozhodčí</th>
+                    <th>E-mail</th>
+                    <th>Kategorie</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedSetupAssignments.length === 0 ? (
+                    <tr>
+                      <td colSpan={4}>Pro vybraný ročník zatím nejsou žádná přiřazení.</td>
+                    </tr>
+                  ) : (
+                    selectedSetupAssignments.map((assignment) => (
+                      <tr key={assignment.id}>
+                        <td>
+                          {assignment.stationCode}
+                          {assignment.stationName ? ` – ${assignment.stationName}` : ''}
+                        </td>
+                        <td>{assignment.displayName || '—'}</td>
+                        <td>{assignment.email || '—'}</td>
+                        <td>{assignment.categories.length ? assignment.categories.join(', ') : '—'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="admin-setup-block">
+            <h3>Vytvoření hlídek</h3>
+            <p className="admin-card-subtitle">
+              Zadej počty hlídek pro jednotlivé kategorie a počáteční čísla kódů.
+            </p>
+            <div className="admin-setup-patrol-grid">
+              {STATION_PASSAGE_CATEGORIES.map((category) => (
+                <div key={category} className="admin-setup-patrol-row">
+                  <strong>{category}</strong>
+                  <label className="admin-field" htmlFor={`admin-patrol-count-${category}`}>
+                    <span>Počet</span>
+                    <input
+                      id={`admin-patrol-count-${category}`}
+                      type="number"
+                      min={0}
+                      value={patrolCounts[category]}
+                      onChange={(event) =>
+                        setPatrolCounts((prev) => ({
+                          ...prev,
+                          [category]: Math.max(0, Number.parseInt(event.target.value || '0', 10) || 0),
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="admin-field" htmlFor={`admin-patrol-start-${category}`}>
+                    <span>Od čísla</span>
+                    <input
+                      id={`admin-patrol-start-${category}`}
+                      type="number"
+                      min={1}
+                      value={patrolStarts[category]}
+                      onChange={(event) =>
+                        setPatrolStarts((prev) => ({
+                          ...prev,
+                          [category]: Math.max(1, Number.parseInt(event.target.value || '1', 10) || 1),
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+            <div className="admin-card-actions admin-card-actions--end">
+              <button
+                type="button"
+                className="admin-button admin-button--secondary"
+                onClick={() => void handleCreatePatrols()}
+                disabled={setupSaving}
+              >
+                {setupSaving ? 'Ukládám…' : 'Vytvořit hlídky'}
+              </button>
+            </div>
+          </div>
+
+          <div className="admin-setup-block">
+            <h3>Smazat všechny body ročníku</h3>
+            <p className="admin-card-subtitle">
+              Smaže bodování, průchody, čekání a odpovědi terčového úseku pro vybraný ročník.
+            </p>
+            <div className="admin-card-actions">
+              <button
+                type="button"
+                className="admin-button admin-button--danger"
+                onClick={() => void handleClearEventPoints()}
+                disabled={setupSaving}
+              >
+                {setupSaving ? 'Zpracovávám…' : 'Smazat body ročníku'}
+              </button>
+              <button
+                type="button"
+                className="admin-button admin-button--secondary"
+                onClick={() => void handleCleanupIncompletePatrols()}
+                disabled={setupSaving}
+              >
+                {setupSaving ? 'Zpracovávám…' : 'Smazat nevyplněné hlídky'}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="admin-card admin-card--with-divider">
+          <header className="admin-card-header">
+            <div>
               <h2>Diskvalifikace hlídky</h2>
               <p className="admin-card-subtitle">
                 Zadej ručně kód hlídky, načti její detail a potvrď diskvalifikaci.
@@ -2956,7 +3951,7 @@ function AdminDashboard({
                 <thead>
                   <tr>
                     <th>Stanoviště</th>
-                    {STATION_PASSAGE_CATEGORIES.map((category) => (
+                    {BASE_CATEGORY_ORDER.map((category) => (
                       <th key={category}>{category}</th>
                     ))}
                     <th>CELKEM</th>
@@ -2971,7 +3966,7 @@ function AdminDashboard({
                           <span>{row.stationName}</span>
                         </div>
                       </td>
-                      {STATION_PASSAGE_CATEGORIES.map((category) => {
+                      {BASE_CATEGORY_ORDER.map((category) => {
                         const isAllowed = row.categories.includes(category);
 
                         if (!isAllowed) {

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 import { getAuthConfig } from '../../api-lib/authTokens.js';
+import { generateTemporaryPassword, hashPassword } from '../../api-lib/auth/password-utils.js';
 
 type TokenClaims = {
   sub?: string;
@@ -11,6 +12,14 @@ type TokenClaims = {
   stationId?: string;
   type?: string;
 };
+
+type StationCategoryKey = 'NH' | 'ND' | 'MH' | 'MD' | 'SH' | 'SD' | 'RH' | 'RD';
+
+const CATEGORY_KEYS = ['N', 'M', 'S', 'R'] as const;
+const STATION_CATEGORY_KEYS: StationCategoryKey[] = ['NH', 'ND', 'MH', 'MD', 'SH', 'SD', 'RH', 'RD'];
+const MAX_PATROLS_PER_CATEGORY = 300;
+
+const PRAGUE_TIME_ZONE = 'Europe/Prague';
 
 function getSupabaseAdminConfig() {
   const supabaseUrl = (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
@@ -34,11 +43,303 @@ function respond(res: any, status: number, message: string, detail?: string) {
   return res.status(status).json(detail ? { error: message, detail } : { error: message });
 }
 
+function normalizeText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeEmail(value: unknown): string {
+  return normalizeText(value).toLowerCase();
+}
+
+function normalizeStationCode(value: unknown): string {
+  return normalizeText(value).toUpperCase();
+}
+
+function normalizePatrolMembers(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.replace(/\r\n?/g, '\n');
+  const compact = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
+  return compact.length > 0 ? compact : null;
+}
+
+function hasAtLeastOneFullName(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const people = value
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .flatMap((line) => line.split(/[;,|]/g))
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return people.some((person) => {
+    const words = person.split(/\s+/).filter(Boolean);
+    return words.length >= 2 && words[0].length >= 2 && words[1].length >= 2;
+  });
+}
+
+function toNonNegativeInt(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.round(value));
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value.trim(), 10);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, parsed);
+    }
+  }
+  return Math.max(0, Math.round(fallback));
+}
+
 function isBoolean(value: unknown): value is boolean {
   return typeof value === 'boolean';
 }
 
-const PRAGUE_TIME_ZONE = 'Europe/Prague';
+function normalizeAllowedCategories(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [];
+  const normalized = values
+    .map((entry) => normalizeText(entry).toUpperCase())
+    .filter((entry) => CATEGORY_KEYS.includes(entry as (typeof CATEGORY_KEYS)[number]));
+  const unique = Array.from(new Set(normalized));
+  unique.sort();
+  return unique;
+}
+
+function normalizeAllowedTasks(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [];
+  const normalized = values.map((entry) => normalizeText(entry)).filter(Boolean);
+  return Array.from(new Set(normalized));
+}
+
+function normalizeStationCodeList(value: unknown): string[] {
+  const asArray =
+    Array.isArray(value) && value.length > 0
+      ? value
+      : typeof value === 'string'
+        ? value
+            .split(/[^A-Za-z0-9]+/)
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : [];
+  const seen = new Set<string>();
+  const list: string[] = [];
+  for (const raw of asArray) {
+    const code = normalizeStationCode(raw);
+    if (!code || seen.has(code)) {
+      continue;
+    }
+    seen.add(code);
+    list.push(code);
+  }
+  return list;
+}
+
+function normalizeStationOrderPayload(payload: Record<string, unknown>) {
+  const rawOrders =
+    payload.category_orders && typeof payload.category_orders === 'object'
+      ? (payload.category_orders as Record<string, unknown>)
+      : {};
+  const rawSeparators =
+    payload.separator_before_by_category && typeof payload.separator_before_by_category === 'object'
+      ? (payload.separator_before_by_category as Record<string, unknown>)
+      : {};
+
+  const categoryOrders: Record<StationCategoryKey, string[]> = {
+    NH: [],
+    ND: [],
+    MH: [],
+    MD: [],
+    SH: [],
+    SD: [],
+    RH: [],
+    RD: [],
+  };
+  const separatorBeforeByCategory: Partial<Record<StationCategoryKey, string>> = {};
+
+  STATION_CATEGORY_KEYS.forEach((category) => {
+    categoryOrders[category] = normalizeStationCodeList(rawOrders[category]);
+    const separator = normalizeStationCode(rawSeparators[category]);
+    if (separator) {
+      separatorBeforeByCategory[category] = separator;
+    }
+  });
+
+  return {
+    categoryOrders,
+    separatorBeforeByCategory,
+  };
+}
+
+function parseIsoOrNull(value: unknown): string | null {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return null;
+  }
+  const timestamp = Date.parse(normalized);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+  return new Date(timestamp).toISOString();
+}
+
+function mapPatrolCategoryKey(key: StationCategoryKey): { category: string; sex: string } {
+  return {
+    category: key.slice(0, 1),
+    sex: key.slice(1, 2),
+  };
+}
+
+function parsePatrolCategoryNumber(rawCode: unknown, fallbackCategory?: unknown): { category: string; number: number } | null {
+  const code = normalizeStationCode(rawCode);
+  const match = code.match(/^([NMSR])(?:[HD])?[- ]?(\d{1,3})$/);
+  if (match) {
+    const number = Number.parseInt(match[2], 10);
+    if (Number.isFinite(number) && number > 0) {
+      return { category: match[1], number };
+    }
+  }
+  const fallback = normalizeStationCode(fallbackCategory);
+  const fallbackMatch = code.match(/^([NMSR])([HD])[- ]?(\d{1,3})$/);
+  if (fallback && CATEGORY_KEYS.includes(fallback as (typeof CATEGORY_KEYS)[number]) && fallbackMatch) {
+    const number = Number.parseInt(fallbackMatch[3], 10);
+    if (Number.isFinite(number) && number > 0) {
+      return { category: fallback, number };
+    }
+  }
+  return null;
+}
+
+function buildPatrolCodeLookupVariants(rawCode: unknown): string[] {
+  const code = normalizeStationCode(rawCode);
+  if (!code) {
+    return [];
+  }
+  const match = code.match(/^([NMSR])([HD])?[- ]?(\d{1,3})$/);
+  if (!match) {
+    return [code];
+  }
+
+  const category = match[1];
+  const sex = match[2] ? match[2] : '';
+  const number = Number.parseInt(match[3], 10);
+  if (!Number.isFinite(number) || number <= 0) {
+    return [code];
+  }
+
+  const noPad = String(number);
+  const pad2 = noPad.padStart(2, '0');
+  const seen = new Set<string>();
+  const variants: string[] = [];
+  const push = (value: string) => {
+    const normalized = value.trim().toUpperCase();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    variants.push(normalized);
+  };
+
+  if (sex) {
+    push(`${category}${sex}-${noPad}`);
+    push(`${category}${sex}-${pad2}`);
+    push(`${category}-${noPad}`);
+    push(`${category}-${pad2}`);
+    return variants;
+  }
+
+  push(`${category}-${noPad}`);
+  push(`${category}-${pad2}`);
+  push(`${category}H-${noPad}`);
+  push(`${category}H-${pad2}`);
+  push(`${category}D-${noPad}`);
+  push(`${category}D-${pad2}`);
+  return variants;
+}
+
+async function resolvePatrolByCode(
+  supabaseAdmin: any,
+  eventId: string,
+  rawCode: unknown,
+): Promise<
+  | {
+      row: {
+        id: string;
+        patrol_code: string | null;
+        category: string | null;
+        sex: string | null;
+        team_name: string | null;
+        patrol_members?: string | null;
+        note?: string | null;
+      };
+      ambiguous: false;
+    }
+  | {
+      ambiguous: true;
+      options: string[];
+    }
+  | null
+> {
+  const variants = buildPatrolCodeLookupVariants(rawCode);
+  if (!variants.length) {
+    return null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('patrols')
+    .select('id, patrol_code, category, sex, team_name, patrol_members, note, active')
+    .eq('event_id', eventId)
+    .in('patrol_code', variants);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = ((data ?? []) as Array<{
+    id: string;
+    patrol_code: string | null;
+    category: string | null;
+    sex: string | null;
+    team_name: string | null;
+    patrol_members?: string | null;
+    note?: string | null;
+    active?: boolean | null;
+  }>).filter((row) => row.active !== false);
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const exactNormalized = normalizeStationCode(rawCode);
+  const exact = rows.filter((row) => normalizeStationCode(row.patrol_code) === exactNormalized);
+  if (exact.length === 1) {
+    return { ambiguous: false, row: exact[0] };
+  }
+  if (rows.length === 1) {
+    return { ambiguous: false, row: rows[0] };
+  }
+
+  const withProfile = rows.filter((row) => {
+    const members = normalizePatrolMembers(row.patrol_members ?? row.note ?? null);
+    return hasAtLeastOneFullName(members ?? '');
+  });
+  if (withProfile.length === 1) {
+    return { ambiguous: false, row: withProfile[0] };
+  }
+
+  return {
+    ambiguous: true,
+    options: rows
+      .map((row) => normalizeStationCode(row.patrol_code))
+      .filter(Boolean)
+      .slice(0, 8),
+  };
+}
 
 function getDatePartsInTimeZone(date: Date, timeZone: string) {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -212,6 +513,620 @@ async function requireCalcSession(req: any, res: any) {
   };
 }
 
+async function loadSetupData(supabaseAdmin: any, currentEventId: string, res: any) {
+  const [eventsRes, stationsRes, judgesRes, assignmentsRes, orderRes] = await Promise.all([
+    supabaseAdmin
+      .from('events')
+      .select('id,name,starts_at,ends_at,scoring_locked')
+      .order('starts_at', { ascending: false, nullsFirst: false })
+      .order('name', { ascending: true }),
+    supabaseAdmin
+      .from('stations')
+      .select('id,event_id,code,name')
+      .order('event_id', { ascending: true })
+      .order('code', { ascending: true }),
+    supabaseAdmin.from('judges').select('id,email,display_name,created_at').order('display_name', { ascending: true }),
+    supabaseAdmin
+      .from('judge_assignments')
+      .select('id,judge_id,station_id,event_id,allowed_categories,allowed_tasks,judge_display_name,created_at')
+      .order('created_at', { ascending: false }),
+    supabaseAdmin
+      .from('event_station_orders')
+      .select('event_id,category_orders,separator_before_by_category,updated_at')
+      .order('updated_at', { ascending: false }),
+  ]);
+
+  if (eventsRes.error || stationsRes.error || judgesRes.error || assignmentsRes.error || orderRes.error) {
+    return respond(res, 500, 'Failed to load setup data', [
+      eventsRes.error?.message,
+      stationsRes.error?.message,
+      judgesRes.error?.message,
+      assignmentsRes.error?.message,
+      orderRes.error?.message,
+    ]
+      .filter(Boolean)
+      .join(' | '));
+  }
+
+  return res.status(200).json({
+    current_event_id: currentEventId,
+    events: eventsRes.data ?? [],
+    stations: stationsRes.data ?? [],
+    judges: judgesRes.data ?? [],
+    assignments: assignmentsRes.data ?? [],
+    station_orders: orderRes.data ?? [],
+  });
+}
+
+async function handleSetupAction(
+  supabaseAdmin: any,
+  currentEventId: string,
+  payload: Record<string, unknown>,
+  res: any,
+) {
+  const action = normalizeText(payload.action);
+  if (!action) {
+    return res.status(400).json({ error: 'Missing action.' });
+  }
+
+  if (action === 'create_event') {
+    const eventName = normalizeText(payload.name);
+    if (!eventName) {
+      return res.status(400).json({ error: 'Event name is required.' });
+    }
+
+    const startsAt = parseIsoOrNull(payload.starts_at);
+    const endsAt = parseIsoOrNull(payload.ends_at);
+    const hasSourceEventId = Object.prototype.hasOwnProperty.call(payload, 'copy_stations_from_event_id');
+    const sourceEventId = hasSourceEventId
+      ? normalizeText(payload.copy_stations_from_event_id)
+      : currentEventId;
+
+    const { data: insertedEvent, error: insertEventError } = await supabaseAdmin
+      .from('events')
+      .insert({
+        name: eventName,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        scoring_locked: false,
+        scoring_locked_at: null,
+      })
+      .select('id,name,starts_at,ends_at,scoring_locked')
+      .single();
+
+    if (insertEventError || !insertedEvent) {
+      return respond(res, 500, 'Failed to create event', insertEventError?.message);
+    }
+
+    if (sourceEventId) {
+      const { data: sourceStations, error: sourceStationsError } = await supabaseAdmin
+        .from('stations')
+        .select('code,name')
+        .eq('event_id', sourceEventId)
+        .order('code', { ascending: true });
+
+      if (sourceStationsError) {
+        return respond(res, 500, 'Event created, but failed to load source stations', sourceStationsError.message);
+      }
+
+      const stationRows = (sourceStations ?? [])
+        .map((row: { code?: string | null; name?: string | null }) => ({
+          event_id: insertedEvent.id,
+          code: normalizeStationCode(row.code),
+          name: normalizeText(row.name),
+        }))
+        .filter((row: { code: string; name: string }) => row.code && row.name);
+
+      if (stationRows.length > 0) {
+        const { error: stationInsertError } = await supabaseAdmin
+          .from('stations')
+          .insert(stationRows);
+        if (stationInsertError) {
+          return respond(res, 500, 'Event created, but failed to copy stations', stationInsertError.message);
+        }
+      }
+
+      const { data: sourceOrder, error: sourceOrderError } = await supabaseAdmin
+        .from('event_station_orders')
+        .select('category_orders,separator_before_by_category')
+        .eq('event_id', sourceEventId)
+        .maybeSingle();
+
+      if (!sourceOrderError && sourceOrder) {
+        const { error: copyOrderError } = await supabaseAdmin.from('event_station_orders').upsert(
+          {
+            event_id: insertedEvent.id,
+            category_orders: sourceOrder.category_orders ?? {},
+            separator_before_by_category: sourceOrder.separator_before_by_category ?? {},
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'event_id' },
+        );
+        if (copyOrderError) {
+          return respond(res, 500, 'Event created, but failed to copy station order', copyOrderError.message);
+        }
+      }
+    }
+
+    return res.status(200).json({ ok: true, event: insertedEvent });
+  }
+
+  if (action === 'save_station_order') {
+    const targetEventId = normalizeText(payload.event_id);
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'Missing event_id.' });
+    }
+
+    const normalized = normalizeStationOrderPayload(payload);
+    const { error } = await supabaseAdmin.from('event_station_orders').upsert(
+      {
+        event_id: targetEventId,
+        category_orders: normalized.categoryOrders,
+        separator_before_by_category: normalized.separatorBeforeByCategory,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'event_id' },
+    );
+
+    if (error) {
+      return respond(res, 500, 'Failed to save station order', error.message);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      event_id: targetEventId,
+      category_orders: normalized.categoryOrders,
+      separator_before_by_category: normalized.separatorBeforeByCategory,
+    });
+  }
+
+  if (action === 'assign_judge') {
+    const targetEventId = normalizeText(payload.event_id);
+    const email = normalizeEmail(payload.email);
+    const displayNameInput = normalizeText(payload.display_name);
+    const stationCode = normalizeStationCode(payload.station_code);
+    const allowedCategories = normalizeAllowedCategories(payload.allowed_categories);
+    const allowedTasks = normalizeAllowedTasks(payload.allowed_tasks);
+
+    if (!targetEventId || !email || !stationCode) {
+      return res.status(400).json({ error: 'Missing required fields (event, email, station).' });
+    }
+
+    const { data: station, error: stationError } = await supabaseAdmin
+      .from('stations')
+      .select('id,code,name')
+      .eq('event_id', targetEventId)
+      .eq('code', stationCode)
+      .maybeSingle();
+
+    if (stationError) {
+      return respond(res, 500, 'Failed to load station', stationError.message);
+    }
+    if (!station) {
+      return res.status(400).json({ error: `Station ${stationCode} does not exist in selected event.` });
+    }
+
+    const { data: existingJudge, error: judgeLookupError } = await supabaseAdmin
+      .from('judges')
+      .select('id,email,display_name')
+      .ilike('email', email)
+      .limit(1)
+      .maybeSingle();
+
+    if (judgeLookupError) {
+      return respond(res, 500, 'Failed to lookup judge account', judgeLookupError.message);
+    }
+
+    const nowIso = new Date().toISOString();
+    let judgeId = '';
+    let judgeDisplayName = displayNameInput || email;
+    let createdJudge = false;
+    let temporaryPassword: string | null = null;
+
+    if (!existingJudge) {
+      temporaryPassword = generateTemporaryPassword(12);
+      const passwordHash = await hashPassword(temporaryPassword);
+      const { data: insertedJudge, error: insertJudgeError } = await supabaseAdmin
+        .from('judges')
+        .insert({
+          email,
+          display_name: judgeDisplayName,
+          password_hash: passwordHash,
+          must_change_password: true,
+          password_rotated_at: nowIso,
+          updated_at: nowIso,
+        })
+        .select('id,display_name')
+        .single();
+      if (insertJudgeError || !insertedJudge) {
+        return respond(res, 500, 'Failed to create judge account', insertJudgeError?.message);
+      }
+      judgeId = insertedJudge.id;
+      judgeDisplayName = normalizeText(insertedJudge.display_name) || judgeDisplayName;
+      createdJudge = true;
+    } else {
+      judgeId = existingJudge.id;
+      const nextDisplayName = displayNameInput || normalizeText(existingJudge.display_name) || email;
+      if (nextDisplayName !== normalizeText(existingJudge.display_name)) {
+        const { error: updateJudgeError } = await supabaseAdmin
+          .from('judges')
+          .update({
+            display_name: nextDisplayName,
+            updated_at: nowIso,
+          })
+          .eq('id', judgeId);
+        if (updateJudgeError) {
+          return respond(res, 500, 'Failed to update judge profile', updateJudgeError.message);
+        }
+      }
+      judgeDisplayName = nextDisplayName;
+    }
+
+    const { error: upsertAssignmentError } = await supabaseAdmin.from('judge_assignments').upsert(
+      {
+        judge_id: judgeId,
+        station_id: station.id,
+        event_id: targetEventId,
+        role: 'judge',
+        judge_display_name: judgeDisplayName,
+        allowed_categories: allowedCategories,
+        allowed_tasks: allowedTasks,
+      },
+      { onConflict: 'judge_id,station_id,event_id' },
+    );
+
+    if (upsertAssignmentError) {
+      return respond(res, 500, 'Failed to save judge assignment', upsertAssignmentError.message);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      created_judge: createdJudge,
+      temporary_password: temporaryPassword,
+      assignment: {
+        judge_id: judgeId,
+        event_id: targetEventId,
+        station_id: station.id,
+        station_code: station.code,
+        allowed_categories: allowedCategories,
+        allowed_tasks: allowedTasks,
+        judge_display_name: judgeDisplayName,
+        email,
+      },
+    });
+  }
+
+  if (action === 'upsert_patrol_profile') {
+    const targetEventId = normalizeText(payload.event_id);
+    const patrolId = normalizeText(payload.patrol_id);
+    const patrolCode = normalizeText(payload.patrol_code);
+    const teamName = normalizeText(payload.team_name);
+    const patrolMembers = normalizePatrolMembers(payload.patrol_members);
+
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'Missing event_id.' });
+    }
+    if (!patrolId && !patrolCode) {
+      return res.status(400).json({ error: 'Missing patrol reference (patrol_id or patrol_code).' });
+    }
+    if (!teamName) {
+      return res.status(400).json({ error: 'Team name is required.' });
+    }
+
+    let resolvedPatrolId = patrolId;
+    if (!resolvedPatrolId) {
+      let resolved;
+      try {
+        resolved = await resolvePatrolByCode(supabaseAdmin, targetEventId, patrolCode);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        return respond(res, 500, 'Failed to resolve patrol code', detail);
+      }
+      if (!resolved) {
+        return res.status(404).json({ error: 'Patrol not found for this event.' });
+      }
+      if (resolved.ambiguous) {
+        return res.status(409).json({
+          error: `Ambiguous patrol code. Matches: ${resolved.options.join(', ')}`,
+          options: resolved.options,
+        });
+      }
+      resolvedPatrolId = resolved.row.id;
+    }
+
+    const { data: updatedPatrol, error: updateError } = await supabaseAdmin
+      .from('patrols')
+      .update({
+        team_name: teamName,
+        patrol_members: patrolMembers,
+      })
+      .eq('event_id', targetEventId)
+      .eq('id', resolvedPatrolId)
+      .select('id, patrol_code, team_name, patrol_members, category, sex')
+      .maybeSingle();
+
+    if (updateError) {
+      return respond(res, 500, 'Failed to update patrol profile', updateError.message);
+    }
+    if (!updatedPatrol) {
+      return res.status(404).json({ error: 'Patrol not found for this event.' });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      patrol: updatedPatrol,
+    });
+  }
+
+  if (action === 'cleanup_incomplete_patrols') {
+    const targetEventId = normalizeText(payload.event_id);
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'Missing event_id.' });
+    }
+
+    const { data: patrols, error: patrolsError } = await supabaseAdmin
+      .from('patrols')
+      .select('id, patrol_code, team_name, patrol_members, note')
+      .eq('event_id', targetEventId)
+      .eq('active', true);
+
+    if (patrolsError) {
+      return respond(res, 500, 'Failed to load patrols', patrolsError.message);
+    }
+
+    const candidates = ((patrols ?? []) as Array<{
+      id: string;
+      patrol_code?: string | null;
+      team_name?: string | null;
+      patrol_members?: string | null;
+      note?: string | null;
+    }>).filter((row) => {
+      const members = normalizePatrolMembers(row.patrol_members ?? row.note ?? null);
+      return !hasAtLeastOneFullName(members ?? '');
+    });
+
+    if (candidates.length === 0) {
+      return res.status(200).json({ ok: true, deleted: 0, skipped: 0 });
+    }
+
+    const candidateIds = candidates.map((row) => row.id);
+    const [scoresRes, passagesRes, timingsRes] = await Promise.all([
+      supabaseAdmin
+        .from('station_scores')
+        .select('patrol_id')
+        .eq('event_id', targetEventId)
+        .in('patrol_id', candidateIds),
+      supabaseAdmin
+        .from('station_passages')
+        .select('patrol_id')
+        .eq('event_id', targetEventId)
+        .in('patrol_id', candidateIds),
+      supabaseAdmin
+        .from('timings')
+        .select('patrol_id')
+        .eq('event_id', targetEventId)
+        .in('patrol_id', candidateIds),
+    ]);
+
+    if (scoresRes.error || passagesRes.error || timingsRes.error) {
+      return respond(res, 500, 'Failed to verify patrol usage before cleanup', [
+        scoresRes.error?.message,
+        passagesRes.error?.message,
+        timingsRes.error?.message,
+      ]
+        .filter(Boolean)
+        .join(' | '));
+    }
+
+    const lockedIds = new Set<string>();
+    ((scoresRes.data ?? []) as Array<{ patrol_id?: string | null }>).forEach((row) => {
+      const id = normalizeText(row.patrol_id);
+      if (id) {
+        lockedIds.add(id);
+      }
+    });
+    ((passagesRes.data ?? []) as Array<{ patrol_id?: string | null }>).forEach((row) => {
+      const id = normalizeText(row.patrol_id);
+      if (id) {
+        lockedIds.add(id);
+      }
+    });
+    ((timingsRes.data ?? []) as Array<{ patrol_id?: string | null }>).forEach((row) => {
+      const id = normalizeText(row.patrol_id);
+      if (id) {
+        lockedIds.add(id);
+      }
+    });
+
+    const deletableIds = candidateIds.filter((id) => !lockedIds.has(id));
+    if (deletableIds.length === 0) {
+      return res.status(200).json({
+        ok: true,
+        deleted: 0,
+        skipped: candidateIds.length,
+      });
+    }
+
+    const { error: deleteError } = await supabaseAdmin
+      .from('patrols')
+      .delete()
+      .eq('event_id', targetEventId)
+      .in('id', deletableIds);
+
+    if (deleteError) {
+      return respond(res, 500, 'Failed to delete incomplete patrols', deleteError.message);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      deleted: deletableIds.length,
+      skipped: candidateIds.length - deletableIds.length,
+    });
+  }
+
+  if (action === 'create_patrols') {
+    const targetEventId = normalizeText(payload.event_id);
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'Missing event_id.' });
+    }
+
+    const rawCounts =
+      payload.counts && typeof payload.counts === 'object' ? (payload.counts as Record<string, unknown>) : {};
+    const rawStarts =
+      payload.start_numbers && typeof payload.start_numbers === 'object'
+        ? (payload.start_numbers as Record<string, unknown>)
+        : {};
+
+    const rows: Array<{
+      event_id: string;
+      team_name: string;
+      category: string;
+      sex: string;
+      patrol_code: string;
+      note: string | null;
+      active: boolean;
+      disqualified: boolean;
+    }> = [];
+
+    for (const bracketKey of STATION_CATEGORY_KEYS) {
+      const count = Math.min(toNonNegativeInt(rawCounts[bracketKey], 0), MAX_PATROLS_PER_CATEGORY);
+      const start = Math.max(1, toNonNegativeInt(rawStarts[bracketKey], 1));
+      const { category, sex } = mapPatrolCategoryKey(bracketKey);
+      for (let i = 0; i < count; i += 1) {
+        const number = start + i;
+        const code = `${bracketKey}-${number}`;
+        rows.push({
+          event_id: targetEventId,
+          team_name: `Hlídka ${code}`,
+          category,
+          sex,
+          patrol_code: code,
+          note: null,
+          active: true,
+          disqualified: false,
+        });
+      }
+    }
+
+    if (rows.length === 0) {
+      return res.status(400).json({ error: 'No patrols requested.' });
+    }
+
+    const requestedCategoryNumbers = new Set<string>();
+    const duplicateCategoryNumbers: string[] = [];
+    rows.forEach((row) => {
+      const parsed = parsePatrolCategoryNumber(row.patrol_code, row.category);
+      if (!parsed) {
+        return;
+      }
+      const key = `${parsed.category}-${parsed.number}`;
+      if (requestedCategoryNumbers.has(key)) {
+        duplicateCategoryNumbers.push(key);
+        return;
+      }
+      requestedCategoryNumbers.add(key);
+    });
+
+    if (duplicateCategoryNumbers.length > 0) {
+      const sample = Array.from(new Set(duplicateCategoryNumbers)).slice(0, 12);
+      return res.status(409).json({
+        error: `Duplicate patrol numbers across H/D in same category are not allowed (e.g. ${sample.join(', ')}).`,
+      });
+    }
+
+    if (requestedCategoryNumbers.size > 0) {
+      const { data: existingPatrols, error: existingPatrolsError } = await supabaseAdmin
+        .from('patrols')
+        .select('patrol_code, category, active')
+        .eq('event_id', targetEventId);
+
+      if (existingPatrolsError) {
+        return respond(res, 500, 'Failed to validate category patrol numbers', existingPatrolsError.message);
+      }
+
+      const overlappingCategoryNumbers: string[] = [];
+      ((existingPatrols ?? []) as Array<{
+        patrol_code?: string | null;
+        category?: string | null;
+        active?: boolean | null;
+      }>).forEach((row) => {
+        if (row.active === false) {
+          return;
+        }
+        const parsed = parsePatrolCategoryNumber(row.patrol_code, row.category);
+        if (!parsed) {
+          return;
+        }
+        const key = `${parsed.category}-${parsed.number}`;
+        if (requestedCategoryNumbers.has(key)) {
+          overlappingCategoryNumbers.push(key);
+        }
+      });
+
+      if (overlappingCategoryNumbers.length > 0) {
+        const sample = Array.from(new Set(overlappingCategoryNumbers)).slice(0, 12);
+        return res.status(409).json({
+          error: `Patrol numbers already exist in selected categories (e.g. ${sample.join(', ')}).`,
+        });
+      }
+    }
+
+    const duplicateCodes: string[] = [];
+    const codeList = rows.map((row) => row.patrol_code);
+    const chunkSize = 400;
+    for (let offset = 0; offset < codeList.length; offset += chunkSize) {
+      const slice = codeList.slice(offset, offset + chunkSize);
+      const { data, error } = await supabaseAdmin
+        .from('patrols')
+        .select('patrol_code')
+        .eq('event_id', targetEventId)
+        .in('patrol_code', slice);
+      if (error) {
+        return respond(res, 500, 'Failed to check existing patrol codes', error.message);
+      }
+      (data ?? []).forEach((row: { patrol_code?: string | null }) => {
+        const code = normalizeStationCode(row.patrol_code);
+        if (code) {
+          duplicateCodes.push(code);
+        }
+      });
+    }
+
+    if (duplicateCodes.length > 0) {
+      const sample = Array.from(new Set(duplicateCodes)).slice(0, 12);
+      return res.status(409).json({
+        error: `Patrol codes already exist in this event (e.g. ${sample.join(', ')}).`,
+      });
+    }
+
+    const { error: insertError } = await supabaseAdmin.from('patrols').insert(rows);
+    if (insertError) {
+      return respond(res, 500, 'Failed to create patrols', insertError.message);
+    }
+
+    return res.status(200).json({ ok: true, created: rows.length });
+  }
+
+  if (action === 'clear_event_points') {
+    const targetEventId = normalizeText(payload.event_id);
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'Missing event_id.' });
+    }
+
+    const tables = ['station_quiz_responses', 'station_scores', 'station_passages', 'timings'];
+    for (const table of tables) {
+      const { error } = await supabaseAdmin.from(table).delete().eq('event_id', targetEventId);
+      if (error) {
+        return respond(res, 500, 'Failed to clear event points', `${table}: ${error.message}`);
+      }
+    }
+
+    return res.status(200).json({ ok: true });
+  }
+
+  return res.status(400).json({ error: `Unsupported action "${action}".` });
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
@@ -229,6 +1144,12 @@ export default async function handler(req: any, res: any) {
 
   const { supabaseAdmin, eventId } = session;
 
+  const setupMode = req.query?.setup === '1' || req.query?.setup === 'true';
+
+  if (req.method === 'GET' && setupMode) {
+    return loadSetupData(supabaseAdmin, eventId, res);
+  }
+
   if (req.method === 'POST') {
     let rawBody: unknown = req.body;
     if (typeof rawBody === 'string') {
@@ -239,7 +1160,13 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const locked = (rawBody as { locked?: unknown })?.locked;
+    const payload = (rawBody && typeof rawBody === 'object' ? rawBody : {}) as Record<string, unknown>;
+
+    if (setupMode || normalizeText(payload.action)) {
+      return handleSetupAction(supabaseAdmin, eventId, payload, res);
+    }
+
+    const locked = payload.locked;
     if (!isBoolean(locked)) {
       return res.status(400).json({ error: 'Invalid payload' });
     }
