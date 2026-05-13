@@ -901,12 +901,34 @@ async function handleAdminArticle(req: any, res: any, id: string) {
       typeof payload.status === 'string' && ['draft', 'published'].includes(payload.status)
         ? payload.status
         : undefined;
-    const publishedAt =
-      status === 'published'
-        ? (typeof payload.published_at === 'string' ? payload.published_at : new Date().toISOString())
-        : status === 'draft'
-          ? null
-          : undefined;
+    let publishedAt: string | null | undefined = undefined;
+
+    if (status === 'draft') {
+      publishedAt = null;
+    } else if (status === 'published') {
+      if (typeof payload.published_at === 'string' && payload.published_at.trim().length > 0) {
+        publishedAt = payload.published_at;
+      } else {
+        const { data: existingArticle, error: existingArticleError } = await supabase
+          .from('content_articles')
+          .select('status,published_at')
+          .eq('id', id)
+          .maybeSingle();
+        if (existingArticleError) {
+          res.status(500).json({ error: 'Failed to load existing article state.' });
+          return;
+        }
+        if (!existingArticle) {
+          res.status(404).json({ error: 'Article not found.' });
+          return;
+        }
+        const existingStatus = (existingArticle as { status?: string | null }).status ?? null;
+        const existingPublishedAt = (existingArticle as { published_at?: string | null }).published_at ?? null;
+        if (!(existingStatus === 'published' && existingPublishedAt)) {
+          publishedAt = new Date().toISOString();
+        }
+      }
+    }
 
     const update: Record<string, unknown> = {};
     if (typeof payload.slug === 'string') update.slug = payload.slug.trim();
