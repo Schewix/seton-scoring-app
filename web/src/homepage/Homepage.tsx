@@ -222,7 +222,26 @@ const LEAGUE_TROOPS = [
   { id: '172-pegas', name: '172. PTO Pegas' },
   { id: 'zabky-jedovnice', name: 'PTO Žabky Jedovnice' },
 ] as const;
-const AFTERPARTY_TROOP_OPTIONS = LEAGUE_TROOPS.map((troop) => troop.name);
+const AFTERPARTY_TROOP_OPTIONS = LEAGUE_TROOPS.map((troop) => troop.name).sort((a, b) => {
+  const aMatch = a.match(/^(\d+)\./);
+  const bMatch = b.match(/^(\d+)\./);
+  const aNumber = aMatch ? Number.parseInt(aMatch[1], 10) : null;
+  const bNumber = bMatch ? Number.parseInt(bMatch[1], 10) : null;
+
+  if (aNumber !== null && bNumber !== null) {
+    if (aNumber !== bNumber) {
+      return aNumber - bNumber;
+    }
+    return a.localeCompare(b, 'cs', { sensitivity: 'base' });
+  }
+  if (aNumber !== null) {
+    return -1;
+  }
+  if (bNumber !== null) {
+    return 1;
+  }
+  return a.localeCompare(b, 'cs', { sensitivity: 'base' });
+});
 
 const CURRENT_LEAGUE_SCORES: Record<string, Partial<Record<LeagueEvent, number>>> = {
   '63-phoenix': { 'pto-ob': 106 },
