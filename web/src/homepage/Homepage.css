@@ -1805,6 +1805,69 @@
   resize: vertical;
 }
 
+.editor-rich-toolbar {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.editor-rich-toolbar button,
+.editor-rich-toolbar select {
+  border: 1px solid rgba(4, 55, 44, 0.2);
+  border-radius: 10px;
+  background: #fff;
+  color: #04372c;
+  font: inherit;
+  padding: 7px 10px;
+}
+
+.editor-rich-toolbar button {
+  cursor: pointer;
+  min-width: 38px;
+}
+
+.editor-rich-input {
+  margin-top: 8px;
+  min-height: 280px;
+  border: 1px solid rgba(4, 55, 44, 0.16);
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px;
+  line-height: 1.55;
+  overflow-y: auto;
+}
+
+.editor-rich-input:focus {
+  outline: 2px solid rgba(12, 124, 90, 0.35);
+  outline-offset: 1px;
+}
+
+.editor-rich-input:empty::before {
+  content: attr(data-placeholder);
+  color: rgba(4, 55, 44, 0.45);
+}
+
+.editor-rich-input figure {
+  margin: 14px 0;
+}
+
+.editor-rich-input img {
+  max-width: 100%;
+  border-radius: 10px;
+  display: block;
+}
+
+.editor-upload-field {
+  display: grid;
+  gap: 8px;
+}
+
+.editor-upload-field input[type='file'] {
+  margin-top: 0;
+  padding: 8px 10px;
+}
+
 .editor-form-actions {
   display: flex;
   align-items: center;
@@ -2619,6 +2682,7 @@
 }
 
 .homepage-afterparty-profile-form input,
+.homepage-afterparty-profile-form select,
 .homepage-afterparty-file-field input {
   border: 1px solid rgba(4, 55, 44, 0.22);
   border-radius: 10px;

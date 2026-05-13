@@ -1,5 +1,5 @@
 import './Homepage.css';
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { PortableText } from '@portabletext/react';
 import AppFooter from '../components/AppFooter';
 import logo from '../assets/znak_SPTO_transparent.png';
@@ -127,6 +127,15 @@ const LEAGUE_TOP_COUNT = 7;
 const AFTERPARTY_STORAGE_KEY = 'zl-afterparty-counter-v2';
 const AFTERPARTY_PARTICIPANT_STORAGE_KEY = 'zl-afterparty-participant-v1';
 const AFTERPARTY_RECEIPTS_BUCKET = 'afterparty-receipts';
+const CONTENT_ARTICLE_IMAGES_BUCKET = 'content-article-images';
+const CONTENT_ARTICLE_ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
+const CONTENT_ARTICLE_FONT_SIZE_OPTIONS = [
+  { value: '2', label: '12 px' },
+  { value: '3', label: '16 px' },
+  { value: '4', label: '20 px' },
+  { value: '5', label: '24 px' },
+  { value: '6', label: '32 px' },
+] as const;
 const AFTERPARTY_TRIGGER_CLICK_COUNT = 5;
 const AFTERPARTY_TRIGGER_WINDOW_MS = 2000;
 type PersonalDrinkKey = string;
@@ -213,6 +222,7 @@ const LEAGUE_TROOPS = [
   { id: '172-pegas', name: '172. PTO Pegas' },
   { id: 'zabky-jedovnice', name: 'PTO Žabky Jedovnice' },
 ] as const;
+const AFTERPARTY_TROOP_OPTIONS = LEAGUE_TROOPS.map((troop) => troop.name);
 
 const CURRENT_LEAGUE_SCORES: Record<string, Partial<Record<LeagueEvent, number>>> = {
   '63-phoenix': { 'pto-ob': 106 },
@@ -623,6 +633,28 @@ function slugify(value: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function normalizeEditorBodyHtml(value: string): string {
+  const normalized = value
+    .replace(/<p><br><\/p>/gi, '')
+    .replace(/<div><br><\/div>/gi, '')
+    .replace(/&nbsp;/gi, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+  if (!normalized || normalized === '<br>') {
+    return '';
+  }
+  return value;
 }
 
 function formatRuleLabel(filename: string): string {
@@ -1275,6 +1307,14 @@ type EditorFormState = {
   status: 'draft' | 'published';
 };
 
+type EditorSignedImageUpload = {
+  fileName: string;
+  contentType: string;
+  path: string;
+  token: string;
+  publicUrl: string;
+};
+
 const EMPTY_EDITOR_FORM: EditorFormState = {
   title: '',
   slug: '',
@@ -1302,6 +1342,9 @@ function RedakcePage() {
   const [albumTitleMessage, setAlbumTitleMessage] = useState<string | null>(null);
   const [albumTitleLoading, setAlbumTitleLoading] = useState(false);
   const [albumTitleSaving, setAlbumTitleSaving] = useState(false);
+  const [articleUploadMessage, setArticleUploadMessage] = useState<string | null>(null);
+  const [articleUploadSaving, setArticleUploadSaving] = useState(false);
+  const bodyEditorRef = useRef<HTMLDivElement | null>(null);
 
   const loadArticles = () =>
     fetch('/api/content/admin/articles', { credentials: 'include' })
@@ -1364,6 +1407,174 @@ function RedakcePage() {
       });
   };
 
+  const syncBodyFromEditor = useCallback(() => {
+    const html = bodyEditorRef.current?.innerHTML ?? '';
+    const normalizedHtml = normalizeEditorBodyHtml(html);
+    setForm((prev) => (prev.body === normalizedHtml ? prev : { ...prev, body: normalizedHtml }));
+  }, []);
+
+  const applyBodyToEditor = useCallback((value: string) => {
+    const editor = bodyEditorRef.current;
+    if (!editor) {
+      return;
+    }
+    const next = value || '';
+    if (/<[a-z][\s\S]*>/i.test(next)) {
+      if (editor.innerHTML !== next) {
+        editor.innerHTML = next;
+      }
+      return;
+    }
+    if (editor.textContent !== next) {
+      editor.textContent = next;
+    }
+  }, []);
+
+  const runBodyCommand = useCallback(
+    (command: string, value?: string) => {
+      const editor = bodyEditorRef.current;
+      if (!editor) {
+        return;
+      }
+      editor.focus();
+      try {
+        document.execCommand('styleWithCSS', false, 'true');
+      } catch {
+        // Some browsers can reject styleWithCSS; commands still work without it.
+      }
+      document.execCommand(command, false, value);
+      syncBodyFromEditor();
+    },
+    [syncBodyFromEditor],
+  );
+
+  const handleBodyInput = () => {
+    syncBodyFromEditor();
+  };
+
+  const handleInsertLink = () => {
+    const editor = bodyEditorRef.current;
+    if (!editor) {
+      return;
+    }
+    const selectionText = window.getSelection()?.toString().trim() ?? '';
+    if (!selectionText) {
+      setArticleUploadMessage('Nejdřív označ text, na který chceš vložit odkaz.');
+      return;
+    }
+    const rawUrl = window.prompt('Zadej URL odkazu (https://...)');
+    if (!rawUrl) {
+      return;
+    }
+    const normalizedUrl = rawUrl.trim();
+    if (!/^https?:\/\//i.test(normalizedUrl)) {
+      setArticleUploadMessage('Odkaz musí začínat na http:// nebo https://');
+      return;
+    }
+    setArticleUploadMessage(null);
+    runBodyCommand('createLink', normalizedUrl);
+  };
+
+  const handleBodyFontSizeChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const value = event.target.value.trim();
+    if (!value) {
+      return;
+    }
+    runBodyCommand('fontSize', value);
+    event.target.value = '';
+  };
+
+  const handleArticleImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) {
+      return;
+    }
+    setArticleUploadMessage(null);
+    const invalid = files.find(
+      (file) => !CONTENT_ARTICLE_ALLOWED_IMAGE_TYPES.includes(file.type as (typeof CONTENT_ARTICLE_ALLOWED_IMAGE_TYPES)[number]),
+    );
+    if (invalid) {
+      setArticleUploadMessage(`Soubor ${invalid.name} není podporovaný obrázek.`);
+      event.target.value = '';
+      return;
+    }
+
+    setArticleUploadSaving(true);
+    try {
+      const response = await fetch('/api/content/admin/article-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          files: files.map((file) => ({
+            name: file.name,
+            type: file.type,
+            size: file.size,
+          })),
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        uploads?: EditorSignedImageUpload[];
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || 'Nepodařilo se připravit upload obrázků.');
+      }
+
+      const uploads = Array.isArray(payload.uploads) ? payload.uploads : [];
+      if (uploads.length !== files.length) {
+        throw new Error('Server vrátil nekompletní seznam uploadů.');
+      }
+
+      const insertedBlocks: string[] = [];
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        const uploadMeta = uploads[index];
+        const { error: uploadError } = await supabase.storage
+          .from(CONTENT_ARTICLE_IMAGES_BUCKET)
+          .uploadToSignedUrl(uploadMeta.path, uploadMeta.token, file, {
+            contentType: file.type || uploadMeta.contentType || undefined,
+            upsert: false,
+          });
+        if (uploadError) {
+          throw uploadError;
+        }
+        const alt = escapeHtml(file.name.replace(/\.[^.]+$/, '').trim());
+        insertedBlocks.push(`<figure><img src="${uploadMeta.publicUrl}" alt="${alt}" loading="lazy"></figure>`);
+      }
+
+      if (insertedBlocks.length > 0) {
+        const htmlToInsert = insertedBlocks.join('<p><br></p>');
+        if (bodyEditorRef.current) {
+          bodyEditorRef.current.focus();
+          document.execCommand('insertHTML', false, htmlToInsert);
+          syncBodyFromEditor();
+        } else {
+          setForm((prev) => {
+            const merged = [prev.body, htmlToInsert].filter(Boolean).join('\n');
+            return { ...prev, body: normalizeEditorBodyHtml(merged) };
+          });
+        }
+
+        if (!form.cover_image_url && uploads[0]?.publicUrl) {
+          setForm((prev) => ({
+            ...prev,
+            cover_image_url: prev.cover_image_url || uploads[0].publicUrl,
+            cover_image_alt: prev.cover_image_alt || files[0].name.replace(/\.[^.]+$/, '').trim(),
+          }));
+        }
+      }
+
+      setArticleUploadMessage(`Nahráno ${files.length} souborů.`);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Nepodařilo se nahrát obrázky.';
+      setArticleUploadMessage(detail);
+    } finally {
+      setArticleUploadSaving(false);
+      event.target.value = '';
+    }
+  };
+
   useEffect(() => {
     let active = true;
     fetch('/api/content/admin/session', { credentials: 'include' })
@@ -1385,6 +1596,10 @@ function RedakcePage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    applyBodyToEditor(form.body);
+  }, [applyBodyToEditor, form.body]);
 
   const handleLogin = (event: FormEvent) => {
     event.preventDefault();
@@ -1425,6 +1640,7 @@ function RedakcePage() {
       setAlbumTitleEdits({});
       setAlbumTitleOriginals({});
       setAlbumTitleMessage(null);
+      setArticleUploadMessage(null);
     });
   };
 
@@ -1441,21 +1657,27 @@ function RedakcePage() {
       status: article.status ?? 'draft',
     });
     setMessage(null);
+    setArticleUploadMessage(null);
   };
 
   const handleNew = () => {
     setActiveId(null);
     setForm(EMPTY_EDITOR_FORM);
     setMessage(null);
+    setArticleUploadMessage(null);
   };
 
   const handleSave = () => {
     setMessage(null);
+    const currentEditorBody = normalizeEditorBodyHtml(bodyEditorRef.current?.innerHTML ?? form.body);
+    if (currentEditorBody !== form.body) {
+      setForm((prev) => ({ ...prev, body: currentEditorBody }));
+    }
     const payload = {
       title: form.title.trim(),
       slug: form.slug.trim() || slugify(form.title),
       excerpt: form.excerpt,
-      body: form.body,
+      body: currentEditorBody,
       author: form.author,
       cover_image_url: form.cover_image_url,
       cover_image_alt: form.cover_image_alt,
@@ -1743,10 +1965,40 @@ function RedakcePage() {
                 </label>
                 <label>
                   Text článku
-                  <textarea
-                    value={form.body}
-                    onChange={(event) => updateField('body', event.target.value)}
-                    rows={12}
+                  <div className="editor-rich-toolbar" role="group" aria-label="Nástroje textu">
+                    <button type="button" onClick={() => runBodyCommand('bold')} title="Tučné písmo">
+                      <strong>B</strong>
+                    </button>
+                    <button type="button" onClick={() => runBodyCommand('italic')} title="Kurzíva">
+                      <em>I</em>
+                    </button>
+                    <button type="button" onClick={() => runBodyCommand('underline')} title="Podtržené písmo">
+                      <span style={{ textDecoration: 'underline' }}>U</span>
+                    </button>
+                    <button type="button" onClick={handleInsertLink} title="Vložit odkaz">
+                      Odkaz
+                    </button>
+                    <select defaultValue="" onChange={handleBodyFontSizeChange} title="Velikost písma">
+                      <option value="" disabled>
+                        Velikost písma
+                      </option>
+                      {CONTENT_ARTICLE_FONT_SIZE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div
+                    ref={bodyEditorRef}
+                    className="editor-rich-input"
+                    contentEditable
+                    suppressContentEditableWarning
+                    role="textbox"
+                    aria-label="Text článku"
+                    aria-multiline="true"
+                    data-placeholder="Napiš text článku…"
+                    onInput={handleBodyInput}
                   />
                 </label>
                 <div className="editor-form-grid">
@@ -1767,6 +2019,17 @@ function RedakcePage() {
                     />
                   </label>
                 </div>
+                <label className="editor-upload-field">
+                  Fotky článku (můžeš vybrat více souborů)
+                  <input
+                    type="file"
+                    multiple
+                    accept={CONTENT_ARTICLE_ALLOWED_IMAGE_TYPES.join(',')}
+                    onChange={handleArticleImageUpload}
+                    disabled={articleUploadSaving}
+                  />
+                </label>
+                {articleUploadMessage ? <p className="homepage-alert">{articleUploadMessage}</p> : null}
                 <div className="editor-form-actions">
                   {message ? <p className="homepage-alert">{message}</p> : null}
                   <div className="editor-buttons">
@@ -2560,6 +2823,14 @@ function parseAfterpartyNonNegativeInt(value: unknown, fallback: number): number
   return fallback;
 }
 
+function normalizeAfterpartyTroopName(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+  return AFTERPARTY_TROOP_OPTIONS.some((option) => option === trimmed) ? trimmed : '';
+}
+
 function loadPersonalDrinkStateFromStorage(): PersonalDrinkStorageState {
   const defaults = createEmptyPersonalDrinkCounts();
   if (typeof window === 'undefined') {
@@ -2753,7 +3024,10 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
         if (data) {
           loadedParticipant = data as AfterpartyParticipant;
           setParticipant(loadedParticipant);
-          setProfileForm({ displayName: loadedParticipant.display_name, troopName: loadedParticipant.troop_name });
+          setProfileForm({
+            displayName: loadedParticipant.display_name,
+            troopName: normalizeAfterpartyTroopName(loadedParticipant.troop_name),
+          });
           setProfileEditing(false);
           await loadParticipantOrders(loadedParticipant.id);
         } else {
@@ -2878,7 +3152,10 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
       }
       const saved = result.data as AfterpartyParticipant;
       setParticipant(saved);
-      setProfileForm({ displayName: saved.display_name, troopName: saved.troop_name });
+      setProfileForm({
+        displayName: saved.display_name,
+        troopName: normalizeAfterpartyTroopName(saved.troop_name),
+      });
       setProfileEditing(false);
       window.localStorage.setItem(AFTERPARTY_PARTICIPANT_STORAGE_KEY, saved.id);
       setAfterpartySuccess('Profil je uložený.');
@@ -3055,12 +3332,17 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
               </label>
               <label>
                 <span>Oddíl</span>
-                <input
-                  type="text"
+                <select
                   value={profileForm.troopName}
-                  maxLength={120}
                   onChange={(event) => setProfileForm((prev) => ({ ...prev, troopName: event.target.value }))}
-                />
+                >
+                  <option value="">Vyber oddíl</option>
+                  {AFTERPARTY_TROOP_OPTIONS.map((troopName) => (
+                    <option key={troopName} value={troopName}>
+                      {troopName}
+                    </option>
+                  ))}
+                </select>
               </label>
               <button type="submit" className="homepage-afterparty-add-order" disabled={profileSaving}>
                 {profileSaving ? 'Ukládám…' : 'Uložit profil'}
