@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ChangePasswordScreen from '../auth/ChangePasswordScreen';
 import LoginScreen from '../auth/LoginScreen';
 import { useAuth } from '../auth/context';
@@ -47,6 +47,13 @@ function formatMinutes(value: number | null) {
     return '—';
   }
   return `${value.toFixed(1).replace('.', ',')} min`;
+}
+
+function formatRoundedMinutes(value: number | null | undefined) {
+  if (!Number.isFinite(value ?? Number.NaN)) {
+    return '—';
+  }
+  return `${Math.max(0, Math.round(Number(value)))} min`;
 }
 
 function clampPercent(value: number) {
@@ -105,6 +112,10 @@ function LiveMapDashboard({
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(true);
+  const [isRealtimePulseVisible, setIsRealtimePulseVisible] = useState(false);
+  const hasInitializedSyncPulseRef = useRef(false);
 
   const loadData = useCallback(async () => {
     setError(null);
@@ -200,6 +211,50 @@ function LiveMapDashboard({
     }
     setSelectedStationId(ordered[0].id);
   }, [selectedStationId, stations]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const mediaQuery = window.matchMedia('(max-width: 1020px)');
+    const applyLayoutMode = () => {
+      if (mediaQuery.matches) {
+        setIsDetailOpen(false);
+      } else {
+        setIsDetailOpen(true);
+      }
+    };
+    applyLayoutMode();
+    const listener = () => applyLayoutMode();
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', listener);
+      return () => mediaQuery.removeEventListener('change', listener);
+    }
+    mediaQuery.addListener(listener);
+    return () => mediaQuery.removeListener(listener);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedStationId || typeof window === 'undefined') {
+      return;
+    }
+    if (window.matchMedia('(max-width: 1020px)').matches) {
+      setIsDetailOpen(true);
+    }
+  }, [selectedStationId]);
+
+  useEffect(() => {
+    if (!lastSyncAt) {
+      return;
+    }
+    if (!hasInitializedSyncPulseRef.current) {
+      hasInitializedSyncPulseRef.current = true;
+      return;
+    }
+    setIsRealtimePulseVisible(true);
+    const timeout = window.setTimeout(() => setIsRealtimePulseVisible(false), 900);
+    return () => window.clearTimeout(timeout);
+  }, [lastSyncAt]);
 
   useEffect(() => {
     const channel = supabase
@@ -352,6 +407,9 @@ function LiveMapDashboard({
   const mapReady = Boolean(eventMap?.image_url);
   const stationsWithPosition = stationSummaries.filter((summary) => Boolean(summary.position));
   const stationsMissingPosition = stationSummaries.filter((summary) => !summary.position);
+  const waitingCount = liveStates.onCourse.filter((state) => state.status === 'ceka').length;
+  const servingCount = liveStates.onCourse.filter((state) => state.status === 'plni').length;
+  const detailToggleLabel = isDetailOpen ? 'Skrýt detail' : 'Detail stanoviště';
 
   const refreshData = useCallback(async () => {
     setRefreshing(true);
@@ -371,72 +429,83 @@ function LiveMapDashboard({
   }
 
   return (
-    <div className="live-map-shell">
-      <header className="live-map-header">
-        <div className="live-map-header-inner">
-          <div>
+    <div className={`live-map-shell ${isMapFullscreen ? 'live-map-shell--map-fullscreen' : ''}`}>
+      <header className={`live-map-hud ${isRealtimePulseVisible ? 'live-map-hud--pulse' : ''}`}>
+        <div className="live-map-hud-main">
+          <div className="live-map-title-wrap">
             <h1>Živá mapa průchodů</h1>
             <p>
               {eventName} · Interní dispečink výpočetky
             </p>
           </div>
-          <div className="live-map-header-actions">
-            <a className="live-map-button live-map-button--secondary" href={MAP_ADMIN_ROUTE}>
-              Editor mapy
-            </a>
-            <button
-              type="button"
-              className="live-map-button live-map-button--secondary"
-              onClick={() => void refreshData()}
-              disabled={refreshing}
-            >
-              {refreshing ? 'Obnovuji…' : 'Obnovit data'}
-            </button>
-            <button type="button" className="live-map-button live-map-button--secondary" onClick={() => logout()}>
-              Odhlásit se
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="live-map-content">
-        <section className="live-map-card live-map-card--metrics">
-          <div className="live-map-metrics">
-            <article>
-              <span>Na trase</span>
-              <strong>{liveStates.onCourse.length}</strong>
-            </article>
-            <article>
-              <span>Čeká</span>
-              <strong>{liveStates.onCourse.filter((state) => state.status === 'ceka').length}</strong>
-            </article>
-            <article>
-              <span>Plní</span>
-              <strong>{liveStates.onCourse.filter((state) => state.status === 'plni').length}</strong>
-            </article>
-            <article>
-              <span>Doběhly</span>
-              <strong>{liveStates.finished.length}</strong>
-            </article>
-            <article>
-              <span>Nestartovaly</span>
-              <strong>{liveStates.notStarted.length}</strong>
-            </article>
-          </div>
-          <div className="live-map-status-row">
+          <div className="live-map-hud-statuses">
             <span className={`live-map-badge ${realtimeConnected ? 'live-map-badge--ok' : 'live-map-badge--warn'}`}>
               {realtimeConnected ? 'Realtime připojeno' : 'Realtime odpojeno'}
             </span>
-            <span className="live-map-badge live-map-badge--neutral">Poslední sync: {formatDateTime(lastSyncAt)}</span>
+            <span className="live-map-badge live-map-badge--neutral">Sync: {formatDateTime(lastSyncAt)}</span>
           </div>
-          {error ? <p className="live-map-error">{error}</p> : null}
-        </section>
+        </div>
+        <div className="live-map-hud-stats">
+          <article className="live-map-stat-pill">
+            <span>Na trase</span>
+            <strong>{liveStates.onCourse.length}</strong>
+          </article>
+          <article className="live-map-stat-pill">
+            <span>Čeká</span>
+            <strong>{waitingCount}</strong>
+          </article>
+          <article className="live-map-stat-pill">
+            <span>Plní</span>
+            <strong>{servingCount}</strong>
+          </article>
+          <article className="live-map-stat-pill">
+            <span>Doběhly</span>
+            <strong>{liveStates.finished.length}</strong>
+          </article>
+          <article className="live-map-stat-pill">
+            <span>Nestart</span>
+            <strong>{liveStates.notStarted.length}</strong>
+          </article>
+        </div>
+        <div className="live-map-hud-actions">
+          <a className="live-map-button live-map-button--secondary" href={MAP_ADMIN_ROUTE}>
+            Editor mapy
+          </a>
+          <button
+            type="button"
+            className="live-map-button live-map-button--secondary"
+            onClick={() => void refreshData()}
+            disabled={refreshing}
+          >
+            {refreshing ? 'Obnovuji…' : 'Obnovit'}
+          </button>
+          <button
+            type="button"
+            className="live-map-button live-map-button--secondary"
+            onClick={() => setIsDetailOpen((current) => !current)}
+          >
+            {detailToggleLabel}
+          </button>
+          <button
+            type="button"
+            className="live-map-button live-map-button--secondary"
+            onClick={() => setIsMapFullscreen((current) => !current)}
+          >
+            {isMapFullscreen ? 'Konec fullscreen' : 'Fullscreen mapy'}
+          </button>
+          <button type="button" className="live-map-button live-map-button--secondary" onClick={() => logout()}>
+            Odhlásit se
+          </button>
+        </div>
+      </header>
 
-        <section className="live-map-grid">
-          <article className="live-map-card live-map-card--map">
-            <header className="live-map-section-header">
+      <main className="live-map-main">
+        {error ? <p className="live-map-error">{error}</p> : null}
+        <section className="live-map-stage">
+          <article className="live-map-map-wrap">
+            <header className="live-map-map-head">
               <h2>Mapa závodu</h2>
-              <p>Klikni na stanoviště pro detail fronty a průchodů.</p>
+              <p>Klikni na stanoviště pro živý detail fronty a průchodů.</p>
             </header>
 
             {mapReady ? (
@@ -465,8 +534,8 @@ function LiveMapDashboard({
                     >
                       <span className="live-map-marker-code">{summary.station.code}</span>
                       <span className="live-map-marker-badges">
-                        <span>{summary.servingCount}</span>
-                        <span>{summary.waitingCount}</span>
+                        <span><small>P</small>{summary.servingCount}</span>
+                        <span><small>Č</small>{summary.waitingCount}</span>
                       </span>
                     </button>
                   );
@@ -479,20 +548,30 @@ function LiveMapDashboard({
               </div>
             )}
 
-            <div className="live-map-legend">
-              <span><i className="live-map-dot live-map-dot--ok" /> Bez fronty</span>
-              <span><i className="live-map-dot live-map-dot--warn" /> 1–2 čekající</span>
-              <span><i className="live-map-dot live-map-dot--critical" /> 3+ čekajících</span>
+            <div className="live-map-map-foot">
+              <div className="live-map-legend">
+                <span><i className="live-map-dot live-map-dot--ok" /> Bez fronty</span>
+                <span><i className="live-map-dot live-map-dot--warn" /> 1–2 čekající</span>
+                <span><i className="live-map-dot live-map-dot--critical" /> 3+ čekajících</span>
+              </div>
+              {stationsMissingPosition.length > 0 ? (
+                <p className="live-map-note">
+                  Bez pozice: {stationsMissingPosition.map((item) => item.station.code).join(', ')}
+                </p>
+              ) : null}
             </div>
-
-            {stationsMissingPosition.length > 0 ? (
-              <p className="live-map-note">
-                Bez pozice: {stationsMissingPosition.map((item) => item.station.code).join(', ')}
-              </p>
-            ) : null}
           </article>
 
-          <aside className="live-map-card live-map-card--detail">
+          <aside className={`live-map-detail-panel ${isDetailOpen ? 'is-open' : ''}`}>
+            <div className="live-map-detail-handle">
+              <button
+                type="button"
+                className="live-map-detail-toggle"
+                onClick={() => setIsDetailOpen((current) => !current)}
+              >
+                {isDetailOpen ? 'Skrýt panel' : 'Zobrazit detail'}
+              </button>
+            </div>
             <header className="live-map-section-header">
               <h2>Detail stanoviště</h2>
               <p>{selectedSummary ? `${selectedSummary.station.code} · ${selectedSummary.station.name}` : 'Vyber stanoviště na mapě.'}</p>
@@ -520,15 +599,16 @@ function LiveMapDashboard({
                 </div>
 
                 <div className="live-map-detail-group">
-                  <h3>Aktuálně plní</h3>
+                  <h3>Právě plní</h3>
                   {selectedSummary.servingPatrols.length === 0 ? (
                     <p>Žádná hlídka.</p>
                   ) : (
-                    <ul>
+                    <ul className="live-map-chip-list">
                       {selectedSummary.servingPatrols.map((state) => (
                         <li key={`serving-${state.patrol.id}`}>
                           <strong>{formatPatrolLabel(state.patrol)}</strong>
                           <span>{state.patrol.team_name || 'Bez názvu'}</span>
+                          <em>plnění · čekání {formatRoundedMinutes(state.waitMinutes)}</em>
                         </li>
                       ))}
                     </ul>
@@ -540,11 +620,12 @@ function LiveMapDashboard({
                   {selectedSummary.waitingPatrols.length === 0 ? (
                     <p>Žádná hlídka.</p>
                   ) : (
-                    <ul>
+                    <ul className="live-map-chip-list">
                       {selectedSummary.waitingPatrols.map((state) => (
                         <li key={`waiting-${state.patrol.id}`}>
                           <strong>{formatPatrolLabel(state.patrol)}</strong>
                           <span>{state.patrol.team_name || 'Bez názvu'}</span>
+                          <em>čekání {formatRoundedMinutes(state.waitMinutes)}</em>
                         </li>
                       ))}
                     </ul>
@@ -556,12 +637,12 @@ function LiveMapDashboard({
                   {selectedSummary.recentPassages.length === 0 ? (
                     <p>Zatím žádné průchody.</p>
                   ) : (
-                    <ul>
+                    <ul className="live-map-chip-list">
                       {selectedSummary.recentPassages.map((passage) => (
                         <li key={passage.id}>
                           <strong>{passage.patrolCode}</strong>
                           <span>{formatDateTime(passage.arrivedAt)}</span>
-                          <span>Čekání: {passage.waitMinutes} min</span>
+                          <em>čekání {formatRoundedMinutes(passage.waitMinutes)}</em>
                         </li>
                       ))}
                     </ul>
@@ -574,7 +655,6 @@ function LiveMapDashboard({
           </aside>
         </section>
       </main>
-
       <AppFooter variant="minimal" />
     </div>
   );
