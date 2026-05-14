@@ -32,7 +32,6 @@ export const ADMIN_SECTION_ITEMS: ReadonlyArray<AdminSectionItem> = [
   { key: 'live', label: 'Live' },
   { key: 'queues', label: 'Fronty' },
   { key: 'patrols', label: 'Hlídky' },
-  { key: 'starts', label: 'Starty' },
   { key: 'stations', label: 'Stanoviště' },
   { key: 'results', label: 'Výsledky' },
   { key: 'stats', label: 'Statistiky' },

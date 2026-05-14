@@ -27,6 +27,7 @@ import {
 import { normalisePatrolCode } from '../components/PatrolCodeInput';
 import AdminLoginScreen from './AdminLoginScreen';
 import {
+  ADMIN_SECTION_ITEMS,
   EMPTY_RACE_DASHBOARD_SUMMARY,
   toAdminSectionId,
   type AdminSectionKey,
@@ -36,6 +37,7 @@ import AdminSectionNav from './components/AdminSectionNav';
 import {
   AdminDashboardSection,
   AdminExportsOverviewSection,
+  AdminLiveMapSection,
   AdminLiveOverviewSection,
   AdminPatrolsOverviewSection,
   AdminQueuesSection,
@@ -43,6 +45,10 @@ import {
   AdminStartsSection,
   AdminStatsSection,
 } from './components/AdminOverviewSections';
+import AdminStationHealthPanel, {
+  type AdminJudgeAssignmentSummary,
+  type AdminStationHealthCard,
+} from './components/AdminStationHealthPanel';
 
 const API_BASE_URL = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
 const SETUP_SELECTED_EVENT_STORAGE_KEY = 'admin.setup.selectedEventId';
@@ -136,6 +142,7 @@ type StationPassageRow = {
   stationId: string;
   stationCode: string;
   stationName: string;
+  lastPassageAt: string | null;
   categories: CategoryKey[];
   totals: Record<CategoryKey, number>;
   expectedTotals: Record<CategoryKey, number>;
@@ -229,6 +236,10 @@ type SetupEventScoringConfig = {
   timeLimitMinutes: Record<CategoryKey, number>;
   timePenaltyStepMinutes: number;
   participatingTroops: string[];
+};
+
+type SelectedSetupAssignmentSummary = AdminJudgeAssignmentSummary & {
+  createdAt: string;
 };
 
 const SETUP_CATEGORY_ORDER_DEFAULTS: Record<StationCategoryKey, readonly string[]> = {
@@ -1276,7 +1287,7 @@ function AdminDashboard({
         .order('code'),
       supabase
         .from('station_passages')
-        .select('station_id, patrol_id, patrols(category, sex)')
+        .select('station_id, patrol_id, arrived_at, left_at, client_created_at, patrols(category, sex)')
         .eq('event_id', eventId),
       supabase
         .from('patrols')
@@ -1352,6 +1363,7 @@ function AdminDashboard({
       stationId: string;
       stationCode: string;
       stationName: string;
+      lastPassageAt: string | null;
       totals: Record<CategoryKey, number>;
       passed: Record<CategoryKey, Set<string>>;
     };
@@ -1362,6 +1374,7 @@ function AdminDashboard({
         stationId: id,
         stationCode: station.code,
         stationName: station.name,
+        lastPassageAt: null,
         totals: createBaseCategoryRecord<number>(() => 0),
         passed: createBaseCategoryRecord<Set<string>>(() => new Set<string>()),
       });
@@ -1370,6 +1383,9 @@ function AdminDashboard({
     type PassageRow = {
       station_id: string;
       patrol_id: string;
+      arrived_at?: string | null;
+      left_at?: string | null;
+      client_created_at?: string | null;
       patrols?: { category?: string | null; sex?: string | null } | null;
     };
 
@@ -1382,6 +1398,16 @@ function AdminDashboard({
       if (!stationCategory) {
         return;
       }
+
+      const maybeLatest = normalizeText(row.left_at) || normalizeText(row.arrived_at) || normalizeText(row.client_created_at);
+      if (maybeLatest) {
+        const latestTs = Date.parse(maybeLatest);
+        const currentTs = Date.parse(station.lastPassageAt ?? '');
+        if (Number.isFinite(latestTs) && (!Number.isFinite(currentTs) || latestTs > currentTs)) {
+          station.lastPassageAt = maybeLatest;
+        }
+      }
+
       const baseCategory = stationCategory.slice(0, 1) as CategoryKey;
       station.totals[baseCategory] += 1;
       station.passed[baseCategory].add(row.patrol_id);
@@ -1422,6 +1448,7 @@ function AdminDashboard({
         stationId: station.stationId,
         stationCode: station.stationCode,
         stationName: station.stationName,
+        lastPassageAt: station.lastPassageAt,
         categories,
         totals: station.totals,
         expectedTotals,
@@ -1454,14 +1481,18 @@ function AdminDashboard({
     const finished = patrolsFinished.size;
     const waitingForStart = Math.max(0, registeredPatrols - patrolsSeen);
     const onCourse = Math.max(0, patrolsSeen - finished);
+    const syncConflicts = rows.filter((row) => row.totalExpected > 0 && row.totalPassed > row.totalExpected).length;
+    const problematicStations = rows.filter(
+      (row) => row.totalExpected > 0 && row.totalPassed === 0 && patrolsSeen > 0,
+    ).length;
     setRaceDashboardSummary({
       registeredPatrols,
       patrolsSeenOnCourse: patrolsSeen,
       patrolsOnCourse: onCourse,
       patrolsFinished: finished,
       patrolsWaitingForStart: waitingForStart,
-      problematicStations: 0,
-      syncConflicts: 0,
+      problematicStations,
+      syncConflicts,
       missingLongPatrols: 0,
       overdueNoFinishPatrols: 0,
       lastSyncAt: new Date().toISOString(),
@@ -1664,7 +1695,7 @@ function AdminDashboard({
     return merged;
   }, [setupEventScoringConfig.participatingTroops]);
 
-  const selectedSetupAssignments = useMemo(() => {
+  const selectedSetupAssignments = useMemo<SelectedSetupAssignmentSummary[]>(() => {
     const judgeById = new Map(setupJudges.map((judge) => [judge.id, judge]));
     const stationById = new Map(
       setupStations
@@ -1693,6 +1724,71 @@ function AdminDashboard({
       })
       .sort((a, b) => a.stationCode.localeCompare(b.stationCode, 'cs') || a.displayName.localeCompare(b.displayName, 'cs'));
   }, [selectedSetupEventId, setupAssignments, setupJudges, setupStations]);
+
+  const stationHealthCards = useMemo<AdminStationHealthCard[]>(() => {
+    const assignmentCountByStationCode = new Map<string, number>();
+    selectedSetupAssignments.forEach((assignment) => {
+      const key = normalizeText(assignment.stationCode).toUpperCase();
+      if (!key) {
+        return;
+      }
+      assignmentCountByStationCode.set(key, (assignmentCountByStationCode.get(key) ?? 0) + 1);
+    });
+
+    const rowByStationCode = new Map(
+      stationRows.map((row) => [normalizeText(row.stationCode).toUpperCase(), row] as const),
+    );
+
+    const baseStations = selectedSetupStations.length > 0
+      ? selectedSetupStations
+      : stationRows.map((row) => ({
+          id: row.stationId,
+          code: row.stationCode,
+          name: row.stationName,
+        }));
+
+    return baseStations.map((station) => {
+      const stationCode = normalizeText(station.code).toUpperCase();
+      const row = rowByStationCode.get(stationCode) ?? null;
+      const judgeCount = assignmentCountByStationCode.get(stationCode) ?? 0;
+      const passed = row?.totalPassed ?? 0;
+      const expected = row?.totalExpected ?? 0;
+      const missing = row?.totalMissing.length ?? 0;
+      const hasCourseData = raceDashboardSummary.patrolsSeenOnCourse > 0;
+
+      let status: AdminStationHealthCard['status'] = 'unknown';
+      let statusLabel = 'Bez dat';
+      if (row) {
+        if (expected > 0 && passed === 0 && hasCourseData) {
+          status = 'offline';
+          statusLabel = 'Podezření offline';
+        } else if (missing > 0) {
+          status = 'warning';
+          statusLabel = 'Vyžaduje kontrolu';
+        } else if (passed > 0 || expected === 0) {
+          status = 'online';
+          statusLabel = 'Aktivní';
+        } else {
+          status = 'unknown';
+          statusLabel = 'Bez průchodů';
+        }
+      }
+
+      return {
+        stationId: station.id,
+        stationCode,
+        stationName: normalizeText(station.name),
+        status,
+        statusLabel,
+        judgeCount,
+        queueLabel: 'TODO',
+        lastPassageAt: row?.lastPassageAt ?? null,
+        passed,
+        expected,
+        missing,
+      };
+    });
+  }, [raceDashboardSummary.patrolsSeenOnCourse, selectedSetupAssignments, selectedSetupStations, stationRows]);
 
   useEffect(() => {
     setSetupEventScoringConfig(normalizeSetupEventScoringConfig(selectedSetupEvent));
@@ -1745,6 +1841,58 @@ function AdminDashboard({
     window.requestAnimationFrame(() => {
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const sections = ADMIN_SECTION_ITEMS
+      .map((item) => ({
+        key: item.key,
+        element: document.getElementById(toAdminSectionId(item.key)),
+      }))
+      .filter((item): item is { key: AdminSectionKey; element: HTMLElement } => Boolean(item.element));
+
+    if (!sections.length) {
+      return;
+    }
+
+    let animationFrame = 0;
+    const updateActiveSection = () => {
+      animationFrame = 0;
+      const anchorLine = window.innerHeight * 0.25;
+      let nextActive = sections[0].key;
+
+      sections.forEach((section) => {
+        const rect = section.element.getBoundingClientRect();
+        if (rect.top <= anchorLine) {
+          nextActive = section.key;
+        }
+      });
+
+      setActiveAdminSection((previous) => (previous === nextActive ? previous : nextActive));
+    };
+
+    const handleScroll = () => {
+      if (animationFrame !== 0) {
+        return;
+      }
+      animationFrame = window.requestAnimationFrame(updateActiveSection);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll);
+    handleScroll();
+
+    return () => {
+      if (animationFrame !== 0) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+    };
   }, []);
 
   const handleLookupPatrol = useCallback(async () => {
@@ -3834,6 +3982,8 @@ function AdminDashboard({
           summary={raceDashboardSummary}
         />
 
+        <AdminLiveMapSection />
+
         <AdminQueuesSection />
 
         <AdminPatrolsOverviewSection onShowPreRaceSetup={() => setShowPreRaceSetup(true)} />
@@ -3887,6 +4037,11 @@ function AdminDashboard({
               </select>
             </label>
           </div>
+
+          <AdminStationHealthPanel
+            stationCards={stationHealthCards}
+            assignmentRows={selectedSetupAssignments}
+          />
 
           <div className="admin-setup-block">
             <h3>Nastavení výsledků a času</h3>
@@ -4226,37 +4381,6 @@ function AdminDashboard({
                 {setupSaving ? 'Ukládám…' : 'Vytvořit/Přiřadit rozhodčího'}
               </button>
             </div>
-            <div className="admin-table-wrapper">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Stanoviště</th>
-                    <th>Rozhodčí</th>
-                    <th>E-mail</th>
-                    <th>Kategorie</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedSetupAssignments.length === 0 ? (
-                    <tr>
-                      <td colSpan={4}>Pro vybraný ročník zatím nejsou žádná přiřazení.</td>
-                    </tr>
-                  ) : (
-                    selectedSetupAssignments.map((assignment) => (
-                      <tr key={assignment.id}>
-                        <td>
-                          {assignment.stationCode}
-                          {assignment.stationName ? ` – ${assignment.stationName}` : ''}
-                        </td>
-                        <td>{assignment.displayName || '—'}</td>
-                        <td>{assignment.email || '—'}</td>
-                        <td>{assignment.categories.length ? assignment.categories.join(', ') : '—'}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
           </div>
 
           <div className="admin-setup-block">
@@ -4520,6 +4644,16 @@ function AdminDashboard({
             </div>
           </header>
           {stationError ? <p className="admin-error">{stationError}</p> : null}
+          {raceDashboardSummary.problematicStations > 0 ? (
+            <p className="admin-error">
+              Některá stanoviště mohou být offline nebo bez průchodů v průběhu závodu.
+            </p>
+          ) : null}
+          {stationRows.some((row) => row.totalMissing.length > 0) ? (
+            <p className="admin-notice">
+              U některých stanovišť chybí průchody - zkontroluj chybějící hlídky kliknutím do tabulky.
+            </p>
+          ) : null}
           {stationRows.length === 0 && !stationLoading ? <p>Žádná data o průchodech stanovišť.</p> : null}
           {stationRows.length > 0 ? (
             <div className="admin-table-wrapper">

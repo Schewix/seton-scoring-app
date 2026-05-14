@@ -215,6 +215,27 @@
   scroll-margin-top: 96px;
 }
 
+.admin-card--dashboard-focus {
+  padding: 30px;
+  border-color: #c7e3b9;
+  box-shadow: 0 12px 28px rgba(31, 107, 59, 0.14);
+}
+
+.admin-card--live-focus {
+  border-color: #cce4f6;
+  box-shadow: 0 10px 24px rgba(25, 66, 112, 0.09);
+}
+
+.admin-card--results-focus {
+  border-color: #f0d66e;
+  box-shadow: 0 14px 30px rgba(98, 72, 0, 0.14);
+}
+
+.admin-card--low-priority {
+  border-color: #e6e6e6;
+  background: #fbfbfb;
+}
+
 .admin-section-block--dashboard {
   order: 1;
 }
@@ -255,8 +276,8 @@
 .admin-live-grid,
 .admin-placeholder-grid {
   display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
 .admin-dashboard-metric,
@@ -265,7 +286,7 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #ffffff;
-  padding: 12px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -281,9 +302,186 @@
 .admin-dashboard-metric strong,
 .admin-live-item strong,
 .admin-placeholder-item span {
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   font-weight: 700;
   color: var(--text);
+}
+
+.admin-dashboard-live-status {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.admin-dashboard-live-status-item {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-dashboard-live-status-item span {
+  font-size: 0.82rem;
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.admin-dashboard-live-status-item strong {
+  font-size: 1.05rem;
+}
+
+.admin-dashboard-live-status-item--ok {
+  border-left: 5px solid var(--zl-green);
+}
+
+.admin-dashboard-live-status-item--alert {
+  border-left: 5px solid var(--py-flame);
+  background: #fff7f2;
+}
+
+.admin-dashboard-live-status-item--pending {
+  border-left: 5px solid #d99f1f;
+  background: #fffaf0;
+}
+
+.admin-dashboard-metric--primary {
+  border-color: #d4e8c8;
+}
+
+.admin-dashboard-metric--highlight {
+  border-color: #84be64;
+  background: #f6fcf4;
+}
+
+.admin-dashboard-metric--warning {
+  border-left: 5px solid #e0a12f;
+}
+
+.admin-dashboard-metric--danger {
+  border-left: 5px solid var(--py-flame);
+  background: #fff7f3;
+}
+
+.admin-dashboard-metric--highlight strong,
+.admin-dashboard-metric--danger strong,
+.admin-dashboard-metric--warning strong {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.admin-live-status-panel {
+  border: 1px solid var(--border);
+  border-left: 5px solid #2f80ed;
+  border-radius: 14px;
+  background: #f7fbff;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-live-status-panel-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.admin-status-badge--online {
+  background: #edf9ee;
+  color: #1f6b3b;
+  border-color: #bee3c0;
+}
+
+.admin-status-badge--warning {
+  background: #fff8ea;
+  color: #9c6400;
+  border-color: #f0d6a4;
+}
+
+.admin-status-badge--offline {
+  background: #fff1ec;
+  color: #b23b14;
+  border-color: #f2b9a8;
+}
+
+.admin-status-badge--unknown {
+  background: #f3f6fa;
+  color: #425466;
+  border-color: #d6dee8;
+}
+
+.admin-live-status-alerts {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-live-item--primary {
+  border-color: #c7e3d3;
+}
+
+.admin-live-item--warning {
+  border-left: 5px solid #e0a12f;
+}
+
+.admin-live-item--danger {
+  border-left: 5px solid var(--py-flame);
+  background: #fff7f3;
+}
+
+.admin-live-map-placeholder {
+  display: grid;
+  grid-template-columns: minmax(260px, 2fr) minmax(220px, 1fr);
+  gap: 14px;
+}
+
+.admin-live-map-placeholder-canvas {
+  min-height: 220px;
+  border: 1px dashed #97c0dc;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(39, 129, 53, 0.16) 0, transparent 45%),
+    radial-gradient(circle at 72% 72%, rgba(240, 200, 20, 0.26) 0, transparent 48%),
+    linear-gradient(145deg, #f4fbff 0%, #edf4fb 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-live-map-placeholder-canvas span {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #3c5970;
+}
+
+.admin-live-map-placeholder-meta {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.admin-live-map-placeholder-meta p {
+  margin: 0;
+  color: var(--text-2);
 }
 
 .admin-dashboard-alerts {
@@ -338,6 +536,12 @@
 
 .admin-card-actions--end {
   justify-content: flex-end;
+}
+
+.admin-button--cta {
+  min-height: 50px;
+  padding: 0 24px;
+  font-size: 1rem;
 }
 
 .admin-disqualify-form {
@@ -539,6 +743,121 @@
   border-radius: 16px;
   border: 1px solid var(--border);
   background: var(--surface);
+}
+
+.admin-results-alerts {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-placeholder-item--warning {
+  border-left: 5px solid #d9a130;
+  background: #fffaf0;
+}
+
+.admin-placeholder-item--danger {
+  border-left: 5px solid var(--py-flame);
+  background: #fff4ee;
+}
+
+.admin-station-ops-layout {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1.2fr 1fr;
+}
+
+.admin-station-live-panel,
+.admin-judge-list-panel {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fafdf9;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-station-live-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.admin-station-live-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.admin-station-live-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-station-live-card--online {
+  border-left: 5px solid #2e8b3c;
+}
+
+.admin-station-live-card--warning {
+  border-left: 5px solid #db9f2f;
+  background: #fffdf7;
+}
+
+.admin-station-live-card--offline {
+  border-left: 5px solid #c54b21;
+  background: #fff4ef;
+}
+
+.admin-station-live-card--unknown {
+  border-left: 5px solid #8ca0b2;
+}
+
+.admin-station-live-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.admin-station-live-card-header strong {
+  display: block;
+  font-size: 1.05rem;
+}
+
+.admin-station-live-card-header span {
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+
+.admin-station-live-meta {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.admin-station-live-meta div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.admin-station-live-meta dt {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.admin-station-live-meta dd {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text);
 }
 
 .admin-disqualify-team {
@@ -946,6 +1265,10 @@
   .admin-content {
     max-width: none;
   }
+
+  .admin-station-ops-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
@@ -960,6 +1283,10 @@
 
   .admin-card {
     padding: 20px;
+  }
+
+  .admin-card--dashboard-focus {
+    padding: 22px;
   }
 
   .admin-card-header {
@@ -978,6 +1305,20 @@
   .admin-header-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .admin-live-map-placeholder {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-live-map-placeholder-canvas {
+    min-height: 180px;
+  }
+
+  .admin-dashboard-metric--highlight strong,
+  .admin-dashboard-metric--danger strong,
+  .admin-dashboard-metric--warning strong {
+    font-size: 1.65rem;
   }
 }
 
@@ -1004,8 +1345,8 @@
   .admin-button,
   .admin-header-actions .admin-button {
     width: 100%;
-    min-height: 44px;
-    font-size: 0.9rem;
+    min-height: 46px;
+    font-size: 0.95rem;
   }
 
   .admin-card-actions {
@@ -1075,6 +1416,23 @@
   .admin-table td {
     padding: 10px 12px;
     font-size: 0.85rem;
+  }
+
+  .admin-dashboard-live-status {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-live-status-panel-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-status-badge {
+    justify-content: flex-start;
+  }
+
+  .admin-station-live-grid {
+    grid-template-columns: 1fr;
   }
 
   .admin-station-label {

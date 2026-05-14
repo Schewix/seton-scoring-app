@@ -28,10 +28,16 @@ export function AdminDashboardSection({
   eventError,
   lockMessage,
 }: DashboardSectionProps) {
+  const syncState = summary.problematicStations > 0 || summary.syncConflicts > 0
+    ? 'alert'
+    : summary.lastSyncAt
+    ? 'ok'
+    : 'pending';
+
   return (
     <section
       id={toAdminSectionId('dashboard')}
-      className="admin-card admin-card--section admin-section-block admin-section-block--dashboard"
+      className="admin-card admin-card--section admin-card--dashboard-focus admin-section-block admin-section-block--dashboard"
     >
       <header className="admin-card-header">
         <div>
@@ -91,28 +97,52 @@ export function AdminDashboardSection({
           </button>
         </div>
       </header>
+      <div className="admin-dashboard-live-status">
+        <article className={`admin-dashboard-live-status-item admin-dashboard-live-status-item--${syncState}`}>
+          <span>Synchronizace</span>
+          <strong>
+            {syncState === 'ok'
+              ? 'Synchronizováno'
+              : syncState === 'alert'
+              ? 'Vyžaduje pozornost'
+              : 'Čeká na první data'}
+          </strong>
+        </article>
+        <article className="admin-dashboard-live-status-item">
+          <span>Offline / problémová stanoviště</span>
+          <strong>{summary.problematicStations}</strong>
+        </article>
+        <article className="admin-dashboard-live-status-item">
+          <span>Konflikty synchronizace</span>
+          <strong>{summary.syncConflicts}</strong>
+        </article>
+        <article className="admin-dashboard-live-status-item">
+          <span>Poslední sync</span>
+          <strong>{formatDateTimeForStatus(summary.lastSyncAt)}</strong>
+        </article>
+      </div>
       <div className="admin-dashboard-metrics">
-        <article className="admin-dashboard-metric">
+        <article className="admin-dashboard-metric admin-dashboard-metric--primary">
           <span>Přihlášené hlídky</span>
           <strong>{summary.registeredPatrols}</strong>
         </article>
-        <article className="admin-dashboard-metric">
+        <article className="admin-dashboard-metric admin-dashboard-metric--highlight">
           <span>Hlídky na trati</span>
           <strong>{summary.patrolsOnCourse}</strong>
         </article>
-        <article className="admin-dashboard-metric">
+        <article className="admin-dashboard-metric admin-dashboard-metric--highlight">
           <span>Dokončené hlídky</span>
           <strong>{summary.patrolsFinished}</strong>
         </article>
-        <article className="admin-dashboard-metric">
+        <article className="admin-dashboard-metric admin-dashboard-metric--warning">
           <span>Čekající na start</span>
           <strong>{summary.patrolsWaitingForStart}</strong>
         </article>
-        <article className="admin-dashboard-metric">
-          <span>Problémová stanoviště</span>
+        <article className="admin-dashboard-metric admin-dashboard-metric--danger">
+          <span>Offline/problémová stanoviště</span>
           <strong>{summary.problematicStations}</strong>
         </article>
-        <article className="admin-dashboard-metric">
+        <article className="admin-dashboard-metric admin-dashboard-metric--primary">
           <span>Poslední synchronizace</span>
           <strong>{formatDateTimeForStatus(summary.lastSyncAt)}</strong>
         </article>
@@ -141,10 +171,13 @@ export function AdminLiveOverviewSection({
   onRefresh,
   summary,
 }: LiveSectionProps) {
+  const hasCriticalIssue = summary.problematicStations > 0 || summary.syncConflicts > 0;
+  const hasWarningIssue = summary.missingLongPatrols > 0 || summary.overdueNoFinishPatrols > 0;
+
   return (
     <section
       id={toAdminSectionId('live')}
-      className="admin-card admin-card--section admin-section-block admin-section-block--live"
+      className="admin-card admin-card--section admin-card--live-focus admin-section-block admin-section-block--live"
     >
       <header className="admin-card-header">
         <div>
@@ -164,24 +197,56 @@ export function AdminLiveOverviewSection({
           </button>
         </div>
       </header>
+      <div className="admin-live-status-panel">
+        <div className="admin-live-status-panel-row">
+          <span className={`admin-status-badge ${hasCriticalIssue ? 'admin-status-badge--offline' : 'admin-status-badge--online'}`}>
+            {hasCriticalIssue ? 'Problém synchronizace' : 'Synchronizace v pořádku'}
+          </span>
+          <span className={`admin-status-badge ${summary.problematicStations > 0 ? 'admin-status-badge--offline' : 'admin-status-badge--online'}`}>
+            Offline/problémová stanoviště: {summary.problematicStations}
+          </span>
+          <span className={`admin-status-badge ${summary.syncConflicts > 0 ? 'admin-status-badge--warning' : 'admin-status-badge--online'}`}>
+            Konflikty: {summary.syncConflicts}
+          </span>
+          <span className="admin-status-badge admin-status-badge--unknown">
+            Poslední sync: {formatDateTimeForStatus(summary.lastSyncAt)}
+          </span>
+        </div>
+        {hasCriticalIssue || hasWarningIssue ? (
+          <div className="admin-live-status-alerts">
+            {summary.problematicStations > 0 ? (
+              <p className="admin-error">Některá stanoviště mohou být offline nebo bez dat.</p>
+            ) : null}
+            {summary.syncConflicts > 0 ? (
+              <p className="admin-notice">Zjištěny konflikty synchronizace, zkontroluj queue a exporty.</p>
+            ) : null}
+            {summary.missingLongPatrols > 0 ? (
+              <p className="admin-notice">Některé hlídky dlouho nejsou vidět v průchodech.</p>
+            ) : null}
+            {summary.overdueNoFinishPatrols > 0 ? (
+              <p className="admin-error">Některé hlídky stále nemají cíl po očekávaném čase.</p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
       <div className="admin-live-grid">
-        <article className="admin-live-item">
+        <article className="admin-live-item admin-live-item--primary">
           <span>Průchody (viděné hlídky)</span>
           <strong>{summary.patrolsSeenOnCourse}</strong>
         </article>
-        <article className="admin-live-item">
+        <article className="admin-live-item admin-live-item--danger">
           <span>Offline/problémy stanovišť</span>
           <strong>{summary.problematicStations}</strong>
         </article>
-        <article className="admin-live-item">
+        <article className="admin-live-item admin-live-item--warning">
           <span>Konflikty synchronizace</span>
           <strong>{summary.syncConflicts}</strong>
         </article>
-        <article className="admin-live-item">
+        <article className="admin-live-item admin-live-item--warning">
           <span>Hlídky dlouho nevidět</span>
           <strong>{summary.missingLongPatrols}</strong>
         </article>
-        <article className="admin-live-item">
+        <article className="admin-live-item admin-live-item--danger">
           <span>Bez cíle po očekávaném čase</span>
           <strong>{summary.overdueNoFinishPatrols}</strong>
         </article>
@@ -196,6 +261,34 @@ export function AdminLiveOverviewSection({
         </a>
       </div>
       {/* TODO: Napojit endpointy pro offline stanoviště, konflikty synchronizace a hlídky dlouho nevidět. */}
+    </section>
+  );
+}
+
+export function AdminLiveMapSection() {
+  return (
+    <section className="admin-card admin-card--section admin-card--live-map admin-section-block admin-section-block--live">
+      <header className="admin-card-header">
+        <div>
+          <h2>Live mapa závodu</h2>
+          <p className="admin-card-subtitle">
+            Připravené místo pro budoucí mapový náhled live průchodů a stavů stanovišť.
+          </p>
+        </div>
+      </header>
+      <div className="admin-live-map-placeholder">
+        <div className="admin-live-map-placeholder-canvas" role="img" aria-label="Náhled live mapy závodu">
+          <span>Náhled mapy</span>
+        </div>
+        <div className="admin-live-map-placeholder-meta">
+          <p>
+            TODO: napojit pozice hlídek, fronty, live průchody a stavy stanovišť.
+          </p>
+          <a className="admin-button admin-button--secondary" href="#admin-passages-section">
+            Otevřít mapu
+          </a>
+        </div>
+      </div>
     </section>
   );
 }
@@ -313,10 +406,12 @@ export function AdminResultsSection({
   exportingLeague,
   onExportLeaguePoints,
 }: ResultsSectionProps) {
+  const hasResultProblems = totalMissingAcrossStations > 0 || summary.patrolsOnCourse > 0 || summary.overdueNoFinishPatrols > 0;
+
   return (
     <section
       id={toAdminSectionId('results')}
-      className="admin-card admin-card--section admin-section-block admin-section-block--results"
+      className="admin-card admin-card--section admin-card--results-focus admin-section-block admin-section-block--results"
     >
       <header className="admin-card-header">
         <div>
@@ -340,20 +435,40 @@ export function AdminResultsSection({
             target="_blank"
             rel="noreferrer"
           >
-            Export PDF/CSV
+            Export výsledků (CSV/PDF)
           </a>
+          <button
+            type="button"
+            className="admin-button admin-button--secondary"
+            disabled
+          >
+            Export diplomů (TODO)
+          </button>
         </div>
       </header>
+      {hasResultProblems ? (
+        <div className="admin-results-alerts">
+          {totalMissingAcrossStations > 0 ? (
+            <p className="admin-error">Ve stanovištích chybí průchody nebo body.</p>
+          ) : null}
+          {summary.patrolsOnCourse > 0 ? (
+            <p className="admin-notice">Některé hlídky jsou stále neuzavřené.</p>
+          ) : null}
+          {summary.overdueNoFinishPatrols > 0 ? (
+            <p className="admin-error">Některé hlídky nemají cílový čas po očekávaném limitu.</p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="admin-placeholder-grid">
-        <div className="admin-placeholder-item">
+        <div className="admin-placeholder-item admin-placeholder-item--warning">
           <strong>Chybějící průchody / body</strong>
           <span>{totalMissingAcrossStations}</span>
         </div>
-        <div className="admin-placeholder-item">
+        <div className="admin-placeholder-item admin-placeholder-item--warning">
           <strong>Neuzavřené hlídky</strong>
           <span>{summary.patrolsOnCourse}</span>
         </div>
-        <div className="admin-placeholder-item">
+        <div className="admin-placeholder-item admin-placeholder-item--danger">
           <strong>Bez cíle po limitu</strong>
           <span>{summary.overdueNoFinishPatrols}</span>
         </div>
@@ -363,12 +478,12 @@ export function AdminResultsSection({
         </div>
       </div>
       <div className="admin-card-actions">
-        <button type="button" className="admin-button admin-button--secondary" disabled>
+        <button type="button" className="admin-button admin-button--secondary admin-button--cta" disabled>
           Potvrdit výsledky hlavním rozhodčím (TODO)
         </button>
         <button
           type="button"
-          className="admin-button admin-button--secondary"
+          className="admin-button admin-button--primary admin-button--cta"
           onClick={onExportLeaguePoints}
           disabled={exportingLeague}
         >
@@ -401,7 +516,7 @@ export function AdminStatsSection({
   return (
     <section
       id={toAdminSectionId('stats')}
-      className="admin-card admin-card--section admin-section-block admin-section-block--stats"
+      className="admin-card admin-card--section admin-card--low-priority admin-section-block admin-section-block--stats"
     >
       <header className="admin-card-header">
         <div>
@@ -466,7 +581,7 @@ export function AdminExportsOverviewSection({
   return (
     <section
       id={toAdminSectionId('exports')}
-      className="admin-card admin-card--section admin-section-block admin-section-block--exports"
+      className="admin-card admin-card--section admin-card--low-priority admin-section-block admin-section-block--exports"
     >
       <header className="admin-card-header">
         <div>
