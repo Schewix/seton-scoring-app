@@ -11,10 +11,13 @@ import {
   LEGACY_FORGOT_PASSWORD_ROUTE,
   LEGACY_FORGOT_PASSWORD_ROUTE_ALT,
   LEGACY_ROUTE_PREFIX,
+  MAPA_PROCHODU_ROUTE,
   ROUTE_PREFIX,
   isChangePasswordPathname,
   isAdminPathname,
   isDeskovkyPathname,
+  isSetonMapAdminPathname,
+  isSetonMapPathname,
   isScoreboardPathname,
   isStationAppPath,
 } from './routing';
@@ -131,6 +134,8 @@ const pathname = window.location.pathname;
 const normalizedPath = pathname.replace(/\/$/, '') || '/';
 const isScoreboardPath = isScoreboardPathname(pathname);
 const isAdminPath = isAdminPathname(pathname);
+const isSetonMapPath = isSetonMapPathname(pathname);
+const isSetonMapAdminPath = isSetonMapAdminPathname(pathname);
 const isHomepagePath = normalizedPath === '/';
 const isDeskovkyPath = isDeskovkyPathname(pathname);
 const isChangePasswordPath = isChangePasswordPathname(normalizedPath);
@@ -165,7 +170,23 @@ function render(element: React.ReactNode) {
   );
 }
 
-if (isAdminPath) {
+if (isSetonMapAdminPath) {
+  import('./liveMap/SetonMapAdminApp')
+    .then(({ default: SetonMapAdminApp }) => {
+      render(<SetonMapAdminApp />);
+    })
+    .catch((error) => {
+      console.error('Failed to load seton map admin view', error);
+    });
+} else if (isSetonMapPath || normalizedPath === MAPA_PROCHODU_ROUTE) {
+  import('./liveMap/SetonLiveMapApp')
+    .then(({ default: SetonLiveMapApp }) => {
+      render(<SetonLiveMapApp />);
+    })
+    .catch((error) => {
+      console.error('Failed to load seton live map view', error);
+    });
+} else if (isAdminPath) {
   import('./admin/AdminApp')
     .then(({ default: AdminApp }) => {
       render(<AdminApp />);

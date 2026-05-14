@@ -6,6 +6,10 @@ export const SCOREBOARD_ROUTE_PREFIX = `${ROUTE_PREFIX}/vysledky`;
 export const LEGACY_SCOREBOARD_ROUTE_PREFIX = `${LEGACY_ROUTE_PREFIX}/vysledky`;
 export const ADMIN_ROUTE_PREFIX = `${ROUTE_PREFIX}/admin`;
 export const LEGACY_ADMIN_ROUTE_PREFIX = `${LEGACY_ROUTE_PREFIX}/admin`;
+export const MAPA_PROCHODU_ROUTE = `${ROUTE_PREFIX}/mapa-prochodu`;
+export const LEGACY_MAPA_PROCHODU_ROUTE = `${LEGACY_ROUTE_PREFIX}/mapa-prochodu`;
+export const MAP_ADMIN_ROUTE = `${ADMIN_ROUTE_PREFIX}/seton/mapa`;
+export const LEGACY_MAP_ADMIN_ROUTE = `${LEGACY_ADMIN_ROUTE_PREFIX}/seton/mapa`;
 export const FORGOT_PASSWORD_ROUTE = '/aplikace/zapomenute-heslo';
 export const LEGACY_FORGOT_PASSWORD_ROUTE = `${ROUTE_PREFIX}/zapomenute-heslo`;
 export const LEGACY_FORGOT_PASSWORD_ROUTE_ALT = `${LEGACY_ROUTE_PREFIX}/zapomenute-heslo`;
@@ -95,6 +99,26 @@ export function isAdminPathname(pathname: string): boolean {
     pathname.startsWith(`${ADMIN_ROUTE_PREFIX}/`) ||
     pathname === LEGACY_ADMIN_ROUTE_PREFIX ||
     pathname.startsWith(`${LEGACY_ADMIN_ROUTE_PREFIX}/`)
+  );
+}
+
+export function isSetonMapPathname(pathname: string): boolean {
+  return (
+    pathname === MAPA_PROCHODU_ROUTE ||
+    pathname.startsWith(`${MAPA_PROCHODU_ROUTE}/`) ||
+    pathname === LEGACY_MAPA_PROCHODU_ROUTE ||
+    pathname.startsWith(`${LEGACY_MAPA_PROCHODU_ROUTE}/`)
+  );
+}
+
+export function isSetonMapAdminPathname(pathname: string): boolean {
+  return (
+    pathname === MAP_ADMIN_ROUTE ||
+    pathname.startsWith(`${MAP_ADMIN_ROUTE}/`) ||
+    pathname === LEGACY_MAP_ADMIN_ROUTE ||
+    pathname.startsWith(`${LEGACY_MAP_ADMIN_ROUTE}/`) ||
+    pathname === '/admin/seton/mapa' ||
+    pathname.startsWith('/admin/seton/mapa/')
   );
 }
 

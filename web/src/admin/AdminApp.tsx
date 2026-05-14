@@ -16,6 +16,7 @@ import {
   parseAnswerLetters,
 } from '../utils/targetAnswers';
 import { env } from '../envVars';
+import { ADMIN_ROUTE_PREFIX } from '../routing';
 import {
   createStationCategoryRecord,
   getStationAllowedBaseCategories,
@@ -27,12 +28,17 @@ import {
 import { normalisePatrolCode } from '../components/PatrolCodeInput';
 import AdminLoginScreen from './AdminLoginScreen';
 import {
-  ADMIN_SECTION_ITEMS,
   EMPTY_RACE_DASHBOARD_SUMMARY,
   toAdminSectionId,
   type AdminSectionKey,
   type RaceDashboardSummary,
 } from './adminSections';
+import {
+  buildAdminRoutePath,
+  detectAdminRoutePrefix,
+  parseAdminRoute,
+  type AdminPageKey,
+} from './adminRoutes';
 import AdminSectionNav from './components/AdminSectionNav';
 import {
   AdminDashboardSection,
@@ -60,6 +66,27 @@ const ZL_GAUSS_CENTER_INDEX = 2;
 const ZL_GAUSS_SIGMA = 1.35;
 const ZL_GAUSS_RATIO_PENALTY_WEIGHT = 0.35;
 const ZL_GAUSS_DROPPED_PENALTY_WEIGHT = 0.08;
+const ADMIN_PAGE_TITLE: Record<AdminPageKey, string> = {
+  dashboard: 'Dashboard',
+  live: 'Živý průběh',
+  patrols: 'Hlídky',
+  stations: 'Stanoviště',
+  results: 'Výsledky',
+  statistics: 'Statistiky',
+  settings: 'Nastavení',
+};
+
+const SECTION_TO_PAGE: Record<AdminSectionKey, AdminPageKey> = {
+  dashboard: 'dashboard',
+  live: 'live',
+  queues: 'live',
+  patrols: 'patrols',
+  starts: 'patrols',
+  stations: 'stations',
+  results: 'results',
+  stats: 'statistics',
+  exports: 'settings',
+};
 
 type PtoTroopRegistryEntry = {
   canonicalName: string;
@@ -1191,7 +1218,19 @@ function AdminDashboard({
   const [showPreRaceSetup, setShowPreRaceSetup] = useState(true);
   const [showStatsSection, setShowStatsSection] = useState(false);
   const [showExportsSection, setShowExportsSection] = useState(false);
-  const [activeAdminSection, setActiveAdminSection] = useState<AdminSectionKey>('dashboard');
+  const [activeAdminPage, setActiveAdminPage] = useState<AdminPageKey>(() => {
+    if (typeof window === 'undefined') {
+      return 'dashboard';
+    }
+    return parseAdminRoute(window.location.pathname).page;
+  });
+  const [adminRoutePrefix, setAdminRoutePrefix] = useState(() => {
+    if (typeof window === 'undefined') {
+      return ADMIN_ROUTE_PREFIX;
+    }
+    return detectAdminRoutePrefix(window.location.pathname);
+  });
+  const [pageTransitioning, setPageTransitioning] = useState(false);
   const [raceDashboardSummary, setRaceDashboardSummary] = useState<RaceDashboardSummary>(
     EMPTY_RACE_DASHBOARD_SUMMARY,
   );
@@ -1829,71 +1868,95 @@ function AdminDashboard({
     setJudgeStationCodeInput(selectedSetupStations[0].code);
   }, [judgeStationCodeInput, selectedSetupStations]);
 
-  const navigateAdminSection = useCallback((section: AdminSectionKey) => {
-    setActiveAdminSection(section);
-    if (typeof window === 'undefined') {
-      return;
-    }
-    const target = document.getElementById(toAdminSectionId(section));
-    if (!target) {
-      return;
-    }
-    window.requestAnimationFrame(() => {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }, []);
+  const navigateAdminPage = useCallback(
+    (page: AdminPageKey, options?: { replace?: boolean }) => {
+      setActiveAdminPage(page);
+      if (typeof window === 'undefined') {
+        return;
+      }
+
+      const nextPrefix = detectAdminRoutePrefix(window.location.pathname);
+      setAdminRoutePrefix(nextPrefix);
+      const targetPath = buildAdminRoutePath({
+        prefix: nextPrefix || adminRoutePrefix,
+        eventId,
+        page,
+      });
+      const currentPath = window.location.pathname.replace(/\/$/, '') || '/';
+
+      if (currentPath !== targetPath) {
+        const method = options?.replace ? 'replaceState' : 'pushState';
+        window.history[method](window.history.state, '', targetPath);
+      }
+
+      setPageTransitioning(true);
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+        setPageTransitioning(false);
+      });
+    },
+    [adminRoutePrefix, eventId],
+  );
+
+  const navigateAdminSection = useCallback(
+    (section: AdminSectionKey) => {
+      navigateAdminPage(SECTION_TO_PAGE[section]);
+    },
+    [navigateAdminPage],
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
 
-    const sections = ADMIN_SECTION_ITEMS
-      .map((item) => ({
-        key: item.key,
-        element: document.getElementById(toAdminSectionId(item.key)),
-      }))
-      .filter((item): item is { key: AdminSectionKey; element: HTMLElement } => Boolean(item.element));
+    const handlePopState = () => {
+      const parsed = parseAdminRoute(window.location.pathname);
+      setAdminRoutePrefix(parsed.prefix);
+      setActiveAdminPage(parsed.page);
+      setPageTransitioning(false);
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    };
 
-    if (!sections.length) {
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isCalcStation || typeof window === 'undefined') {
       return;
     }
 
-    let animationFrame = 0;
-    const updateActiveSection = () => {
-      animationFrame = 0;
-      const anchorLine = window.innerHeight * 0.25;
-      let nextActive = sections[0].key;
+    const parsed = parseAdminRoute(window.location.pathname);
+    const prefix = parsed.prefix || adminRoutePrefix;
+    const expectedPath = buildAdminRoutePath({
+      prefix,
+      eventId,
+      page: activeAdminPage,
+    });
+    const currentPath = window.location.pathname.replace(/\/$/, '') || '/';
 
-      sections.forEach((section) => {
-        const rect = section.element.getBoundingClientRect();
-        if (rect.top <= anchorLine) {
-          nextActive = section.key;
-        }
-      });
+    if (currentPath !== expectedPath) {
+      window.history.replaceState(window.history.state, '', expectedPath);
+    }
+    if (parsed.page !== activeAdminPage) {
+      setActiveAdminPage(parsed.page);
+    }
+    if (prefix !== adminRoutePrefix) {
+      setAdminRoutePrefix(prefix);
+    }
+  }, [activeAdminPage, adminRoutePrefix, eventId, isCalcStation]);
 
-      setActiveAdminSection((previous) => (previous === nextActive ? previous : nextActive));
-    };
-
-    const handleScroll = () => {
-      if (animationFrame !== 0) {
-        return;
-      }
-      animationFrame = window.requestAnimationFrame(updateActiveSection);
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    window.addEventListener('resize', handleScroll);
-    handleScroll();
-
-    return () => {
-      if (animationFrame !== 0) {
-        window.cancelAnimationFrame(animationFrame);
-      }
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', handleScroll);
-    };
-  }, []);
+  useEffect(() => {
+    if (activeAdminPage === 'statistics' && !showStatsSection) {
+      setShowStatsSection(true);
+    }
+    if (activeAdminPage === 'settings' && !showExportsSection) {
+      setShowExportsSection(true);
+    }
+  }, [activeAdminPage, showExportsSection, showStatsSection]);
 
   const handleLookupPatrol = useCallback(async () => {
     setDisqualifyError(null);
@@ -3863,6 +3926,14 @@ function AdminDashboard({
     return warnings;
   }, [eventState.scoringLocked, raceDashboardSummary.patrolsFinished, raceDashboardSummary.patrolsOnCourse, raceDashboardSummary.syncConflicts, stationError]);
 
+  const isDashboardPage = activeAdminPage === 'dashboard';
+  const isLivePage = activeAdminPage === 'live';
+  const isPatrolsPage = activeAdminPage === 'patrols';
+  const isStationsPage = activeAdminPage === 'stations';
+  const isResultsPage = activeAdminPage === 'results';
+  const isStatisticsPage = activeAdminPage === 'statistics';
+  const isSettingsPage = activeAdminPage === 'settings';
+
   if (!isCalcStation) {
     return (
       <div className="admin-shell">
@@ -3901,7 +3972,7 @@ function AdminDashboard({
           <div>
             <h1>Administrace závodu</h1>
             <p className="admin-subtitle">
-              {eventState.name}
+              {eventState.name} · {ADMIN_PAGE_TITLE[activeAdminPage]}
               {eventState.scoringLocked ? ' · Závod ukončen' : ''}
             </p>
           </div>
@@ -3921,6 +3992,18 @@ function AdminDashboard({
               rel="noreferrer"
             >
               Export výsledky
+            </a>
+            <a
+              className="admin-button admin-button--secondary admin-button--pill"
+              href="/aplikace/setonuv-zavod/mapa-prochodu"
+            >
+              Live mapa
+            </a>
+            <a
+              className="admin-button admin-button--secondary admin-button--pill"
+              href="/aplikace/setonuv-zavod/admin/seton/mapa"
+            >
+              Editor mapy
             </a>
             <button
               type="button"
@@ -3954,42 +4037,132 @@ function AdminDashboard({
               Odhlásit se
             </button>
           </div>
+          <div className="admin-header-status-row">
+            <span
+              className={`admin-status-badge ${
+                raceDashboardSummary.problematicStations > 0 || raceDashboardSummary.syncConflicts > 0
+                  ? 'admin-status-badge--offline'
+                  : 'admin-status-badge--online'
+              }`}
+            >
+              {raceDashboardSummary.problematicStations > 0 || raceDashboardSummary.syncConflicts > 0
+                ? 'Live vyžaduje zásah'
+                : 'Live v pořádku'}
+            </span>
+            <span className="admin-status-badge admin-status-badge--warning">
+              Offline stanoviště: {raceDashboardSummary.problematicStations}
+            </span>
+            <span className="admin-status-badge admin-status-badge--warning">
+              Konflikty: {raceDashboardSummary.syncConflicts}
+            </span>
+            <span className="admin-status-badge admin-status-badge--unknown">
+              Poslední sync:{' '}
+              {raceDashboardSummary.lastSyncAt
+                ? new Date(raceDashboardSummary.lastSyncAt).toLocaleTimeString('cs-CZ')
+                : '—'}
+            </span>
+          </div>
         </div>
       </header>
       <main className="admin-content">
         <AdminSectionNav
-          activeSection={activeAdminSection}
-          onNavigate={navigateAdminSection}
+          activePage={activeAdminPage}
+          onNavigate={navigateAdminPage}
         />
+        {pageTransitioning ? (
+          <section className="admin-card admin-card--section admin-card--narrow admin-page-loading">
+            <h2>Načítám stránku…</h2>
+          </section>
+        ) : null}
 
-        <AdminDashboardSection
-          eventLoading={eventLoading}
-          scoringLocked={eventState.scoringLocked}
-          lockUpdating={lockUpdating}
-          onToggleLock={handleToggleLock}
-          onNavigate={navigateAdminSection}
-          summary={raceDashboardSummary}
-          warnings={dashboardWarnings}
-          eventError={eventError}
-          lockMessage={lockMessage}
-        />
+        {isDashboardPage ? (
+          <AdminDashboardSection
+            eventLoading={eventLoading}
+            scoringLocked={eventState.scoringLocked}
+            lockUpdating={lockUpdating}
+            onToggleLock={handleToggleLock}
+            onNavigate={navigateAdminSection}
+            summary={raceDashboardSummary}
+            warnings={dashboardWarnings}
+            eventError={eventError}
+            lockMessage={lockMessage}
+          />
+        ) : null}
 
-        <AdminLiveOverviewSection
-          stationLoading={stationLoading}
-          onRefresh={() => {
-            void loadStationStats();
-          }}
-          summary={raceDashboardSummary}
-        />
+        {isLivePage ? (
+          <AdminLiveOverviewSection
+            stationLoading={stationLoading}
+            onRefresh={() => {
+              void loadStationStats();
+            }}
+            summary={raceDashboardSummary}
+          />
+        ) : null}
 
-        <AdminLiveMapSection />
+        {isLivePage ? <AdminLiveMapSection /> : null}
+        {isLivePage ? <AdminQueuesSection /> : null}
 
-        <AdminQueuesSection />
+        {isPatrolsPage ? <AdminPatrolsOverviewSection onShowPreRaceSetup={() => setShowPreRaceSetup(true)} /> : null}
+        {isPatrolsPage ? <AdminStartsSection /> : null}
 
-        <AdminPatrolsOverviewSection onShowPreRaceSetup={() => setShowPreRaceSetup(true)} />
+        {isStationsPage ? (
+          <section
+            id={toAdminSectionId('stations')}
+            className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--stations"
+          >
+            <header className="admin-card-header">
+              <div>
+                <h2>Stanoviště a rozhodčí</h2>
+                <p className="admin-card-subtitle">
+                  Live přehled stanovišť a aktuálně přiřazených rozhodčích.
+                </p>
+              </div>
+              <div className="admin-card-actions">
+                <button
+                  type="button"
+                  className="admin-button admin-button--secondary"
+                  onClick={() => void loadSetupData()}
+                  disabled={setupLoading || setupSaving}
+                >
+                  {setupLoading ? 'Načítám…' : 'Obnovit stanoviště'}
+                </button>
+                <button
+                  type="button"
+                  className="admin-button admin-button--secondary"
+                  onClick={() => navigateAdminPage('settings')}
+                >
+                  Otevřít detailní nastavení
+                </button>
+              </div>
+            </header>
+            {setupError ? <p className="admin-error">{setupError}</p> : null}
+            {setupSuccess ? <p className="admin-success">{setupSuccess}</p> : null}
+            <div className="admin-disqualify-form">
+              <label className="admin-field" htmlFor="admin-stations-event">
+                <span>Spravovaný ročník</span>
+                <select
+                  id="admin-stations-event"
+                  value={selectedSetupEventId}
+                  onChange={(event) => setSelectedSetupEventId(event.target.value)}
+                  disabled={setupLoading || setupSaving || setupEvents.length === 0}
+                >
+                  {setupEvents.length === 0 ? <option value="">Žádné ročníky</option> : null}
+                  {setupEvents.map((setupEvent) => (
+                    <option key={setupEvent.id} value={setupEvent.id}>
+                      {setupEvent.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <AdminStationHealthPanel
+              stationCards={stationHealthCards}
+              assignmentRows={selectedSetupAssignments}
+            />
+          </section>
+        ) : null}
 
-        <AdminStartsSection />
-
+        {isSettingsPage ? (
         <section
           id={toAdminSectionId('stations')}
           className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--stations"
@@ -4468,7 +4641,9 @@ function AdminDashboard({
             </p>
           )}
         </section>
+        ) : null}
 
+        {isPatrolsPage ? (
         <section className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--patrols">
           <header className="admin-card-header">
             <div>
@@ -4544,7 +4719,9 @@ function AdminDashboard({
             </div>
           ) : null}
         </section>
+        ) : null}
 
+        {isStationsPage ? (
         <section className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--stations">
           <header className="admin-card-header">
             <div>
@@ -4622,7 +4799,9 @@ function AdminDashboard({
             </button>
           </div>
         </section>
+        ) : null}
 
+        {isLivePage || isStationsPage || isStatisticsPage ? (
         <section
           id="admin-passages-section"
           className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--live"
@@ -4742,21 +4921,27 @@ function AdminDashboard({
             </div>
           ) : null}
         </section>
+        ) : null}
 
+        {isResultsPage ? (
         <AdminResultsSection
           totalMissingAcrossStations={totalMissingAcrossStations}
           summary={raceDashboardSummary}
           exportingLeague={exportingLeague}
           onExportLeaguePoints={handleExportLeaguePoints}
         />
+        ) : null}
 
+        {isStatisticsPage ? (
         <AdminStatsSection
-          showStatsSection={showStatsSection}
+          showStatsSection
           onToggle={() => setShowStatsSection((prev) => !prev)}
           stationStatistics={stationStatistics}
           summary={raceDashboardSummary}
         />
+        ) : null}
 
+        {isSettingsPage ? (
         <AdminExportsOverviewSection
           showExportsSection={showExportsSection}
           onToggle={() => setShowExportsSection((prev) => !prev)}
@@ -4765,8 +4950,9 @@ function AdminDashboard({
           onExportLeaguePoints={handleExportLeaguePoints}
           exportingLeague={exportingLeague}
         />
+        ) : null}
 
-        {showExportsSection ? (
+        {isSettingsPage && showExportsSection ? (
         <section className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--exports">
           <header className="admin-card-header">
             <div>

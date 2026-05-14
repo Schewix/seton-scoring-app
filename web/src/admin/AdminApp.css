@@ -60,6 +60,14 @@
   justify-content: center;
 }
 
+.admin-header-status-row {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .admin-button {
   display: inline-flex;
   align-items: center;
@@ -209,6 +217,12 @@
   border-radius: 10px;
   background: #ffffff;
   padding: 0 10px;
+}
+
+.admin-page-loading {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .admin-card--section {
@@ -1307,6 +1321,10 @@
     justify-content: flex-start;
   }
 
+  .admin-header-status-row {
+    align-items: stretch;
+  }
+
   .admin-live-map-placeholder {
     grid-template-columns: 1fr;
   }
@@ -1340,6 +1358,11 @@
     flex-direction: column;
     align-items: stretch;
     gap: 10px;
+  }
+
+  .admin-header-status-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .admin-button,

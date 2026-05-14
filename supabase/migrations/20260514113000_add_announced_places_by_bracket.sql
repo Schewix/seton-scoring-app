@@ -53,6 +53,12 @@ select
   e.announced_places_m,
   e.announced_places_s,
   e.announced_places_r,
+  e.time_limit_n_minutes,
+  e.time_limit_m_minutes,
+  e.time_limit_s_minutes,
+  e.time_limit_r_minutes,
+  e.time_penalty_step_minutes,
+  e.participating_troops,
   e.announced_places_nh,
   e.announced_places_nd,
   e.announced_places_mh,
@@ -60,13 +66,7 @@ select
   e.announced_places_sh,
   e.announced_places_sd,
   e.announced_places_rh,
-  e.announced_places_rd,
-  e.time_limit_n_minutes,
-  e.time_limit_m_minutes,
-  e.time_limit_s_minutes,
-  e.time_limit_r_minutes,
-  e.time_penalty_step_minutes,
-  e.participating_troops
+  e.announced_places_rd
 from public.events e;
 
 grant select on public.events_public to anon, authenticated;
