@@ -784,6 +784,31 @@ describe('station workflow', () => {
     expect(screen.queryByText('Hlídka už na stanovišti byla.')).not.toBeInTheDocument();
   });
 
+  it('loads patrol on Výpočetka in profile-only mode', async () => {
+    mockedStationCode = 'T';
+    supabaseMock.__setMock('stations', () => createCalcStationResult());
+
+    const user = userEvent.setup();
+
+    await renderApp();
+
+    await waitForScannerToggle();
+
+    await selectPatrolCode(user, { category: 'N', type: 'H', number: '1' });
+    await user.click(screen.getByRole('button', { name: 'Načíst hlídku' }));
+
+    const choiceDialog = await screen.findByRole('dialog');
+    await user.click(within(choiceDialog).getByRole('button', { name: 'Jen profil' }));
+
+    expect(await screen.findByText('Hlídka je načtená jen pro úpravu profilu (oddíl a členové).')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Profil hlídky' })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Odpovědi hlídky/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Otevřít bodování' }));
+
+    expect(await screen.findByLabelText(/Odpovědi hlídky/)).toBeInTheDocument();
+  });
+
   it('rejects decimal values for manual scoring input', async () => {
     const user = userEvent.setup();
 

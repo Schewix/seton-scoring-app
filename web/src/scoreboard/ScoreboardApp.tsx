@@ -86,11 +86,23 @@ const BRACKET_ORDER_INDEX = new Map(BRACKET_ORDER.map((key, index) => [key, inde
 
 const CATEGORY_CODES = ['N', 'M', 'S', 'R'] as const;
 type CategoryCode = (typeof CATEGORY_CODES)[number];
+const BRACKET_CODES = ['NH', 'ND', 'MH', 'MD', 'SH', 'SD', 'RH', 'RD'] as const;
+type BracketCode = (typeof BRACKET_CODES)[number];
 const DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY: Record<CategoryCode, number> = {
   N: 5,
   M: 6,
   S: 6,
   R: 3,
+};
+const DEFAULT_ANNOUNCED_PLACES_BY_BRACKET: Record<BracketCode, number> = {
+  NH: DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.N,
+  ND: DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.N,
+  MH: DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.M,
+  MD: DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.M,
+  SH: DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.S,
+  SD: DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.S,
+  RH: DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.R,
+  RD: DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.R,
 };
 
 const STATION_CATEGORY_REQUIREMENTS: Record<string, readonly CategoryCode[]> = {
@@ -215,13 +227,25 @@ function toPositiveInt(value: unknown, fallback: number, max = 100): number {
   return Math.min(max, Math.max(1, Math.round(parsed)));
 }
 
-function parseAnnouncedPlacesByCategory(source: Record<string, unknown> | null | undefined): Record<CategoryCode, number> {
+function parseAnnouncedPlacesByBracket(source: Record<string, unknown> | null | undefined): Record<BracketCode, number> {
   const values = source ?? {};
+  const nh = toPositiveInt(values.announced_places_nh ?? values.announced_places_n, DEFAULT_ANNOUNCED_PLACES_BY_BRACKET.NH);
+  const nd = toPositiveInt(values.announced_places_nd ?? values.announced_places_n, DEFAULT_ANNOUNCED_PLACES_BY_BRACKET.ND);
+  const mh = toPositiveInt(values.announced_places_mh ?? values.announced_places_m, DEFAULT_ANNOUNCED_PLACES_BY_BRACKET.MH);
+  const md = toPositiveInt(values.announced_places_md ?? values.announced_places_m, DEFAULT_ANNOUNCED_PLACES_BY_BRACKET.MD);
+  const sh = toPositiveInt(values.announced_places_sh ?? values.announced_places_s, DEFAULT_ANNOUNCED_PLACES_BY_BRACKET.SH);
+  const sd = toPositiveInt(values.announced_places_sd ?? values.announced_places_s, DEFAULT_ANNOUNCED_PLACES_BY_BRACKET.SD);
+  const rh = toPositiveInt(values.announced_places_rh ?? values.announced_places_r, DEFAULT_ANNOUNCED_PLACES_BY_BRACKET.RH);
+  const rd = toPositiveInt(values.announced_places_rd ?? values.announced_places_r, DEFAULT_ANNOUNCED_PLACES_BY_BRACKET.RD);
   return {
-    N: toPositiveInt(values.announced_places_n, DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.N),
-    M: toPositiveInt(values.announced_places_m, DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.M),
-    S: toPositiveInt(values.announced_places_s, DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.S),
-    R: toPositiveInt(values.announced_places_r, DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY.R),
+    NH: nh,
+    ND: nd,
+    MH: mh,
+    MD: md,
+    SH: sh,
+    SD: sd,
+    RH: rh,
+    RD: rd,
   };
 }
 
@@ -485,15 +509,23 @@ function compareBrackets(aCategory: string, aSex: string, bCategory: string, bSe
   return aKey.localeCompare(bKey);
 }
 
-function getHighlightLimitForCategory(
+function toBracketCode(category: string, sex: string): BracketCode | null {
+  const cat = normaliseCategoryKey(category);
+  const gender = (sex || '').trim().toUpperCase();
+  const key = `${cat ?? ''}${gender}`;
+  return (BRACKET_CODES as readonly string[]).includes(key) ? (key as BracketCode) : null;
+}
+
+function getHighlightLimitForBracket(
   category: string,
-  announcedPlacesByCategory: Record<CategoryCode, number>,
+  sex: string,
+  announcedPlacesByBracket: Record<BracketCode, number>,
 ) {
-  const normalizedCategory = normaliseCategoryKey(category);
-  if (!isCategoryCode(normalizedCategory)) {
+  const bracketCode = toBracketCode(category, sex);
+  if (!bracketCode) {
     return 3;
   }
-  return announcedPlacesByCategory[normalizedCategory];
+  return announcedPlacesByBracket[bracketCode];
 }
 
 function formatCategoryLabel(category: string, sex?: string) {
@@ -552,8 +584,8 @@ function ScoreboardApp() {
   const [eventName, setEventName] = useState<string>(() => {
     return normaliseText((import.meta.env.VITE_EVENT_NAME as string | undefined) ?? null) ?? '';
   });
-  const [announcedPlacesByCategory, setAnnouncedPlacesByCategory] = useState<Record<CategoryCode, number>>(
-    DEFAULT_ANNOUNCED_PLACES_BY_CATEGORY,
+  const [announcedPlacesByBracket, setAnnouncedPlacesByBracket] = useState<Record<BracketCode, number>>(
+    DEFAULT_ANNOUNCED_PLACES_BY_BRACKET,
   );
   const [exporting, setExporting] = useState(false);
   const [stationCodes, setStationCodes] = useState<string[]>([]);
@@ -587,7 +619,9 @@ function ScoreboardApp() {
       try {
         const { data, error } = await supabase
           .from('events_public')
-          .select('name,announced_places_n,announced_places_m,announced_places_s,announced_places_r')
+          .select(
+            'name,announced_places_n,announced_places_m,announced_places_s,announced_places_r,announced_places_nh,announced_places_nd,announced_places_mh,announced_places_md,announced_places_sh,announced_places_sd,announced_places_rh,announced_places_rd',
+          )
           .eq('id', rawEventId)
           .maybeSingle();
         if (!isMountedRef.current || cancelled) return;
@@ -600,7 +634,7 @@ function ScoreboardApp() {
         if (fetchedName) {
           setEventName((prev) => prev || fetchedName);
         }
-        setAnnouncedPlacesByCategory(parseAnnouncedPlacesByCategory(row));
+        setAnnouncedPlacesByBracket(parseAnnouncedPlacesByBracket(row));
       } catch (err) {
         if (!isMountedRef.current || cancelled) return;
         console.error('Failed to load event metadata', err);
@@ -1086,9 +1120,10 @@ function ScoreboardApp() {
               <div className="scoreboard-groups">
                 {groupedRanked.map((group) => {
                   const displayRows = group.visibleItems;
-                  const highlightLimit = getHighlightLimitForCategory(
+                  const highlightLimit = getHighlightLimitForBracket(
                     group.category,
-                    announcedPlacesByCategory,
+                    group.sex,
+                    announcedPlacesByBracket,
                   );
                   return (
                     <div key={group.key} className="scoreboard-group">

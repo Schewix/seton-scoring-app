@@ -25,6 +25,16 @@ const DEFAULT_ANNOUNCED_PLACES: Record<BaseCategoryKey, number> = {
   S: 6,
   R: 3,
 };
+const DEFAULT_ANNOUNCED_PLACES_BY_STATION_CATEGORY: Record<StationCategoryKey, number> = {
+  NH: DEFAULT_ANNOUNCED_PLACES.N,
+  ND: DEFAULT_ANNOUNCED_PLACES.N,
+  MH: DEFAULT_ANNOUNCED_PLACES.M,
+  MD: DEFAULT_ANNOUNCED_PLACES.M,
+  SH: DEFAULT_ANNOUNCED_PLACES.S,
+  SD: DEFAULT_ANNOUNCED_PLACES.S,
+  RH: DEFAULT_ANNOUNCED_PLACES.R,
+  RD: DEFAULT_ANNOUNCED_PLACES.R,
+};
 const DEFAULT_TIME_LIMIT_MINUTES: Record<BaseCategoryKey, number> = {
   N: 110,
   M: 140,
@@ -33,7 +43,7 @@ const DEFAULT_TIME_LIMIT_MINUTES: Record<BaseCategoryKey, number> = {
 };
 const DEFAULT_TIME_PENALTY_STEP_MINUTES = 20;
 const EVENT_SCORING_SETTINGS_SELECT =
-  'announced_places_n,announced_places_m,announced_places_s,announced_places_r,time_limit_n_minutes,time_limit_m_minutes,time_limit_s_minutes,time_limit_r_minutes,time_penalty_step_minutes,participating_troops';
+  'announced_places_n,announced_places_m,announced_places_s,announced_places_r,announced_places_nh,announced_places_nd,announced_places_mh,announced_places_md,announced_places_sh,announced_places_sd,announced_places_rh,announced_places_rd,time_limit_n_minutes,time_limit_m_minutes,time_limit_s_minutes,time_limit_r_minutes,time_penalty_step_minutes,participating_troops';
 
 const PRAGUE_TIME_ZONE = 'Europe/Prague';
 
@@ -126,6 +136,14 @@ type EventScoringSettings = {
   announced_places_m: number;
   announced_places_s: number;
   announced_places_r: number;
+  announced_places_nh: number;
+  announced_places_nd: number;
+  announced_places_mh: number;
+  announced_places_md: number;
+  announced_places_sh: number;
+  announced_places_sd: number;
+  announced_places_rh: number;
+  announced_places_rd: number;
   time_limit_n_minutes: number;
   time_limit_m_minutes: number;
   time_limit_s_minutes: number;
@@ -155,11 +173,75 @@ function normalizeTroopList(value: unknown): string[] {
 
 function normalizeEventScoringSettings(source: Record<string, unknown> | null | undefined): EventScoringSettings {
   const values = source ?? {};
+  const announcedPlacesNH = toPositiveInt(
+    values.announced_places_nh ?? values.announced_places_n,
+    DEFAULT_ANNOUNCED_PLACES_BY_STATION_CATEGORY.NH,
+    100,
+  );
+  const announcedPlacesND = toPositiveInt(
+    values.announced_places_nd ?? values.announced_places_n,
+    DEFAULT_ANNOUNCED_PLACES_BY_STATION_CATEGORY.ND,
+    100,
+  );
+  const announcedPlacesMH = toPositiveInt(
+    values.announced_places_mh ?? values.announced_places_m,
+    DEFAULT_ANNOUNCED_PLACES_BY_STATION_CATEGORY.MH,
+    100,
+  );
+  const announcedPlacesMD = toPositiveInt(
+    values.announced_places_md ?? values.announced_places_m,
+    DEFAULT_ANNOUNCED_PLACES_BY_STATION_CATEGORY.MD,
+    100,
+  );
+  const announcedPlacesSH = toPositiveInt(
+    values.announced_places_sh ?? values.announced_places_s,
+    DEFAULT_ANNOUNCED_PLACES_BY_STATION_CATEGORY.SH,
+    100,
+  );
+  const announcedPlacesSD = toPositiveInt(
+    values.announced_places_sd ?? values.announced_places_s,
+    DEFAULT_ANNOUNCED_PLACES_BY_STATION_CATEGORY.SD,
+    100,
+  );
+  const announcedPlacesRH = toPositiveInt(
+    values.announced_places_rh ?? values.announced_places_r,
+    DEFAULT_ANNOUNCED_PLACES_BY_STATION_CATEGORY.RH,
+    100,
+  );
+  const announcedPlacesRD = toPositiveInt(
+    values.announced_places_rd ?? values.announced_places_r,
+    DEFAULT_ANNOUNCED_PLACES_BY_STATION_CATEGORY.RD,
+    100,
+  );
   return {
-    announced_places_n: toPositiveInt(values.announced_places_n, DEFAULT_ANNOUNCED_PLACES.N, 100),
-    announced_places_m: toPositiveInt(values.announced_places_m, DEFAULT_ANNOUNCED_PLACES.M, 100),
-    announced_places_s: toPositiveInt(values.announced_places_s, DEFAULT_ANNOUNCED_PLACES.S, 100),
-    announced_places_r: toPositiveInt(values.announced_places_r, DEFAULT_ANNOUNCED_PLACES.R, 100),
+    announced_places_n: toPositiveInt(
+      values.announced_places_n ?? Math.max(announcedPlacesNH, announcedPlacesND),
+      DEFAULT_ANNOUNCED_PLACES.N,
+      100,
+    ),
+    announced_places_m: toPositiveInt(
+      values.announced_places_m ?? Math.max(announcedPlacesMH, announcedPlacesMD),
+      DEFAULT_ANNOUNCED_PLACES.M,
+      100,
+    ),
+    announced_places_s: toPositiveInt(
+      values.announced_places_s ?? Math.max(announcedPlacesSH, announcedPlacesSD),
+      DEFAULT_ANNOUNCED_PLACES.S,
+      100,
+    ),
+    announced_places_r: toPositiveInt(
+      values.announced_places_r ?? Math.max(announcedPlacesRH, announcedPlacesRD),
+      DEFAULT_ANNOUNCED_PLACES.R,
+      100,
+    ),
+    announced_places_nh: announcedPlacesNH,
+    announced_places_nd: announcedPlacesND,
+    announced_places_mh: announcedPlacesMH,
+    announced_places_md: announcedPlacesMD,
+    announced_places_sh: announcedPlacesSH,
+    announced_places_sd: announcedPlacesSD,
+    announced_places_rh: announcedPlacesRH,
+    announced_places_rd: announcedPlacesRD,
     time_limit_n_minutes: toPositiveInt(values.time_limit_n_minutes, DEFAULT_TIME_LIMIT_MINUTES.N, 24 * 60),
     time_limit_m_minutes: toPositiveInt(values.time_limit_m_minutes, DEFAULT_TIME_LIMIT_MINUTES.M, 24 * 60),
     time_limit_s_minutes: toPositiveInt(values.time_limit_s_minutes, DEFAULT_TIME_LIMIT_MINUTES.S, 24 * 60),

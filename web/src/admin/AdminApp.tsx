@@ -26,8 +26,26 @@ import {
 } from '../utils/stationCategories';
 import { normalisePatrolCode } from '../components/PatrolCodeInput';
 import AdminLoginScreen from './AdminLoginScreen';
+import {
+  EMPTY_RACE_DASHBOARD_SUMMARY,
+  toAdminSectionId,
+  type AdminSectionKey,
+  type RaceDashboardSummary,
+} from './adminSections';
+import AdminSectionNav from './components/AdminSectionNav';
+import {
+  AdminDashboardSection,
+  AdminExportsOverviewSection,
+  AdminLiveOverviewSection,
+  AdminPatrolsOverviewSection,
+  AdminQueuesSection,
+  AdminResultsSection,
+  AdminStartsSection,
+  AdminStatsSection,
+} from './components/AdminOverviewSections';
 
 const API_BASE_URL = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
+const SETUP_SELECTED_EVENT_STORAGE_KEY = 'admin.setup.selectedEventId';
 const BRACKET_EXPORT_ORDER = ['NH', 'ND', 'MH', 'MD', 'SH', 'SD', 'RH', 'RD'] as const;
 const BRACKET_EXPORT_ORDER_INDEX = new Map(BRACKET_EXPORT_ORDER.map((value, index) => [value, index] as const));
 const BASE_CATEGORY_ORDER = ['N', 'M', 'S', 'R'] as const;
@@ -147,9 +165,17 @@ type SetupEventRow = {
   ends_at: string | null;
   scoring_locked?: boolean | null;
   announced_places_n?: number | null;
+  announced_places_nh?: number | null;
+  announced_places_nd?: number | null;
   announced_places_m?: number | null;
+  announced_places_mh?: number | null;
+  announced_places_md?: number | null;
   announced_places_s?: number | null;
+  announced_places_sh?: number | null;
+  announced_places_sd?: number | null;
   announced_places_r?: number | null;
+  announced_places_rh?: number | null;
+  announced_places_rd?: number | null;
   time_limit_n_minutes?: number | null;
   time_limit_m_minutes?: number | null;
   time_limit_s_minutes?: number | null;
@@ -199,7 +225,7 @@ type PatrolCountsState = Record<StationCategoryKey, number>;
 type PatrolStartsState = Record<StationCategoryKey, number>;
 type CategoryToggleState = Record<CategoryKey, boolean>;
 type SetupEventScoringConfig = {
-  announcedPlaces: Record<CategoryKey, number>;
+  announcedPlaces: Record<StationCategoryKey, number>;
   timeLimitMinutes: Record<CategoryKey, number>;
   timePenaltyStepMinutes: number;
   participatingTroops: string[];
@@ -232,6 +258,17 @@ const DEFAULT_SETUP_ANNOUNCED_PLACES: Record<CategoryKey, number> = {
   R: 3,
 };
 
+const DEFAULT_SETUP_ANNOUNCED_PLACES_BY_STATION_CATEGORY: Record<StationCategoryKey, number> = {
+  NH: DEFAULT_SETUP_ANNOUNCED_PLACES.N,
+  ND: DEFAULT_SETUP_ANNOUNCED_PLACES.N,
+  MH: DEFAULT_SETUP_ANNOUNCED_PLACES.M,
+  MD: DEFAULT_SETUP_ANNOUNCED_PLACES.M,
+  SH: DEFAULT_SETUP_ANNOUNCED_PLACES.S,
+  SD: DEFAULT_SETUP_ANNOUNCED_PLACES.S,
+  RH: DEFAULT_SETUP_ANNOUNCED_PLACES.R,
+  RD: DEFAULT_SETUP_ANNOUNCED_PLACES.R,
+};
+
 const DEFAULT_SETUP_TIME_LIMITS_MINUTES: Record<CategoryKey, number> = {
   N: 110,
   M: 140,
@@ -241,7 +278,6 @@ const DEFAULT_SETUP_TIME_LIMITS_MINUTES: Record<CategoryKey, number> = {
 
 const DEFAULT_SETUP_TIME_PENALTY_STEP_MINUTES = 20;
 const DEFAULT_SETUP_TROOP_OPTIONS = PTO_TROOP_REGISTRY.map((entry) => entry.canonicalName).sort(compareTroopSheetOrder);
-
 function normalizeText(value: string | null | undefined): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -269,6 +305,28 @@ function toPositiveInt(value: unknown, fallback: number, max = 1000): number {
   return Math.min(max, Math.max(1, Math.round(parsed)));
 }
 
+function formatMinutesAsTimeInput(totalMinutes: number): string {
+  const safeMinutes = Math.max(1, Math.min(24 * 60, Math.round(totalMinutes)));
+  const normalizedMinutes = Math.min(23 * 60 + 59, safeMinutes);
+  const hours = Math.floor(normalizedMinutes / 60);
+  const minutes = normalizedMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function parseTimeInputToMinutes(value: string): number | null {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) {
+    return null;
+  }
+  const hours = Number.parseInt(match[1], 10);
+  const minutes = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return null;
+  }
+  return Math.max(1, hours * 60 + minutes);
+}
+
 function normalizeTroopName(value: string | null | undefined): string {
   return normalizeText(value).replace(/\s+/g, ' ');
 }
@@ -294,7 +352,7 @@ function normalizeTroopList(value: unknown): string[] {
 
 function createDefaultSetupEventScoringConfig(): SetupEventScoringConfig {
   return {
-    announcedPlaces: { ...DEFAULT_SETUP_ANNOUNCED_PLACES },
+    announcedPlaces: { ...DEFAULT_SETUP_ANNOUNCED_PLACES_BY_STATION_CATEGORY },
     timeLimitMinutes: { ...DEFAULT_SETUP_TIME_LIMITS_MINUTES },
     timePenaltyStepMinutes: DEFAULT_SETUP_TIME_PENALTY_STEP_MINUTES,
     participatingTroops: [],
@@ -308,10 +366,46 @@ function normalizeSetupEventScoringConfig(source: SetupEventRow | null | undefin
   }
   return {
     announcedPlaces: {
-      N: toPositiveInt(source.announced_places_n, defaults.announcedPlaces.N, 100),
-      M: toPositiveInt(source.announced_places_m, defaults.announcedPlaces.M, 100),
-      S: toPositiveInt(source.announced_places_s, defaults.announcedPlaces.S, 100),
-      R: toPositiveInt(source.announced_places_r, defaults.announcedPlaces.R, 100),
+      NH: toPositiveInt(
+        source.announced_places_nh ?? source.announced_places_n,
+        defaults.announcedPlaces.NH,
+        100,
+      ),
+      ND: toPositiveInt(
+        source.announced_places_nd ?? source.announced_places_n,
+        defaults.announcedPlaces.ND,
+        100,
+      ),
+      MH: toPositiveInt(
+        source.announced_places_mh ?? source.announced_places_m,
+        defaults.announcedPlaces.MH,
+        100,
+      ),
+      MD: toPositiveInt(
+        source.announced_places_md ?? source.announced_places_m,
+        defaults.announcedPlaces.MD,
+        100,
+      ),
+      SH: toPositiveInt(
+        source.announced_places_sh ?? source.announced_places_s,
+        defaults.announcedPlaces.SH,
+        100,
+      ),
+      SD: toPositiveInt(
+        source.announced_places_sd ?? source.announced_places_s,
+        defaults.announcedPlaces.SD,
+        100,
+      ),
+      RH: toPositiveInt(
+        source.announced_places_rh ?? source.announced_places_r,
+        defaults.announcedPlaces.RH,
+        100,
+      ),
+      RD: toPositiveInt(
+        source.announced_places_rd ?? source.announced_places_r,
+        defaults.announcedPlaces.RD,
+        100,
+      ),
     },
     timeLimitMinutes: {
       N: toPositiveInt(source.time_limit_n_minutes, defaults.timeLimitMinutes.N, 24 * 60),
@@ -1077,8 +1171,19 @@ function AdminDashboard({
   const [setupJudges, setSetupJudges] = useState<SetupJudgeRow[]>([]);
   const [setupAssignments, setSetupAssignments] = useState<SetupAssignmentRow[]>([]);
   const [setupOrders, setSetupOrders] = useState<Record<string, SetupStationOrderPayload>>({});
-  const [selectedSetupEventId, setSelectedSetupEventId] = useState(eventId);
+  const [selectedSetupEventId, setSelectedSetupEventId] = useState(() => {
+    if (typeof window === 'undefined') {
+      return eventId;
+    }
+    return window.localStorage.getItem(SETUP_SELECTED_EVENT_STORAGE_KEY) || eventId;
+  });
   const [showPreRaceSetup, setShowPreRaceSetup] = useState(true);
+  const [showStatsSection, setShowStatsSection] = useState(false);
+  const [showExportsSection, setShowExportsSection] = useState(false);
+  const [activeAdminSection, setActiveAdminSection] = useState<AdminSectionKey>('dashboard');
+  const [raceDashboardSummary, setRaceDashboardSummary] = useState<RaceDashboardSummary>(
+    EMPTY_RACE_DASHBOARD_SUMMARY,
+  );
   const [setupEventScoringConfig, setSetupEventScoringConfig] = useState<SetupEventScoringConfig>(
     () => createDefaultSetupEventScoringConfig(),
   );
@@ -1107,6 +1212,17 @@ function AdminDashboard({
   useEffect(() => {
     setEventState({ name: manifest.event.name, scoringLocked: manifest.event.scoringLocked });
   }, [manifest.event.name, manifest.event.scoringLocked]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (!selectedSetupEventId) {
+      window.localStorage.removeItem(SETUP_SELECTED_EVENT_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(SETUP_SELECTED_EVENT_STORAGE_KEY, selectedSetupEventId);
+  }, [selectedSetupEventId]);
 
   const loadAnswers = useCallback(async () => {
     if (!stationId) {
@@ -1179,6 +1295,10 @@ function AdminDashboard({
       );
       setStationError('Nepodařilo se načíst průchody stanovišť.');
       setStationRows([]);
+      setRaceDashboardSummary((previous) => ({
+        ...previous,
+        problematicStations: Math.max(1, previous.problematicStations),
+      }));
       return;
     }
 
@@ -1313,6 +1433,39 @@ function AdminDashboard({
     });
 
     setStationRows(rows);
+    const activePatrolIds = new Set(allPatrols.map((patrol) => patrol.id));
+    const patrolsSeenOnCourse = new Set<string>();
+    const patrolsFinished = new Set<string>();
+    ((passagesRes.data ?? []) as PassageRow[]).forEach((row) => {
+      if (!activePatrolIds.has(row.patrol_id)) {
+        return;
+      }
+      const station = stations.get(row.station_id);
+      if (!station) {
+        return;
+      }
+      patrolsSeenOnCourse.add(row.patrol_id);
+      if (station.code === 'T') {
+        patrolsFinished.add(row.patrol_id);
+      }
+    });
+    const registeredPatrols = activePatrolIds.size;
+    const patrolsSeen = patrolsSeenOnCourse.size;
+    const finished = patrolsFinished.size;
+    const waitingForStart = Math.max(0, registeredPatrols - patrolsSeen);
+    const onCourse = Math.max(0, patrolsSeen - finished);
+    setRaceDashboardSummary({
+      registeredPatrols,
+      patrolsSeenOnCourse: patrolsSeen,
+      patrolsOnCourse: onCourse,
+      patrolsFinished: finished,
+      patrolsWaitingForStart: waitingForStart,
+      problematicStations: 0,
+      syncConflicts: 0,
+      missingLongPatrols: 0,
+      overdueNoFinishPatrols: 0,
+      lastSyncAt: new Date().toISOString(),
+    });
   }, [eventId]);
 
   const handleOpenStationMissing = useCallback(
@@ -1579,6 +1732,20 @@ function AdminDashboard({
     }
     setJudgeStationCodeInput(selectedSetupStations[0].code);
   }, [judgeStationCodeInput, selectedSetupStations]);
+
+  const navigateAdminSection = useCallback((section: AdminSectionKey) => {
+    setActiveAdminSection(section);
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const target = document.getElementById(toAdminSectionId(section));
+    if (!target) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
 
   const handleLookupPatrol = useCallback(async () => {
     setDisqualifyError(null);
@@ -1924,10 +2091,14 @@ function AdminDashboard({
     try {
       await postSetupAction('save_event_scoring_config', {
         event_id: selectedSetupEventId,
-        announced_places_n: setupEventScoringConfig.announcedPlaces.N,
-        announced_places_m: setupEventScoringConfig.announcedPlaces.M,
-        announced_places_s: setupEventScoringConfig.announcedPlaces.S,
-        announced_places_r: setupEventScoringConfig.announcedPlaces.R,
+        announced_places_nh: setupEventScoringConfig.announcedPlaces.NH,
+        announced_places_nd: setupEventScoringConfig.announcedPlaces.ND,
+        announced_places_mh: setupEventScoringConfig.announcedPlaces.MH,
+        announced_places_md: setupEventScoringConfig.announcedPlaces.MD,
+        announced_places_sh: setupEventScoringConfig.announcedPlaces.SH,
+        announced_places_sd: setupEventScoringConfig.announcedPlaces.SD,
+        announced_places_rh: setupEventScoringConfig.announcedPlaces.RH,
+        announced_places_rd: setupEventScoringConfig.announcedPlaces.RD,
         time_limit_n_minutes: setupEventScoringConfig.timeLimitMinutes.N,
         time_limit_m_minutes: setupEventScoringConfig.timeLimitMinutes.M,
         time_limit_s_minutes: setupEventScoringConfig.timeLimitMinutes.S,
@@ -3501,6 +3672,49 @@ function AdminDashboard({
     }
   }, [eventId, eventState.name, leagueImportFile, processingLeagueImport]);
 
+  const totalMissingAcrossStations = useMemo(
+    () => stationRows.reduce((sum, row) => sum + row.totalMissing.length, 0),
+    [stationRows],
+  );
+
+  const stationStatistics = useMemo(() => {
+    if (stationRows.length === 0) {
+      return {
+        averagePassedPerStation: 0,
+        maxWaitingStationLabel: '—',
+        hardestStationLabel: '—',
+      };
+    }
+    const totalPassed = stationRows.reduce((sum, row) => sum + row.totalPassed, 0);
+    const averagePassedPerStation = totalPassed / stationRows.length;
+    const byMissing = [...stationRows].sort((a, b) => b.totalMissing.length - a.totalMissing.length);
+    const busiest = [...stationRows].sort((a, b) => b.totalPassed - a.totalPassed);
+    const hardest = byMissing[0];
+    const busiestStation = busiest[0];
+    return {
+      averagePassedPerStation,
+      maxWaitingStationLabel: busiestStation ? `${busiestStation.stationCode} (${busiestStation.totalPassed})` : '—',
+      hardestStationLabel: hardest ? `${hardest.stationCode} (${hardest.totalMissing.length} chybí)` : '—',
+    };
+  }, [stationRows]);
+
+  const dashboardWarnings = useMemo(() => {
+    const warnings: string[] = [];
+    if (eventState.scoringLocked) {
+      warnings.push('Závod je ukončen a zapisování je uzamčeno (mimo stanoviště T).');
+    }
+    if (stationError) {
+      warnings.push('Nepodařilo se načíst průchody stanovišť.');
+    }
+    if (raceDashboardSummary.patrolsOnCourse > 0 && raceDashboardSummary.patrolsFinished === 0) {
+      warnings.push('Hlídky jsou na trati, ale zatím není žádná dokončená hlídka.');
+    }
+    if (raceDashboardSummary.syncConflicts > 0) {
+      warnings.push(`Ve frontě je ${raceDashboardSummary.syncConflicts} konfliktů synchronizace.`);
+    }
+    return warnings;
+  }, [eventState.scoringLocked, raceDashboardSummary.patrolsFinished, raceDashboardSummary.patrolsOnCourse, raceDashboardSummary.syncConflicts, stationError]);
+
   if (!isCalcStation) {
     return (
       <div className="admin-shell">
@@ -3595,43 +3809,46 @@ function AdminDashboard({
         </div>
       </header>
       <main className="admin-content">
-        <section className="admin-card">
-          <header className="admin-card-header">
-            <div>
-              <h2>Stav závodu</h2>
-              <p className="admin-card-subtitle">
-                {eventLoading
-                  ? 'Načítám stav závodu…'
-                  : eventState.scoringLocked
-                  ? 'Závod je ukončen. Zapisování bodů je uzamčeno pro všechna stanoviště kromě T.'
-                  : 'Závod probíhá. Všechna stanoviště mohou zapisovat body.'}
-              </p>
-            </div>
-            <div className="admin-card-actions">
-              <button
-                type="button"
-                className="admin-button admin-button--primary"
-                onClick={() => handleToggleLock(!eventState.scoringLocked)}
-                disabled={lockUpdating}
-              >
-                {lockUpdating
-                  ? 'Aktualizuji…'
-                  : eventState.scoringLocked
-                  ? 'Znovu povolit zapisování'
-                  : 'Ukončit závod'}
-              </button>
-            </div>
-          </header>
-          {eventError ? <p className="admin-error">{eventError}</p> : null}
-          {lockMessage ? <p className="admin-notice">{lockMessage}</p> : null}
-        </section>
+        <AdminSectionNav
+          activeSection={activeAdminSection}
+          onNavigate={navigateAdminSection}
+        />
 
-        <section className="admin-card admin-card--with-divider">
+        <AdminDashboardSection
+          eventLoading={eventLoading}
+          scoringLocked={eventState.scoringLocked}
+          lockUpdating={lockUpdating}
+          onToggleLock={handleToggleLock}
+          onNavigate={navigateAdminSection}
+          summary={raceDashboardSummary}
+          warnings={dashboardWarnings}
+          eventError={eventError}
+          lockMessage={lockMessage}
+        />
+
+        <AdminLiveOverviewSection
+          stationLoading={stationLoading}
+          onRefresh={() => {
+            void loadStationStats();
+          }}
+          summary={raceDashboardSummary}
+        />
+
+        <AdminQueuesSection />
+
+        <AdminPatrolsOverviewSection onShowPreRaceSetup={() => setShowPreRaceSetup(true)} />
+
+        <AdminStartsSection />
+
+        <section
+          id={toAdminSectionId('stations')}
+          className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--stations"
+        >
           <header className="admin-card-header">
             <div>
-              <h2>Nastavení ročníků</h2>
+              <h2>Stanoviště a rozhodčí</h2>
               <p className="admin-card-subtitle">
-                Správa budoucích ročníků: eventy, pořadí stanovišť, rozhodčí a hlídky.
+                Nastavení ročníků, pořadí stanovišť, kategorie a přiřazení rozhodčích.
               </p>
             </div>
             <div className="admin-card-actions">
@@ -3676,8 +3893,9 @@ function AdminDashboard({
             <p className="admin-card-subtitle">
               Kolik míst se zvýrazní ve výsledcích a do jakého času je za kategorii plných 12 bodů.
             </p>
+            <h4>Vyhlašovaná místa (po kategoriích)</h4>
             <div className="admin-setup-scoring-grid">
-              {BASE_CATEGORY_ORDER.map((category) => (
+              {STATION_PASSAGE_CATEGORIES.map((category) => (
                 <div key={category} className="admin-setup-scoring-row">
                   <strong>{category}</strong>
                   <label className="admin-field" htmlFor={`admin-announced-places-${category}`}>
@@ -3699,22 +3917,35 @@ function AdminDashboard({
                       }
                     />
                   </label>
+                </div>
+              ))}
+            </div>
+            <h4>Čas pro plných 12 bodů</h4>
+            <div className="admin-setup-scoring-grid">
+              {BASE_CATEGORY_ORDER.map((category) => (
+                <div key={`setup-time-limit-${category}`} className="admin-setup-scoring-row">
+                  <strong>{category}</strong>
                   <label className="admin-field" htmlFor={`admin-time-limit-${category}`}>
-                    <span>Čas pro 12 bodů (min)</span>
+                    <span>Čas pro 12 bodů (HH:MM)</span>
                     <input
                       id={`admin-time-limit-${category}`}
-                      type="number"
-                      min={1}
-                      max={1440}
-                      value={setupEventScoringConfig.timeLimitMinutes[category]}
+                      type="time"
+                      step={60}
+                      value={formatMinutesAsTimeInput(setupEventScoringConfig.timeLimitMinutes[category])}
                       onChange={(event) =>
-                        setSetupEventScoringConfig((prev) => ({
-                          ...prev,
-                          timeLimitMinutes: {
-                            ...prev.timeLimitMinutes,
-                            [category]: toPositiveInt(event.target.value, prev.timeLimitMinutes[category], 24 * 60),
-                          },
-                        }))
+                        setSetupEventScoringConfig((prev) => {
+                          const nextMinutes = parseTimeInputToMinutes(event.target.value);
+                          if (nextMinutes === null) {
+                            return prev;
+                          }
+                          return {
+                            ...prev,
+                            timeLimitMinutes: {
+                              ...prev.timeLimitMinutes,
+                              [category]: nextMinutes,
+                            },
+                          };
+                        })
                       }
                     />
                   </label>
@@ -3744,6 +3975,11 @@ function AdminDashboard({
                 <h4>Účastnící se oddíly</h4>
                 <p className="admin-card-subtitle">
                   Označ oddíly, které se účastní ročníku. Seznam se použije ve výpočetce při úpravě profilu hlídky.
+                </p>
+                <p className="admin-card-subtitle">
+                  {setupEventScoringConfig.participatingTroops.length > 0
+                    ? `Vybráno (${setupEventScoringConfig.participatingTroops.length}): ${setupEventScoringConfig.participatingTroops.join(', ')}`
+                    : 'Zatím není vybraný žádný oddíl.'}
                 </p>
               </div>
               <div className="admin-setup-troop-grid">
@@ -4109,7 +4345,7 @@ function AdminDashboard({
           )}
         </section>
 
-        <section className="admin-card admin-card--with-divider">
+        <section className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--patrols">
           <header className="admin-card-header">
             <div>
               <h2>Diskvalifikace hlídky</h2>
@@ -4185,7 +4421,7 @@ function AdminDashboard({
           ) : null}
         </section>
 
-        <section className="admin-card admin-card--with-divider">
+        <section className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--stations">
           <header className="admin-card-header">
             <div>
               <h2>Správné odpovědi – Terčový úsek</h2>
@@ -4263,7 +4499,10 @@ function AdminDashboard({
           </div>
         </section>
 
-        <section className="admin-card admin-card--with-divider">
+        <section
+          id="admin-passages-section"
+          className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--live"
+        >
           <header className="admin-card-header">
             <div>
               <h2>Průchody stanovišť</h2>
@@ -4370,7 +4609,31 @@ function AdminDashboard({
           ) : null}
         </section>
 
-        <section className="admin-card admin-card--with-divider">
+        <AdminResultsSection
+          totalMissingAcrossStations={totalMissingAcrossStations}
+          summary={raceDashboardSummary}
+          exportingLeague={exportingLeague}
+          onExportLeaguePoints={handleExportLeaguePoints}
+        />
+
+        <AdminStatsSection
+          showStatsSection={showStatsSection}
+          onToggle={() => setShowStatsSection((prev) => !prev)}
+          stationStatistics={stationStatistics}
+          summary={raceDashboardSummary}
+        />
+
+        <AdminExportsOverviewSection
+          showExportsSection={showExportsSection}
+          onToggle={() => setShowExportsSection((prev) => !prev)}
+          onExportNameCheck={handleExportNameCheck}
+          exportingNames={exportingNames}
+          onExportLeaguePoints={handleExportLeaguePoints}
+          exportingLeague={exportingLeague}
+        />
+
+        {showExportsSection ? (
+        <section className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--exports">
           <header className="admin-card-header">
             <div>
               <h2>Import body ZL do výsledků</h2>
@@ -4406,6 +4669,7 @@ function AdminDashboard({
           {leagueImportError ? <p className="admin-error">{leagueImportError}</p> : null}
           {leagueImportSuccess ? <p className="admin-success">{leagueImportSuccess}</p> : null}
         </section>
+        ) : null}
         {missingDialog ? (
           <div
             className="admin-modal-backdrop"

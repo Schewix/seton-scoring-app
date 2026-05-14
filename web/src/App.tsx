@@ -139,6 +139,8 @@ interface PatrolFormDraft {
   finishAt: string | null;
 }
 
+type CalcPatrolLoadMode = 'full' | 'profile';
+
 type PatrolProfileChildRow = {
   firstName: string;
   lastName: string;
@@ -155,8 +157,10 @@ interface StationSummaryPatrol {
   visited: boolean;
 }
 
+type SummaryCategoryKey = CategoryKey | StationCategoryKey;
+
 interface StationCategorySummaryItem {
-  key: CategoryKey;
+  key: SummaryCategoryKey;
   expected: number;
   visited: number;
   missing: StationSummaryPatrol[];
@@ -771,7 +775,7 @@ function getStationDisplayName(name: string, code: string | null | undefined): s
   return code?.trim().toUpperCase() === 'T' ? 'Výpočetka' : name;
 }
 
-function formatBaseCategoryDetailLabel(category: CategoryKey): string {
+function formatBaseCategoryDetailLabel(category: SummaryCategoryKey): string {
   if (category === 'N') return 'N';
   if (category === 'M') return 'M';
   if (category === 'S') return 'S';
@@ -780,15 +784,6 @@ function formatBaseCategoryDetailLabel(category: CategoryKey): string {
 }
 
 const BASE_CATEGORY_ORDER: readonly CategoryKey[] = ['N', 'M', 'S', 'R'];
-
-function createBaseCategoryRecord<T>(factory: () => T): Record<CategoryKey, T> {
-  return {
-    N: factory(),
-    M: factory(),
-    S: factory(),
-    R: factory(),
-  };
-}
 
 const NO_SESSION_ERROR = 'NO_SESSION';
 
@@ -901,6 +896,7 @@ function StationApp({
   const scoringDisabled = scoringLocked && !isTargetStation;
   const timeScoringConfig = useMemo(() => buildTimeScoringConfig(manifest.event), [manifest.event]);
   const [activePatrol, setActivePatrol] = useState<Patrol | null>(null);
+  const [calcPatrolLoadMode, setCalcPatrolLoadMode] = useState<CalcPatrolLoadMode>('full');
   const [scannerPatrol, setScannerPatrol] = useState<Patrol | null>(null);
   const [scannerSource, setScannerSource] = useState<'manual' | 'scan' | 'summary' | null>(null);
   const [showPatrolChoice, setShowPatrolChoice] = useState(false);
@@ -978,6 +974,7 @@ function StationApp({
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
   const tempCodesRef = useRef<Map<string, string>>(new Map());
   const tempCounterRef = useRef(1);
+  const calcProfileRef = useRef<HTMLElement | null>(null);
   const formRef = useRef<HTMLElement | null>(null);
   const summaryRef = useRef<HTMLElement | null>(null);
   const summaryDetailRef = useRef<HTMLDivElement | null>(null);
@@ -998,10 +995,10 @@ function StationApp({
   const [stationPassageLoading, setStationPassageLoading] = useState(false);
   const [stationPassageError, setStationPassageError] = useState<string | null>(null);
   const [patrolFormDrafts, setPatrolFormDrafts] = useState<Record<string, PatrolFormDraft>>({});
-  const [selectedSummaryCategory, setSelectedSummaryCategory] = useState<CategoryKey | null>(null);
+  const [selectedSummaryCategory, setSelectedSummaryCategory] = useState<SummaryCategoryKey | null>(null);
   const [showCompletedSummary, setShowCompletedSummary] = useState(false);
   const [showScannerPanel, setShowScannerPanel] = useState(false);
-  const lastSummaryScrollRef = useRef<CategoryKey | null>(null);
+  const lastSummaryScrollRef = useRef<SummaryCategoryKey | null>(null);
   const isChangePasswordView = useMemo(
     () => isChangePasswordPathname(currentPathname),
     [currentPathname],
@@ -1146,6 +1143,14 @@ function StationApp({
     () => BASE_CATEGORY_ORDER.filter((category) => allowedCategorySet.has(category)),
     [allowedCategorySet],
   );
+  const allowedSummaryCategories = useMemo<SummaryCategoryKey[]>(
+    () => (isTargetStation ? allowedStationCategories : allowedBaseCategories),
+    [allowedBaseCategories, allowedStationCategories, isTargetStation],
+  );
+  const allowedSummaryCategorySet = useMemo(
+    () => new Set<SummaryCategoryKey>(allowedSummaryCategories),
+    [allowedSummaryCategories],
+  );
   const allowedStationCategoryLabel = useMemo(() => {
     if (!allowedBaseCategories.length) {
       return '—';
@@ -1174,9 +1179,9 @@ function StationApp({
       if (!previous) {
         return null;
       }
-      return allowedCategorySet.has(previous) ? previous : null;
+      return allowedSummaryCategorySet.has(previous) ? previous : null;
     });
-  }, [allowedCategorySet]);
+  }, [allowedSummaryCategorySet]);
 
   useEffect(() => {
     setShowCompletedSummary(false);
@@ -1650,6 +1655,7 @@ function StationApp({
 
   const previewPatrolCode = scannerPatrol ? resolvePatrolCode(scannerPatrol) : '';
   const showScannerPreview = Boolean(scannerPatrol && scannerSource === 'scan');
+  const isCalcProfileOnlyMode = isTargetStation && calcPatrolLoadMode === 'profile';
 
   useEffect(() => {
     let cancelled = false;
@@ -2205,15 +2211,19 @@ function StationApp({
         waitSeconds?: number | null;
         draft?: PatrolFormDraft | null;
         prefilledAnswers?: string | null;
+        calcLoadMode?: CalcPatrolLoadMode;
       },
     ) => {
       const draft = options?.draft ?? null;
       const hasPrefilledAnswers = typeof options?.prefilledAnswers === 'string';
+      const nextCalcLoadMode = isTargetStation ? options?.calcLoadMode ?? 'full' : 'full';
+      const shouldLoadScoringContext = !isTargetStation || nextCalcLoadMode === 'full';
       const initialTeamName = data.team_name ?? '';
       const initialMembers = typeof data.patrol_members === 'string' ? data.patrol_members : '';
       const parsedProfile = parsePatrolProfileDraft(initialTeamName, initialMembers);
       setActivePatrol({ ...data });
       setScannerPatrol({ ...data });
+      setCalcPatrolLoadMode(nextCalcLoadMode);
       setCalcTeamNameDraft(initialTeamName);
       setCalcPatrolMembersDraft(initialMembers);
       setCalcSelectedTroops(parsedProfile.troops);
@@ -2249,10 +2259,10 @@ function StationApp({
       const total = parseAnswerLetters(stored).length;
       setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
 
-      if (!draft) {
+      if (!draft && shouldLoadScoringContext) {
         void loadTimingData(data.id);
       }
-      if (isTargetStation && !draft && !hasPrefilledAnswers) {
+      if (isTargetStation && !draft && !hasPrefilledAnswers && shouldLoadScoringContext) {
         void (async () => {
           const storedAnswers = await loadTargetAnswers(data.id);
           if (!storedAnswers) {
@@ -2264,12 +2274,21 @@ function StationApp({
           setAnswersInput((current) => (current.trim().length > 0 ? current : storedAnswers));
         })();
       }
-      if (canReviewStationScores && !draft) {
+      if (canReviewStationScores && !draft && shouldLoadScoringContext) {
         void loadScoreReview(data.id, data.patrol_code, data.category, data.sex);
+      } else if (!shouldLoadScoringContext) {
+        setScoreReviewRows([]);
+        setScoreReviewState({});
+        setScoreReviewError(null);
+        setScoreReviewLoading(false);
       }
 
       if (typeof window !== 'undefined') {
         window.requestAnimationFrame(() => {
+          if (isTargetStation && nextCalcLoadMode === 'profile') {
+            calcProfileRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+          }
           formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           if (isTargetStation) {
             answersInputRef.current?.focus();
@@ -2281,24 +2300,27 @@ function StationApp({
     },
     [
       categoryAnswers,
+      calcProfileRef,
+      canReviewStationScores,
+      formRef,
       isTargetStation,
       loadTargetAnswers,
       loadTimingData,
       loadScoreReview,
-      canReviewStationScores,
     ],
   );
 
-  const handleServePatrol = useCallback(() => {
-    if (enableTicketQueue) {
-      handleAddTicket('serving', { restoredWaitMinutes: pendingRecoveredWaitMinutes });
-      return;
-    }
-    if (!scannerPatrol) {
-      pushAlert('Nejprve načti hlídku.');
-      return;
-    }
-    void (async () => {
+  const handleOpenPatrol = useCallback(
+    async (mode: CalcPatrolLoadMode = 'full') => {
+      if (enableTicketQueue) {
+        handleAddTicket('serving', { restoredWaitMinutes: pendingRecoveredWaitMinutes });
+        return;
+      }
+      if (!scannerPatrol) {
+        pushAlert('Nejprve načti hlídku.');
+        return;
+      }
+
       let patrolForForm = scannerPatrol;
       if (stationCode === 'T' && isOnline && !scannerPatrol.id.startsWith('manual-')) {
         const { data, error, status } = await supabase
@@ -2330,28 +2352,42 @@ function StationApp({
         waitSeconds: pendingRecoveredWaitMinutes && pendingRecoveredWaitMinutes > 0
           ? pendingRecoveredWaitMinutes * 60
           : 0,
+        calcLoadMode: stationCode === 'T' ? mode : 'full',
       });
       if (stationCode === 'T' && scannerSource === 'summary') {
         setSelectedSummaryCategory(null);
       }
-      pushAlert(`Hlídka ${patrolForForm.team_name} je připravena k obsluze.`);
+      if (stationCode === 'T' && mode === 'profile') {
+        pushAlert(`Profil hlídky ${patrolForForm.team_name} je připraven k úpravě.`);
+      } else {
+        pushAlert(`Hlídka ${patrolForForm.team_name} je připravena k obsluze.`);
+      }
       setShowPatrolChoice(false);
       setPendingRecoveredWaitMinutes(null);
-    })();
-  }, [
-    enableTicketQueue,
-    handleAddTicket,
-    initializeFormForPatrol,
-    isOnline,
-    eventId,
-    reportSupabaseError,
-    pendingRecoveredWaitMinutes,
-    pushAlert,
-    scannerPatrol,
-    scannerSource,
-    setSelectedSummaryCategory,
-    stationCode,
-  ]);
+    },
+    [
+      enableTicketQueue,
+      handleAddTicket,
+      initializeFormForPatrol,
+      isOnline,
+      eventId,
+      reportSupabaseError,
+      pendingRecoveredWaitMinutes,
+      pushAlert,
+      scannerPatrol,
+      scannerSource,
+      setSelectedSummaryCategory,
+      stationCode,
+    ],
+  );
+
+  const handleServePatrol = useCallback(() => {
+    void handleOpenPatrol('full');
+  }, [handleOpenPatrol]);
+
+  const handleOpenPatrolProfileOnly = useCallback(() => {
+    void handleOpenPatrol('profile');
+  }, [handleOpenPatrol]);
 
   const handleSavePatrolProfile = useCallback(async () => {
     if (!isTargetStation || !activePatrol) {
@@ -2602,6 +2638,33 @@ function StationApp({
     }
   }, [loadScoreReview, activePatrol]);
 
+  const handleOpenFullCalcForm = useCallback(() => {
+    if (!isTargetStation || !activePatrol) {
+      return;
+    }
+    setCalcPatrolLoadMode('full');
+    void loadTimingData(activePatrol.id);
+    void loadScoreReview(activePatrol.id, activePatrol.patrol_code, activePatrol.category, activePatrol.sex);
+    if (!answersInput.trim()) {
+      void (async () => {
+        const storedAnswers = await loadTargetAnswers(activePatrol.id);
+        if (!storedAnswers) {
+          return;
+        }
+        if (activePatrolIdRef.current !== activePatrol.id) {
+          return;
+        }
+        setAnswersInput((current) => (current.trim().length > 0 ? current : storedAnswers));
+      })();
+    }
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        answersInputRef.current?.focus();
+      });
+    }
+  }, [activePatrol, answersInput, isTargetStation, loadScoreReview, loadTargetAnswers, loadTimingData]);
+
   const handleTicketStateChange = useCallback(
     (id: string, nextState: Ticket['state']) => {
       const existingTicket = tickets.find((ticket) => ticket.id === id);
@@ -2799,22 +2862,47 @@ function StationApp({
   }, [eventId, reportSupabaseError, stationId]);
 
   const stationCategorySummary = useMemo<StationCategorySummary>(() => {
-    const record = createBaseCategoryRecord(() => ({
+    const createEmptyEntry = () => ({
       expected: 0,
       visited: 0,
       missing: [] as StationSummaryPatrol[],
       completed: [] as StationSummaryPatrol[],
-    }));
+    });
+    const record = new Map<SummaryCategoryKey, ReturnType<typeof createEmptyEntry>>();
+    allowedSummaryCategories.forEach((key) => {
+      record.set(key, createEmptyEntry());
+    });
     let totalExpected = 0;
     let totalVisited = 0;
     const seen = new Set<string>();
+
+    const resolveSummaryCategory = (
+      category: string | null | undefined,
+      sex: string | null | undefined,
+    ): SummaryCategoryKey | null => {
+      const normalizedCategory = category?.trim().toUpperCase() ?? '';
+      if (!isCategoryKey(normalizedCategory)) {
+        return null;
+      }
+      if (isTargetStation) {
+        const stationCategory = toStationCategoryKey(normalizedCategory, sex);
+        if (!stationCategory || !allowedStationCategorySet.has(stationCategory)) {
+          return null;
+        }
+        return stationCategory;
+      }
+      if (!allowedCategorySet.has(normalizedCategory)) {
+        return null;
+      }
+      return normalizedCategory;
+    };
 
     auth.patrols.forEach((patrolSummary) => {
       if (!isCategoryAllowed(patrolSummary.category)) {
         return;
       }
-      const baseCategory = patrolSummary.category.trim().toUpperCase();
-      if (!isCategoryKey(baseCategory) || !allowedCategorySet.has(baseCategory)) {
+      const summaryCategory = resolveSummaryCategory(patrolSummary.category, patrolSummary.sex);
+      if (!summaryCategory) {
         return;
       }
       const normalizedCode = normalisePatrolCode(patrolSummary.patrol_code ?? '');
@@ -2832,15 +2920,20 @@ function StationApp({
         visited: stationPassageVisitedSet.has(patrolSummary.id),
       };
 
-      record[baseCategory].expected += 1;
+      const entry = record.get(summaryCategory);
+      if (!entry) {
+        return;
+      }
+
+      entry.expected += 1;
       totalExpected += 1;
 
       if (detail.visited) {
-        record[baseCategory].visited += 1;
+        entry.visited += 1;
         totalVisited += 1;
-        record[baseCategory].completed.push(detail);
+        entry.completed.push(detail);
       } else {
-        record[baseCategory].missing.push(detail);
+        entry.missing.push(detail);
       }
     });
 
@@ -2848,8 +2941,8 @@ function StationApp({
       if (!isCategoryAllowed(manual.category)) {
         return;
       }
-      const baseCategory = manual.category.trim().toUpperCase();
-      if (!isCategoryKey(baseCategory) || !allowedCategorySet.has(baseCategory)) {
+      const summaryCategory = resolveSummaryCategory(manual.category, manual.sex);
+      if (!summaryCategory) {
         return;
       }
       const normalizedCode = normalisePatrolCode(manual.patrol_code ?? '');
@@ -2865,19 +2958,24 @@ function StationApp({
         sex: manual.sex,
         visited,
       };
-      record[baseCategory].expected += 1;
+      const entry = record.get(summaryCategory);
+      if (!entry) {
+        return;
+      }
+
+      entry.expected += 1;
       totalExpected += 1;
       if (detail.visited) {
-        record[baseCategory].visited += 1;
+        entry.visited += 1;
         totalVisited += 1;
-        record[baseCategory].completed.push(detail);
+        entry.completed.push(detail);
       } else {
-        record[baseCategory].missing.push(detail);
+        entry.missing.push(detail);
       }
     });
 
-    const items = allowedBaseCategories.map<StationCategorySummaryItem>((category) => {
-      const entry = record[category];
+    const items = allowedSummaryCategories.map<StationCategorySummaryItem>((category) => {
+      const entry = record.get(category) ?? createEmptyEntry();
       const missing = [...entry.missing].sort(compareSummaryPatrols);
       const completed = [...entry.completed].sort(compareSummaryPatrols);
       return {
@@ -2898,9 +2996,11 @@ function StationApp({
       totalMissing,
     };
   }, [
-    allowedBaseCategories,
+    allowedSummaryCategories,
     allowedCategorySet,
+    allowedStationCategorySet,
     auth.patrols,
+    isTargetStation,
     isCategoryAllowed,
     manualPatrols,
     stationPassageVisitedSet,
@@ -2936,9 +3036,28 @@ function StationApp({
     lastSummaryScrollRef.current = selectedSummaryCategory;
   }, [selectedSummaryCategory]);
 
-  const handleSelectSummaryCategory = useCallback((category: CategoryKey) => {
+  const handleSelectSummaryCategory = useCallback((category: SummaryCategoryKey) => {
     setSelectedSummaryCategory((previous) => (previous === category ? null : category));
   }, []);
+
+  const formatSummaryPatrolDisplayLabel = useCallback(
+    (patrol: StationSummaryPatrol) => {
+      if (!isTargetStation) {
+        return formatSummaryPatrolLabel(patrol);
+      }
+      const explicitCode = normalisePatrolCode(patrol.code ?? '');
+      if (explicitCode) {
+        return explicitCode;
+      }
+      const category = patrol.baseCategory?.trim().toUpperCase() ?? '';
+      const sex = patrol.sex?.trim().toUpperCase() ?? '';
+      if (category && sex) {
+        return `${category}${sex}`;
+      }
+      return formatSummaryPatrolLabel(patrol);
+    },
+    [isTargetStation],
+  );
 
   const handleSelectSummaryPatrol = useCallback(
     async (patrol: StationSummaryPatrol) => {
@@ -3275,8 +3394,9 @@ function StationApp({
 
   const resetForm = useCallback(() => {
     setActivePatrol(null);
-      setScannerPatrol(null);
-      setScannerSource(null);
+    setCalcPatrolLoadMode('full');
+    setScannerPatrol(null);
+    setScannerSource(null);
     setPendingRecoveredWaitMinutes(null);
     setShowPatrolChoice(false);
     setPoints('');
@@ -4693,13 +4813,19 @@ function StationApp({
               <button
                 type="button"
                 className="primary"
-                onClick={() => {
-                  handleServePatrol();
-                  setShowPatrolChoice(false);
-                }}
+                onClick={handleServePatrol}
               >
                 Obsluhovat
               </button>
+              {stationCode === 'T' ? (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={handleOpenPatrolProfileOnly}
+                >
+                  Jen profil
+                </button>
+              ) : null}
               {enableTicketQueue ? (
                 <button
                   type="button"
@@ -4827,6 +4953,16 @@ function StationApp({
                         >
                           Obsluhovat
                         </button>
+                        {stationCode === 'T' ? (
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={handleOpenPatrolProfileOnly}
+                            disabled={enableTicketQueue && isPatrolInQueue}
+                          >
+                            Jen profil
+                          </button>
+                        ) : null}
                         {enableTicketQueue ? (
                           <button
                             type="button"
@@ -4927,7 +5063,7 @@ function StationApp({
                       </div>
                       <ul className="station-summary-list">
                         {selectedSummaryDetail.missing.map((patrol) => {
-                          const codeLabel = formatSummaryPatrolLabel(patrol);
+                          const codeLabel = formatSummaryPatrolDisplayLabel(patrol);
                           const isSelectable = !patrol.visited || stationCode === 'T';
                           return (
                             <li key={patrol.id}>
@@ -4969,7 +5105,7 @@ function StationApp({
                       showCompletedSummary ? (
                         <ul className="station-summary-list">
                           {selectedSummaryDetail.completed.map((patrol) => {
-                            const codeLabel = formatSummaryPatrolLabel(patrol);
+                            const codeLabel = formatSummaryPatrolDisplayLabel(patrol);
                             return (
                               <li key={patrol.id}>
                                 <button
@@ -5013,20 +5149,31 @@ function StationApp({
           ) : null}
 
           {stationCode === 'T' && activePatrol ? (
-            <section className="card calc-profile-card">
+            <section ref={calcProfileRef} className="card calc-profile-card">
               <header className="card-header">
                 <div>
                   <h2>Profil hlídky</h2>
                   <p className="card-subtitle">Vyplň oddíl a členy zvlášť. Údaje se uloží do karty hlídky.</p>
                 </div>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => void handleSavePatrolProfile()}
-                  disabled={savingPatrolProfile}
-                >
-                  {savingPatrolProfile ? 'Ukládám…' : 'Uložit profil'}
-                </button>
+                <div className="card-actions">
+                  {isCalcProfileOnlyMode ? (
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={handleOpenFullCalcForm}
+                    >
+                      Přejít na bodování
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => void handleSavePatrolProfile()}
+                    disabled={savingPatrolProfile}
+                  >
+                    {savingPatrolProfile ? 'Ukládám…' : 'Uložit profil'}
+                  </button>
+                </div>
               </header>
               <div className="calc-patrol-profile">
                 <div className="calc-profile-troops">
@@ -5208,6 +5355,14 @@ function StationApp({
               </button>
             </header>
             {activePatrol ? (
+              isCalcProfileOnlyMode ? (
+                <div className="form-placeholder">
+                  <p>Hlídka je načtená jen pro úpravu profilu (oddíl a členové).</p>
+                  <button type="button" className="ghost" onClick={handleOpenFullCalcForm}>
+                    Otevřít bodování
+                  </button>
+                </div>
+              ) : (
               <div className={`form-grid${stationCode === 'T' ? ' form-grid--calc' : ''}`}>
                 <div className="patrol-meta">
                   <strong>{activePatrol.team_name}</strong>
@@ -5537,6 +5692,7 @@ function StationApp({
                   </p>
                 ) : null}
               </div>
+              )
             ) : (
               <p className="form-placeholder">Nejprve načti hlídku a otevři formulář.</p>
             )}
