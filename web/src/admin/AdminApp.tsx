@@ -45,7 +45,6 @@ import {
 } from './adminRoutes';
 import AdminSectionNav from './components/AdminSectionNav';
 import {
-  AdminExportsOverviewSection,
   AdminLiveMapSection,
   AdminLiveOverviewSection,
   AdminPatrolsOverviewSection,
@@ -257,6 +256,19 @@ type SetupEventScoringConfig = {
   participatingTroops: string[];
 };
 
+type JudgeTaskPresetKey =
+  | 'station-basic'
+  | 'score-review'
+  | 'calc-score-review'
+  | 'manage-results'
+  | 'manage-wait-times';
+
+type JudgeTaskPreset = {
+  key: JudgeTaskPresetKey;
+  label: string;
+  tasks: string[];
+};
+
 type SelectedSetupAssignmentSummary = AdminJudgeAssignmentSummary & {
   createdAt: string;
 };
@@ -309,6 +321,46 @@ const DEFAULT_SETUP_TIME_LIMITS_MINUTES: Record<CategoryKey, number> = {
 const DEFAULT_SETUP_TIME_PENALTY_STEP_MINUTES = 20;
 const DEFAULT_TARGET_ANSWER_OPTION_COUNT: TargetAnswerOptionCount = 4;
 const DEFAULT_SETUP_TROOP_OPTIONS = PTO_TROOP_REGISTRY.map((entry) => entry.canonicalName).sort(compareTroopSheetOrder);
+const JUDGE_TASK_PRESETS: ReadonlyArray<JudgeTaskPreset> = [
+  {
+    key: 'station-basic',
+    label: 'Klasický rozhodčí (zápis bodů)',
+    tasks: [],
+  },
+  {
+    key: 'score-review',
+    label: 'Kontrola bodů (score-review)',
+    tasks: ['score-review'],
+  },
+  {
+    key: 'calc-score-review',
+    label: 'Výpočetka - rozšířená kontrola bodů',
+    tasks: ['calc-score-review'],
+  },
+  {
+    key: 'manage-results',
+    label: 'Správa výsledků',
+    tasks: ['manage-results'],
+  },
+  {
+    key: 'manage-wait-times',
+    label: 'Správa čekacích dob',
+    tasks: ['manage-wait-times'],
+  },
+];
+const DEFAULT_JUDGE_TASK_PRESET: JudgeTaskPresetKey = 'station-basic';
+
+function toJudgeTaskPresetKey(value: string): JudgeTaskPresetKey {
+  const normalized = value.trim() as JudgeTaskPresetKey;
+  return JUDGE_TASK_PRESETS.some((preset) => preset.key === normalized)
+    ? normalized
+    : DEFAULT_JUDGE_TASK_PRESET;
+}
+
+function getJudgeTasksForPreset(presetKey: JudgeTaskPresetKey): string[] {
+  return JUDGE_TASK_PRESETS.find((preset) => preset.key === presetKey)?.tasks ?? [];
+}
+
 function normalizeText(value: string | null | undefined): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -1223,8 +1275,19 @@ function AdminDashboard({
     }
     return window.localStorage.getItem(SETUP_SELECTED_EVENT_STORAGE_KEY) || eventId;
   });
-  const [showStatsSection, setShowStatsSection] = useState(false);
-  const [showExportsSection, setShowExportsSection] = useState(false);
+  const normalizedSelectedSetupEventId = normalizeText(selectedSetupEventId);
+  const activeEventId = useMemo(() => {
+    if (!setupEvents.length) {
+      return eventId;
+    }
+    if (
+      normalizedSelectedSetupEventId &&
+      setupEvents.some((eventRow) => eventRow.id === normalizedSelectedSetupEventId)
+    ) {
+      return normalizedSelectedSetupEventId;
+    }
+    return eventId;
+  }, [eventId, normalizedSelectedSetupEventId, setupEvents]);
   const [activeAdminPage, setActiveAdminPage] = useState<AdminPageKey>(() => {
     if (typeof window === 'undefined') {
       return 'live';
@@ -1265,7 +1328,7 @@ function AdminDashboard({
   const [judgeDisplayNameInput, setJudgeDisplayNameInput] = useState('');
   const [judgeStationCodeInput, setJudgeStationCodeInput] = useState('');
   const [judgeCategoryToggle, setJudgeCategoryToggle] = useState<CategoryToggleState>(() => createDefaultCategoryToggleState());
-  const [judgeTasksInput, setJudgeTasksInput] = useState('score-review');
+  const [judgeTaskPreset, setJudgeTaskPreset] = useState<JudgeTaskPresetKey>(DEFAULT_JUDGE_TASK_PRESET);
   const [judgeTemporaryPassword, setJudgeTemporaryPassword] = useState<string | null>(null);
 
   const [patrolCounts, setPatrolCounts] = useState<PatrolCountsState>(() => createDefaultPatrolCounts());
@@ -1287,7 +1350,7 @@ function AdminDashboard({
   }, [selectedSetupEventId]);
 
   const loadAnswers = useCallback(async () => {
-    const answersEventId = selectedSetupEventId || eventId;
+    const answersEventId = activeEventId;
     const answersEventName =
       setupEvents.find((row) => row.id === answersEventId)?.name ?? answersEventId;
     const targetStation = setupStations.find(
@@ -1337,7 +1400,7 @@ function AdminDashboard({
     setAnswersForm(form);
     setAnswersSummary(summary);
     setAnswersSuccess(null);
-  }, [answersTargetOptionCount, eventId, selectedSetupEventId, setupEvents, setupStations, stationId]);
+  }, [activeEventId, answersTargetOptionCount, eventId, setupEvents, setupStations, stationId]);
 
   const loadStationStats = useCallback(async () => {
     setStationLoading(true);
@@ -1348,16 +1411,16 @@ function AdminDashboard({
       supabase
         .from('stations')
         .select('id, code, name')
-        .eq('event_id', eventId)
+        .eq('event_id', activeEventId)
         .order('code'),
       supabase
         .from('station_passages')
         .select('station_id, patrol_id, arrived_at, left_at, client_created_at, patrols(category, sex)')
-        .eq('event_id', eventId),
+        .eq('event_id', activeEventId),
       supabase
         .from('patrols')
         .select('id, category, sex, patrol_code, team_name, active')
-        .eq('event_id', eventId),
+        .eq('event_id', activeEventId),
     ]);
 
     setStationLoading(false);
@@ -1562,7 +1625,7 @@ function AdminDashboard({
       overdueNoFinishPatrols: 0,
       lastSyncAt: new Date().toISOString(),
     });
-  }, [eventId]);
+  }, [activeEventId]);
 
   const handleOpenStationMissing = useCallback(
     (row: StationPassageRow, category: CategoryKey | 'TOTAL') => {
@@ -1751,6 +1814,11 @@ function AdminDashboard({
     () => setupEvents.find((row) => row.id === selectedSetupEventId) ?? null,
     [selectedSetupEventId, setupEvents],
   );
+  const activeSetupEvent = useMemo(
+    () => setupEvents.find((row) => row.id === activeEventId) ?? null,
+    [activeEventId, setupEvents],
+  );
+  const activeEventName = activeSetupEvent?.name || eventState.name;
 
   const setupTroopOptions = useMemo(() => {
     const merged = normalizeTroopList([
@@ -1980,15 +2048,6 @@ function AdminDashboard({
     }
   }, [activeAdminPage, adminRoutePrefix, eventId, isCalcStation]);
 
-  useEffect(() => {
-    if (activeAdminPage === 'statistics' && !showStatsSection) {
-      setShowStatsSection(true);
-    }
-    if (activeAdminPage === 'settings' && !showExportsSection) {
-      setShowExportsSection(true);
-    }
-  }, [activeAdminPage, showExportsSection, showStatsSection]);
-
   const handleLookupPatrol = useCallback(async () => {
     setDisqualifyError(null);
     setDisqualifySuccess(null);
@@ -2005,7 +2064,7 @@ function AdminDashboard({
       const { data, error } = await supabase
         .from('patrols')
         .select('id, patrol_code, team_name, category, sex, disqualified')
-        .eq('event_id', eventId)
+        .eq('event_id', activeEventId)
         .in('patrol_code', variants)
         .maybeSingle();
 
@@ -2034,12 +2093,18 @@ function AdminDashboard({
     } finally {
       setDisqualifyLoading(false);
     }
-  }, [disqualifyCode, eventId]);
+  }, [activeEventId, disqualifyCode]);
 
   const handleDisqualifyPatrol = useCallback(async () => {
     setDisqualifyError(null);
     setDisqualifySuccess(null);
 
+    if (activeEventId !== eventId) {
+      setDisqualifyError(
+        `Diskvalifikace je dostupná jen pro aktuální ročník "${eventState.name}".`,
+      );
+      return;
+    }
     if (!disqualifyTarget) {
       setDisqualifyError('Nejprve načti hlídku.');
       return;
@@ -2089,7 +2154,7 @@ function AdminDashboard({
     } finally {
       setDisqualifySaving(false);
     }
-  }, [accessToken, disqualifyTarget]);
+  }, [accessToken, activeEventId, disqualifyTarget, eventId, eventState.name]);
 
   useEffect(() => {
     if (!isCalcStation) {
@@ -2111,7 +2176,7 @@ function AdminDashboard({
     setAnswersError(null);
     setAnswersSuccess(null);
 
-    const answersEventId = selectedSetupEventId || eventId;
+    const answersEventId = activeEventId;
     const targetStation = setupStations.find(
       (station) =>
         station.event_id === answersEventId &&
@@ -2185,6 +2250,7 @@ function AdminDashboard({
       setAnswersSaving(false);
     }
   }, [
+    activeEventId,
     answersForm,
     answersSummary,
     eventId,
@@ -2192,7 +2258,6 @@ function AdminDashboard({
     loadSetupData,
     postSetupAction,
     selectedSetupEvent,
-    selectedSetupEventId,
     setupStations,
     stationId,
     answersTargetOptionCount,
@@ -2454,10 +2519,7 @@ function AdminDashboard({
       return;
     }
 
-    const allowedTasks = judgeTasksInput
-      .split(/[,\n;]/)
-      .map((item) => item.trim())
-      .filter(Boolean);
+    const allowedTasks = getJudgeTasksForPreset(judgeTaskPreset);
 
     setSetupSaving(true);
     try {
@@ -2491,7 +2553,7 @@ function AdminDashboard({
     judgeDisplayNameInput,
     judgeEmailInput,
     judgeStationCodeInput,
-    judgeTasksInput,
+    judgeTaskPreset,
     loadSetupData,
     postSetupAction,
     selectedSetupEventId,
@@ -2611,7 +2673,7 @@ function AdminDashboard({
       const { data, error } = await supabase
         .from('patrols')
         .select('patrol_code, team_name, category, sex, patrol_members, note, active')
-        .eq('event_id', eventId)
+        .eq('event_id', activeEventId)
         .eq('active', true);
 
       if (error) {
@@ -2693,14 +2755,14 @@ function AdminDashboard({
         worksheet.columns = [{ width: 16 }, ...Array.from({ length: memberColumnCount }, () => ({ width: 28 }))];
       });
 
-      await downloadWorkbook(workbook, toExportFileName(eventState.name, 'kontrola-jmen'));
+      await downloadWorkbook(workbook, toExportFileName(activeEventName, 'kontrola-jmen'));
     } catch (error) {
       console.error('Failed to export name check workbook', error);
       window.alert('Export kontroly jmen selhal.');
     } finally {
       setExportingNames(false);
     }
-  }, [eventId, eventState.name, exportingNames]);
+  }, [activeEventId, activeEventName, exportingNames]);
 
   const handleExportLeaguePoints = useCallback(async () => {
     if (exportingLeague) {
@@ -2739,7 +2801,7 @@ function AdminDashboard({
       const { data, error } = await supabase
         .from('results_ranked')
         .select('patrol_code, team_name, category, sex, disqualified, rank_in_bracket, total_points, points_no_t, pure_seconds')
-        .eq('event_id', eventId);
+        .eq('event_id', activeEventId);
 
       if (error) {
         throw error;
@@ -3328,14 +3390,14 @@ function AdminDashboard({
         worksheet.getColumn(2).hidden = true;
       });
 
-      await downloadWorkbook(workbook, toExportFileName(eventState.name, 'body-zelena-liga'));
+      await downloadWorkbook(workbook, toExportFileName(activeEventName, 'body-zelena-liga'));
     } catch (error) {
       console.error('Failed to export league points workbook', error);
       window.alert('Export bodů pro Zelenou ligu selhal.');
     } finally {
       setExportingLeague(false);
     }
-  }, [eventId, eventState.name, exportingLeague]);
+  }, [activeEventId, activeEventName, exportingLeague]);
 
   const handleLeagueImportFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const [selectedFile] = Array.from(event.target.files ?? []);
@@ -3504,11 +3566,11 @@ function AdminDashboard({
           .select(
             'patrol_id, patrol_code, team_name, category, sex, patrol_members, disqualified, rank_in_bracket, total_points, points_no_t, pure_seconds, start_time, finish_time, total_seconds, wait_seconds, station_points_breakdown',
           )
-          .eq('event_id', eventId),
+          .eq('event_id', activeEventId),
         supabase
           .from('stations')
           .select('code')
-          .eq('event_id', eventId)
+          .eq('event_id', activeEventId)
           .order('code', { ascending: true }),
       ]);
 
@@ -3934,7 +3996,7 @@ function AdminDashboard({
         ];
       });
 
-      await downloadWorkbook(workbook, toExportFileName(eventState.name, 'vysledky-zl-body'));
+      await downloadWorkbook(workbook, toExportFileName(activeEventName, 'vysledky-zl-body'));
 
       const unsupportedSheetsHint = unsupportedSheets.length
         ? ` Nepodporované listy byly přeskočeny: ${unsupportedSheets.slice(0, 4).join(', ')}.`
@@ -3949,7 +4011,7 @@ function AdminDashboard({
     } finally {
       setProcessingLeagueImport(false);
     }
-  }, [eventId, eventState.name, leagueImportFile, processingLeagueImport]);
+  }, [activeEventId, activeEventName, leagueImportFile, processingLeagueImport]);
 
   const totalMissingAcrossStations = useMemo(
     () => stationRows.reduce((sum, row) => sum + row.totalMissing.length, 0),
@@ -4001,8 +4063,8 @@ function AdminDashboard({
           <div>
             <h1>Administrace závodu</h1>
             <p className="admin-subtitle">
-              {eventState.name} · {ADMIN_PAGE_TITLE[activeAdminPage]}
-              {eventState.scoringLocked ? ' · Závod ukončen' : ''}
+              {activeEventName} · {ADMIN_PAGE_TITLE[activeAdminPage]}
+              {activeEventId === eventId && eventState.scoringLocked ? ' · Závod ukončen' : ''}
             </p>
           </div>
           <div className="admin-header-actions admin-header-actions--centered-row">
@@ -4061,7 +4123,7 @@ function AdminDashboard({
             <select
               id="admin-global-event-switch"
               className="admin-header-event-switch-select"
-              value={selectedSetupEventId}
+              value={activeEventId}
               onChange={(event) => setSelectedSetupEventId(event.target.value)}
               disabled={setupLoading || setupSaving || setupEvents.length === 0}
             >
@@ -4097,8 +4159,9 @@ function AdminDashboard({
             summary={raceDashboardSummary}
           />
         ) : null}
+        {isLivePage ? <AdminQueuesSection /> : null}
 
-        {isPatrolsPage ? <AdminPatrolsOverviewSection eventId={eventId} /> : null}
+        {isPatrolsPage ? <AdminPatrolsOverviewSection eventId={activeEventId} /> : null}
         {isPatrolsPage ? <AdminStartsSection /> : null}
 
         {isStationsPage ? (
@@ -4124,7 +4187,7 @@ function AdminDashboard({
           {answersError ? <p className="admin-error">{answersError}</p> : null}
           {answersSuccess ? <p className="admin-success">{answersSuccess}</p> : null}
           <p className="admin-card-subtitle">
-            Ročník nastavení: <strong>{selectedSetupEvent?.name || eventState.name}</strong>
+            Ročník nastavení: <strong>{activeEventName}</strong>
           </p>
           <div className="admin-disqualify-form">
             <label className="admin-field" htmlFor="admin-target-answer-option-count">
@@ -4241,10 +4304,6 @@ function AdminDashboard({
             </header>
             {setupError ? <p className="admin-error">{setupError}</p> : null}
             {setupSuccess ? <p className="admin-success">{setupSuccess}</p> : null}
-            <AdminStationHealthPanel
-              stationCards={stationHealthCards}
-              assignmentRows={selectedSetupAssignments}
-            />
             {judgeTemporaryPassword ? (
               <p className="admin-notice">
                 Nový účet rozhodčího byl vytvořen. Dočasné heslo: <strong>{judgeTemporaryPassword}</strong>
@@ -4293,13 +4352,17 @@ function AdminDashboard({
                 </label>
                 <label className="admin-field" htmlFor="admin-judge-tasks">
                   <span>Oprávnění (allowed tasks)</span>
-                  <input
+                  <select
                     id="admin-judge-tasks"
-                    value={judgeTasksInput}
-                    onChange={(event) => setJudgeTasksInput(event.target.value)}
-                    placeholder="score-review, manage-results"
-                    autoComplete="off"
-                  />
+                    value={judgeTaskPreset}
+                    onChange={(event) => setJudgeTaskPreset(toJudgeTaskPresetKey(event.target.value))}
+                  >
+                    {JUDGE_TASK_PRESETS.map((preset) => (
+                      <option key={preset.key} value={preset.key}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
               <div className="admin-category-toggle-list">
@@ -4330,6 +4393,10 @@ function AdminDashboard({
                 </button>
               </div>
             </div>
+            <AdminStationHealthPanel
+              stationCards={stationHealthCards}
+              assignmentRows={selectedSetupAssignments}
+            />
           </section>
         ) : null}
 
@@ -4709,6 +4776,11 @@ function AdminDashboard({
               </p>
             </div>
           </header>
+          {activeEventId !== eventId ? (
+            <p className="admin-notice">
+              Pro vybraný ročník je diskvalifikace jen pro čtení. Upravovat lze pouze aktuální ročník účtu.
+            </p>
+          ) : null}
           <div className="admin-disqualify-form">
             <label className="admin-field" htmlFor="admin-disqualify-code">
               <span>Kód hlídky</span>
@@ -4767,7 +4839,7 @@ function AdminDashboard({
                   type="button"
                   className="admin-button admin-button--danger"
                   onClick={handleDisqualifyPatrol}
-                  disabled={disqualifySaving || disqualifyTarget.disqualified}
+                  disabled={disqualifySaving || disqualifyTarget.disqualified || activeEventId !== eventId}
                 >
                   {disqualifySaving ? 'Ukládám…' : 'Diskvalifikovat hlídku'}
                 </button>
@@ -4777,10 +4849,9 @@ function AdminDashboard({
         </section>
         ) : null}
 
-        {isLivePage ? <AdminQueuesSection /> : null}
         {isLivePage ? (
           <AdminLiveMapSection
-            eventId={eventId}
+            eventId={activeEventId}
             mapRoute={MAPA_PROCHODU_ROUTE}
           />
         ) : null}
@@ -4908,6 +4979,7 @@ function AdminDashboard({
 
         {isResultsPage ? (
         <AdminResultsSection
+          eventId={activeEventId}
           totalMissingAcrossStations={totalMissingAcrossStations}
           summary={raceDashboardSummary}
           exportingLeague={exportingLeague}
@@ -4917,24 +4989,11 @@ function AdminDashboard({
 
         {isStatisticsPage ? (
         <AdminStatsSection
-          showStatsSection
-          onToggle={() => setShowStatsSection((prev) => !prev)}
-          summary={raceDashboardSummary}
+          eventId={activeEventId}
         />
         ) : null}
 
         {isSettingsPage ? (
-        <AdminExportsOverviewSection
-          showExportsSection={showExportsSection}
-          onToggle={() => setShowExportsSection((prev) => !prev)}
-          onExportNameCheck={handleExportNameCheck}
-          exportingNames={exportingNames}
-          onExportLeaguePoints={handleExportLeaguePoints}
-          exportingLeague={exportingLeague}
-        />
-        ) : null}
-
-        {isSettingsPage && showExportsSection ? (
         <section className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--exports">
           <header className="admin-card-header">
             <div>

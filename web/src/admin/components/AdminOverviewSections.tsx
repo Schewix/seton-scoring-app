@@ -616,6 +616,7 @@ export function AdminStartsSection() {
 }
 
 type ResultsSectionProps = {
+  eventId: string;
   totalMissingAcrossStations: number;
   summary: RaceDashboardSummary;
   exportingLeague: boolean;
@@ -623,12 +624,56 @@ type ResultsSectionProps = {
 };
 
 export function AdminResultsSection({
+  eventId,
   totalMissingAcrossStations,
   summary,
   exportingLeague,
   onExportLeaguePoints,
 }: ResultsSectionProps) {
   const hasResultProblems = totalMissingAcrossStations > 0 || summary.patrolsOnCourse > 0 || summary.overdueNoFinishPatrols > 0;
+  const [disqualifiedCount, setDisqualifiedCount] = useState(0);
+  const [outOfCompetitionCount, setOutOfCompetitionCount] = useState(0);
+  const [statusLoading, setStatusLoading] = useState(false);
+
+  useEffect(() => {
+    let canceled = false;
+
+    const loadResultsStatuses = async () => {
+      setStatusLoading(true);
+      const { data, error } = await supabase
+        .from('patrols')
+        .select('disqualified, active')
+        .eq('event_id', eventId);
+
+      if (canceled) {
+        return;
+      }
+
+      setStatusLoading(false);
+      if (error) {
+        console.error('Failed to load disqualified/out-of-competition counts', error);
+        setDisqualifiedCount(0);
+        setOutOfCompetitionCount(0);
+        return;
+      }
+
+      const rows = (data ?? []) as { disqualified?: boolean | null; active?: boolean | null }[];
+      const disqualified = rows.filter((row) => row.disqualified === true).length;
+      const outOfCompetition = rows.filter(
+        (row) => row.active === false && row.disqualified !== true,
+      ).length;
+      setDisqualifiedCount(disqualified);
+      setOutOfCompetitionCount(outOfCompetition);
+    };
+
+    void loadResultsStatuses();
+
+    return () => {
+      canceled = true;
+    };
+  }, [eventId]);
+
+  const disqualifiedOrOutCount = disqualifiedCount + outOfCompetitionCount;
 
   return (
     <section
@@ -641,24 +686,6 @@ export function AdminResultsSection({
           <p className="admin-card-subtitle">
             Průběžné a finální výsledky včetně kontrol před vyhlášením.
           </p>
-        </div>
-        <div className="admin-card-actions">
-          <a
-            className="admin-button admin-button--secondary"
-            href="https://www.zelenaliga.cz/aplikace/setonuv-zavod/vysledky"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Otevřít průběžné výsledky
-          </a>
-          <a
-            className="admin-button admin-button--secondary"
-            href="https://www.zelenaliga.cz/aplikace/setonuv-zavod/vysledky?autoExport=1"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Export výsledků (CSV/PDF)
-          </a>
         </div>
       </header>
       {hasResultProblems ? (
@@ -689,7 +716,10 @@ export function AdminResultsSection({
         </div>
         <div className="admin-placeholder-item">
           <strong>Diskvalifikované / mimo soutěž</strong>
-          <span>TODO</span>
+          <span>{statusLoading ? '…' : disqualifiedOrOutCount}</span>
+          {!statusLoading ? (
+            <small>{`DSQ: ${disqualifiedCount} · Mimo soutěž: ${outOfCompetitionCount}`}</small>
+          ) : null}
         </div>
       </div>
       <div className="admin-card-actions">
@@ -710,16 +740,293 @@ export function AdminResultsSection({
 }
 
 type StatsSectionProps = {
-  showStatsSection: boolean;
-  onToggle: () => void;
-  summary: RaceDashboardSummary;
+  eventId: string;
 };
 
-export function AdminStatsSection({
-  showStatsSection,
-  onToggle,
-  summary,
-}: StatsSectionProps) {
+type StatsCategoryKey = 'N' | 'M' | 'S' | 'R';
+
+const STATS_CATEGORY_ORDER: ReadonlyArray<StatsCategoryKey> = ['N', 'M', 'S', 'R'];
+
+function toStatsCategoryKey(value: string | null | undefined): StatsCategoryKey | null {
+  const normalized = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  if (normalized === 'N' || normalized === 'M' || normalized === 'S' || normalized === 'R') {
+    return normalized;
+  }
+  return null;
+}
+
+function normalizeStatsText(value: string | null | undefined): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function computeMedian(values: number[]): number | null {
+  if (!values.length) {
+    return null;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+  return sorted[middle];
+}
+
+function formatStatNumber(value: number | null, digits = 1): string {
+  if (value === null || !Number.isFinite(value)) {
+    return '—';
+  }
+  return value.toFixed(digits);
+}
+
+type StationStatsSummaryRow = {
+  stationCode: string;
+  stationName: string;
+  totalWaitMinutes: number;
+  medianWaitMinutes: number | null;
+  averagePoints: number | null;
+};
+
+type StationCategoryAverageRow = {
+  stationCode: string;
+  stationName: string;
+  averages: Record<StatsCategoryKey, number | null>;
+};
+
+type TroopCountRow = {
+  troopName: string;
+  total: number;
+  byCategory: Record<StatsCategoryKey, number>;
+};
+
+export function AdminStatsSection({ eventId }: StatsSectionProps) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [overallWaitMedian, setOverallWaitMedian] = useState<number | null>(null);
+  const [categoryWaitMedians, setCategoryWaitMedians] = useState<Record<StatsCategoryKey, number | null>>({
+    N: null,
+    M: null,
+    S: null,
+    R: null,
+  });
+  const [waitSamplesCount, setWaitSamplesCount] = useState(0);
+  const [stationSummaries, setStationSummaries] = useState<StationStatsSummaryRow[]>([]);
+  const [stationCategoryAverages, setStationCategoryAverages] = useState<StationCategoryAverageRow[]>([]);
+  const [troopCounts, setTroopCounts] = useState<TroopCountRow[]>([]);
+
+  useEffect(() => {
+    let canceled = false;
+
+    const loadStats = async () => {
+      setLoading(true);
+      setError(null);
+      const [stationsResponse, passagesResponse, scoresResponse, patrolsResponse] = await Promise.all([
+        supabase
+          .from('stations')
+          .select('id, code, name')
+          .eq('event_id', eventId),
+        supabase
+          .from('station_passages')
+          .select('station_id, wait_minutes, patrols(category)')
+          .eq('event_id', eventId),
+        supabase
+          .from('station_scores')
+          .select('station_id, points, patrols(category)')
+          .eq('event_id', eventId),
+        supabase
+          .from('patrols')
+          .select('team_name, category, active')
+          .eq('event_id', eventId),
+      ]);
+
+      if (canceled) {
+        return;
+      }
+
+      setLoading(false);
+
+      if (stationsResponse.error || passagesResponse.error || scoresResponse.error || patrolsResponse.error) {
+        console.error(
+          'Failed to load post-race statistics',
+          stationsResponse.error,
+          passagesResponse.error,
+          scoresResponse.error,
+          patrolsResponse.error,
+        );
+        setError('Nepodařilo se načíst statistiky ročníku.');
+        setOverallWaitMedian(null);
+        setCategoryWaitMedians({ N: null, M: null, S: null, R: null });
+        setWaitSamplesCount(0);
+        setStationSummaries([]);
+        setStationCategoryAverages([]);
+        setTroopCounts([]);
+        return;
+      }
+
+      const stations = ((stationsResponse.data ?? []) as { id: string; code: string | null; name: string | null }[])
+        .map((station) => ({
+          id: station.id,
+          code: normalizeStatsText(station.code).toUpperCase(),
+          name: normalizeStatsText(station.name),
+        }))
+        .filter((station) => station.code.length > 0);
+      const stationById = new Map(stations.map((station) => [station.id, station]));
+
+      type PassageRow = {
+        station_id: string;
+        wait_minutes: number | null;
+        patrols?: { category?: string | null } | null;
+      };
+      type ScoreRow = {
+        station_id: string;
+        points: number | null;
+        patrols?: { category?: string | null } | null;
+      };
+      type PatrolRow = {
+        team_name: string | null;
+        category: string | null;
+        active: boolean | null;
+      };
+
+      const overallWaitSamples: number[] = [];
+      const waitByCategory: Record<StatsCategoryKey, number[]> = {
+        N: [],
+        M: [],
+        S: [],
+        R: [],
+      };
+      const waitByStation = new Map<string, number[]>();
+
+      ((passagesResponse.data ?? []) as PassageRow[]).forEach((row) => {
+        const station = stationById.get(row.station_id);
+        if (!station || station.code === 'T') {
+          return;
+        }
+        const wait = typeof row.wait_minutes === 'number' && Number.isFinite(row.wait_minutes)
+          ? Math.max(0, row.wait_minutes)
+          : 0;
+
+        overallWaitSamples.push(wait);
+        const stationSamples = waitByStation.get(row.station_id) ?? [];
+        stationSamples.push(wait);
+        waitByStation.set(row.station_id, stationSamples);
+
+        const category = toStatsCategoryKey(row.patrols?.category);
+        if (category) {
+          waitByCategory[category].push(wait);
+        }
+      });
+
+      const categoryMedians: Record<StatsCategoryKey, number | null> = {
+        N: computeMedian(waitByCategory.N),
+        M: computeMedian(waitByCategory.M),
+        S: computeMedian(waitByCategory.S),
+        R: computeMedian(waitByCategory.R),
+      };
+      setWaitSamplesCount(overallWaitSamples.length);
+      setOverallWaitMedian(computeMedian(overallWaitSamples));
+      setCategoryWaitMedians(categoryMedians);
+
+      const pointsByStation = new Map<string, number[]>();
+      const pointsByStationCategory = new Map<string, Record<StatsCategoryKey, number[]>>();
+
+      ((scoresResponse.data ?? []) as ScoreRow[]).forEach((row) => {
+        const station = stationById.get(row.station_id);
+        if (!station || typeof row.points !== 'number' || !Number.isFinite(row.points)) {
+          return;
+        }
+        const stationPoints = pointsByStation.get(row.station_id) ?? [];
+        stationPoints.push(row.points);
+        pointsByStation.set(row.station_id, stationPoints);
+
+        const category = toStatsCategoryKey(row.patrols?.category);
+        if (!category) {
+          return;
+        }
+        const perCategory = pointsByStationCategory.get(row.station_id) ?? {
+          N: [],
+          M: [],
+          S: [],
+          R: [],
+        };
+        perCategory[category].push(row.points);
+        pointsByStationCategory.set(row.station_id, perCategory);
+      });
+
+      const stationStatsRows: StationStatsSummaryRow[] = stations
+        .map((station) => {
+          const waitSamples = waitByStation.get(station.id) ?? [];
+          const points = pointsByStation.get(station.id) ?? [];
+          const averagePoints = points.length > 0
+            ? points.reduce((sum, value) => sum + value, 0) / points.length
+            : null;
+          return {
+            stationCode: station.code,
+            stationName: station.name,
+            totalWaitMinutes: waitSamples.reduce((sum, value) => sum + value, 0),
+            medianWaitMinutes: computeMedian(waitSamples),
+            averagePoints,
+          };
+        })
+        .sort((a, b) => a.stationCode.localeCompare(b.stationCode, 'cs'));
+      setStationSummaries(stationStatsRows);
+
+      const stationCategoryRows: StationCategoryAverageRow[] = stations
+        .map((station) => {
+          const grouped = pointsByStationCategory.get(station.id) ?? {
+            N: [],
+            M: [],
+            S: [],
+            R: [],
+          };
+          const averages: Record<StatsCategoryKey, number | null> = {
+            N: grouped.N.length ? grouped.N.reduce((sum, value) => sum + value, 0) / grouped.N.length : null,
+            M: grouped.M.length ? grouped.M.reduce((sum, value) => sum + value, 0) / grouped.M.length : null,
+            S: grouped.S.length ? grouped.S.reduce((sum, value) => sum + value, 0) / grouped.S.length : null,
+            R: grouped.R.length ? grouped.R.reduce((sum, value) => sum + value, 0) / grouped.R.length : null,
+          };
+          return {
+            stationCode: station.code,
+            stationName: station.name,
+            averages,
+          };
+        })
+        .sort((a, b) => a.stationCode.localeCompare(b.stationCode, 'cs'));
+      setStationCategoryAverages(stationCategoryRows);
+
+      const troopMap = new Map<string, TroopCountRow>();
+      ((patrolsResponse.data ?? []) as PatrolRow[])
+        .filter((row) => row.active !== false)
+        .forEach((row) => {
+          const troopName = normalizeStatsText(row.team_name) || 'Bez oddílu';
+          const category = toStatsCategoryKey(row.category);
+          const current = troopMap.get(troopName) ?? {
+            troopName,
+            total: 0,
+            byCategory: { N: 0, M: 0, S: 0, R: 0 },
+          };
+          current.total += 1;
+          if (category) {
+            current.byCategory[category] += 1;
+          }
+          troopMap.set(troopName, current);
+        });
+
+      const troopRows = Array.from(troopMap.values()).sort((a, b) => {
+        if (b.total !== a.total) {
+          return b.total - a.total;
+        }
+        return a.troopName.localeCompare(b.troopName, 'cs');
+      });
+      setTroopCounts(troopRows);
+    };
+
+    void loadStats();
+
+    return () => {
+      canceled = true;
+    };
+  }, [eventId]);
+
   return (
     <section
       id={toAdminSectionId('stats')}
@@ -729,41 +1036,139 @@ export function AdminStatsSection({
         <div>
           <h2>Statistiky</h2>
           <p className="admin-card-subtitle">
-            Přehled vytíženosti a výkonnosti stanovišť. Defaultně sbaleno.
+            Souhrnné statistiky po závodě: čekání, body a oddíly.
           </p>
         </div>
-        <div className="admin-card-actions">
-          <button
-            type="button"
-            className="admin-button admin-button--secondary"
-            onClick={onToggle}
-          >
-            {showStatsSection ? 'Skrýt statistiky' : 'Zobrazit statistiky'}
-          </button>
-        </div>
       </header>
-      {showStatsSection ? (
-        <div className="admin-placeholder-grid">
-          <div className="admin-placeholder-item">
-            <strong>Hlídky na trati</strong>
-            <span>{summary.patrolsOnCourse}</span>
+      {loading ? <p className="admin-card-subtitle">Načítám statistiky…</p> : null}
+      {error ? <p className="admin-error">{error}</p> : null}
+
+      {!loading && !error ? (
+        <>
+          <div className="admin-placeholder-grid">
+            <div className="admin-placeholder-item">
+              <strong>Medián čekání celkem (min)</strong>
+              <span>{formatStatNumber(overallWaitMedian)}</span>
+            </div>
+            <div className="admin-placeholder-item">
+              <strong>Záznamy čekání</strong>
+              <span>{waitSamplesCount}</span>
+            </div>
           </div>
-          <div className="admin-placeholder-item">
-            <strong>Dokončené hlídky</strong>
-            <span>{summary.patrolsFinished}</span>
-          </div>
-          <div className="admin-placeholder-item">
-            <strong>Čekající na start</strong>
-            <span>{summary.patrolsWaitingForStart}</span>
-          </div>
-          <div className="admin-placeholder-item">
-            <strong>Poslední synchronizace</strong>
-            <span>{formatDateTimeForStatus(summary.lastSyncAt)}</span>
-          </div>
-        </div>
-      ) : (
-        <p className="admin-card-subtitle">Statistiky jsou skryté. Otevři je tlačítkem výše.</p>
-      )}
+
+          <section className="admin-setup-block">
+            <h3>Medián čekání po kategorii (min)</h3>
+            <div className="admin-placeholder-grid">
+              {STATS_CATEGORY_ORDER.map((category) => (
+                <div key={`wait-median-${category}`} className="admin-placeholder-item">
+                  <strong>{category}</strong>
+                  <span>{formatStatNumber(categoryWaitMedians[category])}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="admin-setup-block">
+            <h3>Celkové čekání a průměr bodů na stanovišti</h3>
+            <div className="admin-table-wrapper">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Stanoviště</th>
+                    <th>Celkové čekání (min)</th>
+                    <th>Medián čekání (min)</th>
+                    <th>Průměr bodů</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stationSummaries.length === 0 ? (
+                    <tr>
+                      <td colSpan={4}>Zatím nejsou dostupná data.</td>
+                    </tr>
+                  ) : (
+                    stationSummaries.map((row) => (
+                      <tr key={`station-summary-${row.stationCode}`}>
+                        <td>{row.stationCode}{row.stationName ? ` - ${row.stationName}` : ''}</td>
+                        <td>{row.totalWaitMinutes}</td>
+                        <td>{formatStatNumber(row.medianWaitMinutes)}</td>
+                        <td>{formatStatNumber(row.averagePoints, 2)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="admin-setup-block">
+            <h3>Průměr bodů na stanovišti v kategorii</h3>
+            <div className="admin-table-wrapper">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Stanoviště</th>
+                    {STATS_CATEGORY_ORDER.map((category) => (
+                      <th key={`station-category-head-${category}`}>{category}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {stationCategoryAverages.length === 0 ? (
+                    <tr>
+                      <td colSpan={5}>Zatím nejsou dostupná data.</td>
+                    </tr>
+                  ) : (
+                    stationCategoryAverages.map((row) => (
+                      <tr key={`station-category-average-${row.stationCode}`}>
+                        <td>{row.stationCode}{row.stationName ? ` - ${row.stationName}` : ''}</td>
+                        {STATS_CATEGORY_ORDER.map((category) => (
+                          <td key={`station-category-average-${row.stationCode}-${category}`}>
+                            {formatStatNumber(row.averages[category], 2)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="admin-setup-block">
+            <h3>Počet hlídek z oddílů</h3>
+            <div className="admin-table-wrapper">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Oddíl</th>
+                    <th>Celkem</th>
+                    {STATS_CATEGORY_ORDER.map((category) => (
+                      <th key={`troop-category-head-${category}`}>{category}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {troopCounts.length === 0 ? (
+                    <tr>
+                      <td colSpan={6}>Zatím nejsou dostupná data.</td>
+                    </tr>
+                  ) : (
+                    troopCounts.map((row) => (
+                      <tr key={`troop-count-${row.troopName}`}>
+                        <td>{row.troopName}</td>
+                        <td>{row.total}</td>
+                        {STATS_CATEGORY_ORDER.map((category) => (
+                          <td key={`troop-count-${row.troopName}-${category}`}>{row.byCategory[category]}</td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      ) : null}
     </section>
   );
 }

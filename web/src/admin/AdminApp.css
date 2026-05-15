@@ -224,6 +224,20 @@
   border-color: #9bcf7f;
 }
 
+.admin-section-nav--compact {
+  padding: 8px;
+  gap: 6px;
+}
+
+.admin-section-nav--compact .admin-section-nav-scroll {
+  gap: 6px;
+}
+
+.admin-section-nav--compact .admin-section-nav-item {
+  padding: 6px 12px;
+  font-size: 0.82rem;
+}
+
 .admin-section-nav-select {
   display: none;
   flex-direction: column;
@@ -336,6 +350,11 @@
 .admin-placeholder-item strong {
   color: var(--text-2);
   font-size: 0.86rem;
+}
+
+.admin-placeholder-item small {
+  color: var(--text-2);
+  font-size: 0.8rem;
 }
 
 .admin-dashboard-metric strong,
