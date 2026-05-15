@@ -1288,6 +1288,8 @@ function AdminDashboard({
 
   const loadAnswers = useCallback(async () => {
     const answersEventId = selectedSetupEventId || eventId;
+    const answersEventName =
+      setupEvents.find((row) => row.id === answersEventId)?.name ?? answersEventId;
     const targetStation = setupStations.find(
       (station) =>
         station.event_id === answersEventId &&
@@ -1296,7 +1298,7 @@ function AdminDashboard({
     const answersStationId = targetStation?.id || (answersEventId === eventId ? stationId : '');
 
     if (!answersStationId) {
-      setAnswersError(`Pro ročník "${selectedSetupEvent?.name ?? answersEventId}" chybí stanoviště T.`);
+      setAnswersError(`Pro ročník "${answersEventName}" chybí stanoviště T.`);
       setAnswersForm(createEmptyAnswers());
       setAnswersSummary(createEmptySummary());
       return;
@@ -1335,7 +1337,7 @@ function AdminDashboard({
     setAnswersForm(form);
     setAnswersSummary(summary);
     setAnswersSuccess(null);
-  }, [answersTargetOptionCount, eventId, selectedSetupEvent, selectedSetupEventId, setupStations, stationId]);
+  }, [answersTargetOptionCount, eventId, selectedSetupEventId, setupEvents, setupStations, stationId]);
 
   const loadStationStats = useCallback(async () => {
     setStationLoading(true);
