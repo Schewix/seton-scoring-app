@@ -53,6 +53,7 @@ import {
   normalizeAnswersInput,
   packAnswersForStorage,
   parseAnswerLetters,
+  type TargetAnswerOptionCount,
 } from './utils/targetAnswers';
 import {
   fetchPatrolRegistryEntries,
@@ -895,6 +896,10 @@ function StationApp({
     isTargetStation || manifest.allowedTasks.some((task) => SCORE_REVIEW_TASK_KEYS.has(task));
   const scoringDisabled = scoringLocked && !isTargetStation;
   const timeScoringConfig = useMemo(() => buildTimeScoringConfig(manifest.event), [manifest.event]);
+  const targetAnswerOptionCount: TargetAnswerOptionCount = manifest.event.targetAnswerOptionCount === 3 ? 3 : 4;
+  const targetAnswerInputPattern = targetAnswerOptionCount === 3 ? '[A-CXa-cx]*' : '[A-DXa-dx]*';
+  const targetAnswerInputHint = targetAnswerOptionCount === 3 ? 'A-C + X' : 'A-D + X';
+  const targetAnswerInputExample = targetAnswerOptionCount === 3 ? 'např. ABCX' : 'např. ABCDX';
   const [activePatrol, setActivePatrol] = useState<Patrol | null>(null);
   const [calcPatrolLoadMode, setCalcPatrolLoadMode] = useState<CalcPatrolLoadMode>('full');
   const [scannerPatrol, setScannerPatrol] = useState<Patrol | null>(null);
@@ -1525,10 +1530,15 @@ function StationApp({
     setEditingOutboxEntryId(entry.client_event_id);
     setEditingOutboxPoints(String(entry.payload.points));
     setEditingOutboxWait(formatWaitMinutes(entry.payload.wait_minutes));
-    setEditingOutboxAnswers(normalizeAnswersInput(entry.payload.normalized_answers || ''));
+    setEditingOutboxAnswers(
+      normalizeAnswersInput(entry.payload.normalized_answers || '', {
+        maxOptionCount: targetAnswerOptionCount,
+        allowBlank: true,
+      }),
+    );
     setEditingOutboxError(null);
     setSavingOutboxEntryId(null);
-  }, []);
+  }, [targetAnswerOptionCount]);
 
   const cancelOutboxEdit = useCallback(() => {
     setEditingOutboxEntryId(null);
@@ -1566,10 +1576,16 @@ function StationApp({
 
       let normalizedAnswers: string | null = null;
       if (entry.payload.use_target_scoring) {
-        normalizedAnswers = packAnswersForStorage(editingOutboxAnswers);
-        const hasAnswers = parseAnswerLetters(normalizedAnswers).length > 0;
+        normalizedAnswers = packAnswersForStorage(editingOutboxAnswers, {
+          maxOptionCount: targetAnswerOptionCount,
+          allowBlank: true,
+        });
+        const hasAnswers = parseAnswerLetters(normalizedAnswers, {
+          maxOptionCount: targetAnswerOptionCount,
+          allowBlank: true,
+        }).length > 0;
         if (!hasAnswers) {
-          setEditingOutboxError('Pro terčový úsek je potřeba vyplnit odpovědi A–D.');
+          setEditingOutboxError(`Pro terčový úsek je potřeba vyplnit odpovědi (${targetAnswerInputHint}).`);
           return;
         }
       }
@@ -1617,6 +1633,8 @@ function StationApp({
       isTimeStationOutboxEntry,
       outboxItems,
       pushAlert,
+      targetAnswerInputHint,
+      targetAnswerOptionCount,
       updateOutboxState,
     ],
   );
@@ -1959,9 +1977,12 @@ function StationApp({
       if (!answers) {
         return null;
       }
-      return normalizeAnswersInput(answers);
+      return normalizeAnswersInput(answers, {
+        maxOptionCount: targetAnswerOptionCount,
+        allowBlank: true,
+      });
     },
-    [eventId, reportSupabaseError, stationCode],
+    [eventId, reportSupabaseError, stationCode, targetAnswerOptionCount],
   );
 
   const loadScoreReview = useCallback(
@@ -2235,7 +2256,12 @@ function StationApp({
       setPoints(draft?.points ?? '');
       setNote(draft?.note ?? '');
       const initialAnswers = hasPrefilledAnswers ? options?.prefilledAnswers ?? '' : draft?.answersInput ?? '';
-      setAnswersInput(normalizeAnswersInput(initialAnswers));
+      setAnswersInput(
+        normalizeAnswersInput(initialAnswers, {
+          maxOptionCount: targetAnswerOptionCount,
+          allowBlank: true,
+        }),
+      );
       setAnswersError('');
       setScanActive(false);
       setManualCodeDraft('');
@@ -2256,7 +2282,7 @@ function StationApp({
       setWaitDraft(draft?.waitDraft ? normalizeWaitInput(draft.waitDraft, WAIT_TIME_ZERO) : formatWaitMinutes(waitMinutes));
 
       const stored = categoryAnswers[data.category] || '';
-      const total = parseAnswerLetters(stored).length;
+      const total = parseAnswerLetters(stored, { maxOptionCount: targetAnswerOptionCount }).length;
       setAutoScore({ correct: 0, total, given: 0, normalizedGiven: '' });
 
       if (!draft && shouldLoadScoringContext) {
@@ -2307,6 +2333,7 @@ function StationApp({
       loadTargetAnswers,
       loadTimingData,
       loadScoreReview,
+      targetAnswerOptionCount,
     ],
   );
 
@@ -3847,9 +3874,9 @@ function StationApp({
     }
 
     const stored = categoryAnswers[activePatrol.category] || '';
-    const total = parseAnswerLetters(stored).length;
+    const total = parseAnswerLetters(stored, { maxOptionCount: targetAnswerOptionCount }).length;
     setAutoScore((prev) => ({ ...prev, total }));
-  }, [categoryAnswers, activePatrol]);
+  }, [categoryAnswers, activePatrol, targetAnswerOptionCount]);
 
   useEffect(() => {
     if (!activePatrol || !useTargetScoring) {
@@ -3858,10 +3885,18 @@ function StationApp({
       return;
     }
 
-    const correctLetters = parseAnswerLetters(categoryAnswers[activePatrol.category] || '');
-    const givenLetters = parseAnswerLetters(answersInput);
+    const correctLetters = parseAnswerLetters(categoryAnswers[activePatrol.category] || '', {
+      maxOptionCount: targetAnswerOptionCount,
+    });
+    const givenLetters = parseAnswerLetters(answersInput, {
+      maxOptionCount: targetAnswerOptionCount,
+      allowBlank: true,
+    });
     const correct = correctLetters.reduce((acc, letter, index) => (letter === givenLetters[index] ? acc + 1 : acc), 0);
-    const normalizedGiven = packAnswersForStorage(answersInput);
+    const normalizedGiven = packAnswersForStorage(answersInput, {
+      maxOptionCount: targetAnswerOptionCount,
+      allowBlank: true,
+    });
     const total = correctLetters.length;
 
     setAutoScore({ correct, total, given: givenLetters.length, normalizedGiven });
@@ -3877,7 +3912,7 @@ function StationApp({
     if (total > 0) {
       setPoints(String(correct));
     }
-  }, [answersInput, useTargetScoring, activePatrol, categoryAnswers]);
+  }, [answersInput, useTargetScoring, activePatrol, categoryAnswers, targetAnswerOptionCount]);
 
   const handleLogout = useCallback(() => {
     void logout();
@@ -3896,10 +3931,11 @@ function StationApp({
       return;
     }
 
-    if (!/^[A-Da-d]+$/.test(insertedText)) {
+    const allowedPattern = targetAnswerOptionCount === 3 ? /^[A-CXa-cx]+$/ : /^[A-DXa-dx]+$/;
+    if (!allowedPattern.test(insertedText)) {
       event.preventDefault();
     }
-  }, []);
+  }, [targetAnswerOptionCount]);
 
   const handleTargetAnswersPaste = useCallback((event: ReactClipboardEvent<HTMLInputElement>) => {
     const pastedText = event.clipboardData.getData('text');
@@ -3908,8 +3944,13 @@ function StationApp({
     }
 
     event.preventDefault();
-    setAnswersInput((previous) => normalizeAnswersInput(`${previous}${pastedText}`));
-  }, []);
+    setAnswersInput((previous) =>
+      normalizeAnswersInput(`${previous}${pastedText}`, {
+        maxOptionCount: targetAnswerOptionCount,
+        allowBlank: true,
+      }),
+    );
+  }, [targetAnswerOptionCount]);
 
   const handleCloseChangePassword = useCallback(() => {
     navigateToPath(getStationPath(stationDisplayName), { replace: true });
@@ -4441,8 +4482,13 @@ function StationApp({
   );
 
   const totalAnswers = useMemo(
-    () => (activePatrol ? parseAnswerLetters(categoryAnswers[activePatrol.category] || '').length : 0),
-    [activePatrol, categoryAnswers]
+    () =>
+      activePatrol
+        ? parseAnswerLetters(categoryAnswers[activePatrol.category] || '', {
+            maxOptionCount: targetAnswerOptionCount,
+          }).length
+        : 0,
+    [activePatrol, categoryAnswers, targetAnswerOptionCount],
   );
   const heroBadges = useMemo(() => {
     const badges = [`Event: ${manifest.event.name}`];
@@ -5660,11 +5706,18 @@ function StationApp({
                       <input
                         ref={answersInputRef}
                         value={answersInput}
-                        onChange={(event) => setAnswersInput(normalizeAnswersInput(event.target.value))}
+                        onChange={(event) =>
+                          setAnswersInput(
+                            normalizeAnswersInput(event.target.value, {
+                              maxOptionCount: targetAnswerOptionCount,
+                              allowBlank: true,
+                            }),
+                          )
+                        }
                         onBeforeInput={handleTargetAnswersBeforeInput}
                         onPaste={handleTargetAnswersPaste}
-                        placeholder="např. ABCD…"
-                        pattern="[A-Da-d]*"
+                        placeholder={targetAnswerInputExample}
+                        pattern={targetAnswerInputPattern}
                         autoCapitalize="characters"
                         maxLength={totalAnswers || undefined}
                       />
@@ -5757,7 +5810,10 @@ function StationApp({
                                   const payload = item.payload;
                                   const allowNegativePoints = stationCode === 'T' && payload.station_id === stationId;
                                   const answers = payload.use_target_scoring
-                                    ? formatAnswersForInput(payload.normalized_answers || '')
+                                    ? formatAnswersForInput(payload.normalized_answers || '', {
+                                        maxOptionCount: targetAnswerOptionCount,
+                                        allowBlank: true,
+                                      })
                                     : '';
                                   const isEditing = editingOutboxEntryId === item.client_event_id;
                                   const isSaving = savingOutboxEntryId === item.client_event_id;
@@ -5869,12 +5925,17 @@ function StationApp({
                                               </label>
                                               {payload.use_target_scoring ? (
                                                 <label>
-                                                  Odpovědi (A-D)
+                                                  Odpovědi ({targetAnswerInputHint})
                                                   <input
                                                     type="text"
                                                     value={editingOutboxAnswers}
                                                     onChange={(event) =>
-                                                      setEditingOutboxAnswers(normalizeAnswersInput(event.target.value))
+                                                      setEditingOutboxAnswers(
+                                                        normalizeAnswersInput(event.target.value, {
+                                                          maxOptionCount: targetAnswerOptionCount,
+                                                          allowBlank: true,
+                                                        }),
+                                                      )
                                                     }
                                                     onBeforeInput={handleTargetAnswersBeforeInput}
                                                     onPaste={(event) => {
@@ -5884,11 +5945,15 @@ function StationApp({
                                                       }
                                                       event.preventDefault();
                                                       setEditingOutboxAnswers((previous) =>
-                                                        normalizeAnswersInput(`${previous}${pasted}`),
+                                                        normalizeAnswersInput(`${previous}${pasted}`, {
+                                                          maxOptionCount: targetAnswerOptionCount,
+                                                          allowBlank: true,
+                                                        }),
                                                       );
                                                     }}
-                                                    placeholder="např. ABCD"
+                                                    placeholder={targetAnswerInputExample}
                                                     autoCapitalize="characters"
+                                                    pattern={targetAnswerInputPattern}
                                                     disabled={isSaving}
                                                   />
                                                 </label>
@@ -5945,7 +6010,10 @@ function StationApp({
                                   {otherSessionItems.map((item, index) => {
                                     const payload = item.payload;
                                     const answers = payload.use_target_scoring
-                                      ? formatAnswersForInput(payload.normalized_answers || '')
+                                      ? formatAnswersForInput(payload.normalized_answers || '', {
+                                          maxOptionCount: targetAnswerOptionCount,
+                                          allowBlank: true,
+                                        })
                                       : '';
                                     const patrolLabel = payload.team_name || 'Neznámá hlídka';
                                     const codeLabel = payload.patrol_code ? ` (${payload.patrol_code})` : '';

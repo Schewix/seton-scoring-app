@@ -12,11 +12,16 @@ import {
   CategoryKey,
   formatAnswersForInput,
   isCategoryKey,
+  normalizeAnswersInput,
   packAnswersForStorage,
   parseAnswerLetters,
+  type TargetAnswerOptionCount,
 } from '../utils/targetAnswers';
 import { env } from '../envVars';
-import { ADMIN_ROUTE_PREFIX } from '../routing';
+import {
+  ADMIN_ROUTE_PREFIX,
+  MAPA_PROCHODU_ROUTE,
+} from '../routing';
 import {
   createStationCategoryRecord,
   getStationAllowedBaseCategories,
@@ -30,7 +35,6 @@ import AdminLoginScreen from './AdminLoginScreen';
 import {
   EMPTY_RACE_DASHBOARD_SUMMARY,
   toAdminSectionId,
-  type AdminSectionKey,
   type RaceDashboardSummary,
 } from './adminSections';
 import {
@@ -41,7 +45,6 @@ import {
 } from './adminRoutes';
 import AdminSectionNav from './components/AdminSectionNav';
 import {
-  AdminDashboardSection,
   AdminExportsOverviewSection,
   AdminLiveMapSection,
   AdminLiveOverviewSection,
@@ -67,25 +70,12 @@ const ZL_GAUSS_SIGMA = 1.35;
 const ZL_GAUSS_RATIO_PENALTY_WEIGHT = 0.35;
 const ZL_GAUSS_DROPPED_PENALTY_WEIGHT = 0.08;
 const ADMIN_PAGE_TITLE: Record<AdminPageKey, string> = {
-  dashboard: 'Dashboard',
   live: 'Živý průběh',
   patrols: 'Hlídky',
   stations: 'Stanoviště',
   results: 'Výsledky',
   statistics: 'Statistiky',
   settings: 'Nastavení',
-};
-
-const SECTION_TO_PAGE: Record<AdminSectionKey, AdminPageKey> = {
-  dashboard: 'dashboard',
-  live: 'live',
-  queues: 'live',
-  patrols: 'patrols',
-  starts: 'patrols',
-  stations: 'stations',
-  results: 'results',
-  stats: 'statistics',
-  exports: 'settings',
 };
 
 type PtoTroopRegistryEntry = {
@@ -215,6 +205,7 @@ type SetupEventRow = {
   time_limit_s_minutes?: number | null;
   time_limit_r_minutes?: number | null;
   time_penalty_step_minutes?: number | null;
+  target_answer_option_count?: number | null;
   participating_troops?: string[] | null;
 };
 
@@ -262,6 +253,7 @@ type SetupEventScoringConfig = {
   announcedPlaces: Record<StationCategoryKey, number>;
   timeLimitMinutes: Record<CategoryKey, number>;
   timePenaltyStepMinutes: number;
+  targetAnswerOptionCount: TargetAnswerOptionCount;
   participatingTroops: string[];
 };
 
@@ -315,6 +307,7 @@ const DEFAULT_SETUP_TIME_LIMITS_MINUTES: Record<CategoryKey, number> = {
 };
 
 const DEFAULT_SETUP_TIME_PENALTY_STEP_MINUTES = 20;
+const DEFAULT_TARGET_ANSWER_OPTION_COUNT: TargetAnswerOptionCount = 4;
 const DEFAULT_SETUP_TROOP_OPTIONS = PTO_TROOP_REGISTRY.map((entry) => entry.canonicalName).sort(compareTroopSheetOrder);
 function normalizeText(value: string | null | undefined): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -341,6 +334,16 @@ function toPositiveInt(value: unknown, fallback: number, max = 1000): number {
     return fallback;
   }
   return Math.min(max, Math.max(1, Math.round(parsed)));
+}
+
+function toTargetAnswerOptionCount(value: unknown, fallback: TargetAnswerOptionCount = DEFAULT_TARGET_ANSWER_OPTION_COUNT): TargetAnswerOptionCount {
+  if (value === 3 || value === '3') {
+    return 3;
+  }
+  if (value === 4 || value === '4') {
+    return 4;
+  }
+  return fallback;
 }
 
 function formatMinutesAsTimeInput(totalMinutes: number): string {
@@ -393,6 +396,7 @@ function createDefaultSetupEventScoringConfig(): SetupEventScoringConfig {
     announcedPlaces: { ...DEFAULT_SETUP_ANNOUNCED_PLACES_BY_STATION_CATEGORY },
     timeLimitMinutes: { ...DEFAULT_SETUP_TIME_LIMITS_MINUTES },
     timePenaltyStepMinutes: DEFAULT_SETUP_TIME_PENALTY_STEP_MINUTES,
+    targetAnswerOptionCount: DEFAULT_TARGET_ANSWER_OPTION_COUNT,
     participatingTroops: [],
   };
 }
@@ -455,6 +459,10 @@ function normalizeSetupEventScoringConfig(source: SetupEventRow | null | undefin
       source.time_penalty_step_minutes,
       defaults.timePenaltyStepMinutes,
       24 * 60,
+    ),
+    targetAnswerOptionCount: toTargetAnswerOptionCount(
+      source.target_answer_option_count,
+      defaults.targetAnswerOptionCount,
     ),
     participatingTroops: normalizeTroopList(source.participating_troops),
   };
@@ -1220,7 +1228,7 @@ function AdminDashboard({
   const [showExportsSection, setShowExportsSection] = useState(false);
   const [activeAdminPage, setActiveAdminPage] = useState<AdminPageKey>(() => {
     if (typeof window === 'undefined') {
-      return 'dashboard';
+      return 'live';
     }
     return parseAdminRoute(window.location.pathname).page;
   });
@@ -1238,6 +1246,11 @@ function AdminDashboard({
     () => createDefaultSetupEventScoringConfig(),
   );
   const [setupTroopDraft, setSetupTroopDraft] = useState('');
+  const [answersTargetOptionCount, setAnswersTargetOptionCount] = useState<TargetAnswerOptionCount>(
+    () => (manifest.event.targetAnswerOptionCount === 3 ? 3 : DEFAULT_TARGET_ANSWER_OPTION_COUNT),
+  );
+  const targetAnswerInputPattern = answersTargetOptionCount === 3 ? '[A-Ca-c]*' : '[A-Da-d]*';
+  const targetAnswerInputHint = answersTargetOptionCount === 3 ? 'A-C' : 'A-D';
 
   const [createEventName, setCreateEventName] = useState('');
   const [createEventStartsAt, setCreateEventStartsAt] = useState('');
@@ -1301,9 +1314,9 @@ function AdminDashboard({
         return;
       }
       const packed = typeof row.correct_answers === 'string' ? row.correct_answers : '';
-      form[category] = formatAnswersForInput(packed);
+      form[category] = formatAnswersForInput(packed, { maxOptionCount: answersTargetOptionCount });
       summary[category] = {
-        letters: parseAnswerLetters(packed),
+        letters: parseAnswerLetters(packed, { maxOptionCount: answersTargetOptionCount }),
         updatedAt: row.updated_at ?? null,
       };
     });
@@ -1311,7 +1324,7 @@ function AdminDashboard({
     setAnswersForm(form);
     setAnswersSummary(summary);
     setAnswersSuccess(null);
-  }, [eventId, stationId]);
+  }, [answersTargetOptionCount, eventId, stationId]);
 
   const loadStationStats = useCallback(async () => {
     setStationLoading(true);
@@ -1734,6 +1747,16 @@ function AdminDashboard({
     return merged;
   }, [setupEventScoringConfig.participatingTroops]);
 
+  useEffect(() => {
+    const currentEventSettings = setupEvents.find((row) => row.id === eventId);
+    if (!currentEventSettings) {
+      return;
+    }
+    setAnswersTargetOptionCount((prev) =>
+      toTargetAnswerOptionCount(currentEventSettings.target_answer_option_count, prev),
+    );
+  }, [eventId, setupEvents]);
+
   const selectedSetupAssignments = useMemo<SelectedSetupAssignmentSummary[]>(() => {
     const judgeById = new Map(setupJudges.map((judge) => [judge.id, judge]));
     const stationById = new Map(
@@ -1896,13 +1919,6 @@ function AdminDashboard({
       });
     },
     [adminRoutePrefix, eventId],
-  );
-
-  const navigateAdminSection = useCallback(
-    (section: AdminSectionKey) => {
-      navigateAdminPage(SECTION_TO_PAGE[section]);
-    },
-    [navigateAdminPage],
   );
 
   useEffect(() => {
@@ -2078,7 +2094,7 @@ function AdminDashboard({
     const deletions: string[] = [];
 
     for (const category of ANSWER_CATEGORIES) {
-      const packed = packAnswersForStorage(answersForm[category]);
+      const packed = packAnswersForStorage(answersForm[category], { maxOptionCount: answersTargetOptionCount });
       if (!packed) {
         if (answersSummary[category].letters.length) {
           deletions.push(category);
@@ -2100,6 +2116,11 @@ function AdminDashboard({
     setAnswersSaving(true);
 
     try {
+      await postSetupAction('save_event_scoring_config', {
+        event_id: eventId,
+        target_answer_option_count: answersTargetOptionCount,
+      });
+
       if (updates.length) {
         const { error } = await supabase
           .from('station_category_answers')
@@ -2121,15 +2142,25 @@ function AdminDashboard({
         }
       }
 
-      setAnswersSuccess('Správné odpovědi byly uloženy.');
+      setAnswersSuccess('Správné odpovědi a počet možností byly uloženy.');
       await loadAnswers();
+      await loadSetupData();
     } catch (error) {
       console.error('Failed to save category answers', error);
-      setAnswersError('Uložení správných odpovědí selhalo.');
+      setAnswersError('Uložení správných odpovědí nebo nastavení možností selhalo.');
     } finally {
       setAnswersSaving(false);
     }
-  }, [answersForm, answersSummary, eventId, loadAnswers, stationId]);
+  }, [
+    answersForm,
+    answersSummary,
+    eventId,
+    loadAnswers,
+    loadSetupData,
+    postSetupAction,
+    stationId,
+    answersTargetOptionCount,
+  ]);
 
   const handleToggleLock = useCallback(
     async (locked: boolean) => {
@@ -2315,6 +2346,7 @@ function AdminDashboard({
         time_limit_s_minutes: setupEventScoringConfig.timeLimitMinutes.S,
         time_limit_r_minutes: setupEventScoringConfig.timeLimitMinutes.R,
         time_penalty_step_minutes: setupEventScoringConfig.timePenaltyStepMinutes,
+        target_answer_option_count: setupEventScoringConfig.targetAnswerOptionCount,
         participating_troops: setupEventScoringConfig.participatingTroops,
       });
       setSetupSuccess('Nastavení vyhlašovaných míst a času bylo uloženo.');
@@ -3888,45 +3920,6 @@ function AdminDashboard({
     [stationRows],
   );
 
-  const stationStatistics = useMemo(() => {
-    if (stationRows.length === 0) {
-      return {
-        averagePassedPerStation: 0,
-        maxWaitingStationLabel: '—',
-        hardestStationLabel: '—',
-      };
-    }
-    const totalPassed = stationRows.reduce((sum, row) => sum + row.totalPassed, 0);
-    const averagePassedPerStation = totalPassed / stationRows.length;
-    const byMissing = [...stationRows].sort((a, b) => b.totalMissing.length - a.totalMissing.length);
-    const busiest = [...stationRows].sort((a, b) => b.totalPassed - a.totalPassed);
-    const hardest = byMissing[0];
-    const busiestStation = busiest[0];
-    return {
-      averagePassedPerStation,
-      maxWaitingStationLabel: busiestStation ? `${busiestStation.stationCode} (${busiestStation.totalPassed})` : '—',
-      hardestStationLabel: hardest ? `${hardest.stationCode} (${hardest.totalMissing.length} chybí)` : '—',
-    };
-  }, [stationRows]);
-
-  const dashboardWarnings = useMemo(() => {
-    const warnings: string[] = [];
-    if (eventState.scoringLocked) {
-      warnings.push('Závod je ukončen a zapisování je uzamčeno (mimo stanoviště T).');
-    }
-    if (stationError) {
-      warnings.push('Nepodařilo se načíst průchody stanovišť.');
-    }
-    if (raceDashboardSummary.patrolsOnCourse > 0 && raceDashboardSummary.patrolsFinished === 0) {
-      warnings.push('Hlídky jsou na trati, ale zatím není žádná dokončená hlídka.');
-    }
-    if (raceDashboardSummary.syncConflicts > 0) {
-      warnings.push(`Ve frontě je ${raceDashboardSummary.syncConflicts} konfliktů synchronizace.`);
-    }
-    return warnings;
-  }, [eventState.scoringLocked, raceDashboardSummary.patrolsFinished, raceDashboardSummary.patrolsOnCourse, raceDashboardSummary.syncConflicts, stationError]);
-
-  const isDashboardPage = activeAdminPage === 'dashboard';
   const isLivePage = activeAdminPage === 'live';
   const isPatrolsPage = activeAdminPage === 'patrols';
   const isStationsPage = activeAdminPage === 'stations';
@@ -3992,18 +3985,6 @@ function AdminDashboard({
               rel="noreferrer"
             >
               Export výsledky
-            </a>
-            <a
-              className="admin-button admin-button--secondary admin-button--pill"
-              href="/aplikace/setonuv-zavod/mapa-prochodu"
-            >
-              Live mapa
-            </a>
-            <a
-              className="admin-button admin-button--secondary admin-button--pill"
-              href="/aplikace/setonuv-zavod/admin/seton/mapa"
-            >
-              Editor mapy
             </a>
             <button
               type="button"
@@ -4075,20 +4056,6 @@ function AdminDashboard({
           </section>
         ) : null}
 
-        {isDashboardPage ? (
-          <AdminDashboardSection
-            eventLoading={eventLoading}
-            scoringLocked={eventState.scoringLocked}
-            lockUpdating={lockUpdating}
-            onToggleLock={handleToggleLock}
-            onNavigate={navigateAdminSection}
-            summary={raceDashboardSummary}
-            warnings={dashboardWarnings}
-            eventError={eventError}
-            lockMessage={lockMessage}
-          />
-        ) : null}
-
         {isLivePage ? (
           <AdminLiveOverviewSection
             stationLoading={stationLoading}
@@ -4099,11 +4066,116 @@ function AdminDashboard({
           />
         ) : null}
 
-        {isLivePage ? <AdminLiveMapSection /> : null}
-        {isLivePage ? <AdminQueuesSection /> : null}
-
         {isPatrolsPage ? <AdminPatrolsOverviewSection onShowPreRaceSetup={() => setShowPreRaceSetup(true)} /> : null}
         {isPatrolsPage ? <AdminStartsSection /> : null}
+
+        {isStationsPage ? (
+        <section className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--stations">
+          <header className="admin-card-header">
+            <div>
+              <h2>Správné odpovědi – Terčový úsek</h2>
+              <p className="admin-card-subtitle">
+                Zadej 12 odpovědí ({targetAnswerInputHint}) pro každou kategorii.
+              </p>
+            </div>
+            <div className="admin-card-actions">
+              <button
+                type="button"
+                className="admin-button admin-button--secondary"
+                onClick={loadAnswers}
+                disabled={answersLoading}
+              >
+                {answersLoading ? 'Načítám…' : 'Obnovit'}
+              </button>
+            </div>
+          </header>
+          {answersError ? <p className="admin-error">{answersError}</p> : null}
+          {answersSuccess ? <p className="admin-success">{answersSuccess}</p> : null}
+          <p className="admin-card-subtitle">
+            Ročník nastavení: <strong>{eventState.name}</strong>
+          </p>
+          <div className="admin-disqualify-form">
+            <label className="admin-field" htmlFor="admin-target-answer-option-count">
+              <span>Počet možností pro otázku</span>
+              <select
+                id="admin-target-answer-option-count"
+                value={answersTargetOptionCount}
+                onChange={(event) => setAnswersTargetOptionCount(toTargetAnswerOptionCount(event.target.value))}
+                disabled={setupSaving || setupLoading}
+              >
+                <option value={4}>4 možnosti (A-D)</option>
+                <option value={3}>3 možnosti (A-C)</option>
+              </select>
+            </label>
+          </div>
+          <p className="admin-card-subtitle">
+            Ve výpočetce rozhodčí zadává <strong>X</strong>, pokud hlídka odpověď nevyplní.
+          </p>
+          <div className="admin-answers-grid">
+            {ANSWER_CATEGORIES.map((category) => {
+              const summary = answersSummary[category];
+              const hasAnswers = summary.letters.length > 0;
+              const formattedLetters = summary.letters.join(' ');
+              const updatedAt = summary.updatedAt ? new Date(summary.updatedAt) : null;
+
+              return (
+                <div key={category} className="admin-answers-field">
+                  <label htmlFor={`answers-${category}`}>
+                    <span className="admin-answers-label">{category}</span>
+                    <input
+                      id={`answers-${category}`}
+                      value={answersForm[category]}
+                      onChange={(event) =>
+                        setAnswersForm((prev) => ({
+                          ...prev,
+                          [category]: normalizeAnswersInput(event.target.value, {
+                            maxOptionCount: answersTargetOptionCount,
+                          }),
+                        }))
+                      }
+                      placeholder={`např. ${targetAnswerInputHint}…`}
+                      pattern={targetAnswerInputPattern}
+                    />
+                  </label>
+                  <p className="admin-answers-meta">
+                    {hasAnswers ? (
+                      <>
+                        <span className="admin-answers-meta-item admin-answers-meta-count">
+                          {`${summary.letters.length} odpovědí`}
+                        </span>
+                        <span className="admin-answers-meta-item admin-answers-meta-letters">
+                          {formattedLetters}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="admin-answers-meta-item">Nenastaveno</span>
+                    )}
+                    {updatedAt ? (
+                      <time
+                        className="admin-answers-meta-item admin-answers-meta-time"
+                        dateTime={updatedAt.toISOString()}
+                        suppressHydrationWarning
+                      >
+                        {updatedAt.toLocaleString('cs-CZ')}
+                      </time>
+                    ) : null}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+          <div className="admin-card-actions admin-card-actions--end">
+            <button
+              type="button"
+              className="admin-button admin-button--primary"
+              onClick={handleSaveAnswers}
+              disabled={answersSaving}
+            >
+              {answersSaving ? 'Ukládám…' : 'Uložit správné odpovědi'}
+            </button>
+          </div>
+        </section>
+        ) : null}
 
         {isStationsPage ? (
           <section
@@ -4159,19 +4231,103 @@ function AdminDashboard({
               stationCards={stationHealthCards}
               assignmentRows={selectedSetupAssignments}
             />
+            {judgeTemporaryPassword ? (
+              <p className="admin-notice">
+                Nový účet rozhodčího byl vytvořen. Dočasné heslo: <strong>{judgeTemporaryPassword}</strong>
+              </p>
+            ) : null}
+            <div className="admin-setup-block">
+              <h3>Rozhodčí a přiřazení</h3>
+              <p className="admin-card-subtitle">
+                Pokud už e-mail existuje, účet se jen přiřadí k vybranému ročníku a stanovišti.
+              </p>
+              <div className="admin-disqualify-form">
+                <label className="admin-field" htmlFor="admin-judge-email">
+                  <span>E-mail</span>
+                  <input
+                    id="admin-judge-email"
+                    type="email"
+                    value={judgeEmailInput}
+                    onChange={(event) => setJudgeEmailInput(event.target.value)}
+                    placeholder="rozhodci@example.com"
+                    autoComplete="email"
+                  />
+                </label>
+                <label className="admin-field" htmlFor="admin-judge-display-name">
+                  <span>Jméno (volitelné)</span>
+                  <input
+                    id="admin-judge-display-name"
+                    value={judgeDisplayNameInput}
+                    onChange={(event) => setJudgeDisplayNameInput(event.target.value)}
+                    placeholder="Jan Novák"
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="admin-field" htmlFor="admin-judge-station">
+                  <span>Stanoviště</span>
+                  <select
+                    id="admin-judge-station"
+                    value={judgeStationCodeInput}
+                    onChange={(event) => setJudgeStationCodeInput(event.target.value)}
+                  >
+                    {selectedSetupStations.map((station) => (
+                      <option key={station.id} value={station.code}>
+                        {station.code} – {station.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="admin-field" htmlFor="admin-judge-tasks">
+                  <span>Oprávnění (allowed tasks)</span>
+                  <input
+                    id="admin-judge-tasks"
+                    value={judgeTasksInput}
+                    onChange={(event) => setJudgeTasksInput(event.target.value)}
+                    placeholder="score-review, manage-results"
+                    autoComplete="off"
+                  />
+                </label>
+              </div>
+              <div className="admin-category-toggle-list">
+                {(['N', 'M', 'S', 'R'] as const).map((category) => (
+                  <label key={category} className="admin-check">
+                    <input
+                      type="checkbox"
+                      checked={judgeCategoryToggle[category]}
+                      onChange={(event) =>
+                        setJudgeCategoryToggle((prev) => ({
+                          ...prev,
+                          [category]: event.target.checked,
+                        }))
+                      }
+                    />
+                    <span>{category}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="admin-card-actions admin-card-actions--end">
+                <button
+                  type="button"
+                  className="admin-button admin-button--secondary"
+                  onClick={() => void handleAssignJudgeToEvent()}
+                  disabled={setupSaving}
+                >
+                  {setupSaving ? 'Ukládám…' : 'Vytvořit/Přiřadit rozhodčího'}
+                </button>
+              </div>
+            </div>
           </section>
         ) : null}
 
         {isSettingsPage ? (
         <section
-          id={toAdminSectionId('stations')}
           className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--stations"
         >
           <header className="admin-card-header">
             <div>
-              <h2>Stanoviště a rozhodčí</h2>
+              <h2>Nastavení závodu</h2>
               <p className="admin-card-subtitle">
-                Nastavení ročníků, pořadí stanovišť, kategorie a přiřazení rozhodčích.
+                Nastavení ročníků, výsledků, času a předzávodních kroků.
               </p>
             </div>
             <div className="admin-card-actions">
@@ -4183,15 +4339,24 @@ function AdminDashboard({
               >
                 {setupLoading ? 'Načítám…' : 'Obnovit nastavení'}
               </button>
+              <button
+                type="button"
+                className="admin-button admin-button--secondary"
+                onClick={() => void handleToggleLock(!eventState.scoringLocked)}
+                disabled={lockUpdating || eventLoading}
+              >
+                {lockUpdating
+                  ? 'Aktualizuji…'
+                  : eventState.scoringLocked
+                  ? 'Znovu povolit zapisování'
+                  : 'Ukončit závod'}
+              </button>
             </div>
           </header>
+          {eventError ? <p className="admin-error">{eventError}</p> : null}
+          {lockMessage ? <p className="admin-notice">{lockMessage}</p> : null}
           {setupError ? <p className="admin-error">{setupError}</p> : null}
           {setupSuccess ? <p className="admin-success">{setupSuccess}</p> : null}
-          {judgeTemporaryPassword ? (
-            <p className="admin-notice">
-              Nový účet rozhodčího byl vytvořen. Dočasné heslo: <strong>{judgeTemporaryPassword}</strong>
-            </p>
-          ) : null}
           <div className="admin-disqualify-form">
             <label className="admin-field" htmlFor="admin-setup-event">
               <span>Spravovaný ročník</span>
@@ -4210,11 +4375,6 @@ function AdminDashboard({
               </select>
             </label>
           </div>
-
-          <AdminStationHealthPanel
-            stationCards={stationHealthCards}
-            assignmentRows={selectedSetupAssignments}
-          />
 
           <div className="admin-setup-block">
             <h3>Nastavení výsledků a času</h3>
@@ -4476,87 +4636,6 @@ function AdminDashboard({
           </div>
 
           <div className="admin-setup-block">
-            <h3>Rozhodčí a přiřazení</h3>
-            <p className="admin-card-subtitle">
-              Pokud už e-mail existuje, účet se jen přiřadí k vybranému ročníku a stanovišti.
-            </p>
-            <div className="admin-disqualify-form">
-              <label className="admin-field" htmlFor="admin-judge-email">
-                <span>E-mail</span>
-                <input
-                  id="admin-judge-email"
-                  type="email"
-                  value={judgeEmailInput}
-                  onChange={(event) => setJudgeEmailInput(event.target.value)}
-                  placeholder="rozhodci@example.com"
-                  autoComplete="email"
-                />
-              </label>
-              <label className="admin-field" htmlFor="admin-judge-display-name">
-                <span>Jméno (volitelné)</span>
-                <input
-                  id="admin-judge-display-name"
-                  value={judgeDisplayNameInput}
-                  onChange={(event) => setJudgeDisplayNameInput(event.target.value)}
-                  placeholder="Jan Novák"
-                  autoComplete="off"
-                />
-              </label>
-              <label className="admin-field" htmlFor="admin-judge-station">
-                <span>Stanoviště</span>
-                <select
-                  id="admin-judge-station"
-                  value={judgeStationCodeInput}
-                  onChange={(event) => setJudgeStationCodeInput(event.target.value)}
-                >
-                  {selectedSetupStations.map((station) => (
-                    <option key={station.id} value={station.code}>
-                      {station.code} – {station.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="admin-field" htmlFor="admin-judge-tasks">
-                <span>Oprávnění (allowed tasks)</span>
-                <input
-                  id="admin-judge-tasks"
-                  value={judgeTasksInput}
-                  onChange={(event) => setJudgeTasksInput(event.target.value)}
-                  placeholder="score-review, manage-results"
-                  autoComplete="off"
-                />
-              </label>
-            </div>
-            <div className="admin-category-toggle-list">
-              {(['N', 'M', 'S', 'R'] as const).map((category) => (
-                <label key={category} className="admin-check">
-                  <input
-                    type="checkbox"
-                    checked={judgeCategoryToggle[category]}
-                    onChange={(event) =>
-                      setJudgeCategoryToggle((prev) => ({
-                        ...prev,
-                        [category]: event.target.checked,
-                      }))
-                    }
-                  />
-                  <span>{category}</span>
-                </label>
-              ))}
-            </div>
-            <div className="admin-card-actions admin-card-actions--end">
-              <button
-                type="button"
-                className="admin-button admin-button--secondary"
-                onClick={() => void handleAssignJudgeToEvent()}
-                disabled={setupSaving}
-              >
-                {setupSaving ? 'Ukládám…' : 'Vytvořit/Přiřadit rozhodčího'}
-              </button>
-            </div>
-          </div>
-
-          <div className="admin-setup-block">
             <h3>Vytvoření hlídek</h3>
             <p className="admin-card-subtitle">
               Zadej počty hlídek pro jednotlivé kategorie a počáteční čísla kódů.
@@ -4721,87 +4800,7 @@ function AdminDashboard({
         </section>
         ) : null}
 
-        {isStationsPage ? (
-        <section className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--stations">
-          <header className="admin-card-header">
-            <div>
-              <h2>Správné odpovědi – Terčový úsek</h2>
-              <p className="admin-card-subtitle">Zadej 12 odpovědí (A–D) pro každou kategorii.</p>
-            </div>
-            <div className="admin-card-actions">
-              <button
-                type="button"
-                className="admin-button admin-button--secondary"
-                onClick={loadAnswers}
-                disabled={answersLoading}
-              >
-                {answersLoading ? 'Načítám…' : 'Obnovit'}
-              </button>
-            </div>
-          </header>
-          {answersError ? <p className="admin-error">{answersError}</p> : null}
-          {answersSuccess ? <p className="admin-success">{answersSuccess}</p> : null}
-          <div className="admin-answers-grid">
-            {ANSWER_CATEGORIES.map((category) => {
-              const summary = answersSummary[category];
-              const hasAnswers = summary.letters.length > 0;
-              const formattedLetters = summary.letters.join(' ');
-              const updatedAt = summary.updatedAt ? new Date(summary.updatedAt) : null;
-
-              return (
-                <div key={category} className="admin-answers-field">
-                  <label htmlFor={`answers-${category}`}>
-                    <span className="admin-answers-label">{category}</span>
-                    <input
-                      id={`answers-${category}`}
-                      value={answersForm[category]}
-                      onChange={(event) =>
-                        setAnswersForm((prev) => ({ ...prev, [category]: event.target.value.toUpperCase() }))
-                      }
-                      placeholder="např. A B C D …"
-                    />
-                  </label>
-                  <p className="admin-answers-meta">
-                    {hasAnswers ? (
-                      <>
-                        <span className="admin-answers-meta-item admin-answers-meta-count">
-                          {`${summary.letters.length} odpovědí`}
-                        </span>
-                        <span className="admin-answers-meta-item admin-answers-meta-letters">
-                          {formattedLetters}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="admin-answers-meta-item">Nenastaveno</span>
-                    )}
-                    {updatedAt ? (
-                      <time
-                        className="admin-answers-meta-item admin-answers-meta-time"
-                        dateTime={updatedAt.toISOString()}
-                        suppressHydrationWarning
-                      >
-                        {updatedAt.toLocaleString('cs-CZ')}
-                      </time>
-                    ) : null}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-          <div className="admin-card-actions admin-card-actions--end">
-            <button
-              type="button"
-              className="admin-button admin-button--primary"
-              onClick={handleSaveAnswers}
-              disabled={answersSaving}
-            >
-              {answersSaving ? 'Ukládám…' : 'Uložit správné odpovědi'}
-            </button>
-          </div>
-        </section>
-        ) : null}
-
-        {isLivePage || isStationsPage || isStatisticsPage ? (
+        {isLivePage ? (
         <section
           id="admin-passages-section"
           className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--live"
@@ -4923,6 +4922,13 @@ function AdminDashboard({
         </section>
         ) : null}
 
+        {isLivePage ? <AdminQueuesSection /> : null}
+        {isLivePage ? (
+          <AdminLiveMapSection
+            mapRoute={MAPA_PROCHODU_ROUTE}
+          />
+        ) : null}
+
         {isResultsPage ? (
         <AdminResultsSection
           totalMissingAcrossStations={totalMissingAcrossStations}
@@ -4936,7 +4942,6 @@ function AdminDashboard({
         <AdminStatsSection
           showStatsSection
           onToggle={() => setShowStatsSection((prev) => !prev)}
-          stationStatistics={stationStatistics}
           summary={raceDashboardSummary}
         />
         ) : null}

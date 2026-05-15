@@ -942,7 +942,7 @@ describe('station workflow', () => {
     });
   });
 
-  it('allows only A-D letters without spaces in target answers input', async () => {
+  it('allows only A-D and X letters without spaces in target answers input', async () => {
     mockedStationCode = 'T';
     supabaseMock.__setMock('stations', () => createCalcStationResult());
     supabaseMock.__setMock(
@@ -965,8 +965,8 @@ describe('station workflow', () => {
 
     await user.type(answersInput, 'H h X z A b C d 1 -');
 
-    expect(answersInput).toHaveValue('ABCD');
-    expect(await screen.findByText('Zadaných odpovědí: 4 / 12.')).toBeInTheDocument();
+    expect(answersInput).toHaveValue('XABCD');
+    expect(await screen.findByText('Zadaných odpovědí: 5 / 12.')).toBeInTheDocument();
   });
 
   it('queues submission when sync endpoint reports failure', async () => {

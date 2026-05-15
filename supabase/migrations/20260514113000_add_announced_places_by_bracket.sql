@@ -43,6 +43,8 @@ alter table public.events
   alter column announced_places_rh set not null,
   alter column announced_places_rd set not null;
 
+drop view if exists public.events_public;
+
 create or replace view public.events_public as
 select
   e.id,

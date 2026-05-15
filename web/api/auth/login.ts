@@ -52,6 +52,7 @@ type EventRow = {
   time_limit_s_minutes?: number | null;
   time_limit_r_minutes?: number | null;
   time_penalty_step_minutes?: number | null;
+  target_answer_option_count?: number | null;
   participating_troops?: string[] | null;
 };
 
@@ -75,6 +76,7 @@ type StationManifest = {
       limitMinutesByCategory: { N: number; M: number; S: number; R: number };
       penaltyStepMinutes: number;
     };
+    targetAnswerOptionCount: 3 | 4;
     participatingTroops: string[];
   };
   allowedCategories: string[];
@@ -85,6 +87,7 @@ type StationManifest = {
 const DEFAULT_ANNOUNCED_PLACES = { N: 5, M: 6, S: 6, R: 3 } as const;
 const DEFAULT_TIME_LIMIT_MINUTES = { N: 110, M: 140, S: 140, R: 140 } as const;
 const DEFAULT_TIME_PENALTY_STEP_MINUTES = 20;
+const DEFAULT_TARGET_ANSWER_OPTION_COUNT: 3 | 4 = 4;
 
 function toPositiveInt(value: unknown, fallback: number, max = 1_000) {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -106,6 +109,8 @@ function toEventManifestSettings(event: EventRow) {
         .filter((item) => item.length > 0)
     : [];
 
+  const targetAnswerOptionCount = event.target_answer_option_count === 3 ? 3 : DEFAULT_TARGET_ANSWER_OPTION_COUNT;
+
   return {
     announcedPlaces: {
       N: toPositiveInt(event.announced_places_n, DEFAULT_ANNOUNCED_PLACES.N, 100),
@@ -122,6 +127,7 @@ function toEventManifestSettings(event: EventRow) {
       },
       penaltyStepMinutes: toPositiveInt(event.time_penalty_step_minutes, DEFAULT_TIME_PENALTY_STEP_MINUTES, 24 * 60),
     },
+    targetAnswerOptionCount,
     participatingTroops,
   };
 }

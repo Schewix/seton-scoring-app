@@ -256,7 +256,7 @@ export function AdminLiveOverviewSection({
         </article>
       </div>
       <div className="admin-card-actions">
-        <a className="admin-button admin-button--secondary" href="#admin-passages-section">
+        <a className="admin-button admin-button--secondary" href="#admin-live-map-section">
           Otevřít mapu průchodů
         </a>
       </div>
@@ -265,9 +265,16 @@ export function AdminLiveOverviewSection({
   );
 }
 
-export function AdminLiveMapSection() {
+type LiveMapSectionProps = {
+  mapRoute: string;
+};
+
+export function AdminLiveMapSection({ mapRoute }: LiveMapSectionProps) {
   return (
-    <section className="admin-card admin-card--section admin-card--live-map admin-section-block admin-section-block--live">
+    <section
+      id="admin-live-map-section"
+      className="admin-card admin-card--section admin-card--live-map admin-section-block admin-section-block--live"
+    >
       <header className="admin-card-header">
         <div>
           <h2>Live mapa závodu</h2>
@@ -282,9 +289,9 @@ export function AdminLiveMapSection() {
         </div>
         <div className="admin-live-map-placeholder-meta">
           <p>
-            TODO: napojit pozice hlídek, fronty, live průchody a stavy stanovišť.
+            Mapa je napojená na živý dispečink průchodů, front a stavů stanovišť.
           </p>
-          <a className="admin-button admin-button--secondary" href="#admin-passages-section">
+          <a className="admin-button admin-button--secondary" href={mapRoute}>
             Otevřít mapu
           </a>
         </div>
@@ -494,23 +501,15 @@ export function AdminResultsSection({
   );
 }
 
-type StationStatistics = {
-  averagePassedPerStation: number;
-  maxWaitingStationLabel: string;
-  hardestStationLabel: string;
-};
-
 type StatsSectionProps = {
   showStatsSection: boolean;
   onToggle: () => void;
-  stationStatistics: StationStatistics;
   summary: RaceDashboardSummary;
 };
 
 export function AdminStatsSection({
   showStatsSection,
   onToggle,
-  stationStatistics,
   summary,
 }: StatsSectionProps) {
   return (
@@ -538,20 +537,20 @@ export function AdminStatsSection({
       {showStatsSection ? (
         <div className="admin-placeholder-grid">
           <div className="admin-placeholder-item">
-            <strong>Průměrné průchody / stanoviště</strong>
-            <span>{stationStatistics.averagePassedPerStation.toFixed(1)}</span>
+            <strong>Hlídky na trati</strong>
+            <span>{summary.patrolsOnCourse}</span>
           </div>
           <div className="admin-placeholder-item">
-            <strong>Nejtěžší stanoviště</strong>
-            <span>{stationStatistics.hardestStationLabel}</span>
+            <strong>Dokončené hlídky</strong>
+            <span>{summary.patrolsFinished}</span>
           </div>
           <div className="admin-placeholder-item">
-            <strong>Nejvytíženější stanoviště</strong>
-            <span>{stationStatistics.maxWaitingStationLabel}</span>
+            <strong>Čekající na start</strong>
+            <span>{summary.patrolsWaitingForStart}</span>
           </div>
           <div className="admin-placeholder-item">
-            <strong>Dokončené / Nedokončené</strong>
-            <span>{summary.patrolsFinished} / {summary.patrolsOnCourse}</span>
+            <strong>Poslední synchronizace</strong>
+            <span>{formatDateTimeForStatus(summary.lastSyncAt)}</span>
           </div>
         </div>
       ) : (

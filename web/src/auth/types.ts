@@ -44,6 +44,7 @@ export interface StationManifest {
       limitMinutesByCategory?: Partial<Record<'N' | 'M' | 'S' | 'R', number>>;
       penaltyStepMinutes?: number;
     };
+    targetAnswerOptionCount?: 3 | 4;
     participatingTroops?: string[];
   };
   allowedCategories: string[];

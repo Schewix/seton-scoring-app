@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import ChangePasswordScreen from '../auth/ChangePasswordScreen';
 import LoginScreen from '../auth/LoginScreen';
 import { useAuth } from '../auth/context';
@@ -14,6 +14,7 @@ import {
 } from './liveMapData';
 import type {
   EventMapRow,
+  LivePatrolState,
   MapPassage,
   MapPatrol,
   MapStationScore,
@@ -54,6 +55,106 @@ function formatRoundedMinutes(value: number | null | undefined) {
     return '—';
   }
   return `${Math.max(0, Math.round(Number(value)))} min`;
+}
+
+type ParsedPatrolCode = {
+  category: string;
+  sex: 'H' | 'D' | '';
+  number: number;
+};
+
+type PatrolSearchMatch = {
+  patrolId: string;
+  patrolCode: string;
+  teamName: string;
+  status: LivePatrolState['status'] | 'nestartovala';
+  stationId: string | null;
+  stationCode: string;
+  stationName: string;
+  latestAt: string | null;
+  waitMinutes: number;
+};
+
+type PatrolSearchResult = {
+  query: string;
+  matches: PatrolSearchMatch[];
+  error: string | null;
+};
+
+function parsePatrolCode(raw: string): ParsedPatrolCode | null {
+  const normalized = raw.trim().toUpperCase().replace(/\s+/g, '');
+  const match = normalized.match(/^([NMSR])([HD])?[-]?(\d{1,3})$/);
+  if (!match) {
+    return null;
+  }
+
+  const number = Number.parseInt(match[3], 10);
+  if (!Number.isFinite(number) || number <= 0) {
+    return null;
+  }
+
+  const sex = (match[2] ?? '') as 'H' | 'D' | '';
+  return {
+    category: match[1],
+    sex,
+    number,
+  };
+}
+
+function formatParsedPatrolCode(parsed: ParsedPatrolCode, includeSex = true) {
+  const sex = includeSex ? parsed.sex : '';
+  return `${parsed.category}${sex}-${parsed.number}`;
+}
+
+function patrolStatusLabel(status: LivePatrolState['status'] | 'nestartovala') {
+  switch (status) {
+    case 'plni':
+      return 'Plní';
+    case 'ceka':
+      return 'Čeká';
+    case 'dobehla':
+      return 'Doběhla';
+    case 'nestartovala':
+      return 'Nestartovala';
+    default:
+      return 'Na trase';
+  }
+}
+
+function parsePatrolFromRecord(patrol: MapPatrol): ParsedPatrolCode | null {
+  const fromCode = parsePatrolCode(patrol.patrol_code ?? '');
+  if (fromCode) {
+    return fromCode;
+  }
+
+  const categoryRaw = (patrol.category ?? '').trim().toUpperCase();
+  let category = categoryRaw;
+  let sexFromCategory: 'H' | 'D' | '' = '';
+  if (/^[NMSR][HD]$/.test(categoryRaw)) {
+    category = categoryRaw.slice(0, 1);
+    sexFromCategory = categoryRaw.slice(1) as 'H' | 'D';
+  }
+  if (!['N', 'M', 'S', 'R'].includes(category)) {
+    return null;
+  }
+
+  const sexRaw = (patrol.sex ?? '').trim().toUpperCase();
+  const sex = sexRaw === 'H' || sexRaw === 'D' ? sexRaw : sexFromCategory;
+  const numberMatch = (patrol.patrol_code ?? '').toUpperCase().match(/(\d{1,4})/);
+  if (!numberMatch) {
+    return null;
+  }
+
+  const number = Number.parseInt(numberMatch[1], 10);
+  if (!Number.isFinite(number) || number <= 0) {
+    return null;
+  }
+
+  return {
+    category,
+    sex,
+    number,
+  };
 }
 
 function clampPercent(value: number) {
@@ -114,8 +215,8 @@ function LiveMapDashboard({
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(true);
-  const [isRealtimePulseVisible, setIsRealtimePulseVisible] = useState(false);
-  const hasInitializedSyncPulseRef = useRef(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchResult, setSearchResult] = useState<PatrolSearchResult | null>(null);
 
   const loadData = useCallback(async () => {
     setError(null);
@@ -244,19 +345,6 @@ function LiveMapDashboard({
   }, [selectedStationId]);
 
   useEffect(() => {
-    if (!lastSyncAt) {
-      return;
-    }
-    if (!hasInitializedSyncPulseRef.current) {
-      hasInitializedSyncPulseRef.current = true;
-      return;
-    }
-    setIsRealtimePulseVisible(true);
-    const timeout = window.setTimeout(() => setIsRealtimePulseVisible(false), 900);
-    return () => window.clearTimeout(timeout);
-  }, [lastSyncAt]);
-
-  useEffect(() => {
     const channel = supabase
       .channel(`seton-live-map-${eventId}`)
       .on(
@@ -372,6 +460,7 @@ function LiveMapDashboard({
   const patrolById = useMemo(() => new Map(patrols.map((patrol) => [patrol.id, patrol] as const)), [patrols]);
 
   const sortedStations = useMemo(() => createStationOrder(stations), [stations]);
+  const stationById = useMemo(() => new Map(sortedStations.map((station) => [station.id, station] as const)), [sortedStations]);
 
   const liveStates = useMemo(
     () =>
@@ -404,12 +493,133 @@ function LiveMapDashboard({
 
   const selectedSummary = selectedStationId ? summaryByStationId.get(selectedStationId) ?? null : null;
 
+  const searchablePatrols = useMemo(
+    () => [
+      ...liveStates.onCourse.map((state) => ({
+        patrol: state.patrol,
+        status: state.status as PatrolSearchMatch['status'],
+        stationId: state.currentStationId,
+        latestAt: state.latestArrivalAt,
+        waitMinutes: state.waitMinutes,
+        parsed: parsePatrolFromRecord(state.patrol),
+      })),
+      ...liveStates.finished.map((state) => ({
+        patrol: state.patrol,
+        status: 'dobehla' as PatrolSearchMatch['status'],
+        stationId: state.currentStationId,
+        latestAt: state.latestArrivalAt,
+        waitMinutes: state.waitMinutes,
+        parsed: parsePatrolFromRecord(state.patrol),
+      })),
+      ...liveStates.notStarted.map((state) => ({
+        patrol: state.patrol,
+        status: 'nestartovala' as PatrolSearchMatch['status'],
+        stationId: null,
+        latestAt: null,
+        waitMinutes: 0,
+        parsed: parsePatrolFromRecord(state.patrol),
+      })),
+    ],
+    [liveStates.finished, liveStates.notStarted, liveStates.onCourse],
+  );
+
   const mapReady = Boolean(eventMap?.image_url);
   const stationsWithPosition = stationSummaries.filter((summary) => Boolean(summary.position));
   const stationsMissingPosition = stationSummaries.filter((summary) => !summary.position);
   const waitingCount = liveStates.onCourse.filter((state) => state.status === 'ceka').length;
   const servingCount = liveStates.onCourse.filter((state) => state.status === 'plni').length;
   const detailToggleLabel = isDetailOpen ? 'Skrýt detail' : 'Detail stanoviště';
+
+  const runPatrolSearch = useCallback((rawQuery: string): PatrolSearchResult => {
+    const parsed = parsePatrolCode(rawQuery);
+    if (!parsed) {
+      return {
+        query: rawQuery.trim(),
+        matches: [],
+        error: 'Použij formát NH-1 nebo N-1.',
+      };
+    }
+
+    const matches = searchablePatrols
+      .filter((candidate) => {
+        if (!candidate.parsed) {
+          return false;
+        }
+        if (candidate.parsed.category !== parsed.category) {
+          return false;
+        }
+        if (candidate.parsed.number !== parsed.number) {
+          return false;
+        }
+        if (parsed.sex) {
+          return candidate.parsed.sex === parsed.sex;
+        }
+        return true;
+      })
+      .map<PatrolSearchMatch>((candidate) => {
+        const station = candidate.stationId ? stationById.get(candidate.stationId) : null;
+        return {
+          patrolId: candidate.patrol.id,
+          patrolCode: formatPatrolLabel(candidate.patrol),
+          teamName: candidate.patrol.team_name || 'Bez názvu',
+          status: candidate.status,
+          stationId: candidate.stationId,
+          stationCode: station?.code ?? '—',
+          stationName: station?.name ?? 'Bez stanoviště',
+          latestAt: candidate.latestAt,
+          waitMinutes: candidate.waitMinutes,
+        };
+      })
+      .sort((a, b) => {
+        const aTs = Date.parse(a.latestAt ?? '');
+        const bTs = Date.parse(b.latestAt ?? '');
+        if (Number.isFinite(aTs) && Number.isFinite(bTs) && aTs !== bTs) {
+          return bTs - aTs;
+        }
+        if (Number.isFinite(aTs) && !Number.isFinite(bTs)) {
+          return -1;
+        }
+        if (!Number.isFinite(aTs) && Number.isFinite(bTs)) {
+          return 1;
+        }
+        return a.patrolCode.localeCompare(b.patrolCode, 'cs');
+      });
+
+    return {
+      query: formatParsedPatrolCode(parsed, Boolean(parsed.sex)),
+      matches,
+      error: null,
+    };
+  }, [searchablePatrols, stationById]);
+
+  const focusStation = useCallback((stationId: string | null) => {
+    if (!stationId) {
+      return;
+    }
+    setSelectedStationId(stationId);
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 1020px)').matches) {
+      setIsDetailOpen(true);
+    }
+  }, []);
+
+  const handleSearchSubmit = useCallback((event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmed = searchInput.trim();
+    if (!trimmed) {
+      setSearchResult({
+        query: '',
+        matches: [],
+        error: 'Zadej číslo hlídky.',
+      });
+      return;
+    }
+    const result = runPatrolSearch(trimmed);
+    setSearchResult(result);
+    const firstWithStation = result.matches.find((match) => Boolean(match.stationId));
+    if (firstWithStation?.stationId) {
+      focusStation(firstWithStation.stationId);
+    }
+  }, [focusStation, runPatrolSearch, searchInput]);
 
   const refreshData = useCallback(async () => {
     setRefreshing(true);
@@ -430,7 +640,7 @@ function LiveMapDashboard({
 
   return (
     <div className={`live-map-shell ${isMapFullscreen ? 'live-map-shell--map-fullscreen' : ''}`}>
-      <header className={`live-map-hud ${isRealtimePulseVisible ? 'live-map-hud--pulse' : ''}`}>
+      <header className="live-map-hud">
         <div className="live-map-hud-main">
           <div className="live-map-title-wrap">
             <h1>Živá mapa průchodů</h1>
@@ -445,6 +655,64 @@ function LiveMapDashboard({
             <span className="live-map-badge live-map-badge--neutral">Sync: {formatDateTime(lastSyncAt)}</span>
           </div>
         </div>
+        <section className="live-map-search" aria-label="Vyhledání hlídky">
+          <form className="live-map-search-form" onSubmit={handleSearchSubmit}>
+            <label htmlFor="live-map-patrol-search">Najít hlídku</label>
+            <div className="live-map-search-row">
+              <input
+                id="live-map-patrol-search"
+                type="text"
+                value={searchInput}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setSearchInput(value);
+                  if (!value.trim()) {
+                    setSearchResult(null);
+                  }
+                }}
+                placeholder="NH-1 nebo N-1"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button type="submit" className="live-map-button live-map-button--primary">
+                Najít
+              </button>
+            </div>
+          </form>
+          {searchResult ? (
+            searchResult.error ? (
+              <p className="live-map-search-note live-map-search-note--error">{searchResult.error}</p>
+            ) : searchResult.matches.length === 0 ? (
+              <p className="live-map-search-note">Hlídka {searchResult.query} nebyla nalezena.</p>
+            ) : (
+              <ul className="live-map-search-results">
+                {searchResult.matches.map((match) => (
+                  <li key={match.patrolId}>
+                    <div>
+                      <strong>{match.patrolCode}</strong>
+                      <span>{match.teamName}</span>
+                      <em>
+                        {patrolStatusLabel(match.status)} · {match.stationId ? `${match.stationCode} · ${match.stationName}` : 'Bez stanoviště'}
+                      </em>
+                      <small>Naposledy: {formatDateTime(match.latestAt)}</small>
+                    </div>
+                    {match.stationId ? (
+                      <button
+                        type="button"
+                        className="live-map-button live-map-button--secondary"
+                        onClick={() => focusStation(match.stationId)}
+                      >
+                        Otevřít
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : (
+            <p className="live-map-search-hint">Vyhledávání funguje pro NH-1 i N-1.</p>
+          )}
+        </section>
         <div className="live-map-hud-stats">
           <article className="live-map-stat-pill">
             <span>Na trase</span>

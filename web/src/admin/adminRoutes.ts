@@ -4,7 +4,6 @@ import {
 } from '../routing';
 
 export type AdminPageKey =
-  | 'dashboard'
   | 'live'
   | 'patrols'
   | 'stations'
@@ -18,7 +17,6 @@ export type AdminPageItem = {
 };
 
 export const ADMIN_PAGE_ITEMS: ReadonlyArray<AdminPageItem> = [
-  { key: 'dashboard', label: 'Dashboard' },
   { key: 'live', label: 'Live' },
   { key: 'patrols', label: 'Hlídky' },
   { key: 'stations', label: 'Stanoviště' },
@@ -30,6 +28,7 @@ export const ADMIN_PAGE_ITEMS: ReadonlyArray<AdminPageItem> = [
 const ADMIN_PAGE_SET = new Set<AdminPageKey>(ADMIN_PAGE_ITEMS.map((item) => item.key));
 
 const ADMIN_PAGE_ALIASES: Record<string, AdminPageKey> = {
+  dashboard: 'live',
   stats: 'statistics',
   exports: 'settings',
   queues: 'live',
@@ -63,7 +62,7 @@ export function normalizeAdminPage(value: string | null | undefined): AdminPageK
   if (normalized in ADMIN_PAGE_ALIASES) {
     return ADMIN_PAGE_ALIASES[normalized];
   }
-  return 'dashboard';
+  return 'live';
 }
 
 export function detectAdminRoutePrefix(pathname: string): string {
@@ -86,7 +85,7 @@ export function parseAdminRoute(pathname: string): {
   const prefix = detectAdminRoutePrefix(normalized);
 
   if (normalized === prefix) {
-    return { prefix, eventId: null, page: 'dashboard' };
+    return { prefix, eventId: null, page: 'live' };
   }
 
   if (normalized.startsWith(`${prefix}/event/`)) {
@@ -108,7 +107,7 @@ export function parseAdminRoute(pathname: string): {
     };
   }
 
-  return { prefix, eventId: null, page: 'dashboard' };
+  return { prefix, eventId: null, page: 'live' };
 }
 
 export function buildAdminRoutePath(options: {

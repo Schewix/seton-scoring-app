@@ -42,8 +42,9 @@ const DEFAULT_TIME_LIMIT_MINUTES: Record<BaseCategoryKey, number> = {
   R: 140,
 };
 const DEFAULT_TIME_PENALTY_STEP_MINUTES = 20;
+const DEFAULT_TARGET_ANSWER_OPTION_COUNT = 4;
 const EVENT_SCORING_SETTINGS_SELECT =
-  'announced_places_n,announced_places_m,announced_places_s,announced_places_r,announced_places_nh,announced_places_nd,announced_places_mh,announced_places_md,announced_places_sh,announced_places_sd,announced_places_rh,announced_places_rd,time_limit_n_minutes,time_limit_m_minutes,time_limit_s_minutes,time_limit_r_minutes,time_penalty_step_minutes,participating_troops';
+  'announced_places_n,announced_places_m,announced_places_s,announced_places_r,announced_places_nh,announced_places_nd,announced_places_mh,announced_places_md,announced_places_sh,announced_places_sd,announced_places_rh,announced_places_rd,time_limit_n_minutes,time_limit_m_minutes,time_limit_s_minutes,time_limit_r_minutes,time_penalty_step_minutes,target_answer_option_count,participating_troops';
 
 const PRAGUE_TIME_ZONE = 'Europe/Prague';
 
@@ -149,8 +150,13 @@ type EventScoringSettings = {
   time_limit_s_minutes: number;
   time_limit_r_minutes: number;
   time_penalty_step_minutes: number;
+  target_answer_option_count: 3 | 4;
   participating_troops: string[];
 };
+
+function normalizeTargetAnswerOptionCount(value: unknown): 3 | 4 {
+  return value === 3 || value === '3' ? 3 : 4;
+}
 
 function normalizeTroopList(value: unknown): string[] {
   const values = Array.isArray(value) ? value : [];
@@ -247,6 +253,9 @@ function normalizeEventScoringSettings(source: Record<string, unknown> | null | 
     time_limit_s_minutes: toPositiveInt(values.time_limit_s_minutes, DEFAULT_TIME_LIMIT_MINUTES.S, 24 * 60),
     time_limit_r_minutes: toPositiveInt(values.time_limit_r_minutes, DEFAULT_TIME_LIMIT_MINUTES.R, 24 * 60),
     time_penalty_step_minutes: toPositiveInt(values.time_penalty_step_minutes, DEFAULT_TIME_PENALTY_STEP_MINUTES, 24 * 60),
+    target_answer_option_count: normalizeTargetAnswerOptionCount(
+      values.target_answer_option_count ?? DEFAULT_TARGET_ANSWER_OPTION_COUNT,
+    ),
     participating_troops: normalizeTroopList(values.participating_troops),
   };
 }
