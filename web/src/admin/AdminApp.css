@@ -68,6 +68,31 @@
   align-items: center;
 }
 
+.admin-header-event-switch {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-header-event-switch-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: rgba(247, 251, 246, 0.9);
+  white-space: nowrap;
+}
+
+.admin-header-event-switch-select {
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #2e7d32;
+  font-weight: 600;
+  padding: 0 16px;
+  min-width: 280px;
+}
+
 .admin-button {
   display: inline-flex;
   align-items: center;
@@ -474,12 +499,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
 .admin-live-map-placeholder-canvas span {
   font-size: 1.05rem;
   font-weight: 700;
   color: #3c5970;
+}
+
+.admin-live-map-preview-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .admin-live-map-placeholder-meta {
@@ -1321,7 +1354,7 @@
     justify-content: flex-start;
   }
 
-  .admin-header-status-row {
+  .admin-header-event-switch {
     align-items: stretch;
   }
 
@@ -1360,9 +1393,14 @@
     gap: 10px;
   }
 
-  .admin-header-status-row {
+  .admin-header-event-switch {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .admin-header-event-switch-select {
+    width: 100%;
+    min-width: 0;
   }
 
   .admin-button,

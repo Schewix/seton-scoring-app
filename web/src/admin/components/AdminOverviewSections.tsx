@@ -1,9 +1,11 @@
+import { useEffect, useMemo, useState } from 'react';
 import {
   formatDateTimeForStatus,
   toAdminSectionId,
   type AdminSectionKey,
   type RaceDashboardSummary,
 } from '../adminSections';
+import { supabase } from '../../supabaseClient';
 
 type DashboardSectionProps = {
   eventLoading: boolean;
@@ -266,10 +268,44 @@ export function AdminLiveOverviewSection({
 }
 
 type LiveMapSectionProps = {
+  eventId: string;
   mapRoute: string;
 };
 
-export function AdminLiveMapSection({ mapRoute }: LiveMapSectionProps) {
+type AdminLiveMapRow = {
+  image_url: string | null;
+};
+
+export function AdminLiveMapSection({ eventId, mapRoute }: LiveMapSectionProps) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    let canceled = false;
+
+    const loadPreview = async () => {
+      setPreviewLoading(true);
+      const { data } = await supabase
+        .from('event_maps')
+        .select('image_url')
+        .eq('event_id', eventId)
+        .maybeSingle();
+
+      if (canceled) {
+        return;
+      }
+
+      setPreviewUrl(((data ?? null) as AdminLiveMapRow | null)?.image_url ?? null);
+      setPreviewLoading(false);
+    };
+
+    void loadPreview();
+
+    return () => {
+      canceled = true;
+    };
+  }, [eventId]);
+
   return (
     <section
       id="admin-live-map-section"
@@ -279,19 +315,25 @@ export function AdminLiveMapSection({ mapRoute }: LiveMapSectionProps) {
         <div>
           <h2>Live mapa závodu</h2>
           <p className="admin-card-subtitle">
-            Připravené místo pro budoucí mapový náhled live průchodů a stavů stanovišť.
+            Náhled mapy, která se používá v živém dispečinku průchodů a front.
           </p>
         </div>
       </header>
       <div className="admin-live-map-placeholder">
         <div className="admin-live-map-placeholder-canvas" role="img" aria-label="Náhled live mapy závodu">
-          <span>Náhled mapy</span>
+          {previewLoading ? (
+            <span>Načítám mapu…</span>
+          ) : previewUrl ? (
+            <img src={previewUrl} alt="Nahraná mapa závodu" className="admin-live-map-preview-image" />
+          ) : (
+            <span>Mapa zatím není nahraná</span>
+          )}
         </div>
         <div className="admin-live-map-placeholder-meta">
           <p>
             Mapa je napojená na živý dispečink průchodů, front a stavů stanovišť.
           </p>
-          <a className="admin-button admin-button--secondary" href={mapRoute}>
+          <a className="admin-button admin-button--secondary" href={mapRoute} target="_blank" rel="noreferrer">
             Otevřít mapu
           </a>
         </div>
@@ -338,10 +380,131 @@ export function AdminQueuesSection() {
 }
 
 type PatrolsOverviewSectionProps = {
-  onShowPreRaceSetup: () => void;
+  eventId: string;
 };
 
-export function AdminPatrolsOverviewSection({ onShowPreRaceSetup }: PatrolsOverviewSectionProps) {
+type PatrolOverviewRow = {
+  id: string;
+  patrol_code: string | null;
+  team_name: string | null;
+  category: string | null;
+  sex: string | null;
+  active: boolean | null;
+};
+
+function normalizeUpper(value: string | null | undefined) {
+  return typeof value === 'string' ? value.trim().toUpperCase() : '';
+}
+
+function normalizeText(value: string | null | undefined) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+export function AdminPatrolsOverviewSection({ eventId }: PatrolsOverviewSectionProps) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<PatrolOverviewRow[]>([]);
+  const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [troopFilter, setTroopFilter] = useState('ALL');
+
+  useEffect(() => {
+    let canceled = false;
+
+    const loadPatrols = async () => {
+      setLoading(true);
+      setError(null);
+      const { data, error: loadError } = await supabase
+        .from('patrols')
+        .select('id, patrol_code, team_name, category, sex, active')
+        .eq('event_id', eventId)
+        .order('patrol_code', { ascending: true });
+
+      if (canceled) {
+        return;
+      }
+
+      setLoading(false);
+      if (loadError) {
+        setRows([]);
+        setError('Nepodařilo se načíst hlídky pro přehled filtrů.');
+        return;
+      }
+
+      setRows(((data ?? []) as PatrolOverviewRow[]).filter((row) => row.active !== false));
+    };
+
+    void loadPatrols();
+
+    return () => {
+      canceled = true;
+    };
+  }, [eventId]);
+
+  const categoryOptions = useMemo(() => {
+    const unique = new Set<string>();
+    rows.forEach((row) => {
+      const category = normalizeUpper(row.category);
+      const sex = normalizeUpper(row.sex);
+      const key = `${category}${sex}`;
+      if (key) {
+        unique.add(key);
+      }
+    });
+    return Array.from(unique).sort((a, b) => a.localeCompare(b, 'cs'));
+  }, [rows]);
+
+  const troopOptions = useMemo(() => {
+    const unique = new Set<string>();
+    rows.forEach((row) => {
+      const name = normalizeText(row.team_name);
+      if (name) {
+        unique.add(name);
+      }
+    });
+    return Array.from(unique).sort((a, b) => a.localeCompare(b, 'cs'));
+  }, [rows]);
+
+  const filteredRows = useMemo(() => {
+    const normalizedSearch = normalizeUpper(search);
+    return rows.filter((row) => {
+      const code = normalizeUpper(row.patrol_code);
+      const teamName = normalizeUpper(row.team_name);
+      const category = normalizeUpper(row.category);
+      const sex = normalizeUpper(row.sex);
+      const bracket = `${category}${sex}`;
+
+      if (categoryFilter !== 'ALL' && bracket !== categoryFilter) {
+        return false;
+      }
+
+      if (troopFilter !== 'ALL' && normalizeText(row.team_name) !== troopFilter) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return code.includes(normalizedSearch) || teamName.includes(normalizedSearch);
+    });
+  }, [categoryFilter, rows, search, troopFilter]);
+
+  const duplicateCodes = useMemo(() => {
+    const counts = new Map<string, number>();
+    rows.forEach((row) => {
+      const code = normalizeUpper(row.patrol_code);
+      if (!code) {
+        return;
+      }
+      counts.set(code, (counts.get(code) ?? 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .filter(([, count]) => count > 1)
+      .map(([code]) => code)
+      .sort((a, b) => a.localeCompare(b, 'cs'));
+  }, [rows]);
+
   return (
     <section
       id={toAdminSectionId('patrols')}
@@ -354,23 +517,75 @@ export function AdminPatrolsOverviewSection({ onShowPreRaceSetup }: PatrolsOverv
             Vyhledávání, filtrace, registrace a kontrola duplicit hlídek.
           </p>
         </div>
-        <div className="admin-card-actions">
-          <button
-            type="button"
-            className="admin-button admin-button--secondary"
-            onClick={onShowPreRaceSetup}
-          >
-            Zobrazit předzávodní nastavení
-          </button>
-        </div>
       </header>
       <div className="admin-placeholder-grid">
-        <div className="admin-placeholder-item"><strong>Vyhledávání hlídek</strong><span>TODO</span></div>
-        <div className="admin-placeholder-item"><strong>Filtr: kategorie</strong><span>TODO</span></div>
-        <div className="admin-placeholder-item"><strong>Filtr: oddíl</strong><span>TODO</span></div>
-        <div className="admin-placeholder-item"><strong>Kontrola duplicit</strong><span>TODO</span></div>
+        <div className="admin-placeholder-item">
+          <strong>Vyhledávání hlídek</strong>
+          <label className="admin-field" htmlFor="admin-patrol-overview-search">
+            <span>Zadej kód nebo název</span>
+            <input
+              id="admin-patrol-overview-search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="např. NH-12 nebo Ještěrky"
+              autoComplete="off"
+            />
+          </label>
+          <span>
+            {loading ? 'Načítám hlídky…' : `${filteredRows.length} / ${rows.length} hlídek`}
+          </span>
+        </div>
+        <div className="admin-placeholder-item">
+          <strong>Filtr: kategorie</strong>
+          <label className="admin-field" htmlFor="admin-patrol-overview-category">
+            <span>Vyber kategorii</span>
+            <select
+              id="admin-patrol-overview-category"
+              value={categoryFilter}
+              onChange={(event) => setCategoryFilter(event.target.value)}
+            >
+              <option value="ALL">Všechny kategorie</option>
+              {categoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span>{categoryFilter === 'ALL' ? 'Bez omezení kategorie' : `Filtrované: ${categoryFilter}`}</span>
+        </div>
+        <div className="admin-placeholder-item">
+          <strong>Filtr: oddíl</strong>
+          <label className="admin-field" htmlFor="admin-patrol-overview-troop">
+            <span>Vyber oddíl</span>
+            <select
+              id="admin-patrol-overview-troop"
+              value={troopFilter}
+              onChange={(event) => setTroopFilter(event.target.value)}
+            >
+              <option value="ALL">Všechny oddíly</option>
+              {troopOptions.map((troop) => (
+                <option key={troop} value={troop}>
+                  {troop}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span>{troopFilter === 'ALL' ? 'Bez omezení oddílu' : `Filtrované: ${troopFilter}`}</span>
+        </div>
+        <div className="admin-placeholder-item">
+          <strong>Kontrola duplicit</strong>
+          <span>
+            {duplicateCodes.length === 0
+              ? 'Bez duplicitních kódů'
+              : `Duplicitní kódy: ${duplicateCodes.length}`}
+          </span>
+          {duplicateCodes.length > 0 ? (
+            <small>{duplicateCodes.slice(0, 5).join(', ')}{duplicateCodes.length > 5 ? '…' : ''}</small>
+          ) : null}
+        </div>
       </div>
-      {/* TODO: Připravit kompletní seznam hlídek s filtry a editací. */}
+      {error ? <p className="admin-error">{error}</p> : null}
     </section>
   );
 }
@@ -444,13 +659,6 @@ export function AdminResultsSection({
           >
             Export výsledků (CSV/PDF)
           </a>
-          <button
-            type="button"
-            className="admin-button admin-button--secondary"
-            disabled
-          >
-            Export diplomů (TODO)
-          </button>
         </div>
       </header>
       {hasResultProblems ? (

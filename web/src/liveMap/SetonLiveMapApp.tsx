@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ChangePasswordScreen from '../auth/ChangePasswordScreen';
 import LoginScreen from '../auth/LoginScreen';
 import { useAuth } from '../auth/context';
@@ -217,6 +217,8 @@ function LiveMapDashboard({
   const [isDetailOpen, setIsDetailOpen] = useState(true);
   const [searchInput, setSearchInput] = useState('');
   const [searchResult, setSearchResult] = useState<PatrolSearchResult | null>(null);
+  const stageRef = useRef<HTMLElement | null>(null);
+  const detailPanelRef = useRef<HTMLElement | null>(null);
 
   const loadData = useCallback(async () => {
     setError(null);
@@ -528,7 +530,6 @@ function LiveMapDashboard({
   const stationsMissingPosition = stationSummaries.filter((summary) => !summary.position);
   const waitingCount = liveStates.onCourse.filter((state) => state.status === 'ceka').length;
   const servingCount = liveStates.onCourse.filter((state) => state.status === 'plni').length;
-  const detailToggleLabel = isDetailOpen ? 'Skrýt detail' : 'Detail stanoviště';
 
   const runPatrolSearch = useCallback((rawQuery: string): PatrolSearchResult => {
     const parsed = parsePatrolCode(rawQuery);
@@ -597,8 +598,15 @@ function LiveMapDashboard({
       return;
     }
     setSelectedStationId(stationId);
-    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 1020px)').matches) {
-      setIsDetailOpen(true);
+    setIsDetailOpen(true);
+    if (typeof window !== 'undefined') {
+      const prefersDetailSheet = window.matchMedia('(max-width: 1020px)').matches;
+      const target = prefersDetailSheet ? detailPanelRef.current : stageRef.current;
+      if (target) {
+        window.requestAnimationFrame(() => {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
     }
   }, []);
 
@@ -750,13 +758,6 @@ function LiveMapDashboard({
           <button
             type="button"
             className="live-map-button live-map-button--secondary"
-            onClick={() => setIsDetailOpen((current) => !current)}
-          >
-            {detailToggleLabel}
-          </button>
-          <button
-            type="button"
-            className="live-map-button live-map-button--secondary"
             onClick={() => setIsMapFullscreen((current) => !current)}
           >
             {isMapFullscreen ? 'Konec fullscreen' : 'Fullscreen mapy'}
@@ -769,7 +770,7 @@ function LiveMapDashboard({
 
       <main className="live-map-main">
         {error ? <p className="live-map-error">{error}</p> : null}
-        <section className="live-map-stage">
+        <section ref={stageRef} className="live-map-stage">
           <article className="live-map-map-wrap">
             <header className="live-map-map-head">
               <h2>Mapa závodu</h2>
@@ -830,7 +831,7 @@ function LiveMapDashboard({
             </div>
           </article>
 
-          <aside className={`live-map-detail-panel ${isDetailOpen ? 'is-open' : ''}`}>
+          <aside ref={detailPanelRef} className={`live-map-detail-panel ${isDetailOpen ? 'is-open' : ''}`}>
             <div className="live-map-detail-handle">
               <button
                 type="button"

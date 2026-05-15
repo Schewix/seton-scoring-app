@@ -1223,7 +1223,6 @@ function AdminDashboard({
     }
     return window.localStorage.getItem(SETUP_SELECTED_EVENT_STORAGE_KEY) || eventId;
   });
-  const [showPreRaceSetup, setShowPreRaceSetup] = useState(true);
   const [showStatsSection, setShowStatsSection] = useState(false);
   const [showExportsSection, setShowExportsSection] = useState(false);
   const [activeAdminPage, setActiveAdminPage] = useState<AdminPageKey>(() => {
@@ -1288,16 +1287,28 @@ function AdminDashboard({
   }, [selectedSetupEventId]);
 
   const loadAnswers = useCallback(async () => {
-    if (!stationId) {
+    const answersEventId = selectedSetupEventId || eventId;
+    const targetStation = setupStations.find(
+      (station) =>
+        station.event_id === answersEventId &&
+        normalizeText(station.code).toUpperCase() === 'T',
+    );
+    const answersStationId = targetStation?.id || (answersEventId === eventId ? stationId : '');
+
+    if (!answersStationId) {
+      setAnswersError(`Pro ročník "${selectedSetupEvent?.name ?? answersEventId}" chybí stanoviště T.`);
+      setAnswersForm(createEmptyAnswers());
+      setAnswersSummary(createEmptySummary());
       return;
     }
+
     setAnswersLoading(true);
     setAnswersError(null);
     const { data, error } = await supabase
       .from('station_category_answers')
       .select('category, correct_answers, updated_at')
-      .eq('event_id', eventId)
-      .eq('station_id', stationId);
+      .eq('event_id', answersEventId)
+      .eq('station_id', answersStationId);
     setAnswersLoading(false);
 
     if (error) {
@@ -1324,7 +1335,7 @@ function AdminDashboard({
     setAnswersForm(form);
     setAnswersSummary(summary);
     setAnswersSuccess(null);
-  }, [answersTargetOptionCount, eventId, stationId]);
+  }, [answersTargetOptionCount, eventId, selectedSetupEvent, selectedSetupEventId, setupStations, stationId]);
 
   const loadStationStats = useCallback(async () => {
     setStationLoading(true);
@@ -1748,14 +1759,16 @@ function AdminDashboard({
   }, [setupEventScoringConfig.participatingTroops]);
 
   useEffect(() => {
-    const currentEventSettings = setupEvents.find((row) => row.id === eventId);
+    const currentEventSettings =
+      setupEvents.find((row) => row.id === selectedSetupEventId) ??
+      setupEvents.find((row) => row.id === eventId);
     if (!currentEventSettings) {
       return;
     }
     setAnswersTargetOptionCount((prev) =>
       toTargetAnswerOptionCount(currentEventSettings.target_answer_option_count, prev),
     );
-  }, [eventId, setupEvents]);
+  }, [eventId, selectedSetupEventId, setupEvents]);
 
   const selectedSetupAssignments = useMemo<SelectedSetupAssignmentSummary[]>(() => {
     const judgeById = new Map(setupJudges.map((judge) => [judge.id, judge]));
@@ -2080,15 +2093,33 @@ function AdminDashboard({
     if (!isCalcStation) {
       return;
     }
-    loadAnswers();
     loadStationStats();
     loadEventState();
     loadSetupData();
-  }, [isCalcStation, loadAnswers, loadStationStats, loadEventState, loadSetupData]);
+  }, [isCalcStation, loadStationStats, loadEventState, loadSetupData]);
+
+  useEffect(() => {
+    if (!isCalcStation) {
+      return;
+    }
+    loadAnswers();
+  }, [isCalcStation, loadAnswers]);
 
   const handleSaveAnswers = useCallback(async () => {
     setAnswersError(null);
     setAnswersSuccess(null);
+
+    const answersEventId = selectedSetupEventId || eventId;
+    const targetStation = setupStations.find(
+      (station) =>
+        station.event_id === answersEventId &&
+        normalizeText(station.code).toUpperCase() === 'T',
+    );
+    const answersStationId = targetStation?.id || (answersEventId === eventId ? stationId : '');
+    if (!answersStationId) {
+      setAnswersError(`Pro ročník "${selectedSetupEvent?.name ?? answersEventId}" chybí stanoviště T.`);
+      return;
+    }
 
     const updates: { event_id: string; station_id: string; category: string; correct_answers: string }[] = [];
     const deletions: string[] = [];
@@ -2106,8 +2137,8 @@ function AdminDashboard({
         return;
       }
       updates.push({
-        event_id: eventId,
-        station_id: stationId,
+        event_id: answersEventId,
+        station_id: answersStationId,
         category,
         correct_answers: packed,
       });
@@ -2117,7 +2148,7 @@ function AdminDashboard({
 
     try {
       await postSetupAction('save_event_scoring_config', {
-        event_id: eventId,
+        event_id: answersEventId,
         target_answer_option_count: answersTargetOptionCount,
       });
 
@@ -2135,8 +2166,8 @@ function AdminDashboard({
           .from('station_category_answers')
           .delete()
           .in('category', deletions)
-          .eq('event_id', eventId)
-          .eq('station_id', stationId);
+          .eq('event_id', answersEventId)
+          .eq('station_id', answersStationId);
         if (error) {
           throw error;
         }
@@ -2158,6 +2189,9 @@ function AdminDashboard({
     loadAnswers,
     loadSetupData,
     postSetupAction,
+    selectedSetupEvent,
+    selectedSetupEventId,
+    setupStations,
     stationId,
     answersTargetOptionCount,
   ]);
@@ -4018,30 +4052,26 @@ function AdminDashboard({
               Odhlásit se
             </button>
           </div>
-          <div className="admin-header-status-row">
-            <span
-              className={`admin-status-badge ${
-                raceDashboardSummary.problematicStations > 0 || raceDashboardSummary.syncConflicts > 0
-                  ? 'admin-status-badge--offline'
-                  : 'admin-status-badge--online'
-              }`}
+          <div className="admin-header-event-switch">
+            <label className="admin-header-event-switch-label" htmlFor="admin-global-event-switch">
+              Ročník
+            </label>
+            <select
+              id="admin-global-event-switch"
+              className="admin-header-event-switch-select"
+              value={selectedSetupEventId}
+              onChange={(event) => setSelectedSetupEventId(event.target.value)}
+              disabled={setupLoading || setupSaving || setupEvents.length === 0}
             >
-              {raceDashboardSummary.problematicStations > 0 || raceDashboardSummary.syncConflicts > 0
-                ? 'Live vyžaduje zásah'
-                : 'Live v pořádku'}
-            </span>
-            <span className="admin-status-badge admin-status-badge--warning">
-              Offline stanoviště: {raceDashboardSummary.problematicStations}
-            </span>
-            <span className="admin-status-badge admin-status-badge--warning">
-              Konflikty: {raceDashboardSummary.syncConflicts}
-            </span>
-            <span className="admin-status-badge admin-status-badge--unknown">
-              Poslední sync:{' '}
-              {raceDashboardSummary.lastSyncAt
-                ? new Date(raceDashboardSummary.lastSyncAt).toLocaleTimeString('cs-CZ')
-                : '—'}
-            </span>
+              {setupEvents.length === 0 ? (
+                <option value={eventId}>{eventState.name}</option>
+              ) : null}
+              {setupEvents.map((setupEvent) => (
+                <option key={setupEvent.id} value={setupEvent.id}>
+                  {setupEvent.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </header>
@@ -4066,7 +4096,7 @@ function AdminDashboard({
           />
         ) : null}
 
-        {isPatrolsPage ? <AdminPatrolsOverviewSection onShowPreRaceSetup={() => setShowPreRaceSetup(true)} /> : null}
+        {isPatrolsPage ? <AdminPatrolsOverviewSection eventId={eventId} /> : null}
         {isPatrolsPage ? <AdminStartsSection /> : null}
 
         {isStationsPage ? (
@@ -4092,7 +4122,7 @@ function AdminDashboard({
           {answersError ? <p className="admin-error">{answersError}</p> : null}
           {answersSuccess ? <p className="admin-success">{answersSuccess}</p> : null}
           <p className="admin-card-subtitle">
-            Ročník nastavení: <strong>{eventState.name}</strong>
+            Ročník nastavení: <strong>{selectedSetupEvent?.name || eventState.name}</strong>
           </p>
           <div className="admin-disqualify-form">
             <label className="admin-field" htmlFor="admin-target-answer-option-count">
@@ -4209,24 +4239,6 @@ function AdminDashboard({
             </header>
             {setupError ? <p className="admin-error">{setupError}</p> : null}
             {setupSuccess ? <p className="admin-success">{setupSuccess}</p> : null}
-            <div className="admin-disqualify-form">
-              <label className="admin-field" htmlFor="admin-stations-event">
-                <span>Spravovaný ročník</span>
-                <select
-                  id="admin-stations-event"
-                  value={selectedSetupEventId}
-                  onChange={(event) => setSelectedSetupEventId(event.target.value)}
-                  disabled={setupLoading || setupSaving || setupEvents.length === 0}
-                >
-                  {setupEvents.length === 0 ? <option value="">Žádné ročníky</option> : null}
-                  {setupEvents.map((setupEvent) => (
-                    <option key={setupEvent.id} value={setupEvent.id}>
-                      {setupEvent.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
             <AdminStationHealthPanel
               stationCards={stationHealthCards}
               assignmentRows={selectedSetupAssignments}
@@ -4357,23 +4369,56 @@ function AdminDashboard({
           {lockMessage ? <p className="admin-notice">{lockMessage}</p> : null}
           {setupError ? <p className="admin-error">{setupError}</p> : null}
           {setupSuccess ? <p className="admin-success">{setupSuccess}</p> : null}
-          <div className="admin-disqualify-form">
-            <label className="admin-field" htmlFor="admin-setup-event">
-              <span>Spravovaný ročník</span>
-              <select
-                id="admin-setup-event"
-                value={selectedSetupEventId}
-                onChange={(event) => setSelectedSetupEventId(event.target.value)}
-                disabled={setupLoading || setupSaving || setupEvents.length === 0}
+
+          <div className="admin-setup-block">
+            <h3>Vytvořit nový ročník</h3>
+            <div className="admin-disqualify-form">
+              <label className="admin-field" htmlFor="admin-create-event-name">
+                <span>Název ročníku</span>
+                <input
+                  id="admin-create-event-name"
+                  value={createEventName}
+                  onChange={(event) => setCreateEventName(event.target.value)}
+                  placeholder="např. Setonův závod 2027"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="admin-field" htmlFor="admin-create-event-start">
+                <span>Začátek (volitelné)</span>
+                <input
+                  id="admin-create-event-start"
+                  type="datetime-local"
+                  value={createEventStartsAt}
+                  onChange={(event) => setCreateEventStartsAt(event.target.value)}
+                />
+              </label>
+              <label className="admin-field" htmlFor="admin-create-event-end">
+                <span>Konec (volitelné)</span>
+                <input
+                  id="admin-create-event-end"
+                  type="datetime-local"
+                  value={createEventEndsAt}
+                  onChange={(event) => setCreateEventEndsAt(event.target.value)}
+                />
+              </label>
+              <label className="admin-check" htmlFor="admin-copy-stations">
+                <input
+                  id="admin-copy-stations"
+                  type="checkbox"
+                  checked={copyStationsFromCurrentEvent}
+                  onChange={(event) => setCopyStationsFromCurrentEvent(event.target.checked)}
+                />
+                <span>Kopírovat stanoviště z aktuálního ročníku</span>
+              </label>
+              <button
+                type="button"
+                className="admin-button admin-button--primary"
+                onClick={() => void handleCreateEvent()}
+                disabled={setupSaving}
               >
-                {setupEvents.length === 0 ? <option value="">Žádné ročníky</option> : null}
-                {setupEvents.map((setupEvent) => (
-                  <option key={setupEvent.id} value={setupEvent.id}>
-                    {setupEvent.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                {setupSaving ? 'Ukládám…' : 'Vytvořit ročník'}
+              </button>
+            </div>
           </div>
 
           <div className="admin-setup-block">
@@ -4520,70 +4565,6 @@ function AdminDashboard({
             </div>
           </div>
 
-          <div className="admin-card-actions">
-            <button
-              type="button"
-              className="admin-button admin-button--secondary"
-              onClick={() => setShowPreRaceSetup((prev) => !prev)}
-            >
-              {showPreRaceSetup ? 'Skrýt předzávodní nastavení' : 'Zobrazit předzávodní nastavení'}
-            </button>
-          </div>
-
-          {showPreRaceSetup ? (
-            <>
-
-          <div className="admin-setup-block">
-            <h3>Vytvořit nový ročník</h3>
-            <div className="admin-disqualify-form">
-              <label className="admin-field" htmlFor="admin-create-event-name">
-                <span>Název ročníku</span>
-                <input
-                  id="admin-create-event-name"
-                  value={createEventName}
-                  onChange={(event) => setCreateEventName(event.target.value)}
-                  placeholder="např. Setonův závod 2027"
-                  autoComplete="off"
-                />
-              </label>
-              <label className="admin-field" htmlFor="admin-create-event-start">
-                <span>Začátek (volitelné)</span>
-                <input
-                  id="admin-create-event-start"
-                  type="datetime-local"
-                  value={createEventStartsAt}
-                  onChange={(event) => setCreateEventStartsAt(event.target.value)}
-                />
-              </label>
-              <label className="admin-field" htmlFor="admin-create-event-end">
-                <span>Konec (volitelné)</span>
-                <input
-                  id="admin-create-event-end"
-                  type="datetime-local"
-                  value={createEventEndsAt}
-                  onChange={(event) => setCreateEventEndsAt(event.target.value)}
-                />
-              </label>
-              <label className="admin-check" htmlFor="admin-copy-stations">
-                <input
-                  id="admin-copy-stations"
-                  type="checkbox"
-                  checked={copyStationsFromCurrentEvent}
-                  onChange={(event) => setCopyStationsFromCurrentEvent(event.target.checked)}
-                />
-                <span>Kopírovat stanoviště z aktuálního ročníku</span>
-              </label>
-              <button
-                type="button"
-                className="admin-button admin-button--primary"
-                onClick={() => void handleCreateEvent()}
-                disabled={setupSaving}
-              >
-                {setupSaving ? 'Ukládám…' : 'Vytvořit ročník'}
-              </button>
-            </div>
-          </div>
-
           <div className="admin-setup-block">
             <h3>Pořadí stanovišť podle kategorie</h3>
             <p className="admin-card-subtitle">
@@ -4713,12 +4694,6 @@ function AdminDashboard({
               </button>
             </div>
           </div>
-            </>
-          ) : (
-            <p className="admin-card-subtitle admin-setup-collapsed-note">
-              Předzávodní nastavení je skryté. Klikni na tlačítko výše pro zobrazení.
-            </p>
-          )}
         </section>
         ) : null}
 
@@ -4800,6 +4775,13 @@ function AdminDashboard({
         </section>
         ) : null}
 
+        {isLivePage ? <AdminQueuesSection /> : null}
+        {isLivePage ? (
+          <AdminLiveMapSection
+            eventId={eventId}
+            mapRoute={MAPA_PROCHODU_ROUTE}
+          />
+        ) : null}
         {isLivePage ? (
         <section
           id="admin-passages-section"
@@ -4920,13 +4902,6 @@ function AdminDashboard({
             </div>
           ) : null}
         </section>
-        ) : null}
-
-        {isLivePage ? <AdminQueuesSection /> : null}
-        {isLivePage ? (
-          <AdminLiveMapSection
-            mapRoute={MAPA_PROCHODU_ROUTE}
-          />
         ) : null}
 
         {isResultsPage ? (

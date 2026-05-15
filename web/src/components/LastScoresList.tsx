@@ -9,6 +9,8 @@ interface ScoreRow {
   points: number;
   note: string | null;
   judge: string | null;
+  submitted_by: string | null;
+  submittedByLabel: string | null;
   patrol_id: string;
   waitMinutes: number | null;
   waitRecorded: boolean;
@@ -93,7 +95,7 @@ function normalizeWaitDraftInput(value: string) {
   return `${digits.slice(0, 2)}:${digits.slice(2)}`;
 }
 
-type ScoreRowRecord = Omit<ScoreRow, 'patrols' | 'waitMinutes' | 'waitRecorded'> & {
+type ScoreRowRecord = Omit<ScoreRow, 'patrols' | 'waitMinutes' | 'waitRecorded' | 'submittedByLabel'> & {
   patrols?: ScoreRow['patrols'] | ScoreRow['patrols'][] | null;
 };
 
@@ -105,10 +107,16 @@ function mapScoreRows(rows: ScoreRowRecord[] = []): ScoreRow[] {
   return rows.map((row) => ({
     ...row,
     patrols: unwrapRelation(row.patrols) ?? null,
+    submittedByLabel: null,
     waitMinutes: null,
     waitRecorded: false,
   }));
 }
+
+type StationJudgeRow = {
+  account_id: string | null;
+  judge_display_name: string | null;
+};
 
 interface LoadOptions {
   skipLoader?: boolean;
@@ -186,10 +194,39 @@ export function LastScoresList({
         return map;
       };
 
+      const loadSubmitterLabels = async (submittedByIds: string[]) => {
+        if (!submittedByIds.length) {
+          return new Map<string, string>();
+        }
+
+        const { data, error } = await supabase
+          .from('station_judges')
+          .select('account_id, judge_display_name')
+          .eq('event_id', eventId)
+          .eq('station_id', stationId)
+          .in('account_id', submittedByIds);
+
+        if (error) {
+          console.error('Nepodařilo se načíst rozhodčí pro poslední záznamy', error);
+          return new Map<string, string>();
+        }
+
+        const map = new Map<string, string>();
+        ((data ?? []) as StationJudgeRow[]).forEach((row) => {
+          const accountId = row.account_id?.trim();
+          if (!accountId) {
+            return;
+          }
+          const displayName = row.judge_display_name?.trim() || accountId.slice(0, 8);
+          map.set(accountId, displayName);
+        });
+        return map;
+      };
+
       const scoresQuery = supabase
         .from('station_scores')
         .select(
-          'id, created_at, points, note, judge, patrol_id, patrols(patrol_code, team_name, category, sex)'
+          'id, created_at, points, note, judge, submitted_by, patrol_id, patrols(patrol_code, team_name, category, sex)'
         )
         .eq('event_id', eventId)
         .eq('station_id', stationId)
@@ -223,6 +260,14 @@ export function LastScoresList({
         const baseRows = mapScoreRows((scoresRes.data ?? []) as ScoreRowRecord[]);
         const patrolIds = baseRows.map((row) => row.patrol_id);
         const waitMap = await loadWaits(patrolIds);
+        const submittedByIds = Array.from(
+          new Set(
+            baseRows
+              .map((row) => row.submitted_by?.trim() ?? '')
+              .filter((value): value is string => value.length > 0)
+          )
+        );
+        const submitterLabelMap = await loadSubmitterLabels(submittedByIds);
 
         const quizMap = new Map<string, ScoreRow['quiz']>();
         if (patrolIds.length > 0) {
@@ -248,6 +293,10 @@ export function LastScoresList({
         const merged = baseRows.map((row) => ({
           ...row,
           quiz: quizMap.get(row.patrol_id) || undefined,
+          submittedByLabel:
+            (row.submitted_by ? submitterLabelMap.get(row.submitted_by.trim()) ?? null : null) ??
+            row.judge ??
+            (row.submitted_by ? row.submitted_by.slice(0, 8) : null),
           waitMinutes: waitMap.get(row.patrol_id) ?? null,
           waitRecorded: waitMap.has(row.patrol_id),
         }));
@@ -271,9 +320,21 @@ export function LastScoresList({
 
       const baseRows = mapScoreRows((scoresRes.data ?? []) as ScoreRowRecord[]);
       const waitMap = await loadWaits(baseRows.map((row) => row.patrol_id));
+      const submittedByIds = Array.from(
+        new Set(
+          baseRows
+            .map((row) => row.submitted_by?.trim() ?? '')
+            .filter((value): value is string => value.length > 0)
+        )
+      );
+      const submitterLabelMap = await loadSubmitterLabels(submittedByIds);
       setRows(
         baseRows.map((row) => ({
           ...row,
+          submittedByLabel:
+            (row.submitted_by ? submitterLabelMap.get(row.submitted_by.trim()) ?? null : null) ??
+            row.judge ??
+            (row.submitted_by ? row.submitted_by.slice(0, 8) : null),
           waitMinutes: waitMap.get(row.patrol_id) ?? null,
           waitRecorded: waitMap.has(row.patrol_id),
         }))
@@ -522,7 +583,7 @@ export function LastScoresList({
                   </div>
                   <div className="score-meta">
                     <span>{new Date(row.created_at).toLocaleString()}</span>
-                    {row.judge ? <span>{row.judge}</span> : null}
+                    {row.submittedByLabel ? <span>Uložil: {row.submittedByLabel}</span> : null}
                     <button
                       type="button"
                       className="ghost score-edit-toggle"
