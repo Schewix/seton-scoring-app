@@ -19,6 +19,8 @@ export type MapStation = {
   event_id: string;
   code: string;
   name: string;
+  is_split?: boolean | null;
+  split_categories?: string[] | null;
 };
 
 export type MapPatrol = {

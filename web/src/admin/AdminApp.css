@@ -667,6 +667,55 @@
   gap: 12px 18px;
 }
 
+.admin-category-toggle-list--compact {
+  gap: 8px 12px;
+}
+
+.admin-station-split-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-station-split-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.admin-station-split-card--invalid {
+  border-color: rgba(217, 75, 32, 0.45);
+  background: #fff8f5;
+}
+
+.admin-station-split-card .admin-error {
+  margin: 0;
+}
+
+.admin-station-split-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.admin-station-split-header strong {
+  font-size: 1rem;
+}
+
+.admin-station-split-header p {
+  margin: 2px 0 0;
+  color: var(--text-2);
+}
+
+.admin-station-split-header small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-2);
+}
+
 .admin-setup-patrol-grid {
   display: grid;
   gap: 10px;
@@ -1473,6 +1522,11 @@
 
   .admin-setup-troop-inline .admin-button {
     width: 100%;
+  }
+
+  .admin-station-split-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .admin-setup-patrol-row strong {

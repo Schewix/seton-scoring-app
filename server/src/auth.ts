@@ -16,6 +16,7 @@ const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   devicePublicKey: z.string().min(1).optional(),
+  event_id: z.string().min(1).optional(),
 });
 
 const authRouter = Router();
@@ -72,7 +73,7 @@ authRouter.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Invalid body' });
   }
 
-  const { email, password, devicePublicKey } = parse.data;
+  const { email, password, devicePublicKey, event_id: eventId } = parse.data;
   const normalizedEmail = email.trim();
 
   const { data: judge, error: judgeError } = await supabase
@@ -102,16 +103,24 @@ authRouter.post('/login', async (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
-  const { data: assignment, error: assignmentError } = await supabase
+  let assignmentQuery = supabase
     .from('judge_assignments')
     .select('*')
-    .eq('judge_id', judge.id)
+    .eq('judge_id', judge.id);
+
+  if (eventId) {
+    assignmentQuery = assignmentQuery.eq('event_id', eventId);
+  }
+
+  const { data: assignment, error: assignmentError } = await assignmentQuery
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (assignmentError || !assignment) {
-    return res.status(403).json({ error: 'Judge has no assignment' });
+    return res.status(403).json({
+      error: eventId ? 'Judge has no assignment for selected event' : 'Judge has no assignment',
+    });
   }
 
   const [{ data: station }, { data: event }] = await Promise.all([

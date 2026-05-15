@@ -191,7 +191,18 @@ function resolveLoginPayload(rawBody: unknown) {
         ? (payload.data as Record<string, unknown>).devicePublicKey
         : undefined;
 
-  return { email, password, devicePublicKey };
+  const eventId =
+    typeof payload.event_id === 'string'
+      ? payload.event_id
+      : typeof payload.eventId === 'string'
+        ? payload.eventId
+        : typeof (payload.data as Record<string, unknown>)?.event_id === 'string'
+          ? (payload.data as Record<string, unknown>).event_id
+          : typeof (payload.data as Record<string, unknown>)?.eventId === 'string'
+            ? (payload.data as Record<string, unknown>).eventId
+            : undefined;
+
+  return { email, password, devicePublicKey, eventId };
 }
 
 function getSupabaseAdminConfig() {
@@ -274,7 +285,7 @@ export default async function handler(req: any, res: any) {
       return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
-    const { email, password, devicePublicKey } = resolveLoginPayload(req.body);
+    const { email, password, devicePublicKey, eventId } = resolveLoginPayload(req.body);
 
     if (typeof email !== 'string' || typeof password !== 'string') {
       return res.status(400).json({ error: 'Missing email or password.' });
@@ -337,10 +348,17 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const { data: assignmentData, error: assignmentError } = await supabase
+    const normalizedEventId = typeof eventId === 'string' ? eventId.trim() : '';
+    let assignmentQuery = supabase
       .from('judge_assignments')
       .select('*')
-      .eq('judge_id', judge.id)
+      .eq('judge_id', judge.id);
+
+    if (normalizedEventId) {
+      assignmentQuery = assignmentQuery.eq('event_id', normalizedEventId);
+    }
+
+    const { data: assignmentData, error: assignmentError } = await assignmentQuery
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -350,7 +368,11 @@ export default async function handler(req: any, res: any) {
       if (assignmentError) {
         return respond(res, 500, 'Failed to load assignment', assignmentError.message);
       }
-      return res.status(403).json({ error: 'Judge has no assignment' });
+      return res.status(403).json({
+        error: normalizedEventId
+          ? 'Judge has no assignment for selected event'
+          : 'Judge has no assignment',
+      });
     }
 
     const [{ data: stationData }, { data: eventData }] = await Promise.all([

@@ -57,6 +57,10 @@ export function translateLoginError(error: unknown): LoginErrorFeedback {
     return { message };
   }
 
+  if (normalized.includes('selected event') || normalized.includes('vybran')) {
+    return { message: 'Pro vybraný ročník nemáš přiřazené stanoviště.' };
+  }
+
   if (normalized.includes('locked') || normalized.includes('suspended') || normalized.includes('blocked')) {
     return { message: 'Účet je dočasně zablokován. Zkuste to za 15 minut.', field: 'password' };
   }

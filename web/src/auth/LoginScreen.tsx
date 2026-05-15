@@ -3,6 +3,7 @@ import '../styles/LoginPage.css';
 import { useAuth } from './context';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
+import { supabase } from '../supabaseClient';
 import {
   ADMIN_ROUTE_PREFIX,
   DESKOVKY_ROUTE_PREFIX,
@@ -18,16 +19,35 @@ interface Props {
   variant?: LoginVariant;
 }
 
+type LoginEventOption = {
+  id: string;
+  name: string;
+};
+
+const PREFERRED_EVENT_ID_STORAGE_KEY = 'auth:preferred-event-id';
+
 export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props) {
   const { login, unlock } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pin, setPin] = useState('');
+  const [events, setEvents] = useState<LoginEventOption[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+    const stored = window.localStorage.getItem(PREFERRED_EVENT_ID_STORAGE_KEY);
+    return typeof stored === 'string' ? stored.trim() : '';
+  });
   const [error, setError] = useState<LoginErrorFeedback | null>(null);
   const [loading, setLoading] = useState(false);
   const [isBrowserOnline, setIsBrowserOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
+  const isDeskovky = variant === 'deskovky';
+  const showEventSelector = !requirePinOnly && !isDeskovky;
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -43,6 +63,90 @@ export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props
     };
   }, []);
 
+  useEffect(() => {
+    if (!showEventSelector) {
+      setEvents([]);
+      setEventsError(null);
+      setEventsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadEvents = async () => {
+      setEventsLoading(true);
+      setEventsError(null);
+      try {
+        const { data, error: fetchError } = await supabase
+          .from('events_public')
+          .select('id,name')
+          .order('created_at', { ascending: false });
+
+        if (cancelled) {
+          return;
+        }
+
+        if (fetchError) {
+          throw fetchError;
+        }
+
+        const nextEvents = Array.isArray(data)
+          ? data
+              .map((row) => {
+                const id = typeof row.id === 'string' ? row.id.trim() : '';
+                const name = typeof row.name === 'string' ? row.name.trim() : '';
+                if (!id || !name) {
+                  return null;
+                }
+                return { id, name } as LoginEventOption;
+              })
+              .filter((row): row is LoginEventOption => Boolean(row))
+          : [];
+
+        setEvents(nextEvents);
+        setSelectedEventId((current) => {
+          const fromQuery =
+            typeof window !== 'undefined'
+              ? new URLSearchParams(window.location.search).get('event')?.trim() ?? ''
+              : '';
+          const preferred = fromQuery || current;
+          if (preferred && nextEvents.some((item) => item.id === preferred)) {
+            return preferred;
+          }
+          return nextEvents[0]?.id ?? '';
+        });
+      } catch (err) {
+        console.error('Failed to load login events', err);
+        if (cancelled) {
+          return;
+        }
+        setEvents([]);
+        setEventsError('Nepodařilo se načíst seznam ročníků.');
+      } finally {
+        if (!cancelled) {
+          setEventsLoading(false);
+        }
+      }
+    };
+
+    void loadEvents();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showEventSelector]);
+
+  useEffect(() => {
+    if (!showEventSelector || typeof window === 'undefined') {
+      return;
+    }
+    const normalizedEventId = selectedEventId.trim();
+    if (!normalizedEventId) {
+      window.localStorage.removeItem(PREFERRED_EVENT_ID_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(PREFERRED_EVENT_ID_STORAGE_KEY, normalizedEventId);
+  }, [selectedEventId, showEventSelector]);
+
   const hasEmail = email.trim().length > 0;
   const hasPassword = password.length > 0;
   const hasPin = pin.trim().length > 0;
@@ -50,7 +154,6 @@ export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props
   const submitDisabled = loading || !isFormValid;
   const submitLabel = requirePinOnly ? 'Odemknout' : 'Přihlásit';
   const loadingLabel = requirePinOnly ? 'Odemykám…' : 'Přihlašuji…';
-  const isDeskovky = variant === 'deskovky';
 
   const formTitle = requirePinOnly
     ? isDeskovky
@@ -136,10 +239,15 @@ export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props
       if (requirePinOnly) {
         await unlock(trimmedPin);
       } else {
+        const normalizedEventId = selectedEventId.trim();
+        const eventId = showEventSelector && events.some((item) => item.id === normalizedEventId)
+          ? normalizedEventId
+          : undefined;
         await login({
           email: trimmedEmail,
           password,
           pin: trimmedPin,
+          eventId,
         });
       }
     } catch (err) {
@@ -236,6 +344,35 @@ export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props
                   <p id={`${emailFieldId}-error`} className="login-field-error">
                     {emailError}
                   </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showEventSelector ? (
+              <div className="login-field-group">
+                <label className="login-field" htmlFor="login-event">
+                  <span>Ročník závodu</span>
+                  <select
+                    id="login-event"
+                    value={selectedEventId}
+                    onChange={(event) => setSelectedEventId(event.target.value)}
+                    disabled={eventsLoading || events.length === 0}
+                  >
+                    {events.map((eventOption) => (
+                      <option key={eventOption.id} value={eventOption.id}>
+                        {eventOption.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {eventsLoading ? (
+                  <p className="login-field-hint">Načítám ročníky…</p>
+                ) : null}
+                {!eventsLoading && eventsError ? (
+                  <p className="login-field-error">{eventsError}</p>
+                ) : null}
+                {!eventsLoading && !eventsError && events.length === 0 ? (
+                  <p className="login-field-error">Není dostupný žádný ročník.</p>
                 ) : null}
               </div>
             ) : null}

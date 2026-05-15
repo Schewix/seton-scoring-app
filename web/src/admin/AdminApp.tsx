@@ -25,7 +25,6 @@ import {
 import {
   createStationCategoryRecord,
   getStationAllowedBaseCategories,
-  getAllowedStationCategories,
   STATION_PASSAGE_CATEGORIES,
   StationCategoryKey,
   toStationCategoryKey,
@@ -213,6 +212,8 @@ type SetupStationRow = {
   event_id: string;
   code: string | null;
   name: string | null;
+  is_split?: boolean | null;
+  split_categories?: string[] | null;
 };
 
 type SetupJudgeRow = {
@@ -243,6 +244,11 @@ type SetupStationOrderRow = {
 type SetupStationOrderPayload = {
   category_orders: Partial<Record<StationCategoryKey, string[]>>;
   separator_before_by_category: Partial<Record<StationCategoryKey, string>>;
+};
+
+type StationSplitDraft = {
+  isSplit: boolean;
+  categories: CategoryKey[];
 };
 
 type PatrolCountsState = Record<StationCategoryKey, number>;
@@ -1153,6 +1159,41 @@ function createDefaultCategoryToggleState(): CategoryToggleState {
   };
 }
 
+function normalizeStationSplitCategories(value: unknown): CategoryKey[] {
+  const list = Array.isArray(value) ? value : [];
+  const normalized = list
+    .map((entry) => (typeof entry === 'string' ? entry.trim().toUpperCase() : ''))
+    .filter((entry): entry is CategoryKey => isCategoryKey(entry));
+  const unique = new Set(normalized);
+  return BASE_CATEGORY_ORDER.filter((category) => unique.has(category));
+}
+
+function getConfiguredStationBaseCategories(input: {
+  stationCode: string;
+  isSplit?: boolean | null;
+  splitCategories?: unknown;
+}): CategoryKey[] {
+  const splitCategories = normalizeStationSplitCategories(input.splitCategories);
+  if (input.isSplit === true && splitCategories.length > 0) {
+    return splitCategories;
+  }
+  return getStationAllowedBaseCategories(input.stationCode);
+}
+
+function normalizeStationSplitDraft(draft: StationSplitDraft): StationSplitDraft {
+  return {
+    isSplit: draft.isSplit === true,
+    categories: normalizeStationSplitCategories(draft.categories),
+  };
+}
+
+function isSameCategoryList(left: readonly CategoryKey[], right: readonly CategoryKey[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
+}
+
 function createBaseCategoryRecord<T>(factory: () => T): Record<CategoryKey, T> {
   return {
     N: factory(),
@@ -1269,6 +1310,7 @@ function AdminDashboard({
   const [setupJudges, setSetupJudges] = useState<SetupJudgeRow[]>([]);
   const [setupAssignments, setSetupAssignments] = useState<SetupAssignmentRow[]>([]);
   const [setupOrders, setSetupOrders] = useState<Record<string, SetupStationOrderPayload>>({});
+  const [stationSplitDraftById, setStationSplitDraftById] = useState<Record<string, StationSplitDraft>>({});
   const [selectedSetupEventId, setSelectedSetupEventId] = useState(() => {
     if (typeof window === 'undefined') {
       return eventId;
@@ -1410,7 +1452,7 @@ function AdminDashboard({
     const [stationsRes, passagesRes, patrolsRes] = await Promise.all([
       supabase
         .from('stations')
-        .select('id, code, name')
+        .select('id, code, name, is_split, split_categories')
         .eq('event_id', activeEventId)
         .order('code'),
       supabase
@@ -1441,8 +1483,19 @@ function AdminDashboard({
       return;
     }
 
-    const stations = new Map<string, { code: string; name: string }>();
-    ((stationsRes.data ?? []) as { id: string; code: string; name: string }[]).forEach((station) => {
+    const stations = new Map<string, {
+      code: string;
+      name: string;
+      isSplit: boolean;
+      splitCategories: CategoryKey[];
+    }>();
+    ((stationsRes.data ?? []) as Array<{
+      id: string;
+      code: string;
+      name: string;
+      is_split?: boolean | null;
+      split_categories?: unknown;
+    }>).forEach((station) => {
       const code = (station.code || '').trim().toUpperCase();
       if (code === 'R') {
         return;
@@ -1450,6 +1503,8 @@ function AdminDashboard({
       stations.set(station.id, {
         code,
         name: station.name,
+        isSplit: station.is_split === true,
+        splitCategories: normalizeStationSplitCategories(station.split_categories),
       });
     });
 
@@ -1546,13 +1601,12 @@ function AdminDashboard({
     );
 
     const rows: StationPassageRow[] = sorted.map((station) => {
-      const categories = Array.from(
-        new Set(
-          getAllowedStationCategories(station.stationCode).map(
-            (stationCategory) => stationCategory.slice(0, 1) as CategoryKey,
-          ),
-        ),
-      );
+      const stationConfig = stations.get(station.stationId);
+      const categories = getConfiguredStationBaseCategories({
+        stationCode: station.stationCode,
+        isSplit: stationConfig?.isSplit ?? false,
+        splitCategories: stationConfig?.splitCategories ?? [],
+      });
       const allowedCategorySet = new Set<CategoryKey>(categories);
       const missing = createBaseCategoryRecord<PatrolSummary[]>(() => []);
       const expectedTotals = createBaseCategoryRecord<number>(() => 0);
@@ -1805,6 +1859,8 @@ function AdminDashboard({
           id: station.id,
           code: normalizeText(station.code).toUpperCase(),
           name: normalizeText(station.name),
+          isSplit: station.is_split === true,
+          splitCategories: normalizeStationSplitCategories(station.split_categories),
         }))
         .filter((station) => station.code),
     [selectedSetupEventId, setupStations],
@@ -1819,6 +1875,24 @@ function AdminDashboard({
     [activeEventId, setupEvents],
   );
   const activeEventName = activeSetupEvent?.name || eventState.name;
+  const stationBaseCategoriesByCode = useMemo(() => {
+    const result = new Map<string, CategoryKey[]>();
+    selectedSetupStations.forEach((station) => {
+      const code = normalizeText(station.code).toUpperCase();
+      if (!code) {
+        return;
+      }
+      result.set(
+        code,
+        getConfiguredStationBaseCategories({
+          stationCode: code,
+          isSplit: station.isSplit,
+          splitCategories: station.splitCategories,
+        }),
+      );
+    });
+    return result;
+  }, [selectedSetupStations]);
 
   const setupTroopOptions = useMemo(() => {
     const merged = normalizeTroopList([
@@ -1963,6 +2037,17 @@ function AdminDashboard({
   }, [selectedSetupEventId, setupOrders]);
 
   useEffect(() => {
+    const nextDraftById: Record<string, StationSplitDraft> = {};
+    selectedSetupStations.forEach((station) => {
+      nextDraftById[station.id] = {
+        isSplit: station.isSplit,
+        categories: normalizeStationSplitCategories(station.splitCategories),
+      };
+    });
+    setStationSplitDraftById(nextDraftById);
+  }, [selectedSetupStations]);
+
+  useEffect(() => {
     if (!selectedSetupStations.length) {
       setJudgeStationCodeInput('');
       return;
@@ -1973,6 +2058,22 @@ function AdminDashboard({
     }
     setJudgeStationCodeInput(selectedSetupStations[0].code);
   }, [judgeStationCodeInput, selectedSetupStations]);
+
+  const stationSplitDirtyCount = useMemo(() => {
+    return selectedSetupStations.reduce((count, station) => {
+      const source = normalizeStationSplitDraft({
+        isSplit: station.isSplit,
+        categories: station.splitCategories,
+      });
+      const draft = normalizeStationSplitDraft(
+        stationSplitDraftById[station.id] ?? source,
+      );
+      if (source.isSplit !== draft.isSplit || !isSameCategoryList(source.categories, draft.categories)) {
+        return count + 1;
+      }
+      return count;
+    }, 0);
+  }, [selectedSetupStations, stationSplitDraftById]);
 
   const navigateAdminPage = useCallback(
     (page: AdminPageKey, options?: { replace?: boolean }) => {
@@ -2459,6 +2560,97 @@ function AdminDashboard({
       setSetupSaving(false);
     }
   }, [loadSetupData, postSetupAction, selectedSetupEventId, setupEventScoringConfig]);
+
+  const handleStationSplitToggle = useCallback((stationId: string, checked: boolean) => {
+    setStationSplitDraftById((prev) => {
+      const current = normalizeStationSplitDraft(prev[stationId] ?? { isSplit: false, categories: [] });
+      return {
+        ...prev,
+        [stationId]: {
+          ...current,
+          isSplit: checked,
+        },
+      };
+    });
+  }, []);
+
+  const handleStationSplitCategoryToggle = useCallback((stationId: string, category: CategoryKey, checked: boolean) => {
+    setStationSplitDraftById((prev) => {
+      const current = normalizeStationSplitDraft(prev[stationId] ?? { isSplit: false, categories: [] });
+      const nextSet = new Set(current.categories);
+      if (checked) {
+        nextSet.add(category);
+      } else {
+        nextSet.delete(category);
+      }
+      return {
+        ...prev,
+        [stationId]: {
+          ...current,
+          categories: BASE_CATEGORY_ORDER.filter((value) => nextSet.has(value)),
+        },
+      };
+    });
+  }, []);
+
+  const handleSaveStationSplitConfig = useCallback(async () => {
+    setSetupError(null);
+    setSetupSuccess(null);
+    setJudgeTemporaryPassword(null);
+
+    if (!selectedSetupEventId) {
+      setSetupError('Vyber ročník.');
+      return;
+    }
+
+    const updates: Array<{
+      station_id: string;
+      is_split: boolean;
+      split_categories: CategoryKey[];
+    }> = [];
+
+    for (const station of selectedSetupStations) {
+      const source = normalizeStationSplitDraft({
+        isSplit: station.isSplit,
+        categories: station.splitCategories,
+      });
+      const draft = normalizeStationSplitDraft(
+        stationSplitDraftById[station.id] ?? source,
+      );
+      if (draft.isSplit && draft.categories.length === 0) {
+        setSetupError(`Stanoviště ${station.code} je rozdělené, ale nemá zvolené žádné kategorie.`);
+        return;
+      }
+      if (source.isSplit === draft.isSplit && isSameCategoryList(source.categories, draft.categories)) {
+        continue;
+      }
+      updates.push({
+        station_id: station.id,
+        is_split: draft.isSplit,
+        split_categories: draft.isSplit ? draft.categories : [],
+      });
+    }
+
+    if (updates.length === 0) {
+      setSetupSuccess('Není co ukládat. Nastavení stanovišť je beze změn.');
+      return;
+    }
+
+    setSetupSaving(true);
+    try {
+      await postSetupAction('save_station_split_config', {
+        event_id: selectedSetupEventId,
+        updates,
+      });
+      setSetupSuccess('Nastavení rozdělení stanovišť bylo uloženo.');
+      await loadSetupData();
+    } catch (error) {
+      console.error('Failed to save station split config', error);
+      setSetupError(error instanceof Error ? error.message : 'Uložení nastavení stanovišť selhalo.');
+    } finally {
+      setSetupSaving(false);
+    }
+  }, [loadSetupData, postSetupAction, selectedSetupEventId, selectedSetupStations, stationSplitDraftById]);
 
   const handleToggleSetupTroop = useCallback((troopName: string) => {
     const normalized = normalizeTroopName(troopName);
@@ -3774,7 +3966,7 @@ function AdminDashboard({
 
       const pickStationCodesForSheet = (category: CategoryKey, sheetRows: ScoredExportRow[]) => {
         const allowedFromStations = allStationCodes.filter((code) => {
-          const allowedCategories = getStationAllowedBaseCategories(code);
+          const allowedCategories = stationBaseCategoriesByCode.get(code) ?? getStationAllowedBaseCategories(code);
           return allowedCategories.includes(category);
         });
         if (allowedFromStations.length > 0) {
@@ -3784,7 +3976,7 @@ function AdminDashboard({
         const fallbackSet = new Set<string>();
         sheetRows.forEach((row) => {
           Object.keys(row.stationPointsBreakdown).forEach((code) => {
-            const allowedCategories = getStationAllowedBaseCategories(code);
+            const allowedCategories = stationBaseCategoriesByCode.get(code) ?? getStationAllowedBaseCategories(code);
             if (allowedCategories.includes(category)) {
               fallbackSet.add(code);
             }
@@ -4011,7 +4203,7 @@ function AdminDashboard({
     } finally {
       setProcessingLeagueImport(false);
     }
-  }, [activeEventId, activeEventName, leagueImportFile, processingLeagueImport]);
+  }, [activeEventId, activeEventName, leagueImportFile, processingLeagueImport, stationBaseCategoriesByCode]);
 
   const totalMissingAcrossStations = useMemo(
     () => stationRows.reduce((sum, row) => sum + row.totalMissing.length, 0),
@@ -4390,6 +4582,84 @@ function AdminDashboard({
                   disabled={setupSaving}
                 >
                   {setupSaving ? 'Ukládám…' : 'Vytvořit/Přiřadit rozhodčího'}
+                </button>
+              </div>
+            </div>
+            <div className="admin-setup-block">
+              <h3>Rozdělení stanovišť pro kategorie</h3>
+              <p className="admin-card-subtitle">
+                Nastavení se použije i v editoru mapy průchodů.
+              </p>
+              <div className="admin-station-split-grid">
+                {selectedSetupStations.length === 0 ? (
+                  <p className="admin-setup-collapsed-note">Pro vybraný ročník nejsou dostupná stanoviště.</p>
+                ) : (
+                  selectedSetupStations.map((station) => {
+                    const sourceDraft = normalizeStationSplitDraft({
+                      isSplit: station.isSplit,
+                      categories: station.splitCategories,
+                    });
+                    const draft = normalizeStationSplitDraft(
+                      stationSplitDraftById[station.id] ?? sourceDraft,
+                    );
+                    const isInvalid = draft.isSplit && draft.categories.length === 0;
+                    const effectiveCategories = getConfiguredStationBaseCategories({
+                      stationCode: station.code,
+                      isSplit: draft.isSplit,
+                      splitCategories: draft.categories,
+                    });
+
+                    return (
+                      <article
+                        key={station.id}
+                        className={`admin-station-split-card ${isInvalid ? 'admin-station-split-card--invalid' : ''}`}
+                      >
+                        <div className="admin-station-split-header">
+                          <div>
+                            <strong>{station.code}</strong>
+                            <p>{station.name || 'Bez názvu'}</p>
+                            <small>Kategorie: {effectiveCategories.join(', ')}</small>
+                          </div>
+                          <label className="admin-check">
+                            <input
+                              type="checkbox"
+                              checked={draft.isSplit}
+                              onChange={(event) => handleStationSplitToggle(station.id, event.target.checked)}
+                            />
+                            <span>Rozdělené</span>
+                          </label>
+                        </div>
+                        <div className="admin-category-toggle-list admin-category-toggle-list--compact">
+                          {BASE_CATEGORY_ORDER.map((category) => (
+                            <label key={`${station.id}-${category}`} className="admin-check">
+                              <input
+                                type="checkbox"
+                                checked={draft.categories.includes(category)}
+                                onChange={(event) =>
+                                  handleStationSplitCategoryToggle(station.id, category, event.target.checked)
+                                }
+                                disabled={!draft.isSplit}
+                              />
+                              <span>{category}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {isInvalid ? (
+                          <p className="admin-error">Rozdělené stanoviště musí mít aspoň jednu kategorii.</p>
+                        ) : null}
+                      </article>
+                    );
+                  })
+                )}
+              </div>
+              <div className="admin-card-actions admin-card-actions--end">
+                <button
+                  type="button"
+                  className="admin-button admin-button--secondary"
+                  onClick={() => void handleSaveStationSplitConfig()}
+                  disabled={setupSaving || selectedSetupStations.length === 0}
+                >
+                  {setupSaving ? 'Ukládám…' : `Uložit nastavení stanovišť${stationSplitDirtyCount > 0 ? ` (${stationSplitDirtyCount})` : ''}`}
                 </button>
               </div>
             </div>

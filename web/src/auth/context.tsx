@@ -37,7 +37,7 @@ import { ACCESS_DENIED_MESSAGE, INVALID_JWT_MESSAGE } from './messages';
 
 interface AuthContextValue {
   status: AuthStatus;
-  login: (params: { email: string; password: string; pin?: string }) => Promise<void>;
+  login: (params: { email: string; password: string; pin?: string; eventId?: string }) => Promise<void>;
   unlock: (pin?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateManifest: (manifest: StationManifest, patrols: PatrolSummary[]) => Promise<void>;
@@ -361,14 +361,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useInitialization(handleInitializationState);
 
   const login = useCallback(
-    async ({ email, password, pin }: { email: string; password: string; pin?: string }) => {
+    async ({
+      email,
+      password,
+      pin,
+      eventId,
+    }: {
+      email: string;
+      password: string;
+      pin?: string;
+      eventId?: string;
+    }) => {
       const normalizedPin = pin?.trim() || undefined;
       if (!normalizedPin) {
         throw new Error('PIN required');
       }
       const deviceKey = await generateDeviceKey();
       const devicePublicKey = toBase64(deviceKey);
-      const response = await loginRequest(email, password, devicePublicKey);
+      const response = await loginRequest(email, password, devicePublicKey, eventId);
 
       if (isPasswordChangeResponse(response)) {
         setStatus({

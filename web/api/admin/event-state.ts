@@ -274,6 +274,11 @@ function normalizeAllowedCategories(value: unknown): string[] {
   return unique;
 }
 
+function normalizeStationSplitCategories(value: unknown): BaseCategoryKey[] {
+  const normalized = normalizeAllowedCategories(value);
+  return CATEGORY_KEYS.filter((category) => normalized.includes(category));
+}
+
 function normalizeAllowedTasks(value: unknown): string[] {
   const values = Array.isArray(value) ? value : [];
   const normalized = values.map((entry) => normalizeText(entry)).filter(Boolean);
@@ -711,7 +716,7 @@ async function loadSetupData(supabaseAdmin: any, currentEventId: string, res: an
       .order('name', { ascending: true }),
     supabaseAdmin
       .from('stations')
-      .select('id,event_id,code,name')
+      .select('id,event_id,code,name,is_split,split_categories')
       .order('event_id', { ascending: true })
       .order('code', { ascending: true }),
     supabaseAdmin.from('judges').select('id,email,display_name,created_at').order('display_name', { ascending: true }),
@@ -813,7 +818,7 @@ async function handleSetupAction(
     if (sourceEventId) {
       const { data: sourceStations, error: sourceStationsError } = await supabaseAdmin
         .from('stations')
-        .select('code,name')
+        .select('code,name,is_split,split_categories')
         .eq('event_id', sourceEventId)
         .order('code', { ascending: true });
 
@@ -822,10 +827,17 @@ async function handleSetupAction(
       }
 
       const stationRows = (sourceStations ?? [])
-        .map((row: { code?: string | null; name?: string | null }) => ({
+        .map((row: {
+          code?: string | null;
+          name?: string | null;
+          is_split?: boolean | null;
+          split_categories?: unknown;
+        }) => ({
           event_id: insertedEvent.id,
           code: normalizeStationCode(row.code),
           name: normalizeText(row.name),
+          is_split: row.is_split === true,
+          split_categories: row.is_split === true ? normalizeStationSplitCategories(row.split_categories) : [],
         }))
         .filter((row: { code: string; name: string }) => row.code && row.name);
 
@@ -929,6 +941,99 @@ async function handleSetupAction(
       ok: true,
       event_id: targetEventId,
       ...normalizedSettings,
+    });
+  }
+
+  if (action === 'save_station_split_config') {
+    const targetEventId = normalizeText(payload.event_id);
+    if (!targetEventId) {
+      return res.status(400).json({ error: 'Missing event_id.' });
+    }
+
+    const rawUpdates = Array.isArray(payload.updates) ? payload.updates : [];
+    if (rawUpdates.length === 0) {
+      return res.status(400).json({ error: 'Missing station updates.' });
+    }
+
+    const updates: Array<{
+      station_id: string;
+      is_split: boolean;
+      split_categories: BaseCategoryKey[];
+    }> = [];
+    const stationIds: string[] = [];
+    let hasInvalidSplitCategories = false;
+
+    rawUpdates.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return;
+      }
+      const row = entry as Record<string, unknown>;
+      const stationId = normalizeText(row.station_id);
+      if (!stationId) {
+        return;
+      }
+      const isSplit = row.is_split === true;
+      const splitCategories = normalizeStationSplitCategories(row.split_categories);
+      if (isSplit && splitCategories.length === 0) {
+        hasInvalidSplitCategories = true;
+        return;
+      }
+      updates.push({
+        station_id: stationId,
+        is_split: isSplit,
+        split_categories: isSplit ? splitCategories : [],
+      });
+      stationIds.push(stationId);
+    });
+
+    if (hasInvalidSplitCategories) {
+      return res.status(400).json({ error: 'Split station must have at least one category.' });
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'Invalid station split configuration.' });
+    }
+
+    const uniqueStationIds = Array.from(new Set(stationIds));
+    const { data: existingStations, error: existingStationsError } = await supabaseAdmin
+      .from('stations')
+      .select('id')
+      .eq('event_id', targetEventId)
+      .in('id', uniqueStationIds);
+
+    if (existingStationsError) {
+      return respond(res, 500, 'Failed to validate station split configuration', existingStationsError.message);
+    }
+
+    const existingStationIdSet = new Set(
+      ((existingStations ?? []) as Array<{ id?: string | null }>)
+        .map((row) => normalizeText(row.id))
+        .filter(Boolean),
+    );
+    const invalidStationId = uniqueStationIds.find((stationId) => !existingStationIdSet.has(stationId));
+    if (invalidStationId) {
+      return res.status(400).json({ error: 'Invalid station for selected event.' });
+    }
+
+    for (const update of updates) {
+      const { error: updateError } = await supabaseAdmin
+        .from('stations')
+        .update({
+          is_split: update.is_split,
+          split_categories: update.split_categories,
+        })
+        .eq('event_id', targetEventId)
+        .eq('id', update.station_id);
+
+      if (updateError) {
+        return respond(res, 500, 'Failed to save station split configuration', updateError.message);
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      event_id: targetEventId,
+      updated: updates.length,
     });
   }
 

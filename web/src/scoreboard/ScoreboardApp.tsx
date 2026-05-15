@@ -72,11 +72,13 @@ interface RankedGroup {
   visibleItems: RankedGroupItem[];
 }
 
-const rawEventId = import.meta.env.VITE_EVENT_ID as string | undefined;
-
-if (!rawEventId) {
-  throw new Error('Missing VITE_EVENT_ID environment variable.');
+interface EventOption {
+  id: string;
+  name: string;
 }
+
+const rawEventId = normaliseText(import.meta.env.VITE_EVENT_ID as string | undefined) ?? '';
+const EVENT_QUERY_PARAM = 'event';
 
 const REFRESH_INTERVAL_MS = 30_000;
 
@@ -592,6 +594,14 @@ function ScoreboardApp() {
   const [expandedPatrolId, setExpandedPatrolId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [autoExportHandled, setAutoExportHandled] = useState(false);
+  const [eventOptions, setEventOptions] = useState<EventOption[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>(() => {
+    if (typeof window === 'undefined') {
+      return rawEventId;
+    }
+    const fromQuery = normaliseText(new URLSearchParams(window.location.search).get(EVENT_QUERY_PARAM));
+    return fromQuery ?? rawEventId;
+  });
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -619,10 +629,105 @@ function ScoreboardApp() {
       try {
         const { data, error } = await supabase
           .from('events_public')
+          .select('id,name')
+          .order('created_at', { ascending: false });
+
+        if (!isMountedRef.current || cancelled) {
+          return;
+        }
+
+        if (error) {
+          console.error('Failed to load event options', error);
+          return;
+        }
+
+        const options = Array.isArray(data)
+          ? data
+              .map((row) => {
+                const id = normaliseText(typeof row.id === 'string' ? row.id : null);
+                const name = normaliseText(typeof row.name === 'string' ? row.name : null);
+                if (!id || !name) {
+                  return null;
+                }
+                return { id, name } as EventOption;
+              })
+              .filter((row): row is EventOption => Boolean(row))
+          : [];
+
+        setEventOptions(options);
+        setSelectedEventId((current) => {
+          if (current && options.some((item) => item.id === current)) {
+            return current;
+          }
+          if (rawEventId && options.some((item) => item.id === rawEventId)) {
+            return rawEventId;
+          }
+          return options[0]?.id ?? current;
+        });
+      } catch (err) {
+        if (!isMountedRef.current || cancelled) {
+          return;
+        }
+        console.error('Failed to load event options', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const normalizedEventId = selectedEventId.trim();
+    const url = new URL(window.location.href);
+    const currentEventParam = normaliseText(url.searchParams.get(EVENT_QUERY_PARAM));
+
+    if (!normalizedEventId) {
+      if (currentEventParam) {
+        url.searchParams.delete(EVENT_QUERY_PARAM);
+        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+      }
+      return;
+    }
+
+    if (currentEventParam === normalizedEventId) {
+      return;
+    }
+
+    url.searchParams.set(EVENT_QUERY_PARAM, normalizedEventId);
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  }, [selectedEventId]);
+
+  useEffect(() => {
+    const selectedEventName = eventOptions.find((item) => item.id === selectedEventId)?.name;
+    if (selectedEventName) {
+      setEventName(selectedEventName);
+    }
+  }, [eventOptions, selectedEventId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (!selectedEventId) {
+        if (!isMountedRef.current || cancelled) {
+          return;
+        }
+        setAnnouncedPlacesByBracket(DEFAULT_ANNOUNCED_PLACES_BY_BRACKET);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('events_public')
           .select(
             'name,announced_places_n,announced_places_m,announced_places_s,announced_places_r,announced_places_nh,announced_places_nd,announced_places_mh,announced_places_md,announced_places_sh,announced_places_sd,announced_places_rh,announced_places_rd',
           )
-          .eq('id', rawEventId)
+          .eq('id', selectedEventId)
           .maybeSingle();
         if (!isMountedRef.current || cancelled) return;
         if (error) {
@@ -644,21 +749,33 @@ function ScoreboardApp() {
     return () => {
       cancelled = true;
     };
-  }, [rawEventId]);
+  }, [selectedEventId]);
 
   const togglePatrolDetails = useCallback((patrolId: string) => {
     setExpandedPatrolId((prev) => (prev === patrolId ? null : patrolId));
   }, []);
 
   useEffect(() => {
+    setExpandedPatrolId(null);
+  }, [selectedEventId]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const loadStations = async () => {
+      if (!selectedEventId) {
+        if (!isMountedRef.current || cancelled) {
+          return;
+        }
+        setStationCodes([]);
+        return;
+      }
+
       try {
         const { data, error } = await supabase
           .from('stations')
           .select('code')
-          .eq('event_id', rawEventId)
+          .eq('event_id', selectedEventId)
           .order('code', { ascending: true });
 
         if (!isMountedRef.current || cancelled) {
@@ -698,15 +815,27 @@ function ScoreboardApp() {
     return () => {
       cancelled = true;
     };
-  }, [rawEventId]);
+  }, [selectedEventId]);
 
   const loadData = useCallback(async () => {
+    if (!selectedEventId) {
+      if (!isMountedRef.current) {
+        return;
+      }
+      setRanked([]);
+      setError(null);
+      setLastUpdatedAt(null);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     setRefreshing(true);
     try {
       const { data, error } = await supabase
         .from('scoreboard_view')
         .select('*')
-        .eq('event_id', rawEventId)
+        .eq('event_id', selectedEventId)
         .order('category', { ascending: true })
         .order('sex', { ascending: true })
         .order('rank_in_bracket', { ascending: true });
@@ -728,7 +857,7 @@ function ScoreboardApp() {
         const { data: patrolRows, error: patrolError } = await supabase
           .from('patrols')
           .select('id, patrol_code')
-          .eq('event_id', rawEventId)
+          .eq('event_id', selectedEventId)
           .in('id', uniqueMissingIds);
 
         if (!isMountedRef.current) {
@@ -790,12 +919,23 @@ function ScoreboardApp() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [rawEventId]);
+  }, [selectedEventId]);
 
   useEffect(() => {
     let interval: number | undefined;
 
     const initialise = async () => {
+      if (!selectedEventId) {
+        if (isMountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+        return;
+      }
+
+      if (isMountedRef.current) {
+        setLoading(true);
+      }
       await loadData();
       if (!isMountedRef.current) return;
 
@@ -811,7 +951,7 @@ function ScoreboardApp() {
         window.clearInterval(interval);
       }
     };
-  }, [loadData]);
+  }, [loadData, selectedEventId]);
 
   useEffect(() => {
     document.title = 'Zelena liga';
@@ -1075,6 +1215,24 @@ function ScoreboardApp() {
                   {refreshing ? 'Aktualizuji…' : 'Aktualizovat'}
                 </button>
               </div>
+              <div className="scoreboard-event-picker">
+                <label htmlFor="scoreboard-event-select">Ročník</label>
+                <select
+                  id="scoreboard-event-select"
+                  value={selectedEventId}
+                  onChange={(event) => setSelectedEventId(event.target.value)}
+                  disabled={eventOptions.length === 0}
+                >
+                  {eventOptions.length === 0 ? (
+                    <option value="">Ročník není dostupný</option>
+                  ) : null}
+                  {eventOptions.map((eventOption) => (
+                    <option key={eventOption.id} value={eventOption.id}>
+                      {eventOption.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="scoreboard-status" data-state={statusState}>
                 <span className="scoreboard-status-dot" aria-hidden="true" />
                 <span>{statusLabel}</span>
@@ -1116,6 +1274,8 @@ function ScoreboardApp() {
             </div>
             {loading && !groupedRanked.length ? (
               <div className="scoreboard-placeholder">Načítám data…</div>
+            ) : !selectedEventId ? (
+              <div className="scoreboard-placeholder">Vyber ročník pro zobrazení výsledků.</div>
             ) : groupedRanked.length ? (
               <div className="scoreboard-groups">
                 {groupedRanked.map((group) => {

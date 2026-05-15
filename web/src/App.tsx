@@ -3918,6 +3918,11 @@ function StationApp({
     void logout();
   }, [logout]);
 
+  const handleSwitchEvent = useCallback(() => {
+    setMenuOpen(false);
+    void logout();
+  }, [logout]);
+
   const handleOpenChangePassword = useCallback(() => {
     setMenuOpen(false);
     navigateToPath(CHANGE_PASSWORD_ROUTE);
@@ -4714,7 +4719,7 @@ function StationApp({
               {isTargetStation ? (
                 <a
                   className="hero-menu-link"
-                  href={SCOREBOARD_ROUTE_PREFIX}
+                  href={`${SCOREBOARD_ROUTE_PREFIX}?event=${encodeURIComponent(manifest.event.id)}`}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -4823,6 +4828,9 @@ function StationApp({
               </header>
               <button type="button" className="logout-button" onClick={handleOpenChangePassword}>
                 Změnit heslo
+              </button>
+              <button type="button" className="logout-button" onClick={handleSwitchEvent}>
+                Změnit ročník
               </button>
               <p className="card-hint">Odhlásíš se z aktuální relace.</p>
               <button type="button" className="logout-button" onClick={handleLogout}>

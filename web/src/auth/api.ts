@@ -78,12 +78,18 @@ function logManifestWarningOnce(key: string, message: string, details: Record<st
   console.warn(message, details);
 }
 
-export function loginRequest(email: string, password: string, devicePublicKey?: string) {
+export function loginRequest(email: string, password: string, devicePublicKey?: string, eventId?: string) {
   const url = `${BASE_URL}/auth/login`;
+  const normalizedEventId = typeof eventId === 'string' ? eventId.trim() : '';
   return fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, devicePublicKey }),
+    body: JSON.stringify({
+      email,
+      password,
+      devicePublicKey,
+      ...(normalizedEventId ? { event_id: normalizedEventId } : {}),
+    }),
   }).then((res) => handleResponse<LoginResponse>(res));
 }
 

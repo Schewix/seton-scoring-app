@@ -257,11 +257,28 @@
   transition: box-shadow 0.2s ease;
 }
 
+.login-field select {
+  width: 100%;
+  border: 1px solid #cfe9c5;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: #333333;
+  background: #ffffff;
+  transition: box-shadow 0.2s ease;
+}
+
 .login-field input::placeholder {
   color: #8fa58a;
 }
 
 .login-field input:focus-visible {
+  outline: 3px solid rgba(87, 170, 39, 0.35);
+  outline-offset: 2px;
+}
+
+.login-field select:focus-visible {
   outline: 3px solid rgba(87, 170, 39, 0.35);
   outline-offset: 2px;
 }
@@ -358,11 +375,19 @@
   border-color: #bfd5eb;
 }
 
+.login-page--deskovky .login-field select {
+  border-color: #bfd5eb;
+}
+
 .login-page--deskovky .login-field input::placeholder {
   color: #7995b5;
 }
 
 .login-page--deskovky .login-field input:focus-visible {
+  outline: 3px solid rgba(0, 85, 164, 0.35);
+}
+
+.login-page--deskovky .login-field select:focus-visible {
   outline: 3px solid rgba(0, 85, 164, 0.35);
 }
 

@@ -10,6 +10,9 @@ import { createStationOrder } from './liveMapData';
 import type { EventMapRow, MapStation, StationMapPosition } from './types';
 import './SetonMapAdminApp.css';
 
+const BASE_CATEGORY_ORDER = ['N', 'M', 'S', 'R'] as const;
+type BaseCategoryKey = (typeof BASE_CATEGORY_ORDER)[number];
+
 type SetupEventRow = {
   id: string;
   name: string;
@@ -20,6 +23,8 @@ type SetupStationRow = {
   event_id: string;
   code: string | null;
   name: string | null;
+  is_split?: boolean | null;
+  split_categories?: string[] | null;
 };
 
 type PositionDraft = {
@@ -30,6 +35,26 @@ type PositionDraft = {
 const API_BASE_URL = env.VITE_AUTH_API_URL?.replace(/\/$/, '') ?? '';
 const MAP_BUCKET = 'event-maps';
 const MAP_ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
+function normalizeStationSplitCategories(value: unknown): BaseCategoryKey[] {
+  const values = Array.isArray(value) ? value : [];
+  const normalized = values
+    .map((entry) => (typeof entry === 'string' ? entry.trim().toUpperCase() : ''))
+    .filter((entry): entry is BaseCategoryKey => BASE_CATEGORY_ORDER.includes(entry as BaseCategoryKey));
+  const dedup = new Set(normalized);
+  return BASE_CATEGORY_ORDER.filter((category) => dedup.has(category));
+}
+
+function formatStationSplitLabel(station: Pick<MapStation, 'is_split' | 'split_categories'>) {
+  if (!station.is_split) {
+    return 'Nerozdělené';
+  }
+  const categories = normalizeStationSplitCategories(station.split_categories);
+  if (categories.length === 0) {
+    return 'Rozdělené · bez kategorií';
+  }
+  return `Rozdělené · ${categories.join(', ')}`;
+}
 
 function sanitizeFileName(value: string) {
   return value
@@ -104,12 +129,12 @@ function MapEditorDashboard({
         event_id: station.event_id,
         code: (station.code ?? '').trim().toUpperCase(),
         name: (station.name ?? '').trim(),
+        is_split: station.is_split === true,
+        split_categories: normalizeStationSplitCategories(station.split_categories),
       }))
       .filter((station) => station.code.length > 0);
     return createStationOrder(filtered);
   }, [selectedEventId, stations]);
-
-  const stationById = useMemo(() => new Map(selectedStations.map((station) => [station.id, station] as const)), [selectedStations]);
 
   const sortedPositions = useMemo(() => {
     const existingByStationId = new Map(positions.map((position) => [position.station_id, position] as const));
@@ -528,14 +553,14 @@ function MapEditorDashboard({
                   <button
                     key={station.id}
                     type="button"
-                    className={`map-admin-marker ${selectedStationId === station.id ? 'map-admin-marker--selected' : ''}`}
+                    className={`map-admin-marker ${selectedStationId === station.id ? 'map-admin-marker--selected' : ''} ${station.is_split ? 'map-admin-marker--split' : ''}`}
                     style={{ left: `${x_percent}%`, top: `${y_percent}%` }}
                     onClick={(event) => {
                       event.stopPropagation();
                       setSelectedStationId(station.id);
                     }}
                     onPointerDown={(event) => handleMarkerPointerDown(event, station.id)}
-                    title={`${station.code} · ${station.name}`}
+                    title={`${station.code} · ${station.name} · ${formatStationSplitLabel(station)}`}
                   >
                     {station.code}
                   </button>
@@ -562,6 +587,7 @@ function MapEditorDashboard({
               ) : (
                 selectedStations.map((station) => {
                   const draft = draftPositions.get(station.id) ?? null;
+                  const splitLabel = formatStationSplitLabel(station);
                   return (
                     <button
                       key={station.id}
@@ -569,8 +595,12 @@ function MapEditorDashboard({
                       className={`map-admin-station-item ${selectedStationId === station.id ? 'map-admin-station-item--selected' : ''}`}
                       onClick={() => setSelectedStationId(station.id)}
                     >
-                      <strong>{station.code}</strong>
+                      <strong>
+                        {station.code}
+                        {station.is_split ? <span className="map-admin-station-split-badge">Split</span> : null}
+                      </strong>
                       <span>{station.name || 'Bez názvu'}</span>
+                      <span className="map-admin-station-split">{splitLabel}</span>
                       <span className="map-admin-station-pos">
                         {draft ? `${draft.x_percent.toFixed(1)}%, ${draft.y_percent.toFixed(1)}%` : 'Bez pozice'}
                       </span>

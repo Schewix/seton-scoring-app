@@ -188,6 +188,10 @@
   box-shadow: 0 0 0 2px #ffffff, 0 14px 24px rgba(44, 67, 52, 0.34);
 }
 
+.map-admin-marker--split {
+  border-style: dashed;
+}
+
 .map-admin-empty {
   margin-top: 14px;
   min-height: 260px;
@@ -241,6 +245,9 @@
 .map-admin-station-item strong {
   font-size: 0.9rem;
   letter-spacing: 0.03em;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .map-admin-station-item span {
@@ -251,6 +258,26 @@
 .map-admin-station-pos {
   color: #1f3d72;
   font-weight: 700;
+}
+
+.map-admin-station-split {
+  color: #2f4a2d;
+  font-weight: 600;
+}
+
+.map-admin-station-split-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 18px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(8, 71, 133, 0.2);
+  background: rgba(8, 71, 133, 0.08);
+  color: #084785;
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .map-admin-card-actions {
