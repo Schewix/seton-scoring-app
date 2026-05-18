@@ -60,6 +60,7 @@ type StationRow = {
   id: string;
   code: string;
   name: string;
+  is_closed?: boolean | null;
 };
 
 type EventRow = {
@@ -95,7 +96,7 @@ type PatrolRow = {
 
 type StationManifest = {
   judge: { id: string; email: string; displayName: string };
-  station: { id: string; code: string; name: string };
+  station: { id: string; code: string; name: string; isClosed: boolean };
   event: {
     id: string;
     name: string;
@@ -301,7 +302,7 @@ async function handleManifestRequest(req: any, res: any) {
       .maybeSingle(),
     supabase
       .from('stations')
-      .select('id, code, name')
+      .select('id, code, name, is_closed')
       .eq('id', stationId)
       .eq('event_id', eventId)
       .maybeSingle(),
@@ -344,6 +345,7 @@ async function handleManifestRequest(req: any, res: any) {
       id: station.id,
       code: station.code,
       name: station.name,
+      isClosed: station.is_closed === true,
     },
     event: {
       id: event.id,

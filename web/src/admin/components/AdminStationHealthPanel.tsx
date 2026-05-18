@@ -4,6 +4,7 @@ export type AdminStationHealthCard = {
   stationId: string;
   stationCode: string;
   stationName: string;
+  isClosed: boolean;
   status: 'online' | 'warning' | 'offline' | 'unknown';
   statusLabel: string;
   judgeCount: number;
@@ -26,6 +27,8 @@ export type AdminJudgeAssignmentSummary = {
 type Props = {
   stationCards: AdminStationHealthCard[];
   assignmentRows: AdminJudgeAssignmentSummary[];
+  onToggleStationClosed?: (stationId: string, nextClosed: boolean) => void;
+  stationClosingId?: string | null;
 };
 
 function statusBadgeClass(status: AdminStationHealthCard['status']) {
@@ -41,7 +44,12 @@ function statusBadgeClass(status: AdminStationHealthCard['status']) {
   return 'admin-status-badge admin-status-badge--unknown';
 }
 
-export default function AdminStationHealthPanel({ stationCards, assignmentRows }: Props) {
+export default function AdminStationHealthPanel({
+  stationCards,
+  assignmentRows,
+  onToggleStationClosed,
+  stationClosingId,
+}: Props) {
   return (
     <div className="admin-station-ops-layout">
       <div className="admin-station-live-panel">
@@ -89,6 +97,22 @@ export default function AdminStationHealthPanel({ stationCards, assignmentRows }
                     <dd>{formatDateTimeForStatus(station.lastPassageAt)}</dd>
                   </div>
                 </dl>
+                {onToggleStationClosed ? (
+                  <div className="admin-station-live-actions">
+                    <button
+                      type="button"
+                      className={`admin-button ${station.isClosed ? 'admin-button--secondary' : 'admin-button--danger'}`}
+                      onClick={() => onToggleStationClosed(station.stationId, !station.isClosed)}
+                      disabled={stationClosingId === station.stationId}
+                    >
+                      {stationClosingId === station.stationId
+                        ? 'Ukládám…'
+                        : station.isClosed
+                        ? 'Otevřít stanoviště'
+                        : 'Uzavřít stanoviště'}
+                    </button>
+                  </div>
+                ) : null}
               </article>
             ))}
           </div>

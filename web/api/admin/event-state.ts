@@ -716,7 +716,7 @@ async function loadSetupData(supabaseAdmin: any, currentEventId: string, res: an
       .order('name', { ascending: true }),
     supabaseAdmin
       .from('stations')
-      .select('id,event_id,code,name,is_split,split_categories')
+      .select('id,event_id,code,name,is_split,split_categories,is_closed')
       .order('event_id', { ascending: true })
       .order('code', { ascending: true }),
     supabaseAdmin.from('judges').select('id,email,display_name,created_at').order('display_name', { ascending: true }),
@@ -818,7 +818,7 @@ async function handleSetupAction(
     if (sourceEventId) {
       const { data: sourceStations, error: sourceStationsError } = await supabaseAdmin
         .from('stations')
-        .select('code,name,is_split,split_categories')
+        .select('code,name,is_split,split_categories,is_closed')
         .eq('event_id', sourceEventId)
         .order('code', { ascending: true });
 
@@ -832,12 +832,14 @@ async function handleSetupAction(
           name?: string | null;
           is_split?: boolean | null;
           split_categories?: unknown;
+          is_closed?: boolean | null;
         }) => ({
           event_id: insertedEvent.id,
           code: normalizeStationCode(row.code),
           name: normalizeText(row.name),
           is_split: row.is_split === true,
           split_categories: row.is_split === true ? normalizeStationSplitCategories(row.split_categories) : [],
+          is_closed: row.is_closed === true,
         }))
         .filter((row: { code: string; name: string }) => row.code && row.name);
 
@@ -1034,6 +1036,47 @@ async function handleSetupAction(
       ok: true,
       event_id: targetEventId,
       updated: updates.length,
+    });
+  }
+
+  if (action === 'set_station_closed') {
+    const targetEventId = normalizeText(payload.event_id);
+    const stationId = normalizeText(payload.station_id);
+    const isClosed = payload.closed === true;
+
+    if (!targetEventId || !stationId) {
+      return res.status(400).json({ error: 'Missing event_id or station_id.' });
+    }
+
+    const { data: station, error: stationLookupError } = await supabaseAdmin
+      .from('stations')
+      .select('id')
+      .eq('event_id', targetEventId)
+      .eq('id', stationId)
+      .maybeSingle();
+
+    if (stationLookupError) {
+      return respond(res, 500, 'Failed to validate station', stationLookupError.message);
+    }
+    if (!station) {
+      return res.status(400).json({ error: 'Invalid station for selected event.' });
+    }
+
+    const { error: updateError } = await supabaseAdmin
+      .from('stations')
+      .update({ is_closed: isClosed })
+      .eq('event_id', targetEventId)
+      .eq('id', stationId);
+
+    if (updateError) {
+      return respond(res, 500, 'Failed to update station closed state', updateError.message);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      event_id: targetEventId,
+      station_id: stationId,
+      closed: isClosed,
     });
   }
 

@@ -126,7 +126,7 @@ authRouter.post('/login', async (req, res) => {
   const [{ data: station }, { data: event }] = await Promise.all([
     supabase
       .from('stations')
-      .select('id, code, name')
+      .select('id, code, name, is_closed')
       .eq('id', assignment.station_id)
       .maybeSingle(),
     supabase
@@ -152,6 +152,7 @@ authRouter.post('/login', async (req, res) => {
       id: station.id,
       code: station.code,
       name: station.name,
+      isClosed: station.is_closed === true,
     },
     event: {
       id: event.id,
@@ -274,7 +275,7 @@ export async function manifestHandler(req: Request, res: Response) {
     const [{ data: station }, { data: event }] = await Promise.all([
       supabase
         .from('stations')
-        .select('id, code, name')
+        .select('id, code, name, is_closed')
         .eq('id', assignment.station_id)
         .maybeSingle(),
       supabase
@@ -300,6 +301,7 @@ export async function manifestHandler(req: Request, res: Response) {
         id: station.id,
         code: station.code,
         name: station.name,
+        isClosed: station.is_closed === true,
       },
       event: {
         id: event.id,

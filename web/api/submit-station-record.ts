@@ -467,7 +467,7 @@ export default async function handler(req: any, res: any) {
 
   const { data: tokenStation, error: tokenStationError } = await supabaseAdmin
     .from('stations')
-    .select('id, code')
+    .select('id, code, is_closed')
     .eq('id', tokenStationId)
     .eq('event_id', tokenEventId)
     .maybeSingle();
@@ -482,6 +482,12 @@ export default async function handler(req: any, res: any) {
   }
 
   const hasCalcPrivileges = (tokenStation.code ?? '').trim().toUpperCase() === 'T';
+  if (tokenStation.is_closed === true) {
+    return res.status(409).json({
+      error: 'Station is closed for scoring.',
+      detail: 'station-closed',
+    });
+  }
   if (!hasCalcPrivileges && tokenStationId !== body.station_id) {
     return res.status(403).json({ error: 'Forbidden' });
   }

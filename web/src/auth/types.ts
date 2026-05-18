@@ -34,6 +34,7 @@ export interface StationManifest {
     id: string;
     code: string;
     name: string;
+    isClosed?: boolean;
   };
   event: {
     id: string;

@@ -2132,7 +2132,7 @@ textarea {
 .score-review-table table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 520px;
+  min-width: 760px;
 }
 
 .score-review-table thead th {
@@ -2206,6 +2206,15 @@ textarea {
 .score-review-name {
   font-size: 13px;
   color: #475569;
+}
+
+.score-review-note {
+  display: inline-block;
+  max-width: 260px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #334155;
+  font-size: 13px;
 }
 
 .score-review-check {
@@ -2296,6 +2305,16 @@ textarea {
   font-size: 0.85rem;
   color: #64748b;
   margin: 4px 0 0;
+}
+
+.note-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.note-field textarea {
+  min-height: 84px;
 }
 
 .error-text {

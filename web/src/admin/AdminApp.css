@@ -975,6 +975,16 @@
   color: var(--text);
 }
 
+.admin-station-live-actions {
+  margin-top: 2px;
+}
+
+.admin-station-live-actions .admin-button {
+  width: 100%;
+  min-height: 40px;
+  font-size: 0.86rem;
+}
+
 .admin-disqualify-team {
   margin-left: 8px;
   color: var(--text-2);

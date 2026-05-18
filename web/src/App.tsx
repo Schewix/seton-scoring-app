@@ -76,6 +76,7 @@ import {
   writeOutboxEntries,
   writeOutboxEntry,
 } from './outbox';
+import { getLocalforage, getOutboxStore } from './storage/localforage';
 
 const SUPABASE_BASE_URL = (env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
 
@@ -873,6 +874,28 @@ function requireAccessToken(accessToken: string | null) {
   return { accessToken: null, error: NO_SESSION_ERROR, shouldBlock: true };
 }
 
+async function clearBrowserRuntimeCaches() {
+  if (typeof caches === 'undefined') {
+    return;
+  }
+  const cacheNames = await caches.keys();
+  if (!cacheNames.length) {
+    return;
+  }
+  await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
+}
+
+async function unregisterAllServiceWorkers() {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+    return;
+  }
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  if (!registrations.length) {
+    return;
+  }
+  await Promise.all(registrations.map((registration) => registration.unregister()));
+}
+
 function StationApp({
   auth,
   refreshManifest,
@@ -890,11 +913,12 @@ function StationApp({
   const stationCode = manifest.station.code?.trim().toUpperCase() || '';
   const stationDisplayName = getStationDisplayName(manifest.station.name, manifest.station.code);
   const scoringLocked = manifest.event.scoringLocked;
+  const stationClosed = manifest.station.isClosed === true;
   const isTargetStation = stationCode === 'T';
   const canManageEventWideOutbox = stationCode === 'T';
   const canReviewStationScores =
     isTargetStation || manifest.allowedTasks.some((task) => SCORE_REVIEW_TASK_KEYS.has(task));
-  const scoringDisabled = scoringLocked && !isTargetStation;
+  const scoringDisabled = stationClosed || (scoringLocked && !isTargetStation);
   const timeScoringConfig = useMemo(() => buildTimeScoringConfig(manifest.event), [manifest.event]);
   const targetAnswerOptionCount: TargetAnswerOptionCount = manifest.event.targetAnswerOptionCount === 3 ? 3 : 4;
   const targetAnswerInputPattern = targetAnswerOptionCount === 3 ? '[A-CXa-cx]*' : '[A-DXa-dx]*';
@@ -941,6 +965,7 @@ function StationApp({
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [authNeedsLogin, setAuthNeedsLogin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [fullRefreshRunning, setFullRefreshRunning] = useState(false);
   const [currentPathname, setCurrentPathname] = useState(() =>
     typeof window !== 'undefined' ? window.location.pathname : getStationPath(stationDisplayName),
   );
@@ -3928,6 +3953,49 @@ function StationApp({
     navigateToPath(CHANGE_PASSWORD_ROUTE);
   }, [navigateToPath]);
 
+  const handleFullRefresh = useCallback(async () => {
+    if (fullRefreshRunning) {
+      return;
+    }
+    const confirmed = typeof window !== 'undefined' && window.confirm(
+      'Smazat lokální cache aplikace na tomto zařízení a provést plný reload?\n\nPoužívej ráno před závodem po testování. Po reloadu bude potřeba se znovu přihlásit.',
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setMenuOpen(false);
+    setFullRefreshRunning(true);
+    try {
+      const localforage = getLocalforage();
+      const outboxStore = getOutboxStore();
+      await Promise.allSettled([
+        localforage.clear(),
+        outboxStore.clear(),
+        clearBrowserRuntimeCaches(),
+        unregisterAllServiceWorkers(),
+      ]);
+
+      if (typeof window !== 'undefined') {
+        try {
+          window.sessionStorage.clear();
+        } catch (error) {
+          console.warn('Failed to clear sessionStorage during full refresh', error);
+        }
+      }
+    } catch (error) {
+      console.error('Full refresh failed', error);
+    } finally {
+      setFullRefreshRunning(false);
+    }
+
+    if (typeof window !== 'undefined') {
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set('hard-refresh', String(Date.now()));
+      window.location.replace(currentUrl.toString());
+    }
+  }, [fullRefreshRunning]);
+
   const handleTargetAnswersBeforeInput = useCallback((event: ReactFormEvent<HTMLInputElement>) => {
     const nativeEvent = event.nativeEvent as InputEvent;
     const insertedText = nativeEvent.data;
@@ -3980,6 +4048,10 @@ function StationApp({
   const handleSaveStationScore = useCallback(
     async (stationId: string) => {
       if (!activePatrol) {
+        return;
+      }
+      if (stationClosed) {
+        pushAlert('Stanoviště je uzavřené. Zapisování bodů není povoleno.');
         return;
       }
 
@@ -4133,6 +4205,7 @@ function StationApp({
       resolvePatrolCode,
       scoreReviewRows,
       scoreReviewState,
+      stationClosed,
       stationCode,
     ],
   );
@@ -4832,6 +4905,15 @@ function StationApp({
               <button type="button" className="logout-button" onClick={handleSwitchEvent}>
                 Změnit ročník
               </button>
+              <button
+                type="button"
+                className="ghost logout-button"
+                onClick={handleFullRefresh}
+                disabled={fullRefreshRunning}
+              >
+                {fullRefreshRunning ? 'Probíhá full refresh…' : 'Full refresh a promazání cache'}
+              </button>
+              <p className="card-hint">Použij ráno před závodem po testování na každém stanovišti.</p>
               <p className="card-hint">Odhlásíš se z aktuální relace.</p>
               <button type="button" className="logout-button" onClick={handleLogout}>
                 Odhlásit se
@@ -5442,6 +5524,14 @@ function StationApp({
                     <p className="wait-hint">Zadej čekání ručně ve formátu HH:MM (bez vteřin), např. 01:30.</p>
                   </div>
                 ) : null}
+                <label className="note-field">
+                  Poznámka k bodům (volitelné)
+                  <textarea
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    placeholder="Např. upřesnění k hodnocení nebo důvod odchylky."
+                  />
+                </label>
                 {stationCode === 'T' ? (
                   <div className="calc-grid">
                     <div className="calc-time-card">
@@ -5559,6 +5649,7 @@ function StationApp({
                               <th>Body</th>
                               <th>Čekání (HH:MM)</th>
                               <th>Stanoviště</th>
+                              <th>Poznámka</th>
                               <th>OK</th>
                               <th>Akce</th>
                             </tr>
@@ -5611,7 +5702,7 @@ function StationApp({
                                 <Fragment key={row.stationId}>
                                   {row.separatorBefore ? (
                                     <tr className="score-review-separator" aria-hidden>
-                                      <td colSpan={5} />
+                                      <td colSpan={6} />
                                     </tr>
                                   ) : null}
                                   <tr className={state.ok ? '' : 'score-review-editing'}>
@@ -5656,6 +5747,9 @@ function StationApp({
                                         <span className="score-review-code">{row.stationCode || '—'}</span>
                                         <span className="score-review-name">{row.stationName}</span>
                                       </div>
+                                    </td>
+                                    <td>
+                                      <span className="score-review-note">{row.note?.trim() || '—'}</span>
                                     </td>
                                     <td>
                                       {isAutoComputedRow ? (
@@ -5749,7 +5843,9 @@ function StationApp({
                 ) : null}
                 {scoringDisabled ? (
                   <p className="error-text">
-                    Závod byl ukončen. Zapisování bodů je možné pouze na stanovišti T.
+                    {stationClosed
+                      ? 'Stanoviště je uzavřené. Zapisování bodů je dočasně vypnuté.'
+                      : 'Závod byl ukončen. Zapisování bodů je možné pouze na stanovišti T.'}
                   </p>
                 ) : null}
               </div>

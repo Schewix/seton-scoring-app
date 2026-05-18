@@ -212,6 +212,7 @@ type SetupStationRow = {
   event_id: string;
   code: string | null;
   name: string | null;
+  is_closed?: boolean | null;
   is_split?: boolean | null;
   split_categories?: string[] | null;
 };
@@ -1372,6 +1373,7 @@ function AdminDashboard({
   const [judgeCategoryToggle, setJudgeCategoryToggle] = useState<CategoryToggleState>(() => createDefaultCategoryToggleState());
   const [judgeTaskPreset, setJudgeTaskPreset] = useState<JudgeTaskPresetKey>(DEFAULT_JUDGE_TASK_PRESET);
   const [judgeTemporaryPassword, setJudgeTemporaryPassword] = useState<string | null>(null);
+  const [stationClosingId, setStationClosingId] = useState<string | null>(null);
 
   const [patrolCounts, setPatrolCounts] = useState<PatrolCountsState>(() => createDefaultPatrolCounts());
   const [patrolStarts, setPatrolStarts] = useState<PatrolStartsState>(() => createDefaultPatrolStarts());
@@ -1452,7 +1454,7 @@ function AdminDashboard({
     const [stationsRes, passagesRes, patrolsRes] = await Promise.all([
       supabase
         .from('stations')
-        .select('id, code, name, is_split, split_categories')
+        .select('id, code, name, is_closed, is_split, split_categories')
         .eq('event_id', activeEventId)
         .order('code'),
       supabase
@@ -1486,6 +1488,7 @@ function AdminDashboard({
     const stations = new Map<string, {
       code: string;
       name: string;
+      isClosed: boolean;
       isSplit: boolean;
       splitCategories: CategoryKey[];
     }>();
@@ -1493,6 +1496,7 @@ function AdminDashboard({
       id: string;
       code: string;
       name: string;
+      is_closed?: boolean | null;
       is_split?: boolean | null;
       split_categories?: unknown;
     }>).forEach((station) => {
@@ -1503,6 +1507,7 @@ function AdminDashboard({
       stations.set(station.id, {
         code,
         name: station.name,
+        isClosed: station.is_closed === true,
         isSplit: station.is_split === true,
         splitCategories: normalizeStationSplitCategories(station.split_categories),
       });
@@ -1859,6 +1864,7 @@ function AdminDashboard({
           id: station.id,
           code: normalizeText(station.code).toUpperCase(),
           name: normalizeText(station.name),
+          isClosed: station.is_closed === true,
           isSplit: station.is_split === true,
           splitCategories: normalizeStationSplitCategories(station.split_categories),
         }))
@@ -1964,11 +1970,13 @@ function AdminDashboard({
           id: row.stationId,
           code: row.stationCode,
           name: row.stationName,
+          isClosed: false,
         }));
 
     return baseStations.map((station) => {
       const stationCode = normalizeText(station.code).toUpperCase();
       const row = rowByStationCode.get(stationCode) ?? null;
+      const isClosed = station.isClosed === true;
       const judgeCount = assignmentCountByStationCode.get(stationCode) ?? 0;
       const passed = row?.totalPassed ?? 0;
       const expected = row?.totalExpected ?? 0;
@@ -1977,7 +1985,10 @@ function AdminDashboard({
 
       let status: AdminStationHealthCard['status'] = 'unknown';
       let statusLabel = 'Bez dat';
-      if (row) {
+      if (isClosed) {
+        status = 'warning';
+        statusLabel = 'Uzavřeno';
+      } else if (row) {
         if (expected > 0 && passed === 0 && hasCourseData) {
           status = 'offline';
           statusLabel = 'Podezření offline';
@@ -1997,6 +2008,7 @@ function AdminDashboard({
         stationId: station.id,
         stationCode,
         stationName: normalizeText(station.name),
+        isClosed,
         status,
         statusLabel,
         judgeCount,
@@ -2651,6 +2663,46 @@ function AdminDashboard({
       setSetupSaving(false);
     }
   }, [loadSetupData, postSetupAction, selectedSetupEventId, selectedSetupStations, stationSplitDraftById]);
+
+  const handleToggleStationClosed = useCallback(async (stationId: string, nextClosed: boolean) => {
+    setSetupError(null);
+    setSetupSuccess(null);
+    setJudgeTemporaryPassword(null);
+
+    if (!selectedSetupEventId) {
+      setSetupError('Vyber ročník.');
+      return;
+    }
+
+    const station = selectedSetupStations.find((item) => item.id === stationId);
+    if (!station) {
+      setSetupError('Stanoviště nebylo nalezeno.');
+      return;
+    }
+
+    setStationClosingId(stationId);
+    try {
+      await postSetupAction('set_station_closed', {
+        event_id: selectedSetupEventId,
+        station_id: stationId,
+        closed: nextClosed,
+      });
+      setSetupSuccess(
+        nextClosed
+          ? `Stanoviště ${station.code} bylo uzavřeno.`
+          : `Stanoviště ${station.code} bylo znovu otevřeno.`,
+      );
+      await loadSetupData();
+      if (selectedSetupEventId === activeEventId) {
+        await loadStationStats();
+      }
+    } catch (error) {
+      console.error('Failed to toggle station closed state', error);
+      setSetupError(error instanceof Error ? error.message : 'Nepodařilo se změnit stav stanoviště.');
+    } finally {
+      setStationClosingId(null);
+    }
+  }, [activeEventId, loadSetupData, loadStationStats, postSetupAction, selectedSetupEventId, selectedSetupStations]);
 
   const handleToggleSetupTroop = useCallback((troopName: string) => {
     const normalized = normalizeTroopName(troopName);
@@ -4666,6 +4718,8 @@ function AdminDashboard({
             <AdminStationHealthPanel
               stationCards={stationHealthCards}
               assignmentRows={selectedSetupAssignments}
+              onToggleStationClosed={(stationId, nextClosed) => void handleToggleStationClosed(stationId, nextClosed)}
+              stationClosingId={stationClosingId}
             />
           </section>
         ) : null}
