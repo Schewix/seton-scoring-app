@@ -130,7 +130,6 @@ const SITEMAP_STATIC_ENTRIES: SitemapStaticEntry[] = [
   { path: '/souteze/vybijena', changefreq: 'monthly', priority: 0.7 },
   { path: '/souteze/memorial-bedricha-stolicky', changefreq: 'monthly', priority: 0.7 },
   { path: '/aplikace', changefreq: 'monthly', priority: 0.6 },
-  { path: '/aplikace/setonuv-zavod', changefreq: 'monthly', priority: 0.5 },
   { path: '/aplikace/setonuv-zavod/vysledky', changefreq: 'weekly', priority: 0.5 },
   { path: '/aplikace/deskovky', changefreq: 'weekly', priority: 0.5 },
   { path: '/aplikace/deskovky/standings', changefreq: 'daily', priority: 0.5 },
@@ -705,8 +704,8 @@ async function handlePublicDetail(req: any, res: any, slug: string) {
 }
 
 async function handlePublicSitemap(req: any, res: any) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.setHeader('Allow', 'GET, HEAD');
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
@@ -743,6 +742,10 @@ async function handlePublicSitemap(req: any, res: any) {
 
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
     res.setHeader('Cache-Control', 'public, s-maxage=900, stale-while-revalidate=300');
+    if (req.method === 'HEAD') {
+      res.status(200).end();
+      return;
+    }
     res.status(200).send(body);
   } catch (error) {
     console.error('[api/content/sitemap] failed', error);
