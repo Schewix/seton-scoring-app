@@ -324,12 +324,27 @@ async function handleManifestRequest(req: any, res: any) {
     return res.status(403).json({ error: 'Judge has no assignment' });
   }
 
+  if (stationError) {
+    return respond(res, 500, 'Failed to load station', stationError.message);
+  }
+  if (eventError) {
+    return respond(res, 500, 'Failed to load event', eventError.message);
+  }
+  if (judgeError) {
+    return respond(res, 500, 'Failed to load judge', judgeError.message);
+  }
+
   const station = (stationData ?? null) as StationRow | null;
   const event = (eventData ?? null) as EventRow | null;
   const judge = (judgeData ?? null) as JudgeRow | null;
 
   if (!station || !event || !judge) {
-    return respond(res, 500, 'Failed to load manifest', 'station-or-event-missing');
+    return respond(
+      res,
+      500,
+      'Failed to load manifest',
+      !station ? 'station-missing' : !event ? 'event-missing' : 'judge-missing',
+    );
   }
 
   const allowedCategories = normalizeAllowedCategories(assignment.allowed_categories, station.code);

@@ -59,7 +59,7 @@ const COMPETITIONS: Competition[] = [
     slug: 'deskove-hry',
     name: 'Deskové hry',
     description: 'Soutěž jednotlivců v deskových hrách.',
-    href: '/aplikace/deskovky',
+    href: '/souteze/deskove-hry',
     ruleMatchers: ['deskove-hry'],
   },
   {

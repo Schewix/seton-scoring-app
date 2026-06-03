@@ -376,7 +376,7 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const [{ data: stationData }, { data: eventData }] = await Promise.all([
+    const [stationResult, eventResult] = await Promise.all([
       supabase
         .from('stations')
         .select('id, code, name, is_closed')
@@ -389,10 +389,22 @@ export default async function handler(req: any, res: any) {
         .maybeSingle(),
     ]);
 
-    const station = (stationData ?? null) as StationRow | null;
-    const event = (eventData ?? null) as EventRow | null;
+    if (stationResult.error) {
+      return respond(res, 500, 'Failed to load station', stationResult.error.message);
+    }
+    if (eventResult.error) {
+      return respond(res, 500, 'Failed to load event', eventResult.error.message);
+    }
+
+    const station = (stationResult.data ?? null) as StationRow | null;
+    const event = (eventResult.data ?? null) as EventRow | null;
     if (!station || !event) {
-      return respond(res, 500, 'Failed to resolve assignment details', 'station-or-event-missing');
+      return respond(
+        res,
+        500,
+        'Failed to resolve assignment details',
+        !station ? 'station-missing' : 'event-missing',
+      );
     }
 
     const allowedCategories = normalizeAllowedCategories(assignment.allowed_categories, station.code);
