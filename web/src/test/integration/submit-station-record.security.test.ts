@@ -244,13 +244,14 @@ describe('submit-station-record api security', () => {
 
     const { data: patrol } = await supabaseAdmin
       .from('patrols')
-      .select('team_name, note')
+      .select('team_name, patrol_members, note')
       .eq('event_id', ctx.eventId)
       .eq('id', ctx.patrolId)
       .maybeSingle();
 
     expect(patrol?.team_name).toBe('4. PTO Test');
-    expect(patrol?.note).toBe('Alice\nBob\nCyril');
+    expect(patrol?.patrol_members).toBe('Alice\nBob\nCyril');
+    expect(patrol?.note ?? null).toBeNull();
   });
 
   it('does not allow non-calc stations to update patrol profile fields', async () => {
@@ -269,12 +270,13 @@ describe('submit-station-record api security', () => {
 
     const { data: patrol } = await supabaseAdmin
       .from('patrols')
-      .select('team_name, note')
+      .select('team_name, patrol_members, note')
       .eq('event_id', ctx.eventId)
       .eq('id', ctx.patrolId)
       .maybeSingle();
 
     expect(patrol?.team_name).toBe('Test patrol');
+    expect(patrol?.patrol_members ?? null).toBeNull();
     expect(patrol?.note ?? null).toBeNull();
   });
 

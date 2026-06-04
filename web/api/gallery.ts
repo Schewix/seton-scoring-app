@@ -1,5 +1,19 @@
 import type { drive_v3 } from 'googleapis';
 import { fetchScriptItems, hasGalleryScript } from '../api-lib/galleryScript.js';
+import {
+  fetchR2Json,
+  getR2GalleryConfig,
+  getR2GalleryConfigError,
+  isR2GalleryRequiredByEnv,
+  normalizeR2GalleryIndex,
+  normalizeR2GalleryManifest,
+  toR2PublicUrl,
+  type R2GalleryConfig,
+  type R2GalleryIndex,
+  type R2GalleryIndexAlbum,
+  type R2GalleryManifest,
+  type R2GalleryManifestPhoto,
+} from '../api-lib/galleryR2.js';
 import { getSupabaseAdminClient } from '../api-lib/content/supabaseAdmin.js';
 import { DRIVE_FIELDS, getDriveClient, getDriveListOptions } from '../api-lib/googleDrive.js';
 
@@ -42,7 +56,8 @@ function clearAlbumsCache() {
       key === 'drive-album-overrides' ||
       key === 'drive-album-years' ||
       key === 'drive-albums' ||
-      key.startsWith('drive-albums:')
+      key.startsWith('drive-albums:') ||
+      key.startsWith('r2-gallery:')
     ) {
       cache.delete(key);
     }
@@ -174,6 +189,202 @@ function toAlbumsLimit(raw: string | string[] | undefined) {
     return null;
   }
   return Math.min(Math.max(Math.round(parsed), 1), 200);
+}
+
+function sortAlbums<T extends { year: string; title: string }>(albums: T[]): T[] {
+  return [...albums].sort((a, b) => {
+    const yearA = sortYearLabel(a.year);
+    const yearB = sortYearLabel(b.year);
+    if (yearA !== yearB) {
+      return yearB - yearA;
+    }
+    if (a.year !== b.year) {
+      return b.year.localeCompare(a.year, 'cs');
+    }
+    return a.title.localeCompare(b.title, 'cs');
+  });
+}
+
+async function fetchAlbumOverridesCached(bypassCache: boolean): Promise<Map<string, string>> {
+  if (bypassCache) {
+    return fetchAlbumOverrides();
+  }
+
+  const cachedOverrides = getCache<Map<string, string>>('drive-album-overrides');
+  if (cachedOverrides) {
+    return cachedOverrides;
+  }
+
+  const overrides = await fetchAlbumOverrides();
+  setCache('drive-album-overrides', overrides);
+  return overrides;
+}
+
+async function loadR2GalleryIndex(config: R2GalleryConfig, bypassCache: boolean): Promise<R2GalleryIndex> {
+  const cacheKey = `r2-gallery:index:${config.publicBaseUrl}:${config.indexPath}`;
+  if (!bypassCache) {
+    const cached = getCache<R2GalleryIndex>(cacheKey);
+    if (cached !== null) {
+      return cached;
+    }
+  }
+
+  const raw = await fetchR2Json<unknown>(config, config.indexPath);
+  const index = normalizeR2GalleryIndex(raw);
+  if (!bypassCache) {
+    setCache(cacheKey, index);
+  }
+  return index;
+}
+
+async function loadR2GalleryManifest(
+  config: R2GalleryConfig,
+  album: R2GalleryIndexAlbum,
+): Promise<R2GalleryManifest> {
+  const cacheKey = `r2-gallery:manifest:${config.publicBaseUrl}:${album.manifestPath}`;
+  const cached = getCache<R2GalleryManifest>(cacheKey);
+  if (cached !== null) {
+    return cached;
+  }
+
+  const raw = await fetchR2Json<unknown>(config, album.manifestPath);
+  const manifest = normalizeR2GalleryManifest(raw);
+  setCache(cacheKey, manifest);
+  return manifest;
+}
+
+function toR2AlbumPayload(album: R2GalleryIndexAlbum, overrides: Map<string, string>) {
+  const overrideTitle = overrides.get(album.driveFolderId) ?? overrides.get(album.folderId);
+  const title = overrideTitle && overrideTitle.trim().length > 0 ? overrideTitle.trim() : album.title;
+  return {
+    id: album.id,
+    title,
+    year: album.year ?? 'Ostatní',
+    slug: album.slug,
+    folderId: album.folderId,
+    baseTitle: album.baseTitle ?? album.title,
+    source: 'cloudflare-r2',
+  };
+}
+
+function findR2Album(index: R2GalleryIndex, folderId: string): R2GalleryIndexAlbum | null {
+  return (
+    index.albums.find(
+      (album) =>
+        album.folderId === folderId ||
+        album.driveFolderId === folderId ||
+        album.id === folderId ||
+        album.slug === folderId,
+    ) ?? null
+  );
+}
+
+function getR2PhotoUrl(config: R2GalleryConfig, url: string | undefined, path: string) {
+  return url && url.trim().length > 0 ? url : toR2PublicUrl(config, path);
+}
+
+function toR2FilePayload(config: R2GalleryConfig, photo: R2GalleryManifestPhoto) {
+  const fullImageUrl = getR2PhotoUrl(config, photo.fullUrl, photo.fullPath);
+  const thumbnailLink = getR2PhotoUrl(config, photo.thumbUrl, photo.thumbPath);
+  return {
+    fileId: photo.sourceFileId || photo.fullPath,
+    name: photo.originalName || photo.sourceFileId || photo.fullPath,
+    thumbnailLink,
+    fullImageUrl,
+    webContentLink: fullImageUrl,
+    width: photo.width ?? null,
+    height: photo.height ?? null,
+    thumbWidth: photo.thumbWidth ?? null,
+    thumbHeight: photo.thumbHeight ?? null,
+    source: 'cloudflare-r2',
+  };
+}
+
+async function handleR2Albums(req: any, res: any, config: R2GalleryConfig) {
+  const bypassCache =
+    req.query?.nocache === '1' ||
+    req.query?.nocache === 'true' ||
+    req.query?.nocache === 'yes';
+  const yearFilter = typeof req.query?.year === 'string' ? req.query.year.trim() : '';
+  const yearsOnly = req.query?.years === '1' || req.query?.years === 'true';
+  const albumsLimit = toAlbumsLimit(req.query?.limit);
+  const index = await loadR2GalleryIndex(config, bypassCache);
+
+  if (yearsOnly) {
+    const sortedAlbums = sortAlbums(
+      index.albums.map((album) => ({
+        title: album.title,
+        year: album.year ?? 'Ostatní',
+      })),
+    );
+    const years = Array.from(new Set(sortedAlbums.map((album) => album.year)));
+    const albumCountsByYear = index.albums.reduce<Record<string, number>>((acc, album) => {
+      const year = album.year ?? 'Ostatní';
+      acc[year] = (acc[year] ?? 0) + 1;
+      return acc;
+    }, {});
+    res.status(200).json({ years, albumCountsByYear, source: 'cloudflare-r2' });
+    return;
+  }
+
+  const overrides = await fetchAlbumOverridesCached(bypassCache);
+  const albums = sortAlbums(
+    index.albums
+      .filter((album) => !yearFilter || (album.year ?? 'Ostatní') === yearFilter)
+      .map((album) => toR2AlbumPayload(album, overrides)),
+  );
+
+  res.status(200).json({
+    albums: albumsLimit ? albums.slice(0, albumsLimit) : albums,
+    source: 'cloudflare-r2',
+  });
+}
+
+async function handleR2Album(
+  req: any,
+  res: any,
+  config: R2GalleryConfig,
+  folderId: string,
+): Promise<boolean> {
+  const pageToken = typeof req.query.pageToken === 'string' ? req.query.pageToken : undefined;
+  const includeCount = req.query.includeCount === '1' || req.query.includeCount === 'true';
+  const pageSize = toPageSize(req.query.pageSize);
+  const offset = pageToken ? Math.max(Number(pageToken) || 0, 0) : 0;
+  const cacheKey = `r2-gallery:files:${config.publicBaseUrl}:${folderId}:${offset}:${pageSize}:${includeCount ? 'count' : 'nocount'}`;
+  const cached = getCache<any>(cacheKey);
+  if (cached !== null) {
+    res.status(200).json(cached);
+    return true;
+  }
+
+  const index = await loadR2GalleryIndex(config, false);
+  const album = findR2Album(index, folderId);
+  if (!album) {
+    return false;
+  }
+
+  const manifest = await loadR2GalleryManifest(config, album);
+  const slice = manifest.photos.slice(offset, offset + pageSize);
+  const nextOffset = offset + pageSize;
+  const payload = {
+    folderId,
+    files: slice.map((photo) => toR2FilePayload(config, photo)),
+    nextPageToken: nextOffset < manifest.photos.length ? String(nextOffset) : null,
+    totalCount: includeCount ? manifest.photos.length : null,
+    source: 'cloudflare-r2',
+  };
+
+  if (req.query.debug === '1') {
+    res.status(200).json({
+      ...payload,
+      manifestPath: album.manifestPath,
+    });
+    return true;
+  }
+
+  setCache(cacheKey, payload);
+  res.status(200).json(payload);
+  return true;
 }
 
 async function fetchAlbumFiles({
@@ -358,15 +569,34 @@ async function handleAlbums(req: any, res: any) {
   applyAlbumsCacheHeaders(res, bypassCache);
   res.setHeader('Access-Control-Allow-Origin', '*');
 
+  if (bypassCache) {
+    clearAlbumsCache();
+  }
+
+  const r2Config = getR2GalleryConfig();
+  if (r2Config) {
+    try {
+      await handleR2Albums(req, res, r2Config);
+      return;
+    } catch (error) {
+      console.warn('[api/gallery] failed to load albums from Cloudflare R2', error);
+      if (r2Config.sourceMode === 'r2') {
+        res.status(500).json({ error: 'Failed to load albums from Cloudflare R2.' });
+        return;
+      }
+    }
+  } else if (isR2GalleryRequiredByEnv()) {
+    res.status(500).json({ error: getR2GalleryConfigError() });
+    return;
+  }
+
   const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
   if (!rootFolderId) {
     res.status(500).json({ error: 'Missing GOOGLE_DRIVE_ROOT_FOLDER_ID environment variable.' });
     return;
   }
 
-  if (bypassCache) {
-    clearAlbumsCache();
-  } else {
+  if (!bypassCache) {
     const cached = getCache<any>(cacheKey);
     if (cached !== null) {
       res.status(200).json(cached);
@@ -416,16 +646,7 @@ async function handleAlbums(req: any, res: any) {
       return;
     }
 
-    let overrides: Map<string, string>;
-    if (!bypassCache) {
-      const cachedOverrides = getCache<Map<string, string>>('drive-album-overrides');
-      overrides = cachedOverrides ?? (await fetchAlbumOverrides());
-      if (!cachedOverrides) {
-        setCache('drive-album-overrides', overrides);
-      }
-    } else {
-      overrides = await fetchAlbumOverrides();
-    }
+    const overrides = await fetchAlbumOverridesCached(bypassCache);
 
     const scopedYearFolders = yearFilter
       ? yearFolders.filter((folder) => (folder.name ?? 'Ostatní') === yearFilter)
@@ -495,6 +716,29 @@ async function handleAlbums(req: any, res: any) {
 async function handleAlbum(req: any, res: any, folderId: string) {
   applyAlbumCacheHeaders(res);
   res.setHeader('Access-Control-Allow-Origin', '*');
+
+  const r2Config = getR2GalleryConfig();
+  if (r2Config) {
+    try {
+      const handled = await handleR2Album(req, res, r2Config, folderId);
+      if (handled) {
+        return;
+      }
+      if (r2Config.sourceMode === 'r2') {
+        res.status(404).json({ error: 'Album not found in Cloudflare R2 gallery index.' });
+        return;
+      }
+    } catch (error) {
+      console.warn('[api/gallery] failed to load album from Cloudflare R2', error);
+      if (r2Config.sourceMode === 'r2') {
+        res.status(500).json({ error: 'Failed to load album from Cloudflare R2.' });
+        return;
+      }
+    }
+  } else if (isR2GalleryRequiredByEnv()) {
+    res.status(500).json({ error: getR2GalleryConfigError() });
+    return;
+  }
 
   const pageToken = typeof req.query.pageToken === 'string' ? req.query.pageToken : undefined;
   const includeCount = req.query.includeCount === '1' || req.query.includeCount === 'true';

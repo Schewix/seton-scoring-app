@@ -23,6 +23,14 @@ export type RaceDashboardSummary = {
   problematicStations: number;
   syncConflicts: number;
   missingLongPatrols: number;
+  maybeLostPatrols: Array<{
+    id: string;
+    code: string;
+    teamName: string;
+    lastSeenAt: string | null;
+    stationCode: string;
+    stationName: string;
+  }>;
   overdueNoFinishPatrols: number;
   lastSyncAt: string | null;
 };
@@ -47,6 +55,7 @@ export const EMPTY_RACE_DASHBOARD_SUMMARY: RaceDashboardSummary = {
   problematicStations: 0,
   syncConflicts: 0,
   missingLongPatrols: 0,
+  maybeLostPatrols: [],
   overdueNoFinishPatrols: 0,
   lastSyncAt: null,
 };

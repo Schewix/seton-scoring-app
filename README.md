@@ -202,6 +202,7 @@ Konfigurace je na začátku souboru (`seton_event_id_override`, `v_vi_secondary_
    - Apps Script/Sheets workflow popsaný v [`google-sheets/SHEET_TEMPLATE_INFO.md`](./google-sheets/SHEET_TEMPLATE_INFO.md),
    - Supabase Edge Function `sync-patrols`.
 3. QR kódy hlídek generuje [`scripts/generate-qr-codes.mjs`](./scripts/generate-qr-codes.mjs).
+4. Sync fotogalerie z Google Drive do Cloudflare R2 je popsaný v [`scripts/README-gallery-sync.md`](./scripts/README-gallery-sync.md).
 
 Poznámka: názvy DB objektů (tabulky/pohledy/policies) zůstávají stabilní kvůli kompatibilitě migrací a nasazených klientů.
 

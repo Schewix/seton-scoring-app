@@ -428,11 +428,8 @@ type GalleryPhotoLike = {
 
 // TODO: Napojit na API / Supabase pro reálné pořadí Zelené ligy.
 
-// Fotogalerie je napojená na Google Drive přes service account.
-// Root složka sdílená na e-mail service accountu, ENV:
-// - GOOGLE_SERVICE_ACCOUNT_EMAIL
-// - GOOGLE_PRIVATE_KEY
-// - GOOGLE_DRIVE_ROOT_FOLDER_ID
+// Fotogalerie jde přes /api/gallery. API umí číst veřejné Cloudflare R2 manifesty
+// a v přechodném režimu spadnout zpět na Google Drive.
 type Troop = {
   number: string;
   name: string;
@@ -778,6 +775,14 @@ function toDriveSizedUrl(url: string, size: number) {
   return output;
 }
 
+function isDriveImageUrl(url: string) {
+  return url.includes('drive.google.com') || url.includes('googleusercontent.com');
+}
+
+function isDirectImageAssetUrl(url: string) {
+  return /^\/api\/gallery\/image\b/.test(url) || /\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(url);
+}
+
 function toProxyImageUrl(url: string, size: number) {
   const cleaned = url.replace(/^https?:\/\//, '');
   const encoded = encodeURIComponent(cleaned);
@@ -813,19 +818,33 @@ function getPhotoThumbUrl(photo: GalleryPhotoLike | undefined | null, size: numb
     return '';
   }
   if (photo.thumbnailLink) {
-    return toDriveSizedUrl(photo.thumbnailLink, size);
+    return isDriveImageUrl(photo.thumbnailLink) ? toDriveSizedUrl(photo.thumbnailLink, size) : photo.thumbnailLink;
   }
   const fallback = photo.fullImageUrl ?? photo.webContentLink;
-  return fallback ? toProxyImageUrl(fallback, size) : '';
+  if (!fallback) {
+    return '';
+  }
+  if (isDriveImageUrl(fallback)) {
+    return toProxyImageUrl(fallback, size);
+  }
+  return isDirectImageAssetUrl(fallback) ? fallback : toProxyImageUrl(fallback, size);
 }
 
 function buildPhotoSrcSet(photo: GalleryPhotoLike | undefined | null, sizes: number[]) {
+  const uniqueUrls = new Set<string>();
   const entries = sizes
     .map((size) => {
       const url = getPhotoThumbUrl(photo, size);
+      if (!url || uniqueUrls.has(url)) {
+        return null;
+      }
+      uniqueUrls.add(url);
       return url ? `${url} ${size}w` : null;
     })
     .filter((entry): entry is string => Boolean(entry));
+  if (entries.length <= 1) {
+    return '';
+  }
   return entries.join(', ');
 }
 
@@ -2451,10 +2470,13 @@ function GalleryAlbumPage({
     if (!photo) {
       return '';
     }
-    if (photo.thumbnailLink) {
-      return toDriveSizedUrl(photo.thumbnailLink, 1800);
+    if (photo.fullImageUrl) {
+      return photo.fullImageUrl;
     }
-    return photo.fullImageUrl ?? photo.webContentLink ?? '';
+    if (photo.thumbnailLink) {
+      return isDriveImageUrl(photo.thumbnailLink) ? toDriveSizedUrl(photo.thumbnailLink, 1800) : photo.thumbnailLink;
+    }
+    return photo.webContentLink ?? '';
   };
   const activePhotoUrl = getLightboxUrl(activePhoto);
 

@@ -1,5 +1,5 @@
 .live-map-shell {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   color: var(--text);
@@ -51,12 +51,13 @@
 
 .live-map-hud {
   position: fixed;
-  top: var(--live-map-hud-top);
-  left: 50%;
-  transform: translateX(-50%);
+  top: calc(var(--live-map-hud-top) + env(safe-area-inset-top, 0px));
+  left: 11px;
+  right: 11px;
   z-index: 30;
-  width: min(1600px, calc(100% - 22px));
-  margin: 0;
+  width: auto;
+  max-width: 1600px;
+  margin: 0 auto;
   padding: 10px;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.26);
@@ -756,7 +757,9 @@
   }
 
   .live-map-hud {
-    width: calc(100% - 12px);
+    left: 6px;
+    right: 6px;
+    width: auto;
     padding: 10px;
     border-radius: 16px;
   }

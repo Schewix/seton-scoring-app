@@ -1,0 +1,12 @@
+{
+  "source": "web-gallery",
+  "rootFolderId": "google-drive-root-folder-id",
+  "targetRootPrefix": "",
+  "albumAllowlist": [
+    "zelena liga",
+    "draci smycka"
+  ],
+  "years": [
+    "2026"
+  ]
+}

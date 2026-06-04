@@ -8,12 +8,14 @@ test-results/
 .env
 .env.*
 !.env.example
+!scripts/.env.example
 !server/.env.example
 !web/.env.example
 .expo-shared/
 *.tmp
 .DS_Store
 zelena-liga-sa.json
+scripts/gallery-sync.config.json
 
 # Supabase
 supabase/.branches/

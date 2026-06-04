@@ -174,7 +174,7 @@ export function AdminLiveOverviewSection({
   summary,
 }: LiveSectionProps) {
   const hasCriticalIssue = summary.problematicStations > 0 || summary.syncConflicts > 0;
-  const hasWarningIssue = summary.missingLongPatrols > 0 || summary.overdueNoFinishPatrols > 0;
+  const maybeLostPatrols = summary.maybeLostPatrols ?? [];
 
   return (
     <section
@@ -204,40 +204,18 @@ export function AdminLiveOverviewSection({
           <span className={`admin-status-badge ${hasCriticalIssue ? 'admin-status-badge--offline' : 'admin-status-badge--online'}`}>
             {hasCriticalIssue ? 'Problém synchronizace' : 'Synchronizace v pořádku'}
           </span>
-          <span className={`admin-status-badge ${summary.problematicStations > 0 ? 'admin-status-badge--offline' : 'admin-status-badge--online'}`}>
-            Offline/problémová stanoviště: {summary.problematicStations}
-          </span>
-          <span className={`admin-status-badge ${summary.syncConflicts > 0 ? 'admin-status-badge--warning' : 'admin-status-badge--online'}`}>
-            Konflikty: {summary.syncConflicts}
-          </span>
           <span className="admin-status-badge admin-status-badge--unknown">
             Poslední sync: {formatDateTimeForStatus(summary.lastSyncAt)}
           </span>
         </div>
-        {hasCriticalIssue || hasWarningIssue ? (
-          <div className="admin-live-status-alerts">
-            {summary.problematicStations > 0 ? (
-              <p className="admin-error">Některá stanoviště mohou být offline nebo bez dat.</p>
-            ) : null}
-            {summary.syncConflicts > 0 ? (
-              <p className="admin-notice">Zjištěny konflikty synchronizace, zkontroluj queue a exporty.</p>
-            ) : null}
-            {summary.missingLongPatrols > 0 ? (
-              <p className="admin-notice">Některé hlídky dlouho nejsou vidět v průchodech.</p>
-            ) : null}
-            {summary.overdueNoFinishPatrols > 0 ? (
-              <p className="admin-error">Některé hlídky stále nemají cíl po očekávaném čase.</p>
-            ) : null}
-          </div>
-        ) : null}
       </div>
       <div className="admin-live-grid">
         <article className="admin-live-item admin-live-item--primary">
-          <span>Průchody (viděné hlídky)</span>
-          <strong>{summary.patrolsSeenOnCourse}</strong>
+          <span>Hlídky na trati</span>
+          <strong>{summary.patrolsOnCourse}</strong>
         </article>
         <article className="admin-live-item admin-live-item--danger">
-          <span>Offline/problémy stanovišť</span>
+          <span>Stanoviště bez dat</span>
           <strong>{summary.problematicStations}</strong>
         </article>
         <article className="admin-live-item admin-live-item--warning">
@@ -245,24 +223,28 @@ export function AdminLiveOverviewSection({
           <strong>{summary.syncConflicts}</strong>
         </article>
         <article className="admin-live-item admin-live-item--warning">
-          <span>Hlídky dlouho nevidět</span>
-          <strong>{summary.missingLongPatrols}</strong>
-        </article>
-        <article className="admin-live-item admin-live-item--danger">
-          <span>Bez cíle po očekávaném čase</span>
-          <strong>{summary.overdueNoFinishPatrols}</strong>
-        </article>
-        <article className="admin-live-item">
-          <span>Poslední synchronizace</span>
-          <strong>{formatDateTimeForStatus(summary.lastSyncAt)}</strong>
+          <span>Hlídky, které se možná ztratily</span>
+          <strong>{maybeLostPatrols.length}</strong>
+          {maybeLostPatrols.length > 0 ? (
+            <details className="admin-live-lost-patrols">
+              <summary>Zobrazit čísla</summary>
+              <ul>
+                {maybeLostPatrols.map((patrol) => (
+                  <li key={patrol.id}>
+                    <strong>{patrol.code}</strong>
+                    <span>
+                      {patrol.teamName ? `${patrol.teamName} · ` : ''}
+                      {patrol.stationCode} {patrol.stationName}
+                      {' · '}
+                      {formatDateTimeForStatus(patrol.lastSeenAt)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
         </article>
       </div>
-      <div className="admin-card-actions">
-        <a className="admin-button admin-button--secondary" href="#admin-live-map-section">
-          Otevřít mapu průchodů
-        </a>
-      </div>
-      {/* TODO: Napojit endpointy pro offline stanoviště, konflikty synchronizace a hlídky dlouho nevidět. */}
     </section>
   );
 }
@@ -276,8 +258,42 @@ type AdminLiveMapRow = {
   image_url: string | null;
 };
 
+type AdminLiveMapStationRow = {
+  id: string;
+  code: string | null;
+  name: string | null;
+};
+
+type AdminLiveMapPositionRow = {
+  station_id: string;
+  x_percent: number | null;
+  y_percent: number | null;
+};
+
+type AdminLiveMapMarker = {
+  stationId: string;
+  code: string;
+  name: string;
+  x: number;
+  y: number;
+};
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  if (value < 0) {
+    return 0;
+  }
+  if (value > 100) {
+    return 100;
+  }
+  return value;
+}
+
 export function AdminLiveMapSection({ eventId, mapRoute }: LiveMapSectionProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [stationMarkers, setStationMarkers] = useState<AdminLiveMapMarker[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
@@ -285,17 +301,64 @@ export function AdminLiveMapSection({ eventId, mapRoute }: LiveMapSectionProps) 
 
     const loadPreview = async () => {
       setPreviewLoading(true);
-      const { data } = await supabase
-        .from('event_maps')
-        .select('image_url')
-        .eq('event_id', eventId)
-        .maybeSingle();
+      const [mapRes, stationRes, positionRes] = await Promise.all([
+        supabase
+          .from('event_maps')
+          .select('image_url')
+          .eq('event_id', eventId)
+          .maybeSingle(),
+        supabase
+          .from('stations')
+          .select('id,code,name')
+          .eq('event_id', eventId),
+        supabase
+          .from('station_map_positions')
+          .select('station_id,x_percent,y_percent')
+          .eq('event_id', eventId),
+      ]);
 
       if (canceled) {
         return;
       }
 
-      setPreviewUrl(((data ?? null) as AdminLiveMapRow | null)?.image_url ?? null);
+      if (mapRes.error || stationRes.error || positionRes.error) {
+        console.error('Failed to load admin live map preview', mapRes.error, stationRes.error, positionRes.error);
+        setPreviewUrl(null);
+        setStationMarkers([]);
+        setPreviewLoading(false);
+        return;
+      }
+
+      const stationById = new Map(
+        ((stationRes.data ?? []) as AdminLiveMapStationRow[])
+          .map((station) => {
+            const code = (station.code ?? '').trim().toUpperCase();
+            if (!station.id || !code) {
+              return null;
+            }
+            return [station.id, { code, name: (station.name ?? '').trim() }] as const;
+          })
+          .filter((entry): entry is readonly [string, { code: string; name: string }] => Boolean(entry)),
+      );
+      const markers = ((positionRes.data ?? []) as AdminLiveMapPositionRow[])
+        .map((position) => {
+          const station = stationById.get(position.station_id);
+          if (!station) {
+            return null;
+          }
+          return {
+            stationId: position.station_id,
+            code: station.code,
+            name: station.name,
+            x: clampPercent(Number(position.x_percent ?? 0)),
+            y: clampPercent(Number(position.y_percent ?? 0)),
+          };
+        })
+        .filter((marker): marker is AdminLiveMapMarker => Boolean(marker))
+        .sort((a, b) => a.code.localeCompare(b.code, 'cs'));
+
+      setPreviewUrl(((mapRes.data ?? null) as AdminLiveMapRow | null)?.image_url ?? null);
+      setStationMarkers(markers);
       setPreviewLoading(false);
     };
 
@@ -324,15 +387,24 @@ export function AdminLiveMapSection({ eventId, mapRoute }: LiveMapSectionProps) 
           {previewLoading ? (
             <span>Načítám mapu…</span>
           ) : previewUrl ? (
-            <img src={previewUrl} alt="Nahraná mapa závodu" className="admin-live-map-preview-image" />
+            <div className="admin-live-map-preview-stage">
+              <img src={previewUrl} alt="Nahraná mapa závodu" className="admin-live-map-preview-image" />
+              {stationMarkers.map((marker) => (
+                <span
+                  key={marker.stationId}
+                  className="admin-live-map-marker"
+                  style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
+                  title={`${marker.code} ${marker.name}`.trim()}
+                >
+                  {marker.code}
+                </span>
+              ))}
+            </div>
           ) : (
             <span>Mapa zatím není nahraná</span>
           )}
         </div>
         <div className="admin-live-map-placeholder-meta">
-          <p>
-            Mapa je napojená na živý dispečink průchodů, front a stavů stanovišť.
-          </p>
           <a className="admin-button admin-button--secondary" href={mapRoute} target="_blank" rel="noreferrer">
             Otevřít mapu
           </a>

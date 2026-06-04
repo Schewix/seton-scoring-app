@@ -1,0 +1,126 @@
+# Google Drive -> Cloudflare R2 Gallery Sync
+
+Google Drive zustava zdroj fotek. Tento sync bere stejnou strukturu a stejny filtr jako soucasna webova galerie: root slozka, v ni slozky kalendarnich roku, v nich slozky akci/alb a v nich fotky. Stahne alba, ktera by web zobrazil podle `GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST`, vytvori WebP full image a thumbnail a nahraje je do Cloudflare R2 bucketu `zelena-liga-gallery`.
+
+## 1. Google service account
+
+1. V Google Cloud Console vytvor nebo vyber projekt.
+2. Zapni API `Google Drive API`.
+3. V `IAM & Admin -> Service Accounts` vytvor service account.
+4. V detailu service accountu vytvor JSON key.
+5. JSON uloz lokalne mimo git, napr. `zelena-liga-sa.json`, nebo jeho obsah vloz do `GOOGLE_SERVICE_ACCOUNT_JSON`.
+
+## 2. Sdileni Google Drive slozky
+
+1. V JSON klici najdi `client_email`.
+2. V Google Drive otevri root slozku fotogalerie.
+3. Sdilej root slozku na `client_email` service accountu s opravnenim `Viewer`.
+4. Z URL root slozky zkopiruj folder ID do `GOOGLE_DRIVE_ROOT_FOLDER_ID`.
+
+## 3. Cloudflare R2
+
+1. V Cloudflare vytvor R2 bucket `zelena-liga-gallery`.
+2. V `R2 -> Manage R2 API Tokens` vytvor API token s opravnenim cist a zapisovat do bucketu.
+3. Nastav public access nebo custom/public domain pro bucket.
+4. Do env nastav `CLOUDFLARE_R2_PUBLIC_BASE_URL` na verejnou base URL bucketu.
+
+## 4. Environment
+
+Vytvor `scripts/.env` podle `scripts/.env.example`:
+
+```bash
+GOOGLE_SERVICE_ACCOUNT_JSON=../zelena-liga-sa.json
+GOOGLE_DRIVE_ROOT_FOLDER_ID=...
+GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST="zelena liga, draci smycka"
+CLOUDFLARE_R2_ACCOUNT_ID=...
+CLOUDFLARE_R2_ACCESS_KEY_ID=...
+CLOUDFLARE_R2_SECRET_ACCESS_KEY=...
+CLOUDFLARE_R2_BUCKET=zelena-liga-gallery
+CLOUDFLARE_R2_PUBLIC_BASE_URL=https://gallery.example.com
+GALLERY_R2_ROOT_PREFIX=
+GALLERY_R2_INDEX_PATH=index.json
+```
+
+`GOOGLE_SERVICE_ACCOUNT_JSON` muze byt raw JSON, base64 JSON, nebo cesta k JSON souboru.
+`GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST` funguje stejne jako ve webu: prazdna hodnota znamena vsechna alba, jinak se album zobrazi/synchronizuje, pokud jeho nazev obsahuje nektery vyraz.
+
+## 5. Konfigurace galerii
+
+Ve vychozim rezimu neni nutny zadny config soubor. Pokud existuje `GOOGLE_DRIVE_ROOT_FOLDER_ID`, script automaticky projde webovou galerii.
+
+Volitelne lze zkopirovat `scripts/gallery-sync.config.example.json` na `scripts/gallery-sync.config.json` a omezit roky nebo prepsat allowlist:
+
+```json
+{
+  "source": "web-gallery",
+  "rootFolderId": "google-drive-root-folder-id",
+  "targetRootPrefix": "",
+  "albumAllowlist": [
+    "zelena liga",
+    "draci smycka"
+  ],
+  "years": [
+    "2026"
+  ]
+}
+```
+
+V R2 vznikne struktura:
+
+```text
+index.json
+2026/nazev-akce/full/nazev-fotky.webp
+2026/nazev-akce/thumb/nazev-fotky.webp
+2026/nazev-akce/manifest.json
+```
+
+Manifest obsahuje `fullPath`, `fullUrl`, `thumbPath`, `thumbUrl`, puvodni nazev, velikosti, rozmery, rok a slug alba.
+Korenovy `index.json` obsahuje seznam alb, pocty fotek, nahledy a cestu k manifestu kazdeho alba. Web ho pouziva pro vypis fotogalerie bez dotazu do Google Drive.
+
+Pro specialni jednorazovy sync konkretni slozky lze stale pouzit explicitni seznam:
+
+```json
+{
+  "galleries": [
+    {
+      "name": "Setonuv zavod 2026",
+      "driveFolderId": "google-drive-folder-id",
+      "prefix": "2026/setonuv-zavod/"
+    }
+  ]
+}
+```
+
+## 6. Spusteni
+
+```bash
+cd scripts
+npm install
+npm run gallery:sync
+```
+
+S jinym configem:
+
+```bash
+npm run gallery:sync -- --config ./gallery-sync.config.json
+```
+
+Vynucene pregenerovani a prepsani objektu:
+
+```bash
+npm run gallery:sync:force
+```
+
+Script je idempotentni: pokud full i thumb objekt v R2 existuje a manifest obsahuje odpovidajici fotku, bez `--force` je preskoci.
+
+## 7. Napojeni webu
+
+Po prvnim syncu nastav ve Vercelu pro web:
+
+```bash
+GALLERY_SOURCE=r2
+CLOUDFLARE_R2_PUBLIC_BASE_URL=https://gallery.example.com
+GALLERY_R2_INDEX_PATH=index.json
+```
+
+`GALLERY_SOURCE=r2` znamena, ze `/api/gallery` cte pouze Cloudflare R2 manifesty. Pokud `GALLERY_SOURCE` neni nastavene nebo je `auto`, API zkusi R2 pri dostupne public base URL a pri chybe spadne zpet na Google Drive. Pro puvodni rezim nastav `GALLERY_SOURCE=drive`.

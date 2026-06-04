@@ -9,13 +9,8 @@ type AdminSectionNavProps = {
 };
 
 export default function AdminSectionNav({ activePage, onNavigate }: AdminSectionNavProps) {
-  const navClassName =
-    activePage === 'results' || activePage === 'statistics'
-      ? 'admin-section-nav admin-section-nav--compact'
-      : 'admin-section-nav';
-
   return (
-    <nav className={navClassName} aria-label="Navigace administrace">
+    <nav className="admin-section-nav" aria-label="Navigace administrace">
       <div className="admin-section-nav-scroll">
         {ADMIN_PAGE_ITEMS.map((item) => (
           <button

@@ -67,6 +67,7 @@ const ZL_GAUSS_CENTER_INDEX = 2;
 const ZL_GAUSS_SIGMA = 1.35;
 const ZL_GAUSS_RATIO_PENALTY_WEIGHT = 0.35;
 const ZL_GAUSS_DROPPED_PENALTY_WEIGHT = 0.08;
+const MAYBE_LOST_PATROL_THRESHOLD_MS = 90 * 60 * 1000;
 const ADMIN_PAGE_TITLE: Record<AdminPageKey, string> = {
   live: 'Živý průběh',
   patrols: 'Hlídky',
@@ -1647,9 +1648,15 @@ function AdminDashboard({
     });
 
     setStationRows(rows);
-    const activePatrolIds = new Set(allPatrols.map((patrol) => patrol.id));
+    const activePatrolById = new Map(allPatrols.map((patrol) => [patrol.id, patrol] as const));
+    const activePatrolIds = new Set(activePatrolById.keys());
     const patrolsSeenOnCourse = new Set<string>();
     const patrolsFinished = new Set<string>();
+    const lastSeenByPatrol = new Map<string, {
+      at: string;
+      stationCode: string;
+      stationName: string;
+    }>();
     ((passagesRes.data ?? []) as PassageRow[]).forEach((row) => {
       if (!activePatrolIds.has(row.patrol_id)) {
         return;
@@ -1659,6 +1666,16 @@ function AdminDashboard({
         return;
       }
       patrolsSeenOnCourse.add(row.patrol_id);
+      const maybeLatest = normalizeText(row.left_at) || normalizeText(row.arrived_at) || normalizeText(row.client_created_at);
+      const latestTs = Date.parse(maybeLatest);
+      const previousTs = Date.parse(lastSeenByPatrol.get(row.patrol_id)?.at ?? '');
+      if (Number.isFinite(latestTs) && (!Number.isFinite(previousTs) || latestTs > previousTs)) {
+        lastSeenByPatrol.set(row.patrol_id, {
+          at: maybeLatest,
+          stationCode: station.code,
+          stationName: station.name,
+        });
+      }
       if (station.code === 'T') {
         patrolsFinished.add(row.patrol_id);
       }
@@ -1672,6 +1689,27 @@ function AdminDashboard({
     const problematicStations = rows.filter(
       (row) => row.totalExpected > 0 && row.totalPassed === 0 && patrolsSeen > 0,
     ).length;
+    const now = Date.now();
+    const maybeLostPatrols = Array.from(lastSeenByPatrol.entries())
+      .filter(([patrolId, lastSeen]) => {
+        if (patrolsFinished.has(patrolId)) {
+          return false;
+        }
+        const lastSeenTs = Date.parse(lastSeen.at);
+        return Number.isFinite(lastSeenTs) && now - lastSeenTs > MAYBE_LOST_PATROL_THRESHOLD_MS;
+      })
+      .map(([patrolId, lastSeen]) => {
+        const patrol = activePatrolById.get(patrolId);
+        return {
+          id: patrolId,
+          code: patrol?.code || 'Bez kódu',
+          teamName: patrol?.teamName || '',
+          lastSeenAt: lastSeen.at,
+          stationCode: lastSeen.stationCode,
+          stationName: lastSeen.stationName,
+        };
+      })
+      .sort((a, b) => a.code.localeCompare(b.code, 'cs'));
     setRaceDashboardSummary({
       registeredPatrols,
       patrolsSeenOnCourse: patrolsSeen,
@@ -1680,7 +1718,8 @@ function AdminDashboard({
       patrolsWaitingForStart: waitingForStart,
       problematicStations,
       syncConflicts,
-      missingLongPatrols: 0,
+      missingLongPatrols: maybeLostPatrols.length,
+      maybeLostPatrols,
       overdueNoFinishPatrols: 0,
       lastSyncAt: new Date().toISOString(),
     });
@@ -4394,6 +4433,7 @@ function AdminDashboard({
           </section>
         ) : null}
 
+        {isLivePage ? <AdminQueuesSection /> : null}
         {isLivePage ? (
           <AdminLiveOverviewSection
             stationLoading={stationLoading}
@@ -4403,7 +4443,6 @@ function AdminDashboard({
             summary={raceDashboardSummary}
           />
         ) : null}
-        {isLivePage ? <AdminQueuesSection /> : null}
 
         {isPatrolsPage ? <AdminPatrolsOverviewSection eventId={activeEventId} /> : null}
         {isPatrolsPage ? <AdminStartsSection /> : null}
