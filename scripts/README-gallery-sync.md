@@ -43,7 +43,7 @@ Vytvor `scripts/.env` podle `scripts/.env.example`:
 GOOGLE_SERVICE_ACCOUNT_JSON=
 GOOGLE_DRIVE_API_KEY=...
 GOOGLE_DRIVE_ROOT_FOLDER_ID=...
-GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST="zelena liga, draci smycka"
+GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST="setonuv zavod, reset, draci smycka, ringobal, memorial bedricha stolicky, sraz pto, deskovky, za psem, lakros, karakoram, piotrio, brnenske bloudeni, vybijena, zabijena, draci smycky, pioples"
 CLOUDFLARE_R2_ACCOUNT_ID=...
 CLOUDFLARE_R2_ACCESS_KEY_ID=...
 CLOUDFLARE_R2_SECRET_ACCESS_KEY=...
@@ -55,7 +55,7 @@ GALLERY_R2_INDEX_PATH=index.json
 
 `GOOGLE_SERVICE_ACCOUNT_JSON` muze byt raw JSON, base64 JSON, nebo cesta k JSON souboru. Pro verejny Drive muze zustat prazdne.
 `GOOGLE_DRIVE_API_KEY` nastav pro verejny Drive misto service accountu.
-`GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST` funguje stejne jako ve webu: prazdna hodnota znamena vsechna alba, jinak se album zobrazi/synchronizuje, pokud jeho nazev obsahuje nektery vyraz.
+`GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST` funguje stejne jako ve webu: prazdna hodnota znamena vsechna alba, jinak se album zobrazi/synchronizuje, pokud jeho nazev obsahuje nektery vyraz. GitHub Actions workflow ma vychozi allowlist pro hlavni souteze; GitHub variable se stejnym nazvem ho muze prepsat.
 
 ## 5. Konfigurace galerii
 
