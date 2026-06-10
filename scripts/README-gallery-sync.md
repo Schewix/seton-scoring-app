@@ -113,7 +113,19 @@ npm run gallery:sync:force
 
 Script je idempotentni: pokud full i thumb objekt v R2 existuje a manifest obsahuje odpovidajici fotku, bez `--force` je preskoci.
 
-## 7. Napojeni webu
+## 7. GitHub Actions
+
+Sync lze spustit rucne v GitHubu:
+
+1. Otevri **Actions**.
+2. Vyber workflow **Gallery Sync**.
+3. Klikni **Run workflow**.
+4. Pokud chces pregenerovat i existujici fotky v R2, zapni volbu `force`.
+
+Workflow pouziva GitHub Secrets `GOOGLE_SERVICE_ACCOUNT_JSON`, `CLOUDFLARE_R2_ACCESS_KEY_ID`
+a `CLOUDFLARE_R2_SECRET_ACCESS_KEY`. Ostatni konfiguraci cte z GitHub Actions Variables.
+
+## 8. Napojeni webu
 
 Po prvnim syncu nastav ve Vercelu pro web:
 
