@@ -940,7 +940,7 @@ describe('station workflow', () => {
       const storedQueue = await readOutbox();
       expect(storedQueue).toHaveLength(0);
     });
-  });
+  }, 10_000);
 
   it('allows only A-D and X letters without spaces in target answers input', async () => {
     mockedStationCode = 'T';

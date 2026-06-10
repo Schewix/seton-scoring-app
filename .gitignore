@@ -20,6 +20,7 @@ scripts/gallery-sync.config.json
 # Supabase
 supabase/.branches/
 supabase/.temp/
+scripts/supabase/
 web/supabase/
 
 # IDE
