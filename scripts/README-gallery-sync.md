@@ -2,7 +2,18 @@
 
 Google Drive zustava zdroj fotek. Tento sync bere stejnou strukturu a stejny filtr jako soucasna webova galerie: root slozka, v ni slozky kalendarnich roku, v nich slozky akci/alb a v nich fotky. Stahne alba, ktera by web zobrazil podle `GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST`, vytvori WebP full image a thumbnail a nahraje je do Cloudflare R2 bucketu `zelena-liga-gallery`.
 
-## 1. Google service account
+## 1. Google Drive pristup
+
+Pro verejne sdilene Google Drive slozky neni service account povinny. Slozka i fotky musi byt citelne pro
+kazdeho s odkazem. Google Drive API ale i pro verejne slozky vyzaduje identitu volajiciho, proto nastav
+`GOOGLE_DRIVE_API_KEY`:
+
+1. V Google Cloud Console vytvor nebo vyber projekt.
+2. Zapni API `Google Drive API`.
+3. V `APIs & Services -> Credentials` vytvor API key.
+4. API key uloz do `GOOGLE_DRIVE_API_KEY`.
+
+Pro soukrome nebo omezene slozky pouzij service account:
 
 1. V Google Cloud Console vytvor nebo vyber projekt.
 2. Zapni API `Google Drive API`.
@@ -12,9 +23,9 @@ Google Drive zustava zdroj fotek. Tento sync bere stejnou strukturu a stejny fil
 
 ## 2. Sdileni Google Drive slozky
 
-1. V JSON klici najdi `client_email`.
-2. V Google Drive otevri root slozku fotogalerie.
-3. Sdilej root slozku na `client_email` service accountu s opravnenim `Viewer`.
+1. V Google Drive otevri root slozku fotogalerie.
+2. Pro public rezim nastav sdileni na **Anyone with the link / Viewer**.
+3. Pro service account rezim v JSON klici najdi `client_email` a sdilej root slozku na tento e-mail s opravnenim `Viewer`.
 4. Z URL root slozky zkopiruj folder ID do `GOOGLE_DRIVE_ROOT_FOLDER_ID`.
 
 ## 3. Cloudflare R2
@@ -29,7 +40,8 @@ Google Drive zustava zdroj fotek. Tento sync bere stejnou strukturu a stejny fil
 Vytvor `scripts/.env` podle `scripts/.env.example`:
 
 ```bash
-GOOGLE_SERVICE_ACCOUNT_JSON=../zelena-liga-sa.json
+GOOGLE_SERVICE_ACCOUNT_JSON=
+GOOGLE_DRIVE_API_KEY=...
 GOOGLE_DRIVE_ROOT_FOLDER_ID=...
 GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST="zelena liga, draci smycka"
 CLOUDFLARE_R2_ACCOUNT_ID=...
@@ -41,7 +53,8 @@ GALLERY_R2_ROOT_PREFIX=
 GALLERY_R2_INDEX_PATH=index.json
 ```
 
-`GOOGLE_SERVICE_ACCOUNT_JSON` muze byt raw JSON, base64 JSON, nebo cesta k JSON souboru.
+`GOOGLE_SERVICE_ACCOUNT_JSON` muze byt raw JSON, base64 JSON, nebo cesta k JSON souboru. Pro verejny Drive muze zustat prazdne.
+`GOOGLE_DRIVE_API_KEY` nastav pro verejny Drive misto service accountu.
 `GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST` funguje stejne jako ve webu: prazdna hodnota znamena vsechna alba, jinak se album zobrazi/synchronizuje, pokud jeho nazev obsahuje nektery vyraz.
 
 ## 5. Konfigurace galerii
@@ -122,8 +135,9 @@ Sync lze spustit rucne v GitHubu:
 3. Klikni **Run workflow**.
 4. Pokud chces pregenerovat i existujici fotky v R2, zapni volbu `force`.
 
-Workflow pouziva GitHub Secrets `GOOGLE_SERVICE_ACCOUNT_JSON`, `CLOUDFLARE_R2_ACCESS_KEY_ID`
-a `CLOUDFLARE_R2_SECRET_ACCESS_KEY`. Ostatni konfiguraci cte z GitHub Actions Variables.
+Workflow pouziva GitHub Secrets `CLOUDFLARE_R2_ACCESS_KEY_ID` a `CLOUDFLARE_R2_SECRET_ACCESS_KEY`.
+Pro soukromy Drive pridej take `GOOGLE_SERVICE_ACCOUNT_JSON`. Pro verejny Drive pridej
+`GOOGLE_DRIVE_API_KEY`. Ostatni konfiguraci cte z GitHub Actions Variables.
 
 ## 8. Napojeni webu
 

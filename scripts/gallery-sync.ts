@@ -194,6 +194,11 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function optionalEnv(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value || null;
+}
+
 function readTextFileIfExists(rawPath: string): string | null {
   const candidates = [
     path.resolve(process.cwd(), rawPath),
@@ -222,7 +227,11 @@ function decodeBase64(value: string): string | null {
 }
 
 function readServiceAccountJson() {
-  const rawValue = requireEnv('GOOGLE_SERVICE_ACCOUNT_JSON');
+  const rawValue = optionalEnv('GOOGLE_SERVICE_ACCOUNT_JSON');
+  if (!rawValue) {
+    return null;
+  }
+
   const rawJson = rawValue.trim().startsWith('{')
     ? rawValue
     : readTextFileIfExists(rawValue) ?? decodeBase64(rawValue) ?? rawValue;
@@ -259,12 +268,25 @@ function readServiceAccountJson() {
 
 function createDriveClient(): drive_v3.Drive {
   const serviceAccount = readServiceAccountJson();
-  const auth = new google.auth.JWT({
-    email: serviceAccount.clientEmail,
-    key: serviceAccount.privateKey,
-    scopes: ['https://www.googleapis.com/auth/drive.readonly'],
-  });
-  return google.drive({ version: 'v3', auth });
+  if (serviceAccount) {
+    const auth = new google.auth.JWT({
+      email: serviceAccount.clientEmail,
+      key: serviceAccount.privateKey,
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+    });
+    return google.drive({ version: 'v3', auth });
+  }
+
+  const apiKey = optionalEnv('GOOGLE_DRIVE_API_KEY') ?? optionalEnv('GOOGLE_API_KEY');
+  if (apiKey) {
+    console.log('GOOGLE_SERVICE_ACCOUNT_JSON not set. Using GOOGLE_DRIVE_API_KEY for public Google Drive access.');
+    return google.drive({ version: 'v3', auth: apiKey });
+  }
+
+  throw new Error(
+    'Missing Google Drive credentials. Public Google Drive folders do not need GOOGLE_SERVICE_ACCOUNT_JSON, '
+      + 'but Google Drive API still requires GOOGLE_DRIVE_API_KEY to list and download public folders.',
+  );
 }
 
 function createR2Client() {
