@@ -125,6 +125,34 @@ const SUPPORTED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const SUPPORTED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 const SHORTCUT_MIME_TYPE = 'application/vnd.google-apps.shortcut';
+const DEFAULT_DRIVE_DOWNLOAD_DELAY_MS = 250;
+const DEFAULT_DRIVE_DOWNLOAD_RETRIES = 3;
+const DEFAULT_DRIVE_DOWNLOAD_RETRY_DELAY_MS = 5000;
+const MAX_DRIVE_DOWNLOAD_RETRY_DELAY_MS = 60000;
+const RETRYABLE_DRIVE_DOWNLOAD_REASONS = new Set([
+  'rateLimitExceeded',
+  'userRateLimitExceeded',
+]);
+const NON_RETRYABLE_DRIVE_DOWNLOAD_REASONS = new Set([
+  'dailyLimitExceeded',
+  'downloadQuotaExceeded',
+  'fileNotDownloadable',
+  'insufficientFilePermissions',
+]);
+
+type DriveDownloadSettings = {
+  delayMs: number;
+  retries: number;
+  retryDelayMs: number;
+  maxRetryDelayMs: number;
+};
+
+type GoogleApiErrorDetails = {
+  statusCode: number | null;
+  reasons: string[];
+  message: string | null;
+  retryAfterMs: number | null;
+};
 
 function loadEnvFiles() {
   const candidates = [
@@ -197,6 +225,43 @@ function requireEnv(name: string): string {
 function optionalEnv(name: string): string | null {
   const value = process.env[name]?.trim();
   return value || null;
+}
+
+function readIntegerEnv(name: string, fallback: number, min: number, max: number): number {
+  const rawValue = process.env[name]?.trim();
+  if (!rawValue) {
+    return fallback;
+  }
+  const parsed = Number(rawValue);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${name} must be an integer between ${min} and ${max}.`);
+  }
+  return parsed;
+}
+
+function getDriveDownloadSettings(): DriveDownloadSettings {
+  return {
+    delayMs: readIntegerEnv('GOOGLE_DRIVE_DOWNLOAD_DELAY_MS', DEFAULT_DRIVE_DOWNLOAD_DELAY_MS, 0, 60000),
+    retries: readIntegerEnv('GOOGLE_DRIVE_DOWNLOAD_RETRIES', DEFAULT_DRIVE_DOWNLOAD_RETRIES, 0, 10),
+    retryDelayMs: readIntegerEnv(
+      'GOOGLE_DRIVE_DOWNLOAD_RETRY_DELAY_MS',
+      DEFAULT_DRIVE_DOWNLOAD_RETRY_DELAY_MS,
+      100,
+      300000,
+    ),
+    maxRetryDelayMs: readIntegerEnv(
+      'GOOGLE_DRIVE_DOWNLOAD_MAX_RETRY_DELAY_MS',
+      MAX_DRIVE_DOWNLOAD_RETRY_DELAY_MS,
+      100,
+      300000,
+    ),
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function readTextFileIfExists(rawPath: string): string | null {
@@ -809,17 +874,221 @@ async function loadExistingManifest(s3: S3Client, bucket: string, key: string): 
   }
 }
 
-async function downloadDriveFile(drive: drive_v3.Drive, file: DriveImage): Promise<Buffer> {
-  const response = await drive.files.get(
-    {
-      fileId: file.id,
-      alt: 'media',
-      supportsAllDrives: true,
-    },
-    { responseType: 'arraybuffer' },
-  );
+function headerValue(headers: unknown, name: string): string | null {
+  if (!headers || typeof headers !== 'object') {
+    return null;
+  }
 
-  return Buffer.from(response.data as ArrayBuffer);
+  const getter = (headers as { get?: unknown }).get;
+  if (typeof getter === 'function') {
+    const value = getter.call(headers, name);
+    return typeof value === 'string' ? value : null;
+  }
+
+  const lowerName = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+    if (key.toLowerCase() !== lowerName) {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      return value.map(String).join(', ');
+    }
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : null;
+  }
+
+  return null;
+}
+
+function parseRetryAfterMs(headers: unknown): number | null {
+  const retryAfter = headerValue(headers, 'retry-after');
+  if (!retryAfter) {
+    return null;
+  }
+
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1000;
+  }
+
+  const retryDate = Date.parse(retryAfter);
+  if (Number.isFinite(retryDate)) {
+    return Math.max(0, retryDate - Date.now());
+  }
+
+  return null;
+}
+
+function responseDataToText(data: unknown): string | null {
+  if (!data) {
+    return null;
+  }
+  if (typeof data === 'string') {
+    return data;
+  }
+  if (Buffer.isBuffer(data)) {
+    return data.toString('utf8');
+  }
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(data).toString('utf8');
+  }
+  if (ArrayBuffer.isView(data)) {
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString('utf8');
+  }
+  return null;
+}
+
+function parseResponsePayload(data: unknown): Record<string, unknown> | null {
+  if (!data) {
+    return null;
+  }
+  if (typeof data === 'object' && !Buffer.isBuffer(data) && !(data instanceof ArrayBuffer) && !ArrayBuffer.isView(data)) {
+    return data as Record<string, unknown>;
+  }
+
+  const text = responseDataToText(data);
+  if (!text) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+  } catch {
+    return { message: text.slice(0, 300) };
+  }
+}
+
+function extractGoogleApiErrorDetails(error: unknown): GoogleApiErrorDetails {
+  const rawError = error as {
+    code?: unknown;
+    message?: unknown;
+    response?: {
+      status?: unknown;
+      data?: unknown;
+      headers?: unknown;
+    };
+    errors?: unknown;
+  };
+  const response = rawError.response;
+  const statusCode =
+    typeof response?.status === 'number'
+      ? response.status
+      : typeof rawError.code === 'number'
+        ? rawError.code
+        : null;
+  const payload = parseResponsePayload(response?.data);
+  const payloadError = payload?.error && typeof payload.error === 'object'
+    ? payload.error as Record<string, unknown>
+    : null;
+  const rawErrors = Array.isArray(payloadError?.errors)
+    ? payloadError.errors
+    : Array.isArray(payload?.errors)
+      ? payload.errors
+      : Array.isArray(rawError.errors)
+        ? rawError.errors
+        : [];
+  const reasons = [...new Set(rawErrors
+    .map((item) => (item && typeof item === 'object' ? (item as { reason?: unknown }).reason : null))
+    .filter((reason): reason is string => typeof reason === 'string' && reason.length > 0))];
+  const payloadMessage =
+    typeof payloadError?.message === 'string'
+      ? payloadError.message
+      : typeof payload?.message === 'string'
+        ? payload.message
+        : null;
+  const message = payloadMessage || (typeof rawError.message === 'string' ? rawError.message : null);
+
+  return {
+    statusCode,
+    reasons,
+    message,
+    retryAfterMs: parseRetryAfterMs(response?.headers),
+  };
+}
+
+function summarizeGoogleApiError(error: unknown): string {
+  const details = extractGoogleApiErrorDetails(error);
+  const parts: string[] = [];
+  if (details.statusCode) {
+    parts.push(`HTTP ${details.statusCode}`);
+  }
+  if (details.reasons.length > 0) {
+    parts.push(`reason=${details.reasons.join(',')}`);
+  }
+  if (details.message) {
+    parts.push(`message="${details.message}"`);
+  }
+  return parts.join(' ') || (error instanceof Error ? error.message : String(error));
+}
+
+function isRetryableDriveDownloadError(error: unknown): boolean {
+  const details = extractGoogleApiErrorDetails(error);
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === 'string' && ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EAI_AGAIN'].includes(code)) {
+    return true;
+  }
+  if (!details.statusCode) {
+    return false;
+  }
+  if (details.statusCode === 429 || details.statusCode >= 500) {
+    return true;
+  }
+  if (details.statusCode !== 403) {
+    return false;
+  }
+  if (details.reasons.some((reason) => NON_RETRYABLE_DRIVE_DOWNLOAD_REASONS.has(reason))) {
+    return false;
+  }
+  if (details.reasons.length === 0) {
+    return true;
+  }
+  return details.reasons.some((reason) => RETRYABLE_DRIVE_DOWNLOAD_REASONS.has(reason));
+}
+
+function retryDelayMs(error: unknown, retryIndex: number, settings: DriveDownloadSettings): number {
+  const details = extractGoogleApiErrorDetails(error);
+  if (details.retryAfterMs !== null) {
+    return Math.min(details.retryAfterMs, settings.maxRetryDelayMs);
+  }
+  return Math.min(settings.retryDelayMs * (2 ** retryIndex), settings.maxRetryDelayMs);
+}
+
+async function downloadDriveFile(
+  drive: drive_v3.Drive,
+  file: DriveImage,
+  galleryName: string,
+  settings: DriveDownloadSettings,
+): Promise<Buffer> {
+  for (let attempt = 0; attempt <= settings.retries; attempt += 1) {
+    if (settings.delayMs > 0) {
+      await sleep(settings.delayMs);
+    }
+
+    try {
+      const response = await drive.files.get(
+        {
+          fileId: file.id,
+          alt: 'media',
+          supportsAllDrives: true,
+        },
+        { responseType: 'arraybuffer' },
+      );
+
+      return Buffer.from(response.data as ArrayBuffer);
+    } catch (error) {
+      const summary = summarizeGoogleApiError(error);
+      if (attempt >= settings.retries || !isRetryableDriveDownloadError(error)) {
+        throw new Error(`Google Drive download failed for ${file.name}: ${summary}`);
+      }
+
+      const delayMs = retryDelayMs(error, attempt, settings);
+      console.warn(
+        `[${galleryName}] Download failed for ${file.name}: ${summary}. Retry ${attempt + 1}/${settings.retries} in ${Math.round(delayMs / 1000)}s.`,
+      );
+      await sleep(delayMs);
+    }
+  }
+
+  throw new Error(`Google Drive download failed for ${file.name}.`);
 }
 
 async function optimizeImage(input: Buffer) {
@@ -884,8 +1153,9 @@ async function syncGallery(params: {
   bucket: string;
   publicBaseUrl: string;
   force: boolean;
+  driveDownloadSettings: DriveDownloadSettings;
 }): Promise<{ stats: SyncStats; manifest: GalleryManifest; manifestKey: string }> {
-  const { gallery, drive, s3, bucket, publicBaseUrl, force } = params;
+  const { gallery, drive, s3, bucket, publicBaseUrl, force, driveDownloadSettings } = params;
   const stats: SyncStats = { found: 0, uploaded: 0, skipped: 0, unsupported: 0, errors: 0 };
 
   console.log(`\n[${gallery.name}] Checking Google Drive folder ${gallery.driveFolderId}`);
@@ -941,7 +1211,7 @@ async function syncGallery(params: {
       }
 
       console.log(`[${gallery.name}] Downloading: ${file.name}`);
-      const sourceBuffer = await downloadDriveFile(drive, file);
+      const sourceBuffer = await downloadDriveFile(drive, file, gallery.name, driveDownloadSettings);
       const optimized = await optimizeImage(sourceBuffer);
 
       if (force || !fullExists) {
@@ -1113,6 +1383,7 @@ async function main() {
   const bucket = process.env.CLOUDFLARE_R2_BUCKET?.trim() || 'zelena-liga-gallery';
   const publicBaseUrl = requireEnv('CLOUDFLARE_R2_PUBLIC_BASE_URL');
   const indexKey = resolveIndexKey(config);
+  const driveDownloadSettings = getDriveDownloadSettings();
   const drive = createDriveClient();
   const s3 = createR2Client();
   const discoveredGalleries = config.webGallery ? await discoverWebGalleryAlbums(drive, config.webGallery) : [];
@@ -1123,6 +1394,9 @@ async function main() {
   }
 
   console.log(`Gallery sync starting. Config: ${options.configPath}, galleries: ${galleries.length}, bucket: ${bucket}, index: ${indexKey}, force: ${options.force ? 'yes' : 'no'}`);
+  console.log(
+    `Google Drive downloads: delay ${driveDownloadSettings.delayMs}ms, retries ${driveDownloadSettings.retries}, retry delay ${driveDownloadSettings.retryDelayMs}ms.`,
+  );
 
   const totals: SyncStats = { found: 0, uploaded: 0, skipped: 0, unsupported: 0, errors: 0 };
   const indexAlbums: GalleryIndexAlbum[] = [];
@@ -1135,6 +1409,7 @@ async function main() {
         bucket,
         publicBaseUrl,
         force: options.force,
+        driveDownloadSettings,
       });
       const { stats, manifest, manifestKey } = result;
       totals.found += stats.found;
