@@ -43,7 +43,7 @@ Vytvor `scripts/.env` podle `scripts/.env.example`:
 GOOGLE_SERVICE_ACCOUNT_JSON=
 GOOGLE_DRIVE_API_KEY=...
 GOOGLE_DRIVE_ROOT_FOLDER_ID=...
-GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST="setonuv zavod, reset, draci smycka, ringobal, memorial bedricha stolicky, sraz pto, deskovky, za psem, lakros, karakoram, piotrio, brnenske bloudeni, vybijena, zabijena, draci smycky, pioples"
+GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST="setonuv zavod, reset, draci smycka, ringobal, memorial bedricha stolicky, sraz pto, deskovky, za psem, lakros, karakoram, piotrio, brnenske bloudeni, vybijena, zabijena, draci smycky, pioples, ples pp"
 GOOGLE_DRIVE_DOWNLOAD_DELAY_MS=250
 GOOGLE_DRIVE_DOWNLOAD_RETRIES=3
 GOOGLE_DRIVE_DOWNLOAD_RETRY_DELAY_MS=5000
