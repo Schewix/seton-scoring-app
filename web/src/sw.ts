@@ -11,7 +11,7 @@ interface SyncEvent extends ExtendableEvent {
 }
 
 const SYNC_TAG = 'sync-pending-ops';
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
@@ -60,7 +60,7 @@ registerRoute(
     plugins: [
       {
         cacheWillUpdate: async ({ response }) => {
-          return response && response.status === 200 ? response : null;
+          return response && (response.status === 200 || response.type === 'opaque') ? response : null;
         },
       },
     ],

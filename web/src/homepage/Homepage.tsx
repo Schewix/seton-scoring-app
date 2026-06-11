@@ -849,9 +849,14 @@ function buildPhotoSrcSet(photo: GalleryPhotoLike | undefined | null, sizes: num
 }
 
 function buildArticleSrcSet(url: string, sizes: number[]) {
+  const uniqueUrls = new Set<string>();
   const entries = sizes
     .map((size) => {
       const sized = getArticleThumbUrl(url, size);
+      if (!sized || uniqueUrls.has(sized)) {
+        return null;
+      }
+      uniqueUrls.add(sized);
       return sized ? `${sized} ${size}w` : null;
     })
     .filter((entry): entry is string => Boolean(entry));
@@ -1023,7 +1028,8 @@ function ArticlesIndexPage({
             </>
           ) : articles.length > 0 ? (
             <div className="homepage-article-grid">
-              {articles.map((article) => {
+              {articles.map((article, index) => {
+                const isPriorityImage = index < 4;
                 const coverUrl = article.coverImage?.url ? getArticleThumbUrl(article.coverImage.url, 360) : '';
                 const coverSrcSet = article.coverImage?.url
                   ? buildArticleSrcSet(article.coverImage.url, [180, 240, 360, 480])
@@ -1040,9 +1046,9 @@ function ArticlesIndexPage({
                             width={120}
                             height={120}
                             alt={article.coverImage.alt ?? article.title}
-                            loading="lazy"
+                            loading={isPriorityImage ? 'eager' : 'lazy'}
                             decoding="async"
-                            fetchPriority="low"
+                            fetchPriority={isPriorityImage ? 'high' : 'low'}
                           />
                         ) : (
                           <span aria-hidden="true">SPTO</span>
@@ -1299,16 +1305,29 @@ function ArticlePage({ article }: { article: Article }) {
           </div>
           {hasMedia ? (
             <aside className="homepage-article-photos" aria-label="Fotografie k článku">
-              {mediaItems.map((photo, index) => (
-                <img
-                  key={`${article.href}-photo-${index}`}
-                  className={index === 0 && coverImage ? 'homepage-article-cover' : undefined}
-                  src={photo.src}
-                  alt={photo.alt}
-                  loading="lazy"
-                  decoding="async"
-                />
-              ))}
+              {mediaItems.map((photo, index) => {
+                const isCover = index === 0 && Boolean(coverImage);
+                const isPriorityImage = index === 0;
+                const imageSize = isCover ? 960 : 720;
+                const src = getArticleThumbUrl(photo.src, imageSize) || photo.src;
+                const srcSet = buildArticleSrcSet(
+                  photo.src,
+                  isCover ? [480, 720, 960, 1200] : [320, 480, 720, 960],
+                );
+                return (
+                  <img
+                    key={`${article.href}-photo-${index}`}
+                    className={isCover ? 'homepage-article-cover' : undefined}
+                    src={src}
+                    srcSet={srcSet || undefined}
+                    sizes="(max-width: 900px) 100vw, 38vw"
+                    alt={photo.alt}
+                    loading={isPriorityImage ? 'eager' : 'lazy'}
+                    decoding="async"
+                    fetchPriority={isPriorityImage ? 'high' : 'low'}
+                  />
+                );
+              })}
             </aside>
           ) : null}
         </div>
@@ -2391,6 +2410,7 @@ function GalleryAlbumPage({
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const loadingPageRef = useRef(false);
 
   useEffect(() => {
     const match = albums.find((item) => item.slug === slug) ?? null;
@@ -2404,6 +2424,10 @@ function GalleryAlbumPage({
     if (!album?.folderId) {
       return undefined;
     }
+    loadingPageRef.current = false;
+    setPhotos([]);
+    setNextPageToken(null);
+    setLightboxIndex(null);
     setIsLoading(true);
     const params = new URLSearchParams({
       folderId: album.folderId,
@@ -2427,6 +2451,7 @@ function GalleryAlbumPage({
       .catch(() => {
         if (active) {
           setPhotos([]);
+          setNextPageToken(null);
         }
       })
       .finally(() => {
@@ -2439,10 +2464,11 @@ function GalleryAlbumPage({
     };
   }, [album?.folderId]);
 
-  const handleLoadMore = async () => {
-    if (!album?.folderId || !nextPageToken || isLoading) {
-      return;
+  const handleLoadMore = useCallback(async () => {
+    if (!album?.folderId || !nextPageToken || loadingPageRef.current) {
+      return false;
     }
+    loadingPageRef.current = true;
     setIsLoading(true);
     const params = new URLSearchParams({
       folderId: album.folderId,
@@ -2456,16 +2482,23 @@ function GalleryAlbumPage({
         throw new Error('Failed to load more photos.');
       }
       const data = await response.json();
-      setPhotos((prev) => [...prev, ...(data.files ?? [])]);
+      const nextFiles = Array.isArray(data.files) ? (data.files as GalleryPhoto[]) : [];
+      setPhotos((prev) => [...prev, ...nextFiles]);
       setNextPageToken(data.nextPageToken ?? null);
+      return nextFiles.length > 0;
+    } catch (error) {
+      console.error('Failed to load more gallery photos', error);
+      return false;
     } finally {
+      loadingPageRef.current = false;
       setIsLoading(false);
     }
-  };
+  }, [album?.folderId, nextPageToken]);
 
   const activePhoto = lightboxIndex !== null ? photos[lightboxIndex] : null;
   const isFirstPhoto = lightboxIndex === 0;
-  const isLastPhoto = lightboxIndex !== null && lightboxIndex === photos.length - 1;
+  const isAtLoadedEnd = lightboxIndex !== null && lightboxIndex >= photos.length - 1;
+  const canGoNext = lightboxIndex !== null && (lightboxIndex < photos.length - 1 || Boolean(nextPageToken));
   const getLightboxUrl = (photo?: GalleryPhoto | null) => {
     if (!photo) {
       return '';
@@ -2479,6 +2512,27 @@ function GalleryAlbumPage({
     return photo.webContentLink ?? '';
   };
   const activePhotoUrl = getLightboxUrl(activePhoto);
+
+  const handlePreviousPhoto = useCallback(() => {
+    setLightboxIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
+  }, []);
+
+  const handleNextPhoto = useCallback(async () => {
+    if (lightboxIndex === null) {
+      return;
+    }
+    if (lightboxIndex < photos.length - 1) {
+      setLightboxIndex(lightboxIndex + 1);
+      return;
+    }
+    if (!nextPageToken) {
+      return;
+    }
+    const loaded = await handleLoadMore();
+    if (loaded) {
+      setLightboxIndex((prev) => (prev !== null ? prev + 1 : prev));
+    }
+  }, [handleLoadMore, lightboxIndex, nextPageToken, photos.length]);
 
   useEffect(() => {
     if (lightboxIndex === null) {
@@ -2501,6 +2555,15 @@ function GalleryAlbumPage({
   }, [lightboxIndex, photos]);
 
   useEffect(() => {
+    if (lightboxIndex === null || !nextPageToken || isLoading) {
+      return;
+    }
+    if (photos.length - lightboxIndex <= 4) {
+      void handleLoadMore();
+    }
+  }, [handleLoadMore, isLoading, lightboxIndex, nextPageToken, photos.length]);
+
+  useEffect(() => {
     if (lightboxIndex === null) {
       return;
     }
@@ -2512,19 +2575,19 @@ function GalleryAlbumPage({
       }
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
-        setLightboxIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
+        handlePreviousPhoto();
         return;
       }
       if (event.key === 'ArrowRight') {
         event.preventDefault();
-        setLightboxIndex((prev) => (prev !== null && prev < photos.length - 1 ? prev + 1 : prev));
+        void handleNextPhoto();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [lightboxIndex, photos.length]);
+  }, [handleNextPhoto, handlePreviousPhoto, lightboxIndex]);
 
   if (!album) {
     if (albumsLoading) {
@@ -2595,7 +2658,7 @@ function GalleryAlbumPage({
           <button
             type="button"
             className="gallery-lightbox-nav prev"
-            onClick={() => setLightboxIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev))}
+            onClick={handlePreviousPhoto}
             aria-label="Předchozí fotka"
             disabled={isFirstPhoto}
           >
@@ -2613,11 +2676,9 @@ function GalleryAlbumPage({
           <button
             type="button"
             className="gallery-lightbox-nav next"
-            onClick={() =>
-              setLightboxIndex((prev) => (prev !== null && prev < photos.length - 1 ? prev + 1 : prev))
-            }
+            onClick={() => void handleNextPhoto()}
             aria-label="Další fotka"
-            disabled={isLastPhoto}
+            disabled={!canGoNext || (isAtLoadedEnd && isLoading)}
           >
             ›
           </button>
@@ -4492,7 +4553,8 @@ function Homepage({
             </>
           ) : homepageArticles.length > 0 ? (
             <div className="homepage-article-grid">
-              {homepageArticles.map((article) => {
+              {homepageArticles.map((article, index) => {
+                const isPriorityImage = index < 2;
                 const coverUrl = article.coverImage?.url
                   ? getArticleThumbUrl(article.coverImage.url, 360)
                   : '';
@@ -4513,7 +4575,7 @@ function Homepage({
                             alt={article.coverImage.alt ?? article.title}
                             loading="lazy"
                             decoding="async"
-                            fetchPriority="low"
+                            fetchPriority={isPriorityImage ? 'auto' : 'low'}
                           />
                         ) : (
                           <span aria-hidden="true">SPTO</span>
