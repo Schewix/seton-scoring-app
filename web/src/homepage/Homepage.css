@@ -175,15 +175,43 @@
 }
 
 .homepage-carousel-track {
-  display: flex;
-  transition: transform 0.6s ease;
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  contain: paint;
 }
 
 .homepage-carousel-slide {
+  position: absolute;
+  inset: 0;
   margin: 0;
-  min-width: 100%;
-  aspect-ratio: 16 / 9;
   background: rgba(4, 55, 44, 0.05);
+  opacity: 0;
+  transform: translate3d(100%, 0, 0);
+  transition: transform 0.55s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.25s ease;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+.homepage-carousel-slide.is-before {
+  opacity: 1;
+  transform: translate3d(-100%, 0, 0);
+}
+
+.homepage-carousel-slide.is-active {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.homepage-carousel-slide.is-after {
+  opacity: 1;
+  transform: translate3d(100%, 0, 0);
+}
+
+.homepage-carousel-slide.is-hidden {
+  opacity: 0;
+  transform: translate3d(100%, 0, 0);
+  pointer-events: none;
 }
 
 .homepage-carousel-slide img {
@@ -2393,10 +2421,14 @@
   .homepage-skeleton-chip {
     animation: none;
   }
+
+  .homepage-carousel-slide {
+    transition: opacity 0.2s ease;
+  }
 }
 
 @media (min-width: 900px) {
-  .homepage-carousel-slide {
+  .homepage-carousel-track {
     aspect-ratio: 20 / 9;
   }
 }

@@ -107,6 +107,11 @@ type DriveFolder = {
   name: string;
 };
 
+type DiscoveredDriveFolder = DriveFolder & {
+  pathParts: string[];
+  ancestorIds: string[];
+};
+
 type SyncStats = {
   found: number;
   uploaded: number;
@@ -122,7 +127,7 @@ type CliOptions = {
 
 const DEFAULT_CONFIG_PATH = 'gallery-sync.config.json';
 const SUPPORTED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const SUPPORTED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const SUPPORTED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.jfif', '.png', '.webp']);
 const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 const SHORTCUT_MIME_TYPE = 'application/vnd.google-apps.shortcut';
 const DEFAULT_DRIVE_DOWNLOAD_DELAY_MS = 250;
@@ -560,7 +565,8 @@ function loadSyncConfig(configPath: string): SyncConfig {
 }
 
 function isSupportedImage(name: string, mimeType: string): boolean {
-  return SUPPORTED_MIME_TYPES.has(mimeType) && SUPPORTED_EXTENSIONS.has(path.extname(name).toLowerCase());
+  return SUPPORTED_MIME_TYPES.has(mimeType)
+    || (mimeType.startsWith('image/') && SUPPORTED_EXTENSIONS.has(path.extname(name).toLowerCase()));
 }
 
 function slugifyBaseName(name: string, fallback: string): string {
@@ -687,28 +693,46 @@ async function listDriveFolders(drive: drive_v3.Drive, parentId: string): Promis
   return folders;
 }
 
-async function listDescendantFolderIds(drive: drive_v3.Drive, parentId: string): Promise<string[]> {
+async function listDriveFolderTree(drive: drive_v3.Drive, parentId: string): Promise<DiscoveredDriveFolder[]> {
   const seen = new Set<string>([parentId]);
-  const queue = [parentId];
-  const descendants: string[] = [];
+  const queue: Array<{ parentId: string; pathParts: string[]; ancestorIds: string[] }> = [
+    { parentId, pathParts: [], ancestorIds: [] },
+  ];
+  const folders: DiscoveredDriveFolder[] = [];
 
   while (queue.length > 0) {
-    const currentId = queue.shift();
-    if (!currentId) {
+    const current = queue.shift();
+    if (!current) {
       continue;
     }
-    const children = await listDriveFolders(drive, currentId);
+
+    const children = await listDriveFolders(drive, current.parentId);
     for (const child of children) {
       if (seen.has(child.id)) {
         continue;
       }
+
       seen.add(child.id);
-      descendants.push(child.id);
-      queue.push(child.id);
+      const pathParts = [...current.pathParts, child.name];
+      const ancestorIds = current.pathParts.length > 0
+        ? [...current.ancestorIds, current.parentId]
+        : [];
+      const folder: DiscoveredDriveFolder = {
+        ...child,
+        pathParts,
+        ancestorIds,
+      };
+
+      folders.push(folder);
+      queue.push({
+        parentId: child.id,
+        pathParts,
+        ancestorIds,
+      });
     }
   }
 
-  return descendants;
+  return folders;
 }
 
 function chunkArray<T>(items: T[], size: number): T[][] {
@@ -781,6 +805,48 @@ async function listDriveFiles(
   return files;
 }
 
+function folderPathLabel(folder: DiscoveredDriveFolder): string {
+  return folder.pathParts.join(' / ');
+}
+
+function isFolderAllowedByAllowlist(folder: DiscoveredDriveFolder, allowlist: string[]): boolean {
+  return isAlbumAllowedByAllowlist(folder.name, allowlist)
+    || isAlbumAllowedByAllowlist(folderPathLabel(folder), allowlist);
+}
+
+function slugifyPathParts(pathParts: string[], fallback: string, separator: '/' | '-'): string {
+  const slugParts = pathParts
+    .map((part, index) => slugifyBaseName(part, `${fallback}-${index + 1}`))
+    .filter(Boolean);
+  return slugParts.join(separator) || fallback;
+}
+
+function selectWebGalleryAlbumFolders(
+  folderTree: DiscoveredDriveFolder[],
+  allowlist: string[],
+): DiscoveredDriveFolder[] {
+  const candidates = allowlist.length > 0
+    ? folderTree.filter((folder) => isFolderAllowedByAllowlist(folder, allowlist))
+    : folderTree.filter((folder) => folder.pathParts.length === 1);
+
+  const selected: DiscoveredDriveFolder[] = [];
+  const selectedIds = new Set<string>();
+  for (const candidate of candidates.sort((a, b) => {
+    if (a.pathParts.length !== b.pathParts.length) {
+      return a.pathParts.length - b.pathParts.length;
+    }
+    return folderPathLabel(a).localeCompare(folderPathLabel(b), 'cs');
+  })) {
+    if (candidate.ancestorIds.some((id) => selectedIds.has(id))) {
+      continue;
+    }
+    selected.push(candidate);
+    selectedIds.add(candidate.id);
+  }
+
+  return selected;
+}
+
 async function discoverWebGalleryAlbums(drive: drive_v3.Drive, config: WebGalleryConfig): Promise<GalleryConfig[]> {
   const rootFolderId = config.rootFolderId?.trim() || requireEnv('GOOGLE_DRIVE_ROOT_FOLDER_ID');
   const rootGallery: GalleryConfig = {
@@ -799,20 +865,23 @@ async function discoverWebGalleryAlbums(drive: drive_v3.Drive, config: WebGaller
   console.log(`Web gallery discovery: ${scopedYears.length} year folder(s), allowlist: ${config.albumAllowlist.length || 'none'}.`);
 
   for (const yearFolder of scopedYears) {
-    const albumFolders = await listDriveFolders(drive, yearFolder.id);
+    const folderTree = await listDriveFolderTree(drive, yearFolder.id);
+    const albumFolders = selectWebGalleryAlbumFolders(folderTree, config.albumAllowlist);
+    console.log(
+      `Web gallery discovery: ${yearFolder.name}: selected ${albumFolders.length} album folder(s) from ${folderTree.length} folder(s).`,
+    );
+
     for (const albumFolder of albumFolders) {
-      if (!isAlbumAllowedByAllowlist(albumFolder.name, config.albumAllowlist)) {
-        continue;
-      }
       const yearSlug = slugifyBaseName(yearFolder.name, yearFolder.id);
-      const albumSlug = slugifyBaseName(albumFolder.name, albumFolder.id);
+      const albumSlug = slugifyPathParts(albumFolder.pathParts, albumFolder.id, '-');
+      const albumPrefix = slugifyPathParts(albumFolder.pathParts, albumFolder.id, '/');
       const slug = yearSlug ? `${yearSlug}-${albumSlug}` : albumSlug;
       galleries.push({
         name: albumFolder.name,
         driveFolderId: albumFolder.id,
-        prefix: `${config.targetRootPrefix}${yearSlug}/${albumSlug}/`,
+        prefix: `${config.targetRootPrefix}${yearSlug}/${albumPrefix}/`,
         year: yearFolder.name,
-        baseTitle: albumFolder.name,
+        baseTitle: folderPathLabel(albumFolder),
         slug,
       });
     }
@@ -1161,12 +1230,21 @@ async function syncGallery(params: {
   console.log(`\n[${gallery.name}] Checking Google Drive folder ${gallery.driveFolderId}`);
   await validateDriveFolder(drive, gallery);
 
-  const folderIds = [gallery.driveFolderId, ...(await listDescendantFolderIds(drive, gallery.driveFolderId))];
+  const descendantFolders = await listDriveFolderTree(drive, gallery.driveFolderId);
+  const folderIds = [gallery.driveFolderId, ...descendantFolders.map((folder) => folder.id)];
   const files = await listDriveFiles(drive, gallery, folderIds, stats);
   stats.found = files.length;
   console.log(
     `[${gallery.name}] Found ${files.length} supported image(s) across ${folderIds.length} folder(s), skipped ${stats.unsupported} unsupported item(s).`,
   );
+  if (files.length === 0 && descendantFolders.length > 0) {
+    const listedFolders = descendantFolders
+      .slice(0, 20)
+      .map(folderPathLabel)
+      .join('; ');
+    const suffix = descendantFolders.length > 20 ? `; ... ${descendantFolders.length - 20} more` : '';
+    console.warn(`[${gallery.name}] No supported images found. Scanned descendant folders: ${listedFolders}${suffix}`);
+  }
 
   const outputNames = buildOutputNames(files);
   const manifestKey = `${gallery.prefix}manifest.json`;

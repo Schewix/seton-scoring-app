@@ -1,6 +1,6 @@
 # Google Drive -> Cloudflare R2 Gallery Sync
 
-Google Drive zustava zdroj fotek. Tento sync bere stejnou strukturu a stejny filtr jako soucasna webova galerie: root slozka, v ni slozky kalendarnich roku, v nich slozky akci/alb a v nich fotky. Stahne alba, ktera by web zobrazil podle `GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST`, vytvori WebP full image a thumbnail a nahraje je do Cloudflare R2 bucketu `zelena-liga-gallery`.
+Google Drive zustava zdroj fotek. Tento sync bere stejnou strukturu a stejny filtr jako soucasna webova galerie: root slozka, v ni slozky kalendarnich roku, pod nimi slozky akci/alb a v nich fotky. Fotky muzou byt primo v albu i ve vnorenejsich podslozkach. Stahne alba, ktera by web zobrazil podle `GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST`, vytvori WebP full image a thumbnail a nahraje je do Cloudflare R2 bucketu `zelena-liga-gallery`.
 
 ## 1. Google Drive pristup
 
@@ -59,12 +59,13 @@ GALLERY_R2_INDEX_PATH=index.json
 
 `GOOGLE_SERVICE_ACCOUNT_JSON` muze byt raw JSON, base64 JSON, nebo cesta k JSON souboru. Pro verejny Drive muze zustat prazdne.
 `GOOGLE_DRIVE_API_KEY` nastav pro verejny Drive misto service accountu.
-`GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST` funguje stejne jako ve webu: prazdna hodnota znamena vsechna alba, jinak se album zobrazi/synchronizuje, pokud jeho nazev obsahuje nektery vyraz. GitHub Actions workflow ma vychozi allowlist pro hlavni souteze; GitHub variable se stejnym nazvem ho muze prepsat.
+`GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST` funguje stejne jako ve webu: prazdna hodnota znamena vsechna prima alba pod rokem, jinak se album zobrazi/synchronizuje, pokud jeho nazev nebo cesta pod rokem obsahuje nektery vyraz. GitHub Actions workflow ma vychozi allowlist pro hlavni souteze; GitHub variable se stejnym nazvem ho muze prepsat.
 `GOOGLE_DRIVE_DOWNLOAD_*` promene zpomaluji downloady a opakuji docasne chyby z Google Drive, typicky `rateLimitExceeded`, `userRateLimitExceeded`, HTTP 429 a HTTP 5xx. Pokud Google vrati tvrdy limit typu `dailyLimitExceeded`, `downloadQuotaExceeded` nebo chybejici opravneni, script chybu vypise a fotku preskoci.
 
 ## 5. Konfigurace galerii
 
 Ve vychozim rezimu neni nutny zadny config soubor. Pokud existuje `GOOGLE_DRIVE_ROOT_FOLDER_ID`, script automaticky projde webovou galerii.
+Alba muze najit i hloubeji pod rocnikem, napr. `rok -> akce -> podslozky -> fotky`. Pokud je vybrana slozka akce, sync do ni zahrne i fotky z jejich podslozek.
 
 Volitelne lze zkopirovat `scripts/gallery-sync.config.example.json` na `scripts/gallery-sync.config.json` a omezit roky nebo prepsat allowlist:
 
