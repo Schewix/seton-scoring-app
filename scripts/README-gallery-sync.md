@@ -70,6 +70,7 @@ GALLERY_R2_INDEX_PATH=index.json
 
 Ve vychozim rezimu neni nutny zadny config soubor. Pokud existuje `GOOGLE_DRIVE_ROOT_FOLDER_ID`, script automaticky projde webovou galerii.
 Alba muze najit i hloubeji pod rocnikem, napr. `rok -> akce -> podslozky -> fotky`. Pokud je vybrana slozka akce, sync do ni zahrne i fotky z jejich podslozek.
+Pokud jsou ve stejnem roce dve slozky se stejnym nebo velmi podobnym nazvem akce, sync je slouci do jednoho alba. Pri porovnani ignoruje rok, datum, uvodni cislo a slova jako `fotky` nebo `foto`.
 
 Volitelne lze zkopirovat `scripts/gallery-sync.config.example.json` na `scripts/gallery-sync.config.json` a omezit roky nebo prepsat allowlist:
 
@@ -108,6 +109,7 @@ Pro specialni jednorazovy sync konkretni slozky lze stale pouzit explicitni sezn
     {
       "name": "Setonuv zavod 2026",
       "driveFolderId": "google-drive-folder-id",
+      "driveFolderIds": ["google-drive-folder-id", "second-google-drive-folder-id"],
       "prefix": "2026/setonuv-zavod/"
     }
   ]

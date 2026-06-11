@@ -9,6 +9,7 @@ import sharp from 'sharp';
 type GalleryConfig = {
   name: string;
   driveFolderId: string;
+  driveFolderIds?: string[];
   prefix: string;
   year?: string;
   baseTitle?: string;
@@ -485,6 +486,30 @@ function sortYearLabel(value: string) {
   return Number.NEGATIVE_INFINITY;
 }
 
+function galleryYearToken(value: string): string | null {
+  const match = value.match(/\d{4}/);
+  return match?.[0] ?? null;
+}
+
+function normalizeAlbumMergeKey(label: string, yearLabel: string): string {
+  const original = normalizeForMatch(label);
+  let key = original
+    .replace(/\b(?:19|20)\d{2}\s+\d{1,2}\s+\d{1,2}\b/g, ' ')
+    .replace(/\b\d{1,2}\s+\d{1,2}\s+(?:(?:19|20)?\d{2})\b/g, ' ');
+  const yearToken = galleryYearToken(yearLabel);
+  if (yearToken) {
+    key = key.replace(new RegExp(`\\b${yearToken}\\b`, 'g'), ' ');
+  }
+  key = key
+    .replace(/^\d+\s+/, ' ')
+    .replace(/\b(?:19|20)\d{2}\b/g, ' ')
+    .replace(/\b(fotky|foto|fotografie|photos|photo)\b/g, ' ')
+    .replace(/\b(kopie|copy)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return key || original;
+}
+
 function parseYears(raw: unknown): string[] {
   if (!Array.isArray(raw)) {
     return [];
@@ -511,6 +536,11 @@ function parseGalleryEntries(raw: unknown): GalleryConfig[] {
     }
     const row = entry as Record<string, unknown>;
     const name = typeof row.name === 'string' ? row.name.trim() : '';
+    const driveFolderIds = Array.isArray(row.driveFolderIds)
+      ? row.driveFolderIds
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean)
+      : [];
     const driveFolderId =
       typeof row.driveFolderId === 'string'
         ? row.driveFolderId.trim()
@@ -518,7 +548,7 @@ function parseGalleryEntries(raw: unknown): GalleryConfig[] {
           ? row.googleDriveFolderId.trim()
           : typeof row.folderId === 'string'
             ? row.folderId.trim()
-            : '';
+            : driveFolderIds[0] ?? '';
     const prefix =
       typeof row.prefix === 'string'
         ? row.prefix
@@ -540,6 +570,7 @@ function parseGalleryEntries(raw: unknown): GalleryConfig[] {
     return {
       name,
       driveFolderId,
+      driveFolderIds,
       prefix: normalizedPrefix,
     };
   });
@@ -680,14 +711,21 @@ function galleryIndexComparable(index: GalleryIndex): string {
   });
 }
 
-async function validateDriveFolder(drive: drive_v3.Drive, gallery: GalleryConfig) {
+function galleryDriveFolderIds(gallery: GalleryConfig): string[] {
+  const ids = [gallery.driveFolderId, ...(gallery.driveFolderIds ?? [])]
+    .map((id) => id.trim())
+    .filter(Boolean);
+  return Array.from(new Set(ids));
+}
+
+async function validateDriveFolder(drive: drive_v3.Drive, gallery: GalleryConfig, folderId = gallery.driveFolderId) {
   if (hasGalleryScript()) {
     try {
-      await fetchScriptItems(gallery.driveFolderId);
+      await fetchScriptItems(folderId);
       return;
     } catch (error) {
       throw new Error(
-        `Failed to open Google Drive folder through gallery script for "${gallery.name}" (${gallery.driveFolderId}). ${
+        `Failed to open Google Drive folder through gallery script for "${gallery.name}" (${folderId}). ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -696,17 +734,17 @@ async function validateDriveFolder(drive: drive_v3.Drive, gallery: GalleryConfig
 
   try {
     const { data } = await drive.files.get({
-      fileId: gallery.driveFolderId,
+      fileId: folderId,
       fields: 'id,name,mimeType',
       supportsAllDrives: true,
     });
 
     if (data.mimeType !== FOLDER_MIME_TYPE) {
-      throw new Error(`Google Drive ID ${gallery.driveFolderId} is not a folder.`);
+      throw new Error(`Google Drive ID ${folderId} is not a folder.`);
     }
   } catch (error) {
     throw new Error(
-      `Failed to open Google Drive folder for "${gallery.name}" (${gallery.driveFolderId}). ${
+      `Failed to open Google Drive folder for "${gallery.name}" (${folderId}). ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
@@ -960,6 +998,31 @@ function selectWebGalleryAlbumFolders(
   return selected;
 }
 
+function groupWebGalleryAlbumFolders(
+  albumFolders: DiscoveredDriveFolder[],
+  yearName: string,
+): DiscoveredDriveFolder[][] {
+  const groups = new Map<string, DiscoveredDriveFolder[]>();
+  for (const folder of albumFolders) {
+    const key = normalizeAlbumMergeKey(folderPathLabel(folder), yearName);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.push(folder);
+    } else {
+      groups.set(key, [folder]);
+    }
+  }
+
+  return Array.from(groups.values()).map((group) =>
+    group.sort((a, b) => {
+      if (a.pathParts.length !== b.pathParts.length) {
+        return a.pathParts.length - b.pathParts.length;
+      }
+      return folderPathLabel(a).localeCompare(folderPathLabel(b), 'cs');
+    }),
+  );
+}
+
 async function discoverWebGalleryAlbums(drive: drive_v3.Drive, config: WebGalleryConfig): Promise<GalleryConfig[]> {
   const rootFolderId = config.rootFolderId?.trim() || requireEnv('GOOGLE_DRIVE_ROOT_FOLDER_ID');
   const rootGallery: GalleryConfig = {
@@ -980,11 +1043,23 @@ async function discoverWebGalleryAlbums(drive: drive_v3.Drive, config: WebGaller
   for (const yearFolder of scopedYears) {
     const folderTree = await listDriveFolderTree(drive, yearFolder.id);
     const albumFolders = selectWebGalleryAlbumFolders(folderTree, config.albumAllowlist);
+    const albumFolderGroups = groupWebGalleryAlbumFolders(albumFolders, yearFolder.name);
     console.log(
-      `Web gallery discovery: ${yearFolder.name}: selected ${albumFolders.length} album folder(s) from ${folderTree.length} folder(s).`,
+      `Web gallery discovery: ${yearFolder.name}: selected ${albumFolders.length} album folder(s), merged into ${albumFolderGroups.length} album(s) from ${folderTree.length} folder(s).`,
     );
 
-    for (const albumFolder of albumFolders) {
+    for (const albumFolderGroup of albumFolderGroups) {
+      const albumFolder = albumFolderGroup[0];
+      if (!albumFolder) {
+        continue;
+      }
+      if (albumFolderGroup.length > 1) {
+        console.log(
+          `Web gallery discovery: ${yearFolder.name}: merging "${albumFolder.name}" from folders: ${
+            albumFolderGroup.map(folderPathLabel).join('; ')
+          }`,
+        );
+      }
       const yearSlug = slugifyBaseName(yearFolder.name, yearFolder.id);
       const albumSlug = slugifyPathParts(albumFolder.pathParts, albumFolder.id, '-');
       const albumPrefix = slugifyPathParts(albumFolder.pathParts, albumFolder.id, '/');
@@ -992,6 +1067,7 @@ async function discoverWebGalleryAlbums(drive: drive_v3.Drive, config: WebGaller
       galleries.push({
         name: albumFolder.name,
         driveFolderId: albumFolder.id,
+        driveFolderIds: albumFolderGroup.map((folder) => folder.id),
         prefix: `${config.targetRootPrefix}${yearSlug}/${albumPrefix}/`,
         year: yearFolder.name,
         baseTitle: folderPathLabel(albumFolder),
@@ -1362,10 +1438,30 @@ async function syncGallery(params: {
   const stats: SyncStats = { found: 0, uploaded: 0, skipped: 0, unsupported: 0, errors: 0 };
 
   console.log(`\n[${gallery.name}] Checking Google Drive folder ${gallery.driveFolderId}`);
-  await validateDriveFolder(drive, gallery);
+  const rootFolderIds = galleryDriveFolderIds(gallery);
+  if (rootFolderIds.length > 1) {
+    console.log(`[${gallery.name}] Merged album source folders: ${rootFolderIds.join(', ')}`);
+  }
+  const folderIds: string[] = [];
+  const seenFolderIds = new Set<string>();
+  const descendantFolders: DiscoveredDriveFolder[] = [];
+  const addFolderId = (folderId: string) => {
+    if (seenFolderIds.has(folderId)) {
+      return;
+    }
+    seenFolderIds.add(folderId);
+    folderIds.push(folderId);
+  };
 
-  const descendantFolders = await listDriveFolderTree(drive, gallery.driveFolderId);
-  const folderIds = [gallery.driveFolderId, ...descendantFolders.map((folder) => folder.id)];
+  for (const rootFolderId of rootFolderIds) {
+    await validateDriveFolder(drive, gallery, rootFolderId);
+    addFolderId(rootFolderId);
+    const descendants = await listDriveFolderTree(drive, rootFolderId);
+    descendantFolders.push(...descendants);
+    for (const folder of descendants) {
+      addFolderId(folder.id);
+    }
+  }
   const files = await listDriveFiles(drive, gallery, folderIds, stats);
   stats.found = files.length;
   console.log(
