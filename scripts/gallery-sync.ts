@@ -100,6 +100,8 @@ type DriveImage = {
   name: string;
   mimeType: string;
   size: number | null;
+  sourceUrl?: string | null;
+  thumbnailUrl?: string | null;
 };
 
 type DriveFolder = {
@@ -157,6 +159,16 @@ type GoogleApiErrorDetails = {
   reasons: string[];
   message: string | null;
   retryAfterMs: number | null;
+};
+
+type ScriptItemType = 'folder' | 'image';
+
+type ScriptItem = {
+  id: string;
+  name: string;
+  type: ScriptItemType;
+  src?: string;
+  thumb?: string;
 };
 
 function loadEnvFiles() {
@@ -357,6 +369,46 @@ function createDriveClient(): drive_v3.Drive {
     'Missing Google Drive credentials. Public Google Drive folders do not need GOOGLE_SERVICE_ACCOUNT_JSON, '
       + 'but Google Drive API still requires GOOGLE_DRIVE_API_KEY to list and download public folders.',
   );
+}
+
+function getGalleryScriptUrl(): string | null {
+  const raw = process.env.GOOGLE_DRIVE_SCRIPT_URL?.trim();
+  return raw || null;
+}
+
+function hasGalleryScript(): boolean {
+  return Boolean(getGalleryScriptUrl());
+}
+
+async function fetchScriptItems(folderId?: string): Promise<ScriptItem[]> {
+  const scriptUrl = getGalleryScriptUrl();
+  if (!scriptUrl) {
+    throw new Error('Missing GOOGLE_DRIVE_SCRIPT_URL environment variable.');
+  }
+
+  const url = new URL(scriptUrl);
+  if (folderId) {
+    url.searchParams.set('id', folderId);
+  }
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gallery script error: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as ScriptItem[] | { error?: string };
+  if (Array.isArray(payload)) {
+    return payload.filter((item) => item && typeof item.id === 'string' && item.id.length > 0);
+  }
+  if (payload && typeof payload === 'object' && 'error' in payload) {
+    throw new Error(`Gallery script error: ${payload.error ?? 'unknown'}`);
+  }
+  return [];
 }
 
 function createR2Client() {
@@ -629,6 +681,19 @@ function galleryIndexComparable(index: GalleryIndex): string {
 }
 
 async function validateDriveFolder(drive: drive_v3.Drive, gallery: GalleryConfig) {
+  if (hasGalleryScript()) {
+    try {
+      await fetchScriptItems(gallery.driveFolderId);
+      return;
+    } catch (error) {
+      throw new Error(
+        `Failed to open Google Drive folder through gallery script for "${gallery.name}" (${gallery.driveFolderId}). ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   try {
     const { data } = await drive.files.get({
       fileId: gallery.driveFolderId,
@@ -665,6 +730,14 @@ function driveListOptions(): { corpora?: 'user' | 'drive' | 'allDrives'; driveId
 }
 
 async function listDriveFolders(drive: drive_v3.Drive, parentId: string): Promise<DriveFolder[]> {
+  if (hasGalleryScript()) {
+    const items = await fetchScriptItems(parentId);
+    return items
+      .filter((item) => item.type === 'folder')
+      .map((item) => ({ id: item.id, name: item.name || item.id }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+  }
+
   const folders: DriveFolder[] = [];
   let pageToken: string | undefined;
 
@@ -762,6 +835,32 @@ async function listDriveFiles(
 ): Promise<DriveImage[]> {
   const files: DriveImage[] = [];
   const seenFileIds = new Set<string>();
+
+  if (hasGalleryScript()) {
+    for (const folderId of folderIds) {
+      const items = await fetchScriptItems(folderId);
+      for (const item of items) {
+        if (item.type !== 'image') {
+          continue;
+        }
+        if (seenFileIds.has(item.id)) {
+          continue;
+        }
+        seenFileIds.add(item.id);
+        files.push({
+          id: item.id,
+          name: item.name || `photo-${shortId(item.id)}`,
+          mimeType: 'image/*',
+          size: null,
+          sourceUrl: item.src ?? null,
+          thumbnailUrl: item.thumb ?? null,
+        });
+      }
+    }
+
+    files.sort((a, b) => a.name.localeCompare(b.name, 'cs') || a.id.localeCompare(b.id));
+    return files;
+  }
 
   for (const folderChunk of chunkArray(folderIds, 50)) {
     const parentsQuery = folderChunk.map((id) => `'${id}' in parents`).join(' or ');
@@ -1135,6 +1234,27 @@ function retryDelayMs(error: unknown, retryIndex: number, settings: DriveDownloa
   return Math.min(settings.retryDelayMs * (2 ** retryIndex), settings.maxRetryDelayMs);
 }
 
+async function downloadImageSourceUrl(file: DriveImage): Promise<Buffer> {
+  const sourceUrl = file.sourceUrl?.trim() || file.thumbnailUrl?.trim();
+  if (!sourceUrl) {
+    throw new Error(`No script image URL available for ${file.name}.`);
+  }
+  if (!/^https?:\/\//i.test(sourceUrl)) {
+    throw new Error(`Script image URL for ${file.name} is not absolute: ${sourceUrl}`);
+  }
+
+  const response = await fetch(sourceUrl, {
+    headers: {
+      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Script image download failed for ${file.name}: HTTP ${response.status}`);
+  }
+
+  return Buffer.from(await response.arrayBuffer());
+}
+
 async function downloadDriveFile(
   drive: drive_v3.Drive,
   file: DriveImage,
@@ -1303,7 +1423,12 @@ async function syncGallery(params: {
       }
 
       console.log(`[${gallery.name}] Downloading: ${file.name}`);
-      const sourceBuffer = await downloadDriveFile(drive, file, gallery.name, driveDownloadSettings);
+      let sourceBuffer: Buffer;
+      if (file.sourceUrl || file.thumbnailUrl) {
+        sourceBuffer = await downloadImageSourceUrl(file);
+      } else {
+        sourceBuffer = await downloadDriveFile(drive, file, gallery.name, driveDownloadSettings);
+      }
       const optimized = await optimizeImage(sourceBuffer);
 
       if (force || !fullExists) {
@@ -1493,6 +1618,7 @@ async function main() {
   console.log(
     `Google Drive list scope: corpora=${driveList.corpora ?? 'default'}${driveList.driveId ? `, driveId=${driveList.driveId}` : ''}.`,
   );
+  console.log(`Google Drive gallery script: ${hasGalleryScript() ? 'enabled' : 'disabled'}.`);
 
   const totals: SyncStats = { found: 0, uploaded: 0, skipped: 0, unsupported: 0, errors: 0 };
   const indexAlbums: GalleryIndexAlbum[] = [];

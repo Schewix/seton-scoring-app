@@ -50,6 +50,7 @@ Pro serverless fotogalerii (Vercel funkce) přidej do environmentu také:
 | `GALLERY_SOURCE` | `r2` čte galerii z Cloudflare R2 manifestů, `drive` vynutí původní Google Drive režim, prázdná/`auto` zkusí R2 a při chybě spadne zpět na Drive. |
 | `CLOUDFLARE_R2_PUBLIC_BASE_URL` nebo `GALLERY_R2_PUBLIC_BASE_URL` | Veřejná base URL R2 bucketu s optimalizovanými fotkami. |
 | `GALLERY_R2_INDEX_PATH` | Cesta ke kořenovému indexu galerie v R2, výchozí `index.json`. |
+| `GOOGLE_DRIVE_SCRIPT_URL` | Volitelný fallback na původní Apps Script galerii pro Drive složky, které nejdou spolehlivě listovat přímo přes Drive API. |
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | E-mail service accountu s přístupem do Drive pro fallback/stávající režim. |
 | `GOOGLE_PRIVATE_KEY` | Privátní klíč service accountu pro fallback/stávající režim (s `\\n` místo nových řádků). |
 | `GOOGLE_DRIVE_ROOT_FOLDER_ID` | Root složka fotogalerie pro fallback/stávající režim. |
