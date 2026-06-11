@@ -55,6 +55,7 @@ if (PRIVATE_KEY) {
 
 let cachedDrive: drive_v3.Drive | null = null;
 const SHARED_DRIVE_ID = process.env.GOOGLE_DRIVE_SHARED_DRIVE_ID ?? '';
+const DRIVE_LIST_CORPORA = process.env.GOOGLE_DRIVE_LIST_CORPORA ?? '';
 
 export function getDriveClient(): drive_v3.Drive {
   if (cachedDrive) {
@@ -76,11 +77,19 @@ export function getDriveClient(): drive_v3.Drive {
   return cachedDrive;
 }
 
+function normalizeDriveListCorpora(raw: string): 'user' | 'drive' | 'allDrives' {
+  const value = raw.trim();
+  if (value === 'user' || value === 'drive' || value === 'allDrives') {
+    return value;
+  }
+  return 'allDrives';
+}
+
 export function getDriveListOptions(): { corpora?: string; driveId?: string } {
   if (SHARED_DRIVE_ID) {
     return { corpora: 'drive', driveId: SHARED_DRIVE_ID };
   }
-  return {};
+  return { corpora: normalizeDriveListCorpora(DRIVE_LIST_CORPORA) };
 }
 
 export const DRIVE_FIELDS =

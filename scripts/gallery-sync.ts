@@ -648,10 +648,18 @@ async function validateDriveFolder(drive: drive_v3.Drive, gallery: GalleryConfig
   }
 }
 
-function driveListOptions() {
+function normalizeDriveListCorpora(raw: string | undefined): 'user' | 'drive' | 'allDrives' {
+  const value = raw?.trim();
+  if (value === 'user' || value === 'drive' || value === 'allDrives') {
+    return value;
+  }
+  return 'allDrives';
+}
+
+function driveListOptions(): { corpora?: 'user' | 'drive' | 'allDrives'; driveId?: string } {
   const sharedDriveId = process.env.GOOGLE_DRIVE_SHARED_DRIVE_ID?.trim();
   if (!sharedDriveId) {
-    return {};
+    return { corpora: normalizeDriveListCorpora(process.env.GOOGLE_DRIVE_LIST_CORPORA) };
   }
   return { corpora: 'drive', driveId: sharedDriveId };
 }
@@ -663,13 +671,16 @@ async function listDriveFolders(drive: drive_v3.Drive, parentId: string): Promis
   do {
     const { data } = await drive.files.list({
       q: `'${parentId}' in parents and (mimeType = '${FOLDER_MIME_TYPE}' or mimeType = '${SHORTCUT_MIME_TYPE}') and trashed = false`,
-      fields: 'nextPageToken, files(id,name,mimeType,shortcutDetails(targetId,targetMimeType))',
+      fields: 'nextPageToken,incompleteSearch,files(id,name,mimeType,shortcutDetails(targetId,targetMimeType))',
       pageSize: 1000,
       pageToken,
       includeItemsFromAllDrives: true,
       supportsAllDrives: true,
       ...driveListOptions(),
     });
+    if (data.incompleteSearch) {
+      console.warn(`Google Drive returned incomplete folder search results for parent ${parentId}.`);
+    }
 
     for (const file of data.files ?? []) {
       if (file.mimeType === FOLDER_MIME_TYPE && file.id && file.name) {
@@ -760,13 +771,16 @@ async function listDriveFiles(
       const { data } = await drive.files.list({
         q: `(${parentsQuery}) and trashed = false`,
         fields:
-          'nextPageToken, files(id,name,mimeType,size,shortcutDetails(targetId,targetMimeType))',
+          'nextPageToken,incompleteSearch,files(id,name,mimeType,size,shortcutDetails(targetId,targetMimeType))',
         pageSize: 1000,
         pageToken,
         includeItemsFromAllDrives: true,
         supportsAllDrives: true,
         ...driveListOptions(),
       });
+      if (data.incompleteSearch) {
+        console.warn(`[${gallery.name}] Google Drive returned incomplete file search results for ${folderChunk.length} folder(s).`);
+      }
 
       for (const file of data.files ?? []) {
         if (!file.id || !file.name || !file.mimeType) {
@@ -1464,6 +1478,7 @@ async function main() {
   const driveDownloadSettings = getDriveDownloadSettings();
   const drive = createDriveClient();
   const s3 = createR2Client();
+  const driveList = driveListOptions();
   const discoveredGalleries = config.webGallery ? await discoverWebGalleryAlbums(drive, config.webGallery) : [];
   const galleries = [...config.galleries, ...discoveredGalleries];
 
@@ -1474,6 +1489,9 @@ async function main() {
   console.log(`Gallery sync starting. Config: ${options.configPath}, galleries: ${galleries.length}, bucket: ${bucket}, index: ${indexKey}, force: ${options.force ? 'yes' : 'no'}`);
   console.log(
     `Google Drive downloads: delay ${driveDownloadSettings.delayMs}ms, retries ${driveDownloadSettings.retries}, retry delay ${driveDownloadSettings.retryDelayMs}ms.`,
+  );
+  console.log(
+    `Google Drive list scope: corpora=${driveList.corpora ?? 'default'}${driveList.driveId ? `, driveId=${driveList.driveId}` : ''}.`,
   );
 
   const totals: SyncStats = { found: 0, uploaded: 0, skipped: 0, unsupported: 0, errors: 0 };

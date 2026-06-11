@@ -43,6 +43,7 @@ Vytvor `scripts/.env` podle `scripts/.env.example`:
 GOOGLE_SERVICE_ACCOUNT_JSON=
 GOOGLE_DRIVE_API_KEY=...
 GOOGLE_DRIVE_ROOT_FOLDER_ID=...
+GOOGLE_DRIVE_LIST_CORPORA=allDrives
 GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST="setonuv zavod, reset, draci smycka, ringobal, memorial bedricha stolicky, sraz pto, deskovky, za psem, lakros, karakoram, piotrio, brnenske bloudeni, vybijena, zabijena, draci smycky, pioples, ples pp"
 GOOGLE_DRIVE_DOWNLOAD_DELAY_MS=250
 GOOGLE_DRIVE_DOWNLOAD_RETRIES=3
@@ -59,6 +60,7 @@ GALLERY_R2_INDEX_PATH=index.json
 
 `GOOGLE_SERVICE_ACCOUNT_JSON` muze byt raw JSON, base64 JSON, nebo cesta k JSON souboru. Pro verejny Drive muze zustat prazdne.
 `GOOGLE_DRIVE_API_KEY` nastav pro verejny Drive misto service accountu.
+`GOOGLE_DRIVE_LIST_CORPORA` ve vychozim stavu pouziva `allDrives`, aby sync nasel i soubory ve verejnych slozkach, shortcut targetech a sdilenych discich. Pokud mas nastaveny konkretni `GOOGLE_DRIVE_SHARED_DRIVE_ID`, sync pouzije `corpora=drive` pro tento drive.
 `GOOGLE_DRIVE_ALBUM_NAME_ALLOWLIST` funguje stejne jako ve webu: prazdna hodnota znamena vsechna prima alba pod rokem, jinak se album zobrazi/synchronizuje, pokud jeho nazev nebo cesta pod rokem obsahuje nektery vyraz. GitHub Actions workflow ma vychozi allowlist pro hlavni souteze; GitHub variable se stejnym nazvem ho muze prepsat.
 `GOOGLE_DRIVE_DOWNLOAD_*` promene zpomaluji downloady a opakuji docasne chyby z Google Drive, typicky `rateLimitExceeded`, `userRateLimitExceeded`, HTTP 429 a HTTP 5xx. Pokud Google vrati tvrdy limit typu `dailyLimitExceeded`, `downloadQuotaExceeded` nebo chybejici opravneni, script chybu vypise a fotku preskoci.
 

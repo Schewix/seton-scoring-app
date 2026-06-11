@@ -53,6 +53,7 @@ Pro serverless fotogalerii (Vercel funkce) přidej do environmentu také:
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | E-mail service accountu s přístupem do Drive pro fallback/stávající režim. |
 | `GOOGLE_PRIVATE_KEY` | Privátní klíč service accountu pro fallback/stávající režim (s `\\n` místo nových řádků). |
 | `GOOGLE_DRIVE_ROOT_FOLDER_ID` | Root složka fotogalerie pro fallback/stávající režim. |
+| `GOOGLE_DRIVE_LIST_CORPORA` | Volitelné scope pro Drive list dotazy, výchozí `allDrives`; pro konkrétní shared drive nastav raději `GOOGLE_DRIVE_SHARED_DRIVE_ID`. |
 
 Další proměnné lze doplnit dle potřeby – viz `src/envVars.ts`.
 
