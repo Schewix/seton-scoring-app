@@ -268,7 +268,7 @@ const CURRENT_LEAGUE_SCORES: Record<string, Partial<Record<LeagueEvent, number>>
 };
 
 const HISTORICAL_LEAGUE_EMBED_URL =
-  'https://docs.google.com/spreadsheets/d/14TLcdhZzW1jAgFk-eBWcOeh3uB8Ec2QewfNVjhefWJE/gviz/tq?tqx=out:html&gid=1022719772';
+  'https://docs.google.com/spreadsheets/d/1NyooEqb5doCtua3ee7OLJtSa3kV7fCH3/gviz/tq?tqx=out:html&gid=252350504';
 
 const HEADER_SUBTITLE = 'Soutěže, oddíly a informace na jednom místě.';
 const HEADER_LEAD =
@@ -618,9 +618,9 @@ const APPLICATION_LINKS = [
 const CONTACTS = [
   {
     role: 'Načelník SPTO',
-    name: 'René Hrabovský (Renda)',
-    phone: '+420 604 208 908',
-    email: 'ReneHrabovsky@seznam.cz',
+    name: 'Ondřej Ševčík (Ševa)',
+    phone: '+420 731 019 469',
+    email: 'osevcik@severka.org',
   },
   {
     role: 'Sekretářka SPTO',
@@ -3346,51 +3346,51 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
         ) : null}
 
         {mode === 'league' ? (
-        <section className="homepage-afterparty-section">
-          <div className="homepage-afterparty-section-head">
-            <h3>Profil</h3>
-            {participant && !profileEditing ? (
-              <button type="button" className="homepage-afterparty-inline-button" onClick={() => setProfileEditing(true)}>
-                Upravit
-              </button>
-            ) : null}
-          </div>
-          {participant && !profileEditing ? (
-            <div className="homepage-afterparty-profile-summary">
-              <strong>{participant.display_name}</strong>
-              <span>{participant.troop_name}</span>
+          <section className="homepage-afterparty-section">
+            <div className="homepage-afterparty-section-head">
+              <h3>Profil</h3>
+              {participant && !profileEditing ? (
+                <button type="button" className="homepage-afterparty-inline-button" onClick={() => setProfileEditing(true)}>
+                  Upravit
+                </button>
+              ) : null}
             </div>
-          ) : (
-            <form className="homepage-afterparty-profile-form" onSubmit={handleProfileSubmit}>
-              <label>
-                <span>Jméno</span>
-                <input
-                  type="text"
-                  value={profileForm.displayName}
-                  maxLength={80}
-                  onChange={(event) => setProfileForm((prev) => ({ ...prev, displayName: event.target.value }))}
-                />
-              </label>
-              <label>
-                <span>Oddíl</span>
-                <select
-                  value={profileForm.troopName}
-                  onChange={(event) => setProfileForm((prev) => ({ ...prev, troopName: event.target.value }))}
-                >
-                  <option value="">Vyber oddíl</option>
-                  {AFTERPARTY_TROOP_OPTIONS.map((troopName) => (
-                    <option key={troopName} value={troopName}>
-                      {troopName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button type="submit" className="homepage-afterparty-add-order" disabled={profileSaving}>
-                {profileSaving ? 'Ukládám…' : 'Uložit profil'}
-              </button>
-            </form>
-          )}
-        </section>
+            {participant && !profileEditing ? (
+              <div className="homepage-afterparty-profile-summary">
+                <strong>{participant.display_name}</strong>
+                <span>{participant.troop_name}</span>
+              </div>
+            ) : (
+              <form className="homepage-afterparty-profile-form" onSubmit={handleProfileSubmit}>
+                <label>
+                  <span>Jméno</span>
+                  <input
+                    type="text"
+                    value={profileForm.displayName}
+                    maxLength={80}
+                    onChange={(event) => setProfileForm((prev) => ({ ...prev, displayName: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  <span>Oddíl</span>
+                  <select
+                    value={profileForm.troopName}
+                    onChange={(event) => setProfileForm((prev) => ({ ...prev, troopName: event.target.value }))}
+                  >
+                    <option value="">Vyber oddíl</option>
+                    {AFTERPARTY_TROOP_OPTIONS.map((troopName) => (
+                      <option key={troopName} value={troopName}>
+                        {troopName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="submit" className="homepage-afterparty-add-order" disabled={profileSaving}>
+                  {profileSaving ? 'Ukládám…' : 'Uložit profil'}
+                </button>
+              </form>
+            )}
+          </section>
         ) : null}
 
         <section className="homepage-afterparty-section homepage-afterparty-section-users">
@@ -3491,97 +3491,97 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
         </section>
 
         {mode === 'league' ? (
-        <>
-        <section className="homepage-afterparty-section">
-          <div className="homepage-afterparty-section-head">
-            <h3>Moje účtenky</h3>
-            <button
-              type="button"
-              className="homepage-afterparty-inline-button"
-              onClick={loadAfterpartyOnlineState}
-              disabled={loadingOnline}
-            >
-              {loadingOnline ? 'Načítám…' : 'Obnovit'}
-            </button>
-          </div>
-          {orders.length === 0 ? (
-            <p className="homepage-afterparty-empty">Zatím nemáš žádnou odeslanou účtenku.</p>
-          ) : (
-            <div className="homepage-afterparty-order-list">
-              {orders.map((order) => (
-                <article key={order.id} className={`homepage-afterparty-order is-${order.status}`}>
-                  <div className="homepage-afterparty-order-head">
-                    <strong>{formatAfterpartyStatus(order.status)}</strong>
-                    <span>{formatAfterpartyDate(order.submitted_at)}</span>
-                  </div>
-                  <p>
-                    {order.status === 'approved'
-                      ? `${order.total_points} bodů`
-                      : order.status === 'rejected'
-                        ? 'Bez bodů'
-                        : 'Body se připíšou po kontrole'}
-                  </p>
-                  <div className="homepage-afterparty-order-items">
-                    {(order.afterparty_order_items ?? []).map((item) => (
-                      <span key={item.id}>
-                        {item.label} × {order.status === 'approved' ? item.approved_quantity : item.quantity}
-                      </span>
-                    ))}
-                  </div>
-                  {order.review_note ? <p className="homepage-afterparty-empty">{order.review_note}</p> : null}
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+          <>
+            <section className="homepage-afterparty-section">
+              <div className="homepage-afterparty-section-head">
+                <h3>Moje účtenky</h3>
+                <button
+                  type="button"
+                  className="homepage-afterparty-inline-button"
+                  onClick={loadAfterpartyOnlineState}
+                  disabled={loadingOnline}
+                >
+                  {loadingOnline ? 'Načítám…' : 'Obnovit'}
+                </button>
+              </div>
+              {orders.length === 0 ? (
+                <p className="homepage-afterparty-empty">Zatím nemáš žádnou odeslanou účtenku.</p>
+              ) : (
+                <div className="homepage-afterparty-order-list">
+                  {orders.map((order) => (
+                    <article key={order.id} className={`homepage-afterparty-order is-${order.status}`}>
+                      <div className="homepage-afterparty-order-head">
+                        <strong>{formatAfterpartyStatus(order.status)}</strong>
+                        <span>{formatAfterpartyDate(order.submitted_at)}</span>
+                      </div>
+                      <p>
+                        {order.status === 'approved'
+                          ? `${order.total_points} bodů`
+                          : order.status === 'rejected'
+                            ? 'Bez bodů'
+                            : 'Body se připíšou po kontrole'}
+                      </p>
+                      <div className="homepage-afterparty-order-items">
+                        {(order.afterparty_order_items ?? []).map((item) => (
+                          <span key={item.id}>
+                            {item.label} × {order.status === 'approved' ? item.approved_quantity : item.quantity}
+                          </span>
+                        ))}
+                      </div>
+                      {order.review_note ? <p className="homepage-afterparty-empty">{order.review_note}</p> : null}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
 
-        <section className="homepage-afterparty-section">
-          <div className="homepage-afterparty-section-head">
-            <h3>Pořadí</h3>
-            <div className="homepage-afterparty-segmented">
-              <button
-                type="button"
-                className={leaderboardMode === 'individuals' ? 'is-active' : ''}
-                onClick={() => setLeaderboardMode('individuals')}
-              >
-                Lidi
-              </button>
-              <button
-                type="button"
-                className={leaderboardMode === 'troops' ? 'is-active' : ''}
-                onClick={() => setLeaderboardMode('troops')}
-              >
-                Oddíly
-              </button>
-            </div>
-          </div>
-          {activeLeaderboard.length === 0 ? (
-            <p className="homepage-afterparty-empty">Zatím nejsou potvrzené žádné body.</p>
-          ) : (
-            <ol className="homepage-afterparty-leaderboard">
-              {leaderboardMode === 'individuals'
-                ? (activeLeaderboard as AfterpartyIndividualLeaderboardRow[]).map((row) => (
-                  <li key={row.participant_id}>
-                    <span>
-                      <strong>{row.display_name}</strong>
-                      <small>{row.troop_name}</small>
-                    </span>
-                    <strong>{row.total_points}</strong>
-                  </li>
-                ))
-                : (activeLeaderboard as AfterpartyTroopLeaderboardRow[]).map((row) => (
-                  <li key={row.troop_name}>
-                    <span>
-                      <strong>{row.troop_name}</strong>
-                      <small>{row.participants} lidí</small>
-                    </span>
-                    <strong>{row.total_points}</strong>
-                  </li>
-                ))}
-            </ol>
-          )}
-        </section>
-        </>
+            <section className="homepage-afterparty-section">
+              <div className="homepage-afterparty-section-head">
+                <h3>Pořadí</h3>
+                <div className="homepage-afterparty-segmented">
+                  <button
+                    type="button"
+                    className={leaderboardMode === 'individuals' ? 'is-active' : ''}
+                    onClick={() => setLeaderboardMode('individuals')}
+                  >
+                    Lidi
+                  </button>
+                  <button
+                    type="button"
+                    className={leaderboardMode === 'troops' ? 'is-active' : ''}
+                    onClick={() => setLeaderboardMode('troops')}
+                  >
+                    Oddíly
+                  </button>
+                </div>
+              </div>
+              {activeLeaderboard.length === 0 ? (
+                <p className="homepage-afterparty-empty">Zatím nejsou potvrzené žádné body.</p>
+              ) : (
+                <ol className="homepage-afterparty-leaderboard">
+                  {leaderboardMode === 'individuals'
+                    ? (activeLeaderboard as AfterpartyIndividualLeaderboardRow[]).map((row) => (
+                      <li key={row.participant_id}>
+                        <span>
+                          <strong>{row.display_name}</strong>
+                          <small>{row.troop_name}</small>
+                        </span>
+                        <strong>{row.total_points}</strong>
+                      </li>
+                    ))
+                    : (activeLeaderboard as AfterpartyTroopLeaderboardRow[]).map((row) => (
+                      <li key={row.troop_name}>
+                        <span>
+                          <strong>{row.troop_name}</strong>
+                          <small>{row.participants} lidí</small>
+                        </span>
+                        <strong>{row.total_points}</strong>
+                      </li>
+                    ))}
+                </ol>
+              )}
+            </section>
+          </>
         ) : null}
 
         {menuOpen ? (
@@ -3952,104 +3952,104 @@ function AfterpartyAdminManager({ open, onClose }: { open: boolean; onClose: () 
               {pendingOrders.length > 0 ? (
                 <div className="homepage-afterparty-admin-list">
                   {pendingOrders.map((order) => {
-                const participant = order.afterparty_participants ?? null;
-                const items = order.afterparty_order_items ?? [];
-                const isSaving = savingOrderId === order.id;
-                const previewPoints = items.reduce(
-                  (sum, item) =>
-                    sum
-                    + getAfterpartyAdminDraftQuantity(draftQuantities, order.id, item)
-                    * Math.max(0, Math.round(item.points_each ?? 0)),
-                  0,
-                );
+                    const participant = order.afterparty_participants ?? null;
+                    const items = order.afterparty_order_items ?? [];
+                    const isSaving = savingOrderId === order.id;
+                    const previewPoints = items.reduce(
+                      (sum, item) =>
+                        sum
+                        + getAfterpartyAdminDraftQuantity(draftQuantities, order.id, item)
+                        * Math.max(0, Math.round(item.points_each ?? 0)),
+                      0,
+                    );
 
-                return (
-                  <article key={order.id} className={`homepage-afterparty-admin-order is-${order.status}`}>
-                    <div className="homepage-afterparty-admin-order-head">
-                      <div>
-                        <h3>{participant?.display_name ?? 'Neznámý účastník'}</h3>
-                        <p>
-                          {participant?.troop_name ?? 'Bez oddílu'} · {formatAfterpartyDate(order.submitted_at)}
-                        </p>
-                      </div>
-                      <span className={`homepage-afterparty-admin-status is-${order.status}`}>
-                        {formatAfterpartyStatus(order.status)}
-                      </span>
-                    </div>
+                    return (
+                      <article key={order.id} className={`homepage-afterparty-admin-order is-${order.status}`}>
+                        <div className="homepage-afterparty-admin-order-head">
+                          <div>
+                            <h3>{participant?.display_name ?? 'Neznámý účastník'}</h3>
+                            <p>
+                              {participant?.troop_name ?? 'Bez oddílu'} · {formatAfterpartyDate(order.submitted_at)}
+                            </p>
+                          </div>
+                          <span className={`homepage-afterparty-admin-status is-${order.status}`}>
+                            {formatAfterpartyStatus(order.status)}
+                          </span>
+                        </div>
 
-                    <div className="homepage-afterparty-admin-receipt">
-                      {renderAdminReceipt(order)}
-                    </div>
+                        <div className="homepage-afterparty-admin-receipt">
+                          {renderAdminReceipt(order)}
+                        </div>
 
-                    <div className="homepage-afterparty-admin-items">
-                      {items.map((item) => {
-                        const inputId = `afterparty-admin-${order.id}-${item.id}`;
-                        return (
-                          <label key={item.id} className="homepage-afterparty-admin-item" htmlFor={inputId}>
-                            <span>
-                              <strong>{item.label}</strong>
-                              <small>
-                                {item.category} · nahlášeno {item.quantity} · {item.points_each} bodů za kus
-                              </small>
-                            </span>
-                            <input
-                              id={inputId}
-                              type="number"
-                              min="0"
-                              step="1"
-                              inputMode="numeric"
-                              value={draftQuantities[afterpartyDraftKey(order.id, item.id)] ?? String(item.quantity)}
-                              onChange={(event) => handleQuantityChange(order.id, item.id, event.target.value)}
-                            />
-                          </label>
-                        );
-                      })}
-                    </div>
+                        <div className="homepage-afterparty-admin-items">
+                          {items.map((item) => {
+                            const inputId = `afterparty-admin-${order.id}-${item.id}`;
+                            return (
+                              <label key={item.id} className="homepage-afterparty-admin-item" htmlFor={inputId}>
+                                <span>
+                                  <strong>{item.label}</strong>
+                                  <small>
+                                    {item.category} · nahlášeno {item.quantity} · {item.points_each} bodů za kus
+                                  </small>
+                                </span>
+                                <input
+                                  id={inputId}
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  inputMode="numeric"
+                                  value={draftQuantities[afterpartyDraftKey(order.id, item.id)] ?? String(item.quantity)}
+                                  onChange={(event) => handleQuantityChange(order.id, item.id, event.target.value)}
+                                />
+                              </label>
+                            );
+                          })}
+                        </div>
 
-                    <label className="homepage-afterparty-admin-note" htmlFor={`afterparty-admin-note-${order.id}`}>
-                      <span>Poznámka pro účastníka</span>
-                      <textarea
-                        id={`afterparty-admin-note-${order.id}`}
-                        value={reviewNotes[order.id] ?? ''}
-                        onChange={(event) =>
-                          setReviewNotes((prev) => ({
-                            ...prev,
-                            [order.id]: event.target.value,
-                          }))
-                        }
-                        placeholder="Volitelné, např. upraven počet podle účtenky"
-                      />
-                    </label>
+                        <label className="homepage-afterparty-admin-note" htmlFor={`afterparty-admin-note-${order.id}`}>
+                          <span>Poznámka pro účastníka</span>
+                          <textarea
+                            id={`afterparty-admin-note-${order.id}`}
+                            value={reviewNotes[order.id] ?? ''}
+                            onChange={(event) =>
+                              setReviewNotes((prev) => ({
+                                ...prev,
+                                [order.id]: event.target.value,
+                              }))
+                            }
+                            placeholder="Volitelné, např. upraven počet podle účtenky"
+                          />
+                        </label>
 
-                    <div className="homepage-afterparty-admin-total">
-                      <span>
-                        Body po kontrole: <strong>{previewPoints}</strong>
-                      </span>
-                      <span>
-                        Aktuálně uloženo: <strong>{order.total_points}</strong>
-                      </span>
-                    </div>
+                        <div className="homepage-afterparty-admin-total">
+                          <span>
+                            Body po kontrole: <strong>{previewPoints}</strong>
+                          </span>
+                          <span>
+                            Aktuálně uloženo: <strong>{order.total_points}</strong>
+                          </span>
+                        </div>
 
-                    <div className="homepage-afterparty-admin-actions">
-                      <button
-                        type="button"
-                        className="homepage-afterparty-inline-button"
-                        onClick={() => reviewOrder(order, 'reject')}
-                        disabled={isSaving}
-                      >
-                        {isSaving ? 'Ukládám…' : 'Zamítnout'}
-                      </button>
-                      <button
-                        type="button"
-                        className="homepage-afterparty-add-order"
-                        onClick={() => reviewOrder(order, 'approve')}
-                        disabled={isSaving}
-                      >
-                        {isSaving ? 'Ukládám…' : 'Potvrdit body'}
-                      </button>
-                    </div>
-                  </article>
-                );
+                        <div className="homepage-afterparty-admin-actions">
+                          <button
+                            type="button"
+                            className="homepage-afterparty-inline-button"
+                            onClick={() => reviewOrder(order, 'reject')}
+                            disabled={isSaving}
+                          >
+                            {isSaving ? 'Ukládám…' : 'Zamítnout'}
+                          </button>
+                          <button
+                            type="button"
+                            className="homepage-afterparty-add-order"
+                            onClick={() => reviewOrder(order, 'approve')}
+                            disabled={isSaving}
+                          >
+                            {isSaving ? 'Ukládám…' : 'Potvrdit body'}
+                          </button>
+                        </div>
+                      </article>
+                    );
                   })}
                 </div>
               ) : null}
@@ -4812,7 +4812,7 @@ function AboutSptoPage() {
   return (
     <SiteShell>
       <main className="homepage-main homepage-single" aria-labelledby="about-spto-heading">
-        <h1 id="about-spto-heading">O SPTO</h1> 
+        <h1 id="about-spto-heading">O SPTO</h1>
 
         <div className="homepage-card">
           <div className="homepage-about-grid">
