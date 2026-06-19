@@ -2304,6 +2304,20 @@
   width: fit-content;
 }
 
+.articles-load-more {
+  display: flex;
+  width: fit-content;
+  margin: 32px auto 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.articles-load-more:disabled {
+  cursor: wait;
+  opacity: 0.7;
+  transform: none;
+}
+
 .gallery-lightbox {
   position: fixed;
   inset: 0;

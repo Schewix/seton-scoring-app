@@ -11,7 +11,7 @@ interface SyncEvent extends ExtendableEvent {
 }
 
 const SYNC_TAG = 'sync-pending-ops';
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
@@ -38,6 +38,14 @@ registerRoute(
 registerRoute(
   ({ request }) => request.destination === 'style' || request.destination === 'script',
   new StaleWhileRevalidate({ cacheName: `${CACHE_VERSION}-assets` })
+);
+
+registerRoute(
+  ({ request, url }) =>
+    request.method === 'GET' &&
+    url.origin === self.location.origin &&
+    url.pathname.startsWith('/api/content/articles'),
+  new StaleWhileRevalidate({ cacheName: `${CACHE_VERSION}-public-articles` })
 );
 
 registerRoute(
