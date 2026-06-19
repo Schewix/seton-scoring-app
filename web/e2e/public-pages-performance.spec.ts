@@ -41,6 +41,16 @@ const MOCK_ARTICLE = {
   bodyFormat: 'text' as const,
 };
 
+const MOCK_ARTICLE_SUMMARY = {
+  source: MOCK_ARTICLE.source,
+  slug: MOCK_ARTICLE.slug,
+  title: MOCK_ARTICLE.title,
+  excerpt: MOCK_ARTICLE.excerpt,
+  dateISO: MOCK_ARTICLE.dateISO,
+  author: MOCK_ARTICLE.author,
+  coverImage: MOCK_ARTICLE.coverImage,
+};
+
 const MOCK_ALBUM = {
   id: 'album-perf-1',
   title: 'Speed album',
@@ -64,6 +74,14 @@ const LOAD_CASES: LoadCase[] = [
     waitUntilReady: async (page) => {
       await expect(page.locator('#articles-heading')).toBeVisible();
       await expect(page.locator('a[href="/clanky/perf-test-article"]')).toBeVisible();
+    },
+  },
+  {
+    name: 'article-detail',
+    path: '/clanky/perf-test-article',
+    waitUntilReady: async (page) => {
+      await expect(page.locator('#article-heading')).toHaveText('Performance test article');
+      await expect(page.getByText('Performance test body')).toBeVisible();
     },
   },
   {
@@ -97,7 +115,7 @@ async function mockPublicApis(page: Page) {
   await page.route('**/api/content/articles**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === '/api/content/articles') {
-      return fulfillJson(route, { articles: [MOCK_ARTICLE] });
+      return fulfillJson(route, { articles: [MOCK_ARTICLE_SUMMARY], hasMore: false, nextOffset: null });
     }
     if (url.pathname.startsWith('/api/content/articles/')) {
       return fulfillJson(route, { article: MOCK_ARTICLE });

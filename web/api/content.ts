@@ -30,6 +30,19 @@ type LocalArticleRow = {
   synced_at?: string | null;
 };
 
+type LocalArticleSummaryRow = Pick<
+  LocalArticleRow,
+  | 'slug'
+  | 'title'
+  | 'excerpt'
+  | 'author'
+  | 'cover_image_url'
+  | 'cover_image_alt'
+  | 'published_at'
+  | 'created_at'
+  | 'source'
+>;
+
 type ImportedArticleRow = {
   id: string;
   external_id: string | null;
@@ -114,6 +127,8 @@ type AfterpartyAdminOrder = {
 const AFTERPARTY_RECEIPTS_BUCKET = 'afterparty-receipts';
 const CONTENT_ARTICLE_IMAGES_BUCKET = 'content-article-images';
 const CONTENT_ARTICLE_ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const PUBLIC_ARTICLE_PAGE_SIZE = 12;
+const PUBLIC_ARTICLE_MAX_PAGE_SIZE = 50;
 const SITEMAP_BASE_URL = 'https://www.zelenaliga.cz';
 const SITEMAP_STATIC_ENTRIES: SitemapStaticEntry[] = [
   { path: '/', changefreq: 'weekly', priority: 1.0 },
@@ -570,15 +585,6 @@ function mapPionyr(article: PionyrArticle): PublicArticle {
   };
 }
 
-function sortByDateDesc(a: PublicArticle, b: PublicArticle) {
-  const dateA = new Date(a.dateISO).getTime();
-  const dateB = new Date(b.dateISO).getTime();
-  if (Number.isNaN(dateA) || Number.isNaN(dateB)) {
-    return 0;
-  }
-  return dateB - dateA;
-}
-
 const SYNC_EDIT_GRACE_MS = 60_000;
 
 function wasEditedAfterSync(row: { updated_at?: string | null; synced_at?: string | null }) {
@@ -622,22 +628,45 @@ function mapLocalRow(row: LocalArticleRow): PublicArticle {
   };
 }
 
-async function fetchLocalArticles(): Promise<PublicArticle[]> {
+function mapLocalSummaryRow(row: LocalArticleSummaryRow): PublicArticle {
+  const source = row.source === 'pionyr' ? 'pionyr' : 'local';
+  return {
+    source,
+    slug: row.slug,
+    title: row.title,
+    excerpt: row.excerpt ?? '',
+    dateISO: row.published_at ?? row.created_at,
+    author: row.author,
+    coverImage: row.cover_image_url ? { url: row.cover_image_url, alt: row.cover_image_alt } : null,
+  };
+}
+
+async function fetchLocalArticleSummaries({
+  limit,
+  offset = 0,
+}: {
+  limit: number;
+  offset?: number;
+}): Promise<{ articles: PublicArticle[]; hasMore: boolean }> {
   const supabase = getSupabaseAdminClient();
   const { data, error } = await supabase
     .from('content_articles')
-    .select(
-      'id,slug,title,excerpt,body,author,cover_image_url,cover_image_alt,status,published_at,created_at,source,external_id,external_url,synced_at',
-    )
+    .select('slug,title,excerpt,author,cover_image_url,cover_image_alt,published_at,created_at,source')
     .eq('status', 'published')
-    .order('published_at', { ascending: false });
+    .order('published_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit);
 
   if (error) {
     console.error('[api/content] supabase error', error);
-    return [];
+    throw error;
   }
 
-  return (data ?? []).map((row: LocalArticleRow) => mapLocalRow(row));
+  const rows = (data ?? []) as LocalArticleSummaryRow[];
+  return {
+    articles: rows.slice(0, limit).map(mapLocalSummaryRow),
+    hasMore: rows.length > limit,
+  };
 }
 
 async function handlePublicList(req: any, res: any) {
@@ -645,10 +674,17 @@ async function handlePublicList(req: any, res: any) {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
-  res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=600');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=3600, stale-while-revalidate=86400');
   try {
-    const local = await fetchLocalArticles();
-    res.status(200).json({ articles: local.sort(sortByDateDesc) });
+    const requestedLimit = parseNonNegativeInt(req.query?.limit, PUBLIC_ARTICLE_PAGE_SIZE);
+    const limit = Math.min(PUBLIC_ARTICLE_MAX_PAGE_SIZE, Math.max(1, requestedLimit));
+    const offset = parseNonNegativeInt(req.query?.offset, 0);
+    const { articles, hasMore } = await fetchLocalArticleSummaries({ limit, offset });
+    res.status(200).json({
+      articles,
+      hasMore,
+      nextOffset: hasMore ? offset + articles.length : null,
+    });
   } catch (error) {
     console.error('[api/content/articles] failed', error);
     res.status(500).json({ error: 'Failed to load articles.' });
@@ -660,7 +696,7 @@ async function handlePublicDetail(req: any, res: any, slug: string) {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
-  res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=600');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=3600, stale-while-revalidate=86400');
   try {
     const supabase = getSupabaseAdminClient();
     const { data, error } = await supabase
@@ -674,20 +710,7 @@ async function handlePublicDetail(req: any, res: any, slug: string) {
 
     if (!error && data) {
       const row = data as LocalArticleRow;
-      const source = row.source === 'pionyr' ? 'pionyr' : 'local';
-      res.status(200).json({
-        article: {
-          source,
-          slug: row.slug,
-          title: row.title,
-          excerpt: row.excerpt ?? '',
-          dateISO: row.published_at ?? row.created_at,
-          author: row.author,
-          coverImage: row.cover_image_url ? { url: row.cover_image_url, alt: row.cover_image_alt } : null,
-          body: row.body,
-          bodyFormat: source === 'pionyr' ? 'html' : 'text',
-        },
-      });
+      res.status(200).json({ article: mapLocalRow(row) });
       return;
     }
 
@@ -711,9 +734,8 @@ async function handlePublicSitemap(req: any, res: any) {
   }
 
   try {
-    const latestArticles = (await fetchLocalArticles())
-      .sort(sortByDateDesc)
-      .slice(0, 3)
+    const { articles } = await fetchLocalArticleSummaries({ limit: 3 });
+    const latestArticles = articles
       .map((article) => {
         const lastmod = normalizeSitemapLastmod(article.dateISO);
         return renderSitemapUrl({
@@ -1316,7 +1338,13 @@ export default async function handler(req: any, res: any) {
       return;
     }
     if (segments.length >= 2) {
-      await handlePublicDetail(req, res, segments[1]);
+      let articleSlug = segments[1];
+      try {
+        articleSlug = decodeURIComponent(articleSlug);
+      } catch {
+        // Keep the raw slug when the URL contains malformed escape sequences.
+      }
+      await handlePublicDetail(req, res, articleSlug);
       return;
     }
   }

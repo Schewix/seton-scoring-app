@@ -10,6 +10,17 @@ export type ContentArticle = {
   bodyFormat?: 'html' | 'text' | null;
 };
 
+export type ContentArticlesPage = {
+  articles: ContentArticle[];
+  hasMore: boolean;
+  nextOffset: number | null;
+};
+
+type FetchContentArticlesOptions = {
+  limit?: number;
+  offset?: number;
+};
+
 async function parseJson(response: Response) {
   const text = await response.text();
   if (!text) return {};
@@ -20,17 +31,32 @@ async function parseJson(response: Response) {
   }
 }
 
-export async function fetchContentArticles(): Promise<ContentArticle[]> {
-  const response = await fetch('/api/content/articles');
+export async function fetchContentArticles({
+  limit = 12,
+  offset = 0,
+}: FetchContentArticlesOptions = {}): Promise<ContentArticlesPage> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const response = await fetch(`/api/content/articles?${params.toString()}`);
   if (!response.ok) {
-    return [];
+    return { articles: [], hasMore: false, nextOffset: null };
   }
-  const payload = (await parseJson(response)) as { articles?: ContentArticle[] };
-  return payload.articles ?? [];
+  const payload = (await parseJson(response)) as {
+    articles?: ContentArticle[];
+    hasMore?: boolean;
+    nextOffset?: number | null;
+  };
+  return {
+    articles: payload.articles ?? [],
+    hasMore: payload.hasMore === true,
+    nextOffset: typeof payload.nextOffset === 'number' ? payload.nextOffset : null,
+  };
 }
 
 export async function fetchContentArticle(slug: string): Promise<ContentArticle | null> {
-  const response = await fetch(`/api/content/articles/${slug}`);
+  const response = await fetch(`/api/content/articles/${encodeURIComponent(slug)}`);
   if (!response.ok) {
     return null;
   }

@@ -365,6 +365,8 @@ const HOMEPAGE_CAROUSEL = (CAROUSEL_IMAGE_SOURCES.length ? CAROUSEL_IMAGE_SOURCE
 );
 
 const GALLERY_PAGE_SIZE = 24;
+const HOMEPAGE_ARTICLE_LIMIT = 6;
+const ARTICLES_PAGE_SIZE = 12;
 
 type Article = {
   source: 'pionyr' | 'local';
@@ -783,10 +785,11 @@ function isDirectImageAssetUrl(url: string) {
   return /^\/api\/gallery\/image\b/.test(url) || /\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(url);
 }
 
-function toProxyImageUrl(url: string, size: number) {
-  const cleaned = url.replace(/^https?:\/\//, '');
+function toProxyImageUrl(url: string, size: number, cropSquare = true) {
+  const cleaned = url.replace(/^https?:\/\//i, '').replace(/^\/\//, '');
   const encoded = encodeURIComponent(cleaned);
-  return `https://images.weserv.nl/?url=${encoded}&w=${size}&h=${size}&fit=cover&output=webp&q=80`;
+  const cropParams = cropSquare ? `&h=${size}&fit=cover` : '';
+  return `https://images.weserv.nl/?url=${encoded}&w=${size}${cropParams}&output=webp&q=80`;
 }
 
 function extractDriveFileId(url: string) {
@@ -794,11 +797,11 @@ function extractDriveFileId(url: string) {
   return match?.[1] ?? null;
 }
 
-function getArticleThumbUrl(url: string, size: number) {
+function getArticleThumbUrl(url: string, size: number, cropSquare = true) {
   if (!url) {
     return '';
   }
-  if (url.includes('pionyr.cz/')) {
+  if (url.startsWith('/') || url.includes('images.weserv.nl/')) {
     return url;
   }
   if (url.includes('drive.google.com/thumbnail')) {
@@ -810,7 +813,7 @@ function getArticleThumbUrl(url: string, size: number) {
       return `https://drive.google.com/thumbnail?sz=w${size}&id=${id}`;
     }
   }
-  return toProxyImageUrl(url, size);
+  return toProxyImageUrl(url, size, cropSquare);
 }
 
 function getPhotoThumbUrl(photo: GalleryPhotoLike | undefined | null, size: number) {
@@ -848,11 +851,11 @@ function buildPhotoSrcSet(photo: GalleryPhotoLike | undefined | null, sizes: num
   return entries.join(', ');
 }
 
-function buildArticleSrcSet(url: string, sizes: number[]) {
+function buildArticleSrcSet(url: string, sizes: number[], cropSquare = true) {
   const uniqueUrls = new Set<string>();
   const entries = sizes
     .map((size) => {
-      const sized = getArticleThumbUrl(url, size);
+      const sized = getArticleThumbUrl(url, size, cropSquare);
       if (!sized || uniqueUrls.has(sized)) {
         return null;
       }
@@ -1007,9 +1010,15 @@ function GallerySkeletonGrid({ count = 8 }: { count?: number }) {
 function ArticlesIndexPage({
   articles,
   articlesLoading,
+  hasMore,
+  loadingMore,
+  onLoadMore,
 }: {
   articles: Article[];
   articlesLoading: boolean;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
 }) {
   return (
     <SiteShell>
@@ -1024,80 +1033,99 @@ function ArticlesIndexPage({
               <p className="homepage-skeleton-status" role="status">
                 Načítám články z redakce…
               </p>
-              <ArticleSkeletonGrid count={6} />
+              <ArticleSkeletonGrid count={ARTICLES_PAGE_SIZE} />
             </>
           ) : articles.length > 0 ? (
-            <div className="homepage-article-grid">
-              {articles.map((article, index) => {
-                const isPriorityImage = index < 4;
-                const coverUrl = article.coverImage?.url ? getArticleThumbUrl(article.coverImage.url, 360) : '';
-                const coverSrcSet = article.coverImage?.url
-                  ? buildArticleSrcSet(article.coverImage.url, [180, 240, 360, 480])
-                  : '';
-                return (
-                  <article key={article.href} className="homepage-article-card">
-                    <div className="homepage-article-row">
-                      <div className={`homepage-article-thumb${article.coverImage?.url ? '' : ' is-empty'}`}>
-                        {article.coverImage?.url ? (
-                          <img
-                            src={coverUrl}
-                            srcSet={coverSrcSet || undefined}
-                            sizes="(max-width: 700px) 28vw, 120px"
-                            width={120}
-                            height={120}
-                            alt={article.coverImage.alt ?? article.title}
-                            loading={isPriorityImage ? 'eager' : 'lazy'}
-                            decoding="async"
-                            fetchPriority={isPriorityImage ? 'high' : 'low'}
-                          />
-                        ) : (
-                          <span aria-hidden="true">SPTO</span>
-                        )}
-                      </div>
-                      <div className="homepage-article-body">
-                        <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <time
-                            dateTime={article.dateISO}
+            <>
+              <div className="homepage-article-grid">
+                {articles.map((article, index) => {
+                  const isPriorityImage = index === 0;
+                  const coverUrl = article.coverImage?.url ? getArticleThumbUrl(article.coverImage.url, 360) : '';
+                  const coverSrcSet = article.coverImage?.url
+                    ? buildArticleSrcSet(article.coverImage.url, [180, 240, 360, 480])
+                    : '';
+                  return (
+                    <article key={article.href} className="homepage-article-card">
+                      <div className="homepage-article-row">
+                        <div className={`homepage-article-thumb${article.coverImage?.url ? '' : ' is-empty'}`}>
+                          {article.coverImage?.url ? (
+                            <img
+                              src={coverUrl}
+                              srcSet={coverSrcSet || undefined}
+                              sizes="(max-width: 700px) 28vw, 120px"
+                              width={120}
+                              height={120}
+                              alt={article.coverImage.alt ?? article.title}
+                              loading={isPriorityImage ? 'eager' : 'lazy'}
+                              decoding="async"
+                              fetchPriority={isPriorityImage ? 'high' : 'low'}
+                            />
+                          ) : (
+                            <span aria-hidden="true">SPTO</span>
+                          )}
+                        </div>
+                        <div className="homepage-article-body">
+                          <div
+                            className="homepage-article-meta"
+                            style={{ display: 'flex', justifyContent: 'space-between' }}
+                          >
+                            <time
+                              dateTime={article.dateISO}
+                              style={{
+                                display: 'inline-flex',
+                                padding: '4px 10px',
+                                borderRadius: '999px',
+                                background: 'rgba(4, 55, 44, 0.08)',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {article.dateLabel}
+                            </time>
+                          </div>
+                          <h3
                             style={{
-                              display: 'inline-flex',
-                              padding: '4px 10px',
-                              borderRadius: '999px',
-                              background: 'rgba(4, 55, 44, 0.08)',
-                              fontWeight: 600,
+                              display: '-webkit-box',
+                              WebkitBoxOrient: 'vertical',
+                              WebkitLineClamp: 2,
+                              overflow: 'hidden',
                             }}
                           >
-                            {article.dateLabel}
-                          </time>
+                            {article.title}
+                          </h3>
+                          <p
+                            style={{
+                              display: '-webkit-box',
+                              WebkitBoxOrient: 'vertical',
+                              WebkitLineClamp: 3,
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {article.excerpt}
+                          </p>
+                          <a
+                            className="homepage-inline-link"
+                            href={article.href}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            Číst článek <span aria-hidden="true">→</span>
+                          </a>
                         </div>
-                        <h3
-                          style={{
-                            display: '-webkit-box',
-                            WebkitBoxOrient: 'vertical',
-                            WebkitLineClamp: 2,
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {article.title}
-                        </h3>
-                        <p
-                          style={{
-                            display: '-webkit-box',
-                            WebkitBoxOrient: 'vertical',
-                            WebkitLineClamp: 3,
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {article.excerpt}
-                        </p>
-                        <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                          Číst článek <span aria-hidden="true">→</span>
-                        </a>
                       </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+                    </article>
+                  );
+                })}
+              </div>
+              {hasMore ? (
+                <button
+                  type="button"
+                  className="homepage-cta secondary articles-load-more"
+                  onClick={onLoadMore}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? 'Načítám další články…' : 'Načíst další články'}
+                </button>
+              ) : null}
+            </>
           ) : (
             <div className="homepage-card">
               <p style={{ margin: 0 }}>Zatím tu není žádný článek z redakce.</p>
@@ -1309,10 +1337,11 @@ function ArticlePage({ article }: { article: Article }) {
                 const isCover = index === 0 && Boolean(coverImage);
                 const isPriorityImage = index === 0;
                 const imageSize = isCover ? 960 : 720;
-                const src = getArticleThumbUrl(photo.src, imageSize) || photo.src;
+                const src = getArticleThumbUrl(photo.src, imageSize, false) || photo.src;
                 const srcSet = buildArticleSrcSet(
                   photo.src,
                   isCover ? [480, 720, 960, 1200] : [320, 480, 720, 960],
+                  false,
                 );
                 return (
                   <img
@@ -2688,33 +2717,26 @@ function GalleryAlbumPage({
   );
 }
 
-function ArticlePageLoader({ slug, articles }: { slug: string; articles: Article[] }) {
-  const [article, setArticle] = useState<Article | null>(
-    () => articles.find((item) => item.href.split('/').pop() === slug) ?? null,
-  );
-
-  useEffect(() => {
-    const match = articles.find((item) => item.href.split('/').pop() === slug) ?? null;
-    if (match) {
-      setArticle(match);
-    }
-  }, [articles, slug]);
+function ArticlePageLoader({ slug }: { slug: string }) {
+  const [article, setArticle] = useState<Article | null>(null);
 
   useEffect(() => {
     let active = true;
-    if (article && (article.source === 'local' || (article.body && article.body.length > 0))) {
-      return undefined;
-    }
-    fetchContentArticle(slug).then((data) => {
-      if (!active || !data) {
-        return;
-      }
-      setArticle(mapContentArticle(data));
-    });
+    setArticle(null);
+    fetchContentArticle(slug)
+      .then((data) => {
+        if (!active || !data) {
+          return;
+        }
+        setArticle(mapContentArticle(data));
+      })
+      .catch(() => {
+        // The loading state stays visible and a reload retries the request.
+      });
     return () => {
       active = false;
     };
-  }, [article, slug]);
+  }, [slug]);
 
   if (!article) {
     return (
@@ -4505,7 +4527,7 @@ function Homepage({
   const headerTitle = homepageContent?.heroTitle ?? undefined;
   const headerSubtitle = homepageContent?.heroSubtitle ?? undefined;
   const headerLead = HEADER_LEAD;
-  const homepageArticles = articles.slice(0, 4);
+  const homepageArticles = articles.slice(0, HOMEPAGE_ARTICLE_LIMIT);
 
   return (
     <SiteShell
@@ -4549,7 +4571,7 @@ function Homepage({
               <p className="homepage-skeleton-status" role="status">
                 Načítám články z redakce…
               </p>
-              <ArticleSkeletonGrid />
+              <ArticleSkeletonGrid count={HOMEPAGE_ARTICLE_LIMIT} />
             </>
           ) : homepageArticles.length > 0 ? (
             <div className="homepage-article-grid">
@@ -4943,6 +4965,8 @@ export default function ZelenaligaSite() {
   const [homepageContent, setHomepageContent] = useState<SanityHomepage | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [articlesLoading, setArticlesLoading] = useState(false);
+  const [articlesHasMore, setArticlesHasMore] = useState(false);
+  const [articlesLoadingMore, setArticlesLoadingMore] = useState(false);
   const [leagueScores, setLeagueScores] = useState<LeagueScoresRecord>(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
   const [driveAlbums, setDriveAlbums] = useState<DriveAlbum[]>([]);
   const [galleryYears, setGalleryYears] = useState<string[]>([]);
@@ -4952,7 +4976,7 @@ export default function ZelenaligaSite() {
   const path = window.location.pathname.replace(/\/$/, '') || '/';
   const segments = path.split('/').filter(Boolean);
   const slug = segments[0] ?? '';
-  const shouldLoadArticles = path === '/' || slug === 'clanky';
+  const shouldLoadArticles = path === '/' || path === '/clanky';
   const shouldLoadLeague = path === '/' || slug === 'aktualni-poradi' || slug === 'zelena-liga';
   const shouldLoadGallery = slug === 'fotogalerie';
   const isGalleryOverviewRoute = shouldLoadGallery && segments.length === 1;
@@ -4976,21 +5000,28 @@ export default function ZelenaligaSite() {
 
   useEffect(() => {
     if (!shouldLoadArticles) {
+      setArticles([]);
+      setArticlesHasMore(false);
       setArticlesLoading(false);
       return;
     }
     let active = true;
+    const limit = path === '/' ? HOMEPAGE_ARTICLE_LIMIT : ARTICLES_PAGE_SIZE;
+    setArticles([]);
+    setArticlesHasMore(false);
     setArticlesLoading(true);
-    fetchContentArticles()
-      .then((articlesData) => {
+    fetchContentArticles({ limit })
+      .then((pageData) => {
         if (!active) {
           return;
         }
-        setArticles(articlesData.map(mapContentArticle));
+        setArticles(pageData.articles.map(mapContentArticle));
+        setArticlesHasMore(path === '/clanky' && pageData.hasMore);
       })
       .catch(() => {
         if (active) {
           setArticles([]);
+          setArticlesHasMore(false);
         }
       })
       .finally(() => {
@@ -5001,7 +5032,31 @@ export default function ZelenaligaSite() {
     return () => {
       active = false;
     };
-  }, [shouldLoadArticles]);
+  }, [path, shouldLoadArticles]);
+
+  const handleLoadMoreArticles = () => {
+    if (path !== '/clanky' || articlesLoading || articlesLoadingMore || !articlesHasMore) {
+      return;
+    }
+    setArticlesLoadingMore(true);
+    fetchContentArticles({ limit: ARTICLES_PAGE_SIZE, offset: articles.length })
+      .then((pageData) => {
+        setArticles((current) => {
+          const existingHrefs = new Set(current.map((article) => article.href));
+          const nextArticles = pageData.articles
+            .map(mapContentArticle)
+            .filter((article) => !existingHrefs.has(article.href));
+          return [...current, ...nextArticles];
+        });
+        setArticlesHasMore(pageData.hasMore);
+      })
+      .catch(() => {
+        // Keep the button available so the visitor can retry the same page.
+      })
+      .finally(() => {
+        setArticlesLoadingMore(false);
+      });
+  };
 
   useEffect(() => {
     if (!shouldLoadLeague) {
@@ -5251,9 +5306,17 @@ export default function ZelenaligaSite() {
     if (slug === 'clanky') {
       if (segments.length > 1) {
         const articleSlug = segments[1];
-        return <ArticlePageLoader slug={articleSlug} articles={articles} />;
+        return <ArticlePageLoader slug={articleSlug} />;
       }
-      return <ArticlesIndexPage articles={articles} articlesLoading={articlesLoading} />;
+      return (
+        <ArticlesIndexPage
+          articles={articles}
+          articlesLoading={articlesLoading}
+          hasMore={articlesHasMore}
+          loadingMore={articlesLoadingMore}
+          onLoadMore={handleLoadMoreArticles}
+        />
+      );
     }
 
     if (slug === 'fotogalerie') {
