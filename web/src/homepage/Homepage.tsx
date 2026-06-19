@@ -810,7 +810,8 @@ function getArticleThumbUrl(url: string, size: number, cropSquare = true) {
   if (!url) {
     return '';
   }
-  if (url.startsWith('/') || url.includes('images.weserv.nl/')) {
+  // pionyr.cz blocks server-side image proxies with HTTP 403, while direct browser requests work.
+  if (url.startsWith('/') || url.includes('images.weserv.nl/') || url.includes('pionyr.cz/')) {
     return url;
   }
   if (url.includes('drive.google.com/thumbnail')) {
@@ -1078,6 +1079,9 @@ function ArticlesIndexPage({
                               loading={isPriorityImage ? 'eager' : 'lazy'}
                               decoding="async"
                               fetchPriority={isPriorityImage ? 'high' : 'low'}
+                              onError={(event) =>
+                                fallbackToOriginalArticleImage(event, article.coverImage?.url ?? '')
+                              }
                             />
                           ) : (
                             <span aria-hidden="true">SPTO</span>
