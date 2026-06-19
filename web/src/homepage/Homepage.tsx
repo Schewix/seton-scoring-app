@@ -1,5 +1,14 @@
 import './Homepage.css';
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type SyntheticEvent,
+} from 'react';
 import { PortableText } from '@portabletext/react';
 import AppFooter from '../components/AppFooter';
 import logo from '../assets/znak_SPTO_transparent.png';
@@ -863,7 +872,17 @@ function buildArticleSrcSet(url: string, sizes: number[], cropSquare = true) {
       return sized ? `${sized} ${size}w` : null;
     })
     .filter((entry): entry is string => Boolean(entry));
-  return entries.join(', ');
+  return entries.length > 1 ? entries.join(', ') : '';
+}
+
+function fallbackToOriginalArticleImage(event: SyntheticEvent<HTMLImageElement>, originalUrl: string) {
+  const image = event.currentTarget;
+  if (!originalUrl || image.dataset.originalFallbackApplied === 'true') {
+    return;
+  }
+  image.dataset.originalFallbackApplied = 'true';
+  image.removeAttribute('srcset');
+  image.src = originalUrl;
 }
 
 const portableTextComponents = {
@@ -1354,6 +1373,7 @@ function ArticlePage({ article }: { article: Article }) {
                     loading={isPriorityImage ? 'eager' : 'lazy'}
                     decoding="async"
                     fetchPriority={isPriorityImage ? 'high' : 'low'}
+                    onError={(event) => fallbackToOriginalArticleImage(event, photo.src)}
                   />
                 );
               })}
@@ -4598,6 +4618,9 @@ function Homepage({
                             loading="lazy"
                             decoding="async"
                             fetchPriority={isPriorityImage ? 'auto' : 'low'}
+                            onError={(event) =>
+                              fallbackToOriginalArticleImage(event, article.coverImage?.url ?? '')
+                            }
                           />
                         ) : (
                           <span aria-hidden="true">SPTO</span>
