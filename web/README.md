@@ -56,6 +56,16 @@ Pro serverless fotogalerii (Vercel funkce) přidej do environmentu také:
 | `GOOGLE_DRIVE_ROOT_FOLDER_ID` | Root složka fotogalerie pro fallback/stávající režim. |
 | `GOOGLE_DRIVE_LIST_CORPORA` | Volitelné scope pro Drive list dotazy, výchozí `allDrives`; pro konkrétní shared drive nastav raději `GOOGLE_DRIVE_SHARED_DRIVE_ID`. |
 
+Pro import článků z Pionýra a ukládání jejich fotek do Cloudflare R2 přidej také:
+
+| Proměnná | Význam |
+| --- | --- |
+| `CLOUDFLARE_R2_ACCOUNT_ID` | Cloudflare Account ID pro R2 S3 endpoint. |
+| `CLOUDFLARE_R2_ACCESS_KEY_ID` | R2 Access Key ID s právem číst a zapisovat do bucketu. |
+| `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | R2 Secret Access Key. |
+| `CLOUDFLARE_R2_BUCKET` | Název R2 bucketu, např. `zelena-liga-gallery`. |
+| `CONTENT_ARTICLE_R2_PREFIX` | Volitelný prefix pro článkové obrázky, výchozí `articles/pionyr`. |
+
 Další proměnné lze doplnit dle potřeby – viz `src/envVars.ts`.
 
 ### Build & testy

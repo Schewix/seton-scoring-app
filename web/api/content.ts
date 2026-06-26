@@ -808,13 +808,11 @@ async function handleAdminImport(req: any, res: any) {
 
   try {
     const list = await fetchPionyrArticles();
+    const { cachePionyrArticleImages } = await import('../api-lib/content/articleImageR2.js');
     const enriched = await Promise.all(
       list.map(async (article) => {
-        if (article.bodyHtml) {
-          return article;
-        }
-        const detail = await fetchPionyrArticleBySlug(article.slug);
-        return detail ?? article;
+        const withDetail = article.bodyHtml ? article : (await fetchPionyrArticleBySlug(article.slug)) ?? article;
+        return cachePionyrArticleImages(withDetail);
       }),
     );
 

@@ -806,9 +806,21 @@ function extractDriveFileId(url: string) {
   return match?.[1] ?? null;
 }
 
+function getCachedArticleImageVariantUrl(url: string, size: number) {
+  if (!url.includes('/articles/') || !/-w\d+\.webp(?:[?#].*)?$/i.test(url)) {
+    return null;
+  }
+  const targetWidth = size <= 360 ? 360 : size <= 720 ? 720 : 1200;
+  return url.replace(/-w\d+\.webp/i, `-w${targetWidth}.webp`);
+}
+
 function getArticleThumbUrl(url: string, size: number, cropSquare = true) {
   if (!url) {
     return '';
+  }
+  const cachedArticleVariant = getCachedArticleImageVariantUrl(url, size);
+  if (cachedArticleVariant) {
+    return cachedArticleVariant;
   }
   // pionyr.cz blocks server-side image proxies with HTTP 403, while direct browser requests work.
   if (url.startsWith('/') || url.includes('images.weserv.nl/') || url.includes('pionyr.cz/')) {
