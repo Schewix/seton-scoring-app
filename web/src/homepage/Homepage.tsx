@@ -3202,6 +3202,33 @@ type LeagueRow = {
 
 type LeagueRowWithRank = LeagueRow & { rank: number };
 
+function getLeagueTroopNameNumber(name: string): number | null {
+  const match = name.match(/\d+/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number.parseInt(match[0], 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function compareLeagueRowsByTroopNumber(a: Pick<LeagueRow, 'name' | 'order'>, b: Pick<LeagueRow, 'name' | 'order'>) {
+  const aNumber = getLeagueTroopNameNumber(a.name);
+  const bNumber = getLeagueTroopNameNumber(b.name);
+  if (aNumber !== null && bNumber !== null) {
+    if (aNumber !== bNumber) {
+      return aNumber - bNumber;
+    }
+    return a.name.localeCompare(b.name, 'cs', { sensitivity: 'base' });
+  }
+  if (aNumber !== null) {
+    return -1;
+  }
+  if (bNumber !== null) {
+    return 1;
+  }
+  return a.name.localeCompare(b.name, 'cs', { sensitivity: 'base' }) || a.order - b.order;
+}
+
 function cloneLeagueScores(source: LeagueScoresRecord): LeagueScoresRecord {
   const next: LeagueScoresRecord = {};
   Object.entries(source).forEach(([troopId, scores]) => {
@@ -3421,7 +3448,7 @@ function buildLeagueRows(
     };
   }).sort((a, b) => {
     if (a.total === null && b.total === null) {
-      return a.order - b.order;
+      return compareLeagueRowsByTroopNumber(a, b);
     }
     if (a.total === null) {
       return 1;
