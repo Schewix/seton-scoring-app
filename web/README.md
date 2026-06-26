@@ -65,6 +65,7 @@ Pro import článků z Pionýra a ukládání jejich fotek do Cloudflare R2 při
 | `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | R2 Secret Access Key. |
 | `CLOUDFLARE_R2_BUCKET` | Název R2 bucketu, např. `zelena-liga-gallery`. |
 | `CONTENT_ARTICLE_R2_PREFIX` | Volitelný prefix pro článkové obrázky, výchozí `articles/pionyr`. |
+| `CONTENT_ARTICLE_IMAGE_MAX_SOURCE_MB` | Volitelný limit velikosti původní fotky před optimalizací, výchozí `60`. |
 
 Další proměnné lze doplnit dle potřeby – viz `src/envVars.ts`.
 

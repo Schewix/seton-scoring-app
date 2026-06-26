@@ -11,6 +11,8 @@ type ArticleImageR2Config = {
   bucket: string;
   publicBaseUrl: string;
   prefix: string;
+  maxSourceBytes: number;
+  fetchTimeoutMs: number;
 };
 
 type CachedArticleImage = {
@@ -21,9 +23,10 @@ type CachedArticleImage = {
 const ARTICLE_IMAGE_VARIANT_WIDTHS = [360, 720, 1200] as const;
 const ARTICLE_IMAGE_DEFAULT_PREFIX = 'articles/pionyr';
 const ARTICLE_IMAGE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
-const ARTICLE_IMAGE_MAX_SOURCE_BYTES = 20 * 1024 * 1024;
-const ARTICLE_IMAGE_FETCH_TIMEOUT_MS = 20_000;
-const ARTICLE_IMAGE_CONCURRENCY = 2;
+const ARTICLE_IMAGE_DEFAULT_MAX_SOURCE_BYTES = 60 * 1024 * 1024;
+const ARTICLE_IMAGE_FETCH_TIMEOUT_MS = 45_000;
+const ARTICLE_IMAGE_CONCURRENCY = 1;
+const BYTES_PER_MEGABYTE = 1024 * 1024;
 const ARTICLE_IMAGE_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
@@ -31,6 +34,11 @@ let cachedS3Client: { cacheKey: string; client: S3Client } | null = null;
 
 function readEnv(name: string): string {
   return (process.env[name] ?? '').trim();
+}
+
+function readPositiveNumberEnv(name: string, fallback: number): number {
+  const value = Number(readEnv(name));
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 function normalizePrefix(raw: string): string {
@@ -51,6 +59,10 @@ function getArticleImageR2Config(): ArticleImageR2Config | null {
     readEnv('CONTENT_ARTICLE_R2_PUBLIC_BASE_URL') ||
     readEnv('GALLERY_R2_PUBLIC_BASE_URL') ||
     readEnv('CLOUDFLARE_R2_PUBLIC_BASE_URL');
+  const maxSourceMegabytes = readPositiveNumberEnv(
+    'CONTENT_ARTICLE_IMAGE_MAX_SOURCE_MB',
+    ARTICLE_IMAGE_DEFAULT_MAX_SOURCE_BYTES / BYTES_PER_MEGABYTE,
+  );
 
   if (!accountId || !accessKeyId || !secretAccessKey || !bucket || !publicBaseUrl) {
     return null;
@@ -63,6 +75,8 @@ function getArticleImageR2Config(): ArticleImageR2Config | null {
     bucket,
     publicBaseUrl: publicBaseUrl.replace(/\/+$/, ''),
     prefix: normalizePrefix(readEnv('CONTENT_ARTICLE_R2_PREFIX') || ARTICLE_IMAGE_DEFAULT_PREFIX),
+    maxSourceBytes: Math.round(maxSourceMegabytes * BYTES_PER_MEGABYTE),
+    fetchTimeoutMs: ARTICLE_IMAGE_FETCH_TIMEOUT_MS,
   };
 }
 
@@ -131,9 +145,9 @@ async function objectExists(s3: S3Client, bucket: string, key: string): Promise<
   }
 }
 
-async function downloadImage(sourceUrl: string): Promise<Buffer> {
+async function downloadImage(sourceUrl: string, config: ArticleImageR2Config): Promise<Buffer> {
   const response = await fetch(sourceUrl, {
-    signal: AbortSignal.timeout(ARTICLE_IMAGE_FETCH_TIMEOUT_MS),
+    signal: AbortSignal.timeout(config.fetchTimeoutMs),
     headers: {
       Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
       Referer: 'https://pionyr.cz/',
@@ -151,13 +165,13 @@ async function downloadImage(sourceUrl: string): Promise<Buffer> {
   }
 
   const contentLength = Number(response.headers.get('content-length') ?? 0);
-  if (Number.isFinite(contentLength) && contentLength > ARTICLE_IMAGE_MAX_SOURCE_BYTES) {
-    throw new Error(`Image is too large (${contentLength} bytes)`);
+  if (Number.isFinite(contentLength) && contentLength > config.maxSourceBytes) {
+    throw new Error(`Image is too large (${contentLength} bytes, max ${config.maxSourceBytes} bytes)`);
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
-  if (buffer.byteLength > ARTICLE_IMAGE_MAX_SOURCE_BYTES) {
-    throw new Error(`Image is too large (${buffer.byteLength} bytes)`);
+  if (buffer.byteLength > config.maxSourceBytes) {
+    throw new Error(`Image is too large (${buffer.byteLength} bytes, max ${config.maxSourceBytes} bytes)`);
   }
   return buffer;
 }
@@ -212,13 +226,11 @@ async function cacheImageVariants(
   }
 
   if (missingKeys.length > 0) {
-    const input = await downloadImage(sourceUrl);
-    await Promise.all(
-      missingKeys.map(async ({ width, key }) => {
-        const body = await optimizeImageVariant(input, width);
-        await uploadImageVariant({ s3, bucket: config.bucket, key, body });
-      }),
-    );
+    const input = await downloadImage(sourceUrl, config);
+    for (const { width, key } of missingKeys) {
+      const body = await optimizeImageVariant(input, width);
+      await uploadImageVariant({ s3, bucket: config.bucket, key, body });
+    }
   }
 
   return { sourceUrl, variants };
