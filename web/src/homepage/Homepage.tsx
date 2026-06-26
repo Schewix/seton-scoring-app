@@ -127,12 +127,19 @@ const NAV_ITEMS = [
   { id: 'kontakty', label: 'Kontakty', href: '/kontakty' },
 ];
 
-const LEAGUE_EVENTS = [
+type LeagueEventEntry = {
+  key: string;
+  label: string;
+  name: string;
+  order?: number;
+};
+
+const LEAGUE_EVENTS: LeagueEventEntry[] = [
   { key: 'pto-ob', label: 'PTOB', name: 'Orientační běh' },
   { key: 'ds', label: 'DS', name: 'Dračí smyčka' },
   { key: 'kp', label: 'KP', name: 'Kosmův prostor' },
   { key: 'zls', label: 'Seton', name: 'Setonův závod' },
-] as const;
+];
 const LEAGUE_TOP_COUNT = 7;
 const AFTERPARTY_STORAGE_KEY = 'zl-afterparty-counter-v2';
 const AFTERPARTY_PARTICIPANT_STORAGE_KEY = 'zl-afterparty-participant-v1';
@@ -202,15 +209,35 @@ type AfterpartyCounterMode = 'counter' | 'league';
 type AfterpartyAdminSessionState = 'checking' | 'unauthorized' | 'authorized';
 type AfterpartyDrinkCategory = (typeof AFTERPARTY_DRINK_MENU)[number]['category'];
 
-type LeagueEvent = (typeof LEAGUE_EVENTS)[number]['key'];
+type LeagueEvent = string;
+type LeagueTroopEntry = {
+  id: string;
+  name: string;
+  order?: number;
+};
 type LeagueScoresRecord = Record<string, Partial<Record<LeagueEvent, number | null>>>;
 type LeagueScoreEntry = {
+  season_id?: string | null;
   troop_id: string;
   event_key: string;
   points: number | string | null;
 };
+type LeagueSeason = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  startsOn?: string | null;
+  endsOn?: string | null;
+  troops: LeagueTroopEntry[];
+  events: LeagueEventEntry[];
+  scores: LeagueScoresRecord;
+};
+type LeagueData = {
+  seasons: LeagueSeason[];
+  activeSeasonId: string;
+};
 
-const LEAGUE_TROOPS = [
+const LEAGUE_TROOPS: LeagueTroopEntry[] = [
   { id: '63-phoenix', name: '63. PTO Phoenix' },
   { id: '6-nibowaka', name: '6. PTO Nibowaka' },
   { id: '66-brabrouci', name: '66. PTO Brabrouci' },
@@ -232,7 +259,9 @@ const LEAGUE_TROOPS = [
   { id: '99-kamzici', name: '99. PTO Kamzíci' },
   { id: '172-pegas', name: '172. PTO Pegas' },
   { id: 'zabky-jedovnice', name: 'PTO Žabky Jedovnice' },
-] as const;
+];
+const DEFAULT_LEAGUE_SEASON_ID = '2025-2026';
+const DEFAULT_LEAGUE_SEASON_NAME = 'Ročník 2025/2026';
 const AFTERPARTY_TROOP_OPTIONS = LEAGUE_TROOPS.map((troop) => troop.name).sort((a, b) => {
   const aMatch = a.match(/^(\d+)\./);
   const bMatch = b.match(/^(\d+)\./);
@@ -325,7 +354,8 @@ const SPTO_CHIEFS = [
   { name: 'Petra Stolařová', troop: '32. PTO Severka', term: '2012–2016' },
   { name: 'Martin Hlavoň', troop: '26. PTO Kulturní historie', term: '2016–2018' },
   { name: 'Vítězslav Ondráček', troop: '10. PTO Severka', term: '2018–2022' },
-  { name: 'René Hrabovský', troop: '64. PTO Lorien', term: '2022–dosud' },
+  { name: 'René Hrabovský', troop: '64. PTO Lorien', term: '2022–2026' },
+  { name: 'Ondřej Ševčík', troop: '32. PTO Severka', term: '2026–dosud' },
 ];
 
 const CAROUSEL_IMAGE_SOURCES = Object.entries(
@@ -1078,6 +1108,7 @@ function ArticlesIndexPage({
                   const coverSrcSet = article.coverImage?.url
                     ? buildArticleSrcSet(article.coverImage.url, [180, 240, 360, 480])
                     : '';
+                  const excerpt = article.excerpt.trim();
                   return (
                     <article key={article.href} className="homepage-article-card">
                       <div className="homepage-article-row">
@@ -1110,9 +1141,11 @@ function ArticlesIndexPage({
                           <h3 className="homepage-article-title">
                             {article.title}
                           </h3>
-                          <p className="homepage-article-excerpt">
-                            {article.excerpt}
-                          </p>
+                          {excerpt ? (
+                            <p className="homepage-article-excerpt">
+                              {excerpt}
+                            </p>
+                          ) : null}
                           <a className="homepage-inline-link homepage-article-read-link" href={article.href}>
                             Číst článek <span aria-hidden="true">→</span>
                           </a>
@@ -1427,7 +1460,12 @@ function RedakcePage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [form, setForm] = useState<EditorFormState>(EMPTY_EDITOR_FORM);
   const [message, setMessage] = useState<string | null>(null);
-  const [leagueScores, setLeagueScores] = useState<LeagueScoresRecord>(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
+  const [leagueData, setLeagueData] = useState<LeagueData>(createDefaultLeagueData());
+  const [selectedLeagueSeasonId, setSelectedLeagueSeasonId] = useState(DEFAULT_LEAGUE_SEASON_ID);
+  const [newLeagueSeasonName, setNewLeagueSeasonName] = useState('');
+  const [newLeagueTroopName, setNewLeagueTroopName] = useState('');
+  const [newLeagueEventLabel, setNewLeagueEventLabel] = useState('');
+  const [newLeagueEventName, setNewLeagueEventName] = useState('');
   const [leagueMessage, setLeagueMessage] = useState<string | null>(null);
   const [leagueSaving, setLeagueSaving] = useState(false);
   const [albumTitleAlbums, setAlbumTitleAlbums] = useState<DriveAlbum[]>([]);
@@ -1454,11 +1492,16 @@ function RedakcePage() {
     fetch('/api/content/admin/league', { credentials: 'include' })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((data) => {
-        const entries = Array.isArray(data.scores) ? (data.scores as LeagueScoreEntry[]) : [];
-        setLeagueScores(buildLeagueScoreRecord(entries, CURRENT_LEAGUE_SCORES));
+        const normalized = normalizeLeagueData(data);
+        setLeagueData(normalized);
+        setSelectedLeagueSeasonId((current) =>
+          normalized.seasons.some((season) => season.id === current) ? current : normalized.activeSeasonId,
+        );
       })
       .catch(() => {
-        setLeagueScores(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
+        const fallback = createDefaultLeagueData();
+        setLeagueData(fallback);
+        setSelectedLeagueSeasonId(fallback.activeSeasonId);
       });
 
   const loadAlbumTitles = () => {
@@ -1728,7 +1771,13 @@ function RedakcePage() {
       setArticles([]);
       setActiveId(null);
       setForm(EMPTY_EDITOR_FORM);
-      setLeagueScores(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
+      const fallback = createDefaultLeagueData();
+      setLeagueData(fallback);
+      setSelectedLeagueSeasonId(fallback.activeSeasonId);
+      setNewLeagueSeasonName('');
+      setNewLeagueTroopName('');
+      setNewLeagueEventLabel('');
+      setNewLeagueEventName('');
       setLeagueMessage(null);
       setAlbumTitleAlbums([]);
       setAlbumTitleEdits({});
@@ -1830,16 +1879,171 @@ function RedakcePage() {
     });
   };
 
+  const updateLeagueSeason = (seasonId: string, updater: (season: LeagueSeason) => LeagueSeason) => {
+    setLeagueData((current) => ({
+      ...current,
+      seasons: current.seasons.map((season) => (season.id === seasonId ? updater(season) : season)),
+    }));
+  };
+
   const updateLeagueScore = (troopId: string, eventKey: LeagueEvent, rawValue: string) => {
     const normalized = rawValue.replace(',', '.').trim();
     const parsed = normalized.length > 0 ? Number(normalized) : null;
     const nextValue = parsed !== null && Number.isFinite(parsed) ? parsed : null;
-    setLeagueScores((prev) => ({
-      ...prev,
-      [troopId]: {
-        ...(prev[troopId] ?? {}),
-        [eventKey]: nextValue,
+    updateLeagueSeason(selectedLeagueSeasonId, (season) => ({
+      ...season,
+      scores: {
+        ...season.scores,
+        [troopId]: {
+          ...(season.scores[troopId] ?? {}),
+          [eventKey]: nextValue,
+        },
       },
+    }));
+    setLeagueMessage(null);
+  };
+
+  const updateLeagueSeasonName = (value: string) => {
+    updateLeagueSeason(selectedLeagueSeasonId, (season) => ({ ...season, name: value }));
+    setLeagueMessage(null);
+  };
+
+  const updateLeagueSeasonActive = (isActive: boolean) => {
+    setLeagueData((current) => ({
+      activeSeasonId: isActive
+        ? selectedLeagueSeasonId
+        : current.activeSeasonId === selectedLeagueSeasonId
+          ? current.seasons.find((season) => season.id !== selectedLeagueSeasonId && season.isActive)?.id ??
+          current.seasons.find((season) => season.id !== selectedLeagueSeasonId)?.id ??
+          selectedLeagueSeasonId
+          : current.activeSeasonId,
+      seasons: current.seasons.map((season) => ({
+        ...season,
+        isActive: season.id === selectedLeagueSeasonId ? isActive : isActive ? false : season.isActive,
+      })),
+    }));
+    setLeagueMessage(null);
+  };
+
+  const handleCreateLeagueSeason = () => {
+    const name = newLeagueSeasonName.trim();
+    if (!name) {
+      setLeagueMessage('Zadej název ročníku.');
+      return;
+    }
+    const baseId = slugify(name) || `rocnik-${Date.now()}`;
+    setLeagueData((current) => {
+      let id = baseId;
+      let suffix = 2;
+      while (current.seasons.some((season) => season.id === id)) {
+        id = `${baseId}-${suffix}`;
+        suffix += 1;
+      }
+      const sourceSeason =
+        current.seasons.find((season) => season.id === selectedLeagueSeasonId) ??
+        getActiveLeagueSeason(current);
+      const nextSeason: LeagueSeason = {
+        id,
+        name,
+        isActive: false,
+        troops: cloneLeagueTroops(sourceSeason.troops.length > 0 ? sourceSeason.troops : LEAGUE_TROOPS),
+        events: cloneLeagueEvents(sourceSeason.events.length > 0 ? sourceSeason.events : LEAGUE_EVENTS),
+        scores: {},
+      };
+      setSelectedLeagueSeasonId(id);
+      return {
+        ...current,
+        seasons: [nextSeason, ...current.seasons],
+      };
+    });
+    setNewLeagueSeasonName('');
+    setLeagueMessage('Ročník je připravený. Nezapomeň ho uložit.');
+  };
+
+  const handleAddLeagueTroop = () => {
+    const name = newLeagueTroopName.trim();
+    if (!name) {
+      setLeagueMessage('Zadej název oddílu.');
+      return;
+    }
+    const baseId = slugify(name) || `oddil-${Date.now()}`;
+    updateLeagueSeason(selectedLeagueSeasonId, (season) => {
+      let id = baseId;
+      let suffix = 2;
+      while (season.troops.some((troop) => troop.id === id)) {
+        id = `${baseId}-${suffix}`;
+        suffix += 1;
+      }
+      return {
+        ...season,
+        troops: [...season.troops, { id, name, order: season.troops.length }],
+      };
+    });
+    setNewLeagueTroopName('');
+    setLeagueMessage(null);
+  };
+
+  const handleRemoveLeagueTroop = (troopId: string) => {
+    updateLeagueSeason(selectedLeagueSeasonId, (season) => {
+      const nextScores = { ...season.scores };
+      delete nextScores[troopId];
+      return {
+        ...season,
+        troops: season.troops
+          .filter((troop) => troop.id !== troopId)
+          .map((troop, index) => ({ ...troop, order: index })),
+        scores: nextScores,
+      };
+    });
+    setLeagueMessage(null);
+  };
+
+  const updateLeagueEvent = (eventKey: string, patch: Partial<Pick<LeagueEventEntry, 'label' | 'name'>>) => {
+    updateLeagueSeason(selectedLeagueSeasonId, (season) => ({
+      ...season,
+      events: season.events.map((event) => (event.key === eventKey ? { ...event, ...patch } : event)),
+    }));
+    setLeagueMessage(null);
+  };
+
+  const handleAddLeagueEvent = () => {
+    const name = newLeagueEventName.trim();
+    const label = newLeagueEventLabel.trim() || name;
+    if (!name && !label) {
+      setLeagueMessage('Zadej název soutěže.');
+      return;
+    }
+    const baseKey = slugify(name || label) || `soutez-${Date.now()}`;
+    updateLeagueSeason(selectedLeagueSeasonId, (season) => {
+      let key = baseKey;
+      let suffix = 2;
+      while (season.events.some((event) => event.key === key)) {
+        key = `${baseKey}-${suffix}`;
+        suffix += 1;
+      }
+      return {
+        ...season,
+        events: [...season.events, { key, label, name: name || label, order: season.events.length }],
+      };
+    });
+    setNewLeagueEventLabel('');
+    setNewLeagueEventName('');
+    setLeagueMessage(null);
+  };
+
+  const handleRemoveLeagueEvent = (eventKey: string) => {
+    updateLeagueSeason(selectedLeagueSeasonId, (season) => ({
+      ...season,
+      events: season.events
+        .filter((event) => event.key !== eventKey)
+        .map((event, index) => ({ ...event, order: index })),
+      scores: Object.fromEntries(
+        Object.entries(season.scores).map(([troopId, troopScores]) => {
+          const nextScores = { ...(troopScores ?? {}) };
+          delete nextScores[eventKey];
+          return [troopId, nextScores];
+        }),
+      ),
     }));
     setLeagueMessage(null);
   };
@@ -1852,18 +2056,58 @@ function RedakcePage() {
   const handleLeagueSave = () => {
     setLeagueMessage(null);
     setLeagueSaving(true);
-    const payloadScores = LEAGUE_TROOPS.flatMap((troop) =>
-      LEAGUE_EVENTS.map((event) => ({
+    const selectedSeason =
+      leagueData.seasons.find((season) => season.id === selectedLeagueSeasonId) ??
+      getActiveLeagueSeason(leagueData);
+    const seasonName = selectedSeason.name.trim();
+    if (!seasonName) {
+      setLeagueSaving(false);
+      setLeagueMessage('Název ročníku nesmí být prázdný.');
+      return;
+    }
+    if (selectedSeason.troops.length === 0) {
+      setLeagueSaving(false);
+      setLeagueMessage('Ročník musí mít aspoň jeden oddíl.');
+      return;
+    }
+    if (selectedSeason.events.length === 0) {
+      setLeagueSaving(false);
+      setLeagueMessage('Ročník musí mít aspoň jednu soutěž.');
+      return;
+    }
+    const payloadScores = selectedSeason.troops.flatMap((troop) =>
+      selectedSeason.events.map((event) => ({
+        season_id: selectedSeason.id,
         troop_id: troop.id,
         event_key: event.key,
-        points: leagueScores[troop.id]?.[event.key] ?? null,
+        points: selectedSeason.scores[troop.id]?.[event.key] ?? null,
       })),
     );
     fetch('/api/content/admin/league', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ scores: payloadScores }),
+      body: JSON.stringify({
+        season: {
+          id: selectedSeason.id,
+          name: seasonName,
+          is_active: selectedSeason.isActive,
+          starts_on: selectedSeason.startsOn ?? null,
+          ends_on: selectedSeason.endsOn ?? null,
+        },
+        troops: selectedSeason.troops.map((troop, index) => ({
+          troop_id: troop.id,
+          troop_name: troop.name,
+          order_index: troop.order ?? index,
+        })),
+        events: selectedSeason.events.map((event, index) => ({
+          event_key: event.key,
+          event_label: event.label.trim() || event.name.trim() || event.key,
+          event_name: event.name.trim() || event.label.trim() || event.key,
+          order_index: event.order ?? index,
+        })),
+        scores: payloadScores,
+      }),
     })
       .then((response) => {
         if (!response.ok) {
@@ -1932,8 +2176,13 @@ function RedakcePage() {
       });
   };
 
-  const leagueGridTemplate = `minmax(220px, 1.4fr) repeat(${LEAGUE_EVENTS.length}, minmax(90px, 0.8fr)) minmax(90px, 0.8fr)`;
-  const leagueRows = addCompetitionRanks(buildLeagueRows(leagueScores));
+  const selectedLeagueSeason =
+    leagueData.seasons.find((season) => season.id === selectedLeagueSeasonId) ??
+    getActiveLeagueSeason(leagueData);
+  const leagueGridTemplate = `minmax(220px, 1.4fr) repeat(${selectedLeagueSeason.events.length}, minmax(90px, 0.8fr)) minmax(90px, 0.8fr)`;
+  const leagueRows = addCompetitionRanks(
+    buildLeagueRows(selectedLeagueSeason.scores, selectedLeagueSeason.troops, selectedLeagueSeason.events),
+  );
   const albumTitleGroups = useMemo(() => {
     const groups = new Map<string, DriveAlbum[]>();
     albumTitleAlbums.forEach((album) => {
@@ -2143,20 +2392,170 @@ function RedakcePage() {
             <div className="homepage-card editor-league">
               <div className="editor-league-toolbar">
                 <div>
-                  <h2>Aktuální pořadí Zelené ligy</h2>
-                  <p>Uprav body oddílů v jednotlivých soutěžích. Celkové pořadí se přepočítá automaticky.</p>
+                  <h2>Pořadí Zelené ligy podle ročníků</h2>
+                  <p>Vytvářej ročníky, nastav účastnící se oddíly a uprav body v jednotlivých soutěžích.</p>
                 </div>
                 <div className="editor-league-actions">
                   <button type="button" className="homepage-button" onClick={handleLeagueSave} disabled={leagueSaving}>
-                    {leagueSaving ? 'Ukládám…' : 'Uložit tabulku'}
+                    {leagueSaving ? 'Ukládám…' : 'Uložit ročník'}
                   </button>
                 </div>
               </div>
               {leagueMessage ? <p className="homepage-alert">{leagueMessage}</p> : null}
+              <div className="gallery-year-tabs editor-league-season-tabs" aria-label="Ročníky pořadí">
+                {leagueData.seasons.map((season) => (
+                  <button
+                    key={season.id}
+                    type="button"
+                    className={`gallery-year-tab${season.id === selectedLeagueSeason.id ? ' is-active' : ''}`}
+                    onClick={() => {
+                      setSelectedLeagueSeasonId(season.id);
+                      setLeagueMessage(null);
+                    }}
+                  >
+                    {season.name}
+                    {season.isActive ? ' · aktuální' : ''}
+                  </button>
+                ))}
+              </div>
+              <div className="editor-league-season-panel">
+                <label className="editor-field" htmlFor="editor-league-season-name">
+                  <span>Název ročníku</span>
+                  <input
+                    id="editor-league-season-name"
+                    type="text"
+                    value={selectedLeagueSeason.name}
+                    onChange={(event) => updateLeagueSeasonName(event.target.value)}
+                  />
+                </label>
+                <label className="editor-check" htmlFor="editor-league-season-active">
+                  <input
+                    id="editor-league-season-active"
+                    type="checkbox"
+                    checked={selectedLeagueSeason.isActive}
+                    onChange={(event) => updateLeagueSeasonActive(event.target.checked)}
+                  />
+                  <span>Tento ročník zobrazovat jako aktuální</span>
+                </label>
+              </div>
+              <div className="editor-league-season-create">
+                <label className="editor-field" htmlFor="editor-league-new-season">
+                  <span>Vytvořit nový ročník</span>
+                  <input
+                    id="editor-league-new-season"
+                    type="text"
+                    value={newLeagueSeasonName}
+                    onChange={(event) => setNewLeagueSeasonName(event.target.value)}
+                    placeholder="Např. Ročník 2026/2027"
+                  />
+                </label>
+                <button type="button" className="homepage-button homepage-button--ghost" onClick={handleCreateLeagueSeason}>
+                  Vytvořit ročník
+                </button>
+              </div>
+              <div className="editor-league-troops">
+                <div>
+                  <h3>Oddíly v ročníku</h3>
+                  <p>Oddíl odstraněný z ročníku se nebude počítat do tabulky, ostatní ročníky zůstanou beze změny.</p>
+                </div>
+                <div className="editor-league-troop-list">
+                  {selectedLeagueSeason.troops.map((troop) => (
+                    <span key={troop.id} className="editor-league-troop-pill">
+                      {troop.name}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveLeagueTroop(troop.id)}
+                        aria-label={`Odebrat oddíl ${troop.name}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="editor-league-season-create">
+                  <label className="editor-field" htmlFor="editor-league-new-troop">
+                    <span>Přidat oddíl</span>
+                    <input
+                      id="editor-league-new-troop"
+                      type="text"
+                      value={newLeagueTroopName}
+                      onChange={(event) => setNewLeagueTroopName(event.target.value)}
+                      placeholder="Např. 32. PTO Severka"
+                    />
+                  </label>
+                  <button type="button" className="homepage-button homepage-button--ghost" onClick={handleAddLeagueTroop}>
+                    Přidat oddíl
+                  </button>
+                </div>
+              </div>
+              <div className="editor-league-troops editor-league-events">
+                <div>
+                  <h3>Soutěže v ročníku</h3>
+                  <p>Soutěže můžeš pro každý ročník pojmenovat jinak nebo je úplně odebrat.</p>
+                </div>
+                <div className="editor-league-event-list">
+                  {selectedLeagueSeason.events.map((event) => (
+                    <div key={event.key} className="editor-league-event-row">
+                      <label className="editor-field" htmlFor={`editor-league-event-label-${event.key}`}>
+                        <span>Zkratka v tabulce</span>
+                        <input
+                          id={`editor-league-event-label-${event.key}`}
+                          type="text"
+                          value={event.label}
+                          onChange={(changeEvent) => updateLeagueEvent(event.key, { label: changeEvent.target.value })}
+                          placeholder="PTOB"
+                        />
+                      </label>
+                      <label className="editor-field" htmlFor={`editor-league-event-name-${event.key}`}>
+                        <span>Název soutěže</span>
+                        <input
+                          id={`editor-league-event-name-${event.key}`}
+                          type="text"
+                          value={event.name}
+                          onChange={(changeEvent) => updateLeagueEvent(event.key, { name: changeEvent.target.value })}
+                          placeholder="Orientační běh"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="homepage-button homepage-button--ghost editor-league-event-remove"
+                        onClick={() => handleRemoveLeagueEvent(event.key)}
+                      >
+                        Odebrat
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="editor-league-season-create editor-league-event-create">
+                  <label className="editor-field" htmlFor="editor-league-new-event-label">
+                    <span>Zkratka</span>
+                    <input
+                      id="editor-league-new-event-label"
+                      type="text"
+                      value={newLeagueEventLabel}
+                      onChange={(event) => setNewLeagueEventLabel(event.target.value)}
+                      placeholder="Např. ZL"
+                    />
+                  </label>
+                  <label className="editor-field" htmlFor="editor-league-new-event-name">
+                    <span>Název nové soutěže</span>
+                    <input
+                      id="editor-league-new-event-name"
+                      type="text"
+                      value={newLeagueEventName}
+                      onChange={(event) => setNewLeagueEventName(event.target.value)}
+                      placeholder="Např. Závod ligy"
+                    />
+                  </label>
+                  <button type="button" className="homepage-button homepage-button--ghost" onClick={handleAddLeagueEvent}>
+                    Přidat soutěž
+                  </button>
+                </div>
+              </div>
               <div className="editor-league-table" style={{ '--league-editor-grid': leagueGridTemplate } as React.CSSProperties}>
                 <div className="editor-league-row editor-league-row--header">
                   <span>Oddíl</span>
-                  {LEAGUE_EVENTS.map((event) => (
+                  {selectedLeagueSeason.events.map((event) => (
                     <span key={event.key} className="editor-league-score">
                       {event.label}
                     </span>
@@ -2166,8 +2565,8 @@ function RedakcePage() {
                 {leagueRows.map((row) => (
                   <div key={row.key} className="editor-league-row">
                     <span className="editor-league-name">{row.name}</span>
-                    {LEAGUE_EVENTS.map((event) => {
-                      const value = leagueScores[row.key]?.[event.key];
+                    {selectedLeagueSeason.events.map((event) => {
+                      const value = selectedLeagueSeason.scores[row.key]?.[event.key];
                       return (
                         <label key={`${row.key}-${event.key}`} className="editor-league-input">
                           <input
@@ -2811,15 +3210,63 @@ function cloneLeagueScores(source: LeagueScoresRecord): LeagueScoresRecord {
   return next;
 }
 
+function cloneLeagueTroops(troops: LeagueTroopEntry[] = LEAGUE_TROOPS): LeagueTroopEntry[] {
+  return troops.map((troop, index) => ({
+    id: troop.id,
+    name: troop.name,
+    order: troop.order ?? index,
+  }));
+}
+
+function cloneLeagueEvents(events: LeagueEventEntry[] = LEAGUE_EVENTS): LeagueEventEntry[] {
+  return events.map((event, index) => ({
+    key: event.key,
+    label: event.label,
+    name: event.name,
+    order: event.order ?? index,
+  }));
+}
+
+function createDefaultLeagueSeason(): LeagueSeason {
+  return {
+    id: DEFAULT_LEAGUE_SEASON_ID,
+    name: DEFAULT_LEAGUE_SEASON_NAME,
+    isActive: true,
+    startsOn: '2025-09-01',
+    endsOn: '2026-06-30',
+    troops: cloneLeagueTroops(),
+    events: cloneLeagueEvents(),
+    scores: cloneLeagueScores(CURRENT_LEAGUE_SCORES),
+  };
+}
+
+function createDefaultLeagueData(): LeagueData {
+  const season = createDefaultLeagueSeason();
+  return {
+    seasons: [season],
+    activeSeasonId: season.id,
+  };
+}
+
+function getActiveLeagueSeason(leagueData: LeagueData): LeagueSeason {
+  return (
+    leagueData.seasons.find((season) => season.id === leagueData.activeSeasonId) ??
+    leagueData.seasons.find((season) => season.isActive) ??
+    leagueData.seasons[0] ??
+    createDefaultLeagueSeason()
+  );
+}
+
 function buildLeagueScoreRecord(
   entries: LeagueScoreEntry[] | null | undefined,
   fallback: LeagueScoresRecord,
+  troops: LeagueTroopEntry[] = LEAGUE_TROOPS,
 ): LeagueScoresRecord {
   if (!entries || entries.length === 0) {
     return cloneLeagueScores(fallback);
   }
   const record: LeagueScoresRecord = {};
-  LEAGUE_TROOPS.forEach((troop) => {
+  troops.forEach((troop) => {
     record[troop.id] = {};
   });
   entries.forEach((entry) => {
@@ -2846,10 +3293,123 @@ function buildLeagueScoreRecord(
   return record;
 }
 
-function buildLeagueRows(scores: LeagueScoresRecord = CURRENT_LEAGUE_SCORES): LeagueRow[] {
-  return LEAGUE_TROOPS.map((troop, index) => {
+function normalizeLeagueEvents(rawEvents: unknown): LeagueEventEntry[] {
+  if (!Array.isArray(rawEvents) || rawEvents.length === 0) {
+    return cloneLeagueEvents();
+  }
+  const seen = new Set<string>();
+  const events = rawEvents
+    .map((event: any, index: number): LeagueEventEntry | null => {
+      const rawName = typeof event?.name === 'string' ? event.name.trim() : '';
+      const rawLabel = typeof event?.label === 'string' ? event.label.trim() : '';
+      const rawKey =
+        typeof event?.key === 'string' && event.key.trim()
+          ? event.key.trim()
+          : typeof event?.event_key === 'string' && event.event_key.trim()
+            ? event.event_key.trim()
+            : '';
+      const name = rawName || rawLabel || rawKey;
+      const label = rawLabel || rawName || rawKey;
+      const key = rawKey || slugify(name);
+      if (!key || !name || seen.has(key)) {
+        return null;
+      }
+      seen.add(key);
+      const orderRaw = Number(event.order ?? event.order_index ?? index);
+      return {
+        key,
+        label,
+        name,
+        order: Number.isFinite(orderRaw) ? orderRaw : index,
+      };
+    })
+    .filter((event: LeagueEventEntry | null): event is LeagueEventEntry => Boolean(event))
+    .sort((a: LeagueEventEntry, b: LeagueEventEntry) => (a.order ?? 0) - (b.order ?? 0));
+  return events.length > 0 ? events : cloneLeagueEvents();
+}
+
+function normalizeLeagueData(raw: any): LeagueData {
+  const fallback = createDefaultLeagueData();
+  const rawSeasons = Array.isArray(raw?.seasons) ? raw.seasons : [];
+  if (rawSeasons.length === 0) {
+    const entries = Array.isArray(raw?.scores) ? (raw.scores as LeagueScoreEntry[]) : [];
+    return {
+      seasons: [{
+        ...fallback.seasons[0],
+        scores: buildLeagueScoreRecord(entries, CURRENT_LEAGUE_SCORES),
+      }],
+      activeSeasonId: DEFAULT_LEAGUE_SEASON_ID,
+    };
+  }
+
+  const seasons: LeagueSeason[] = rawSeasons
+    .map((season: any, seasonIndex: number): LeagueSeason | null => {
+      const id = typeof season?.id === 'string' && season.id.trim() ? season.id.trim() : '';
+      const name = typeof season?.name === 'string' && season.name.trim() ? season.name.trim() : id;
+      if (!id || !name) {
+        return null;
+      }
+      const rawTroops = Array.isArray(season.troops) ? season.troops : [];
+      const troops: LeagueTroopEntry[] = rawTroops.length > 0
+        ? rawTroops
+          .map((troop: any, troopIndex: number): LeagueTroopEntry | null => {
+            const troopId = typeof troop?.id === 'string' && troop.id.trim()
+              ? troop.id.trim()
+              : typeof troop?.troop_id === 'string' && troop.troop_id.trim()
+                ? troop.troop_id.trim()
+                : '';
+            const troopName = typeof troop?.name === 'string' && troop.name.trim()
+              ? troop.name.trim()
+              : typeof troop?.troop_name === 'string' && troop.troop_name.trim()
+                ? troop.troop_name.trim()
+                : '';
+            if (!troopId || !troopName) {
+              return null;
+            }
+            const orderRaw = Number(troop.order ?? troop.order_index ?? troopIndex);
+            return {
+              id: troopId,
+              name: troopName,
+              order: Number.isFinite(orderRaw) ? orderRaw : troopIndex,
+            };
+          })
+          .filter((troop: LeagueTroopEntry | null): troop is LeagueTroopEntry => Boolean(troop))
+          .sort((a: LeagueTroopEntry, b: LeagueTroopEntry) => (a.order ?? 0) - (b.order ?? 0))
+        : cloneLeagueTroops();
+      const fallbackScores = seasonIndex === 0 ? CURRENT_LEAGUE_SCORES : {};
+      const scoreEntries = Array.isArray(season.scores) ? (season.scores as LeagueScoreEntry[]) : [];
+      const events = normalizeLeagueEvents(season.events);
+      return {
+        id,
+        name,
+        isActive: season.isActive === true || season.is_active === true,
+        startsOn: typeof season.startsOn === 'string' ? season.startsOn : season.starts_on ?? null,
+        endsOn: typeof season.endsOn === 'string' ? season.endsOn : season.ends_on ?? null,
+        troops,
+        events,
+        scores: buildLeagueScoreRecord(scoreEntries, fallbackScores, troops),
+      };
+    })
+    .filter((season: LeagueSeason | null): season is LeagueSeason => Boolean(season));
+
+  if (seasons.length === 0) {
+    return fallback;
+  }
+  const activeSeasonId =
+    typeof raw?.activeSeasonId === 'string' && seasons.some((season) => season.id === raw.activeSeasonId)
+      ? raw.activeSeasonId
+      : seasons.find((season) => season.isActive)?.id ?? seasons[0].id;
+  return { seasons, activeSeasonId };
+}
+
+function buildLeagueRows(
+  scores: LeagueScoresRecord = CURRENT_LEAGUE_SCORES,
+  troops: LeagueTroopEntry[] = LEAGUE_TROOPS,
+  events: LeagueEventEntry[] = LEAGUE_EVENTS,
+): LeagueRow[] {
+  return troops.map((troop, index) => {
     const troopScores = scores[troop.id] ?? {};
-    const scoreValues = LEAGUE_EVENTS.map((event) => troopScores[event.key] ?? null);
+    const scoreValues = events.map((event) => troopScores[event.key] ?? null);
     const hasScores = scoreValues.some((value) => value !== null);
     const total = hasScores ? scoreValues.reduce<number>((sum, value) => sum + (value ?? 0), 0) : null;
     return {
@@ -2857,7 +3417,7 @@ function buildLeagueRows(scores: LeagueScoresRecord = CURRENT_LEAGUE_SCORES): Le
       name: troop.name,
       scores: scoreValues,
       total,
-      order: index,
+      order: troop.order ?? index,
     };
   }).sort((a, b) => {
     if (a.total === null && b.total === null) {
@@ -4527,12 +5087,12 @@ function Homepage({
   homepageContent,
   articles,
   articlesLoading,
-  leagueScores,
+  leagueSeason,
 }: {
   homepageContent: SanityHomepage | null;
   articles: Article[];
   articlesLoading: boolean;
-  leagueScores: LeagueScoresRecord;
+  leagueSeason: LeagueSeason;
 }) {
   const headerTitle = homepageContent?.heroTitle ?? undefined;
   const headerSubtitle = homepageContent?.heroSubtitle ?? undefined;
@@ -4593,6 +5153,7 @@ function Homepage({
                 const coverSrcSet = article.coverImage?.url
                   ? buildArticleSrcSet(article.coverImage.url, [180, 240, 360, 480])
                   : '';
+                const excerpt = article.excerpt.trim();
                 return (
                   <article key={article.title} className="homepage-article-card homepage-article-card--homepage">
                     <div className="homepage-article-row">
@@ -4601,9 +5162,9 @@ function Homepage({
                           <img
                             src={coverUrl}
                             srcSet={coverSrcSet || undefined}
-                            sizes="(max-width: 700px) 28vw, 120px"
-                            width={120}
-                            height={120}
+                            sizes="(max-width: 680px) calc(100vw - 72px), (max-width: 1180px) 128px, 260px"
+                            width={320}
+                            height={200}
                             alt={article.coverImage.alt ?? article.title}
                             loading="lazy"
                             decoding="async"
@@ -4625,9 +5186,11 @@ function Homepage({
                         <h3 className="homepage-article-title">
                           {article.title}
                         </h3>
-                        <p className="homepage-article-excerpt homepage-article-excerpt--short">
-                          {article.excerpt}
-                        </p>
+                        {excerpt ? (
+                          <p className="homepage-article-excerpt homepage-article-excerpt--short">
+                            {excerpt}
+                          </p>
+                        ) : null}
                         <a className="homepage-inline-link homepage-article-read-link" href={article.href}>
                           Číst článek <span aria-hidden="true">→</span>
                         </a>
@@ -4656,8 +5219,9 @@ function Homepage({
           </div>
           <div className="homepage-card" style={{ maxWidth: '880px' }}>
             <h3>Top {LEAGUE_TOP_COUNT} oddílů</h3>
+            <p className="homepage-league-note">{leagueSeason.name}</p>
             <ol className="homepage-about-list">
-              {addCompetitionRanks(buildLeagueRows(leagueScores))
+              {addCompetitionRanks(buildLeagueRows(leagueSeason.scores, leagueSeason.troops, leagueSeason.events))
                 .slice(0, LEAGUE_TOP_COUNT)
                 .map((row) => (
                   <li
@@ -4776,23 +5340,49 @@ function ApplicationsPage() {
   );
 }
 
-function LeagueStandingsPage({ leagueScores }: { leagueScores: LeagueScoresRecord }) {
-  const leagueGridTemplate = `minmax(220px, 1.3fr) repeat(${LEAGUE_EVENTS.length}, minmax(90px, 1fr)) minmax(90px, 0.8fr)`;
-  const rows = addCompetitionRanks(buildLeagueRows(leagueScores));
+function LeagueStandingsPage({ leagueData }: { leagueData: LeagueData }) {
+  const [selectedSeasonId, setSelectedSeasonId] = useState(leagueData.activeSeasonId);
+  useEffect(() => {
+    setSelectedSeasonId((current) =>
+      leagueData.seasons.some((season) => season.id === current) ? current : leagueData.activeSeasonId,
+    );
+  }, [leagueData]);
+  const selectedSeason =
+    leagueData.seasons.find((season) => season.id === selectedSeasonId) ??
+    getActiveLeagueSeason(leagueData);
+  const leagueGridTemplate = `minmax(220px, 1.3fr) repeat(${selectedSeason.events.length}, minmax(90px, 1fr)) minmax(90px, 0.8fr)`;
+  const rows = addCompetitionRanks(buildLeagueRows(selectedSeason.scores, selectedSeason.troops, selectedSeason.events));
   const hasAnyScores = rows.some((row) => row.total !== null);
 
   return (
     <SiteShell>
       <main className="homepage-main homepage-single homepage-league-page" aria-labelledby="league-heading">
-        <h1 id="league-heading">Aktuální pořadí</h1>
+        <h1 id="league-heading">Pořadí Zelené ligy</h1>
+        <div className="gallery-year-tabs homepage-league-season-tabs" aria-label="Ročníky pořadí">
+          {leagueData.seasons.map((season) => (
+            <button
+              key={season.id}
+              type="button"
+              className={`gallery-year-tab${season.id === selectedSeason.id ? ' is-active' : ''}`}
+              onClick={() => setSelectedSeasonId(season.id)}
+            >
+              {season.name}
+              {season.isActive ? ' · aktuální' : ''}
+            </button>
+          ))}
+        </div>
         <div className="homepage-card homepage-league-table-card">
+          <div className="homepage-league-season-heading">
+            <h2>{selectedSeason.name}</h2>
+            {selectedSeason.isActive ? <span>Aktuální ročník</span> : <span>Archivní ročník</span>}
+          </div>
           {!hasAnyScores ? (
-            <p className="homepage-league-note">Body doplníme po napojení na tabulku s aktuálním pořadím.</p>
+            <p className="homepage-league-note">Body pro tento ročník zatím nejsou vyplněné.</p>
           ) : null}
           <div className="homepage-league-table" style={{ '--league-grid': leagueGridTemplate } as React.CSSProperties}>
             <div className="homepage-league-row homepage-league-header">
               <span>Oddíl</span>
-              {LEAGUE_EVENTS.map((event) => (
+              {selectedSeason.events.map((event) => (
                 <span key={event.key} className="homepage-league-score">
                   {event.label}
                 </span>
@@ -4805,7 +5395,7 @@ function LeagueStandingsPage({ leagueScores }: { leagueScores: LeagueScoresRecor
                   <strong className="homepage-league-rank">{row.rank}.</strong> {row.name}
                 </span>
                 {row.scores.map((score, scoreIndex) => {
-                  const event = LEAGUE_EVENTS[scoreIndex];
+                  const event = selectedSeason.events[scoreIndex];
                   return (
                     <span key={`${row.key}-${scoreIndex}`} className="homepage-league-score" data-label={event.label}>
                       {formatLeagueScore(score)}
@@ -4820,7 +5410,7 @@ function LeagueStandingsPage({ leagueScores }: { leagueScores: LeagueScoresRecor
           </div>
         </div>
         <div className="homepage-card homepage-league-history-card">
-          <h2>Historické pořadí</h2>
+          <h2>Starší archiv pořadí</h2>
           {HISTORICAL_LEAGUE_EMBED_URL ? (
             <div className="homepage-league-embed">
               <iframe
@@ -4957,7 +5547,7 @@ export default function ZelenaligaSite() {
   const [articlesLoading, setArticlesLoading] = useState(false);
   const [articlesHasMore, setArticlesHasMore] = useState(false);
   const [articlesLoadingMore, setArticlesLoadingMore] = useState(false);
-  const [leagueScores, setLeagueScores] = useState<LeagueScoresRecord>(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
+  const [leagueData, setLeagueData] = useState<LeagueData>(createDefaultLeagueData());
   const [driveAlbums, setDriveAlbums] = useState<DriveAlbum[]>([]);
   const [galleryYears, setGalleryYears] = useState<string[]>([]);
   const [galleryAlbumCountsByYear, setGalleryAlbumCountsByYear] = useState<Record<string, number>>({});
@@ -5059,12 +5649,11 @@ export default function ZelenaligaSite() {
         if (!active) {
           return;
         }
-        const entries = Array.isArray(data.scores) ? (data.scores as LeagueScoreEntry[]) : [];
-        setLeagueScores(buildLeagueScoreRecord(entries, CURRENT_LEAGUE_SCORES));
+        setLeagueData(normalizeLeagueData(data));
       })
       .catch(() => {
         if (active) {
-          setLeagueScores(cloneLeagueScores(CURRENT_LEAGUE_SCORES));
+          setLeagueData(createDefaultLeagueData());
         }
       });
     return () => {
@@ -5256,7 +5845,7 @@ export default function ZelenaligaSite() {
         homepageContent={homepageContent}
         articles={articles}
         articlesLoading={articlesLoading}
-        leagueScores={leagueScores}
+        leagueSeason={getActiveLeagueSeason(leagueData)}
       />
     );
   }
@@ -5274,7 +5863,7 @@ export default function ZelenaligaSite() {
     }
 
     if (slug === 'aktualni-poradi' || slug === 'zelena-liga') {
-      return <LeagueStandingsPage leagueScores={leagueScores} />;
+      return <LeagueStandingsPage leagueData={leagueData} />;
     }
 
     if (slug === 'aplikace') {

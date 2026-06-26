@@ -931,6 +931,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: clamp(16px, 3vw, 22px);
+  align-items: start;
 }
 
 .homepage-article-grid--index {
@@ -939,7 +940,8 @@
 }
 
 .homepage-article-grid--homepage {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(14px, 2vw, 18px);
 }
 
 .homepage-article-card {
@@ -954,7 +956,8 @@
 }
 
 .homepage-article-card--homepage {
-  min-height: 220px;
+  padding: 14px;
+  min-height: 0;
 }
 
 .homepage-article-grid--index .homepage-article-card {
@@ -974,6 +977,11 @@
 
 .homepage-article-grid--index .homepage-article-row {
   gap: 18px;
+}
+
+.homepage-article-card--homepage .homepage-article-row {
+  flex-direction: column;
+  gap: 12px;
 }
 
 .homepage-article-thumb {
@@ -997,6 +1005,13 @@
   width: 150px;
   min-width: 150px;
   height: 140px;
+}
+
+.homepage-article-card--homepage .homepage-article-thumb {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  aspect-ratio: 16 / 10;
 }
 
 .homepage-article-thumb img {
@@ -1024,6 +1039,10 @@
 
 .homepage-article-grid--index .homepage-article-card h3 {
   font-size: clamp(1.25rem, 2.1vw, 1.5rem);
+}
+
+.homepage-article-card--homepage h3 {
+  font-size: clamp(1rem, 1.4vw, 1.15rem);
 }
 
 .homepage-article-card p {
@@ -1067,6 +1086,11 @@
   -webkit-line-clamp: 2;
 }
 
+.homepage-article-card--homepage .homepage-article-excerpt--short {
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
 .homepage-article-read-link {
   display: inline-flex;
   align-items: center;
@@ -1086,6 +1110,22 @@
   color: #ffcc33;
 }
 
+@media (max-width: 1180px) {
+  .homepage-article-grid--homepage {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .homepage-article-card--homepage .homepage-article-row {
+    display: grid;
+    grid-template-columns: 128px minmax(0, 1fr);
+  }
+
+  .homepage-article-card--homepage .homepage-article-thumb {
+    height: 128px;
+    aspect-ratio: auto;
+  }
+}
+
 @media (max-width: 680px) {
   .homepage-article-row {
     flex-direction: column;
@@ -1099,6 +1139,15 @@
   .homepage-article-grid--index,
   .homepage-article-grid--homepage {
     grid-template-columns: 1fr;
+  }
+
+  .homepage-article-card--homepage .homepage-article-row {
+    display: flex;
+    grid-template-columns: none;
+  }
+
+  .homepage-article-card--homepage .homepage-article-thumb {
+    height: 180px;
   }
 }
 
@@ -1601,6 +1650,33 @@
   text-align: left;
 }
 
+.homepage-league-season-tabs {
+  justify-content: center;
+}
+
+.homepage-league-season-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.homepage-league-season-heading h2 {
+  margin: 0;
+}
+
+.homepage-league-season-heading span {
+  display: inline-flex;
+  width: fit-content;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(255, 204, 51, 0.28);
+  color: #04372c;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
 .homepage-league-note {
   margin-bottom: 16px;
   font-size: 0.9rem;
@@ -2030,6 +2106,132 @@
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.editor-league-season-tabs {
+  justify-content: flex-start;
+}
+
+.editor-league-season-panel,
+.editor-league-season-create,
+.editor-league-troops {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(4, 55, 44, 0.04);
+  border: 1px solid rgba(4, 55, 44, 0.1);
+}
+
+.editor-league-season-panel,
+.editor-league-season-create {
+  grid-template-columns: minmax(240px, 1fr) auto;
+  align-items: end;
+}
+
+.editor-field,
+.editor-check {
+  display: grid;
+  gap: 6px;
+}
+
+.editor-field span,
+.editor-check span {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: rgba(4, 55, 44, 0.72);
+}
+
+.editor-field input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(4, 55, 44, 0.18);
+  padding: 10px 12px;
+  font: inherit;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.editor-check {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  align-self: center;
+}
+
+.editor-check input {
+  width: 18px;
+  height: 18px;
+}
+
+.editor-league-troops h3,
+.editor-league-troops p {
+  margin: 0;
+}
+
+.editor-league-troops p {
+  color: rgba(4, 55, 44, 0.72);
+  font-size: 0.92rem;
+}
+
+.editor-league-troop-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.editor-league-troop-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(4, 55, 44, 0.14);
+  color: #04372c;
+  font-weight: 700;
+}
+
+.editor-league-troop-pill button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(4, 55, 44, 0.08);
+  color: #04372c;
+  cursor: pointer;
+}
+
+.editor-league-troop-pill button:hover,
+.editor-league-troop-pill button:focus-visible {
+  background: rgba(180, 30, 30, 0.12);
+  color: #8a1f1f;
+}
+
+.editor-league-event-list {
+  display: grid;
+  gap: 10px;
+}
+
+.editor-league-event-row,
+.editor-league-event-create {
+  grid-template-columns: minmax(120px, 0.5fr) minmax(220px, 1fr) auto;
+}
+
+.editor-league-event-row {
+  display: grid;
+  align-items: end;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(4, 55, 44, 0.1);
+}
+
+.editor-league-event-remove {
+  align-self: end;
+  min-height: 41px;
 }
 
 .editor-league-table {
@@ -2555,6 +2757,19 @@
 }
 
 @media (max-width: 720px) {
+  .homepage-league-season-heading,
+  .editor-league-season-panel,
+  .editor-league-season-create,
+  .editor-league-event-row,
+  .editor-league-event-create {
+    grid-template-columns: 1fr;
+  }
+
+  .homepage-league-season-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .homepage-league-table {
     overflow-x: visible;
     gap: 12px;
