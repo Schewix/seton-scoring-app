@@ -5437,7 +5437,7 @@ function LeagueStandingsPage({ leagueData }: { leagueData: LeagueData }) {
           </div>
         </div>
         <div className="homepage-card homepage-league-history-card">
-          <h2>Starší archiv pořadí</h2>
+          <h2>Historická tabulka</h2>
           {HISTORICAL_LEAGUE_EMBED_URL ? (
             <div className="homepage-league-embed">
               <iframe
