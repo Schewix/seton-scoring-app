@@ -97,7 +97,7 @@
 .homepage-nav {
   width: 100%;
   max-width: var(--homepage-max-width);
-  margin-bottom: 48px;
+  margin-bottom: clamp(24px, 4vw, 36px);
   padding: 12px 16px;
   border-radius: 999px;
   border: 1px solid rgba(4, 55, 44, 0.16);
@@ -110,7 +110,7 @@
 .homepage-nav.is-compact {
   width: auto;
   max-width: none;
-  margin: 0 0 40px auto;
+  margin: 0 0 28px auto;
   padding: 0;
   border: none;
   border-radius: 0;
@@ -147,7 +147,7 @@
 .homepage-nav.is-desktop-compact {
   width: 100%;
   max-width: var(--homepage-max-width);
-  margin: 0 0 48px;
+  margin: 0 0 clamp(24px, 4vw, 36px);
 }
 
 .homepage-nav.is-desktop-compact .homepage-nav-panel {
@@ -431,7 +431,7 @@
   .homepage-nav {
     width: auto;
     max-width: none;
-    margin: 0 0 32px auto;
+    margin: 0 0 24px auto;
     padding: 0;
     border: none;
     border-radius: 0;
@@ -589,6 +589,12 @@
 .homepage-section-header h2 {
   margin: 0;
   font-size: clamp(1.8rem, 4vw, 2.4rem);
+  color: var(--text);
+}
+
+.homepage-section-header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4.8vw, 3rem);
   color: var(--text);
 }
 
@@ -1342,7 +1348,12 @@
   align-items: center;
   text-align: center;
   max-width: min(900px, 100%);
-  margin-top: 48px;
+  gap: clamp(16px, 2.5vw, 28px);
+  margin-top: 0;
+}
+
+.homepage-single > h1 {
+  margin: 0;
 }
 
 .homepage-single.articles-page {
@@ -1371,7 +1382,12 @@
   max-width: min(1200px, 100%);
   align-items: stretch;
   text-align: left;
+  gap: clamp(14px, 2vw, 22px);
   padding: 0 16px;
+}
+
+.homepage-single.gallery-page .homepage-lead {
+  margin-top: 0;
 }
 
 .homepage-single.homepage-league-page {
@@ -2443,12 +2459,12 @@
 .gallery-year-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  margin-top: 32px;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .gallery-year-tabs {
-  margin-top: 8px;
+  margin-top: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -2617,7 +2633,7 @@
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  margin-top: 24px;
+  margin-top: 0;
 }
 
 .gallery-photo-thumb {
