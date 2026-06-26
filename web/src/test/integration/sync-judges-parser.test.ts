@@ -4,7 +4,7 @@ import {
   normalizeLookupKey,
   parseBoardCsvRows,
   parseJudgeCsvRows,
-} from '../../../../supabase/functions/sync-judges/parser.ts';
+} from '../../../../supabase/functions/sync-judges/parser';
 
 describe('sync-judges parser integration', () => {
   it('parses deskovka with multiple games and allowed categories V,VI', () => {

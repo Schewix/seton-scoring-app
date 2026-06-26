@@ -27,6 +27,23 @@ type PendingRequest = {
   abortController: AbortController;
 };
 
+type GalleryPreviewFile = GalleryPreview['files'][number];
+
+type RawGalleryPreviewResponse = {
+  folderId?: unknown;
+  totalCount?: unknown;
+  files?: unknown;
+};
+
+type RawGalleryPreviewFile = {
+  fileId?: unknown;
+  id?: unknown;
+  name?: unknown;
+  thumbnailLink?: unknown;
+  fullImageUrl?: unknown;
+  webContentLink?: unknown;
+};
+
 const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 const cache = new Map<string, CacheEntry>();
 const pendingRequests = new Map<string, PendingRequest>();
@@ -86,35 +103,37 @@ export function fetchAlbumPreview(folderId: string, signal?: AbortSignal): Promi
       return res.json() as Promise<GalleryPreview>;
     })
     .then((data) => {
-      const files = Array.isArray((data as any).files)
-        ? (data as any).files
-            .map((file: any) => {
+      const rawData = data as RawGalleryPreviewResponse;
+      const files: GalleryPreviewFile[] = Array.isArray(rawData.files)
+        ? rawData.files
+            .map((file): GalleryPreviewFile | null => {
+              const row = file && typeof file === 'object' ? (file as RawGalleryPreviewFile) : null;
               const fileId =
-                typeof file?.fileId === 'string'
-                  ? file.fileId
-                  : typeof file?.id === 'string'
-                    ? file.id
+                typeof row?.fileId === 'string'
+                  ? row.fileId
+                  : typeof row?.id === 'string'
+                    ? row.id
                     : '';
               if (!fileId) {
                 return null;
               }
               return {
                 fileId,
-                name: typeof file?.name === 'string' ? file.name : '',
-                thumbnailLink: typeof file?.thumbnailLink === 'string' ? file.thumbnailLink : null,
-                fullImageUrl: typeof file?.fullImageUrl === 'string' ? file.fullImageUrl : null,
-                webContentLink: typeof file?.webContentLink === 'string' ? file.webContentLink : null,
+                name: typeof row?.name === 'string' ? row.name : '',
+                thumbnailLink: typeof row?.thumbnailLink === 'string' ? row.thumbnailLink : null,
+                fullImageUrl: typeof row?.fullImageUrl === 'string' ? row.fullImageUrl : null,
+                webContentLink: typeof row?.webContentLink === 'string' ? row.webContentLink : null,
               };
             })
             .filter(
-              (file): file is GalleryPreview['files'][number] =>
+              (file): file is GalleryPreviewFile =>
                 Boolean(file && typeof file.fileId === 'string' && file.fileId.length > 0),
             )
         : [];
 
       const normalized: GalleryPreview = {
-        folderId: typeof (data as any).folderId === 'string' ? (data as any).folderId : folderId,
-        totalCount: typeof (data as any).totalCount === 'number' ? (data as any).totalCount : null,
+        folderId: typeof rawData.folderId === 'string' ? rawData.folderId : folderId,
+        totalCount: typeof rawData.totalCount === 'number' ? rawData.totalCount : null,
         files,
       };
 

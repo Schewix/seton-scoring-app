@@ -348,13 +348,15 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
-      let stationCode = stationCodeCache.get(parsed.station_id);
+      const stationId = parsed.station_id;
+      const eventId = parsed.event_id;
+      let stationCode = stationCodeCache.get(stationId);
       if (!stationCode) {
         const { data: stationRow, error: stationError } = await supabaseAdmin
           .from('stations')
           .select('id, code')
-          .eq('id', parsed.station_id)
-          .eq('event_id', parsed.event_id)
+          .eq('id', stationId)
+          .eq('event_id', eventId)
           .maybeSingle();
 
         if (stationError) {
@@ -365,8 +367,9 @@ export default async function handler(req: any, res: any) {
           continue;
         }
 
-        stationCode = (stationRow.code ?? '').trim().toUpperCase();
-        stationCodeCache.set(parsed.station_id, stationCode);
+        const rawStationCode = typeof stationRow.code === 'string' ? stationRow.code : '';
+        stationCode = rawStationCode.trim().toUpperCase();
+        stationCodeCache.set(stationId, stationCode);
       }
 
       const result = await processSubmission(operation, parsed, judge.display_name, {

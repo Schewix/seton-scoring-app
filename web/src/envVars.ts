@@ -7,5 +7,6 @@ export const env = {
   VITE_AUTH_API_URL: import.meta.env.VITE_AUTH_API_URL as string | undefined,
   VITE_AUTH_BYPASS: import.meta.env.VITE_AUTH_BYPASS as string | undefined,
   VITE_AUTH_BYPASS_TOKEN: import.meta.env.VITE_AUTH_BYPASS_TOKEN as string | undefined,
+  VITE_AUTH_BYPASS_STATION_CODE: import.meta.env.VITE_AUTH_BYPASS_STATION_CODE as string | undefined,
   VITE_AUTH_BYPASS_PATROLS: import.meta.env.VITE_AUTH_BYPASS_PATROLS as string | undefined,
 };

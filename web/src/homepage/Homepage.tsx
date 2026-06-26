@@ -199,6 +199,7 @@ type AfterpartyTroopLeaderboardRow = {
 };
 type AfterpartyCounterMode = 'counter' | 'league';
 type AfterpartyAdminSessionState = 'checking' | 'unauthorized' | 'authorized';
+type AfterpartyDrinkCategory = (typeof AFTERPARTY_DRINK_MENU)[number]['category'];
 
 type LeagueEvent = (typeof LEAGUE_EVENTS)[number]['key'];
 type LeagueScoresRecord = Record<string, Partial<Record<LeagueEvent, number | null>>>;
@@ -3076,7 +3077,9 @@ function AfterpartyCounter({ open, onClose }: { open: boolean; onClose: () => vo
   const [selectedDrinks, setSelectedDrinks] = useState<PersonalDrinkKey[]>(initialState.selected);
   const [counts, setCounts] = useState<PersonalDrinkCounts>(initialState.counts);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeDrinkCategory, setActiveDrinkCategory] = useState(AFTERPARTY_DRINK_MENU[0]?.category ?? '');
+  const [activeDrinkCategory, setActiveDrinkCategory] = useState<AfterpartyDrinkCategory>(
+    AFTERPARTY_DRINK_MENU[0]?.category ?? 'Pivo',
+  );
   const [mode, setMode] = useState<AfterpartyCounterMode>('counter');
   const [participant, setParticipant] = useState<AfterpartyParticipant | null>(null);
   const [profileForm, setProfileForm] = useState({ displayName: '', troopName: '' });
