@@ -1117,9 +1117,9 @@ function ArticlesIndexPage({
                             <img
                               src={coverUrl}
                               srcSet={coverSrcSet || undefined}
-                              sizes="(max-width: 700px) 28vw, 120px"
-                              width={120}
-                              height={120}
+                              sizes="(max-width: 360px) 84px, (max-width: 680px) 96px, 150px"
+                              width={150}
+                              height={140}
                               alt={article.coverImage.alt ?? article.title}
                               loading={isPriorityImage ? 'eager' : 'lazy'}
                               decoding="async"
