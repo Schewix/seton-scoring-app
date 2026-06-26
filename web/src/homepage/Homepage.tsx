@@ -307,8 +307,12 @@ const CURRENT_LEAGUE_SCORES: Record<string, Partial<Record<LeagueEvent, number>>
   'zabky-jedovnice': { 'pto-ob': 0 },
 };
 
+const HISTORICAL_LEAGUE_SHEET_ID = '1NyooEqb5doCtua3ee7OLJtSa3kV7fCH3';
+const HISTORICAL_LEAGUE_SHEET_GID = '252350504';
 const HISTORICAL_LEAGUE_EMBED_URL =
-  'https://docs.google.com/spreadsheets/d/1NyooEqb5doCtua3ee7OLJtSa3kV7fCH3/gviz/tq?tqx=out:html&gid=252350504';
+  `https://docs.google.com/spreadsheets/d/${HISTORICAL_LEAGUE_SHEET_ID}/gviz/tq?tqx=out:html&gid=${HISTORICAL_LEAGUE_SHEET_GID}`;
+const HISTORICAL_LEAGUE_VIEW_URL =
+  `https://docs.google.com/spreadsheets/d/${HISTORICAL_LEAGUE_SHEET_ID}/edit#gid=${HISTORICAL_LEAGUE_SHEET_GID}`;
 
 const HEADER_SUBTITLE = 'Soutěže, oddíly a informace na jednom místě.';
 const HEADER_LEAD =
@@ -5439,14 +5443,30 @@ function LeagueStandingsPage({ leagueData }: { leagueData: LeagueData }) {
         <div className="homepage-card homepage-league-history-card">
           <h2>Historická tabulka</h2>
           {HISTORICAL_LEAGUE_EMBED_URL ? (
-            <div className="homepage-league-embed">
-              <iframe
-                src={HISTORICAL_LEAGUE_EMBED_URL}
-                title="Historické pořadí Zelené ligy"
-                loading="lazy"
-                allowFullScreen
-              />
-            </div>
+            <>
+              <div className="homepage-league-embed">
+                <iframe
+                  src={HISTORICAL_LEAGUE_EMBED_URL}
+                  title="Historické pořadí Zelené ligy"
+                  loading="lazy"
+                  allowFullScreen
+                />
+              </div>
+              <div className="homepage-league-mobile-fallback">
+                <p>
+                  Google tabulka se na mobilu nemusí spolehlivě načíst přímo v této stránce.
+                  Otevři ji raději samostatně.
+                </p>
+                <a className="homepage-cta secondary" href={HISTORICAL_LEAGUE_VIEW_URL} target="_blank" rel="noreferrer">
+                  Otevřít historickou tabulku
+                </a>
+              </div>
+              <div className="homepage-league-embed-actions">
+                <a className="homepage-inline-link" href={HISTORICAL_LEAGUE_VIEW_URL} target="_blank" rel="noreferrer">
+                  Otevřít tabulku v Google Sheets
+                </a>
+              </div>
+            </>
           ) : (
             <p>Sem vložíme Google tabulku s historickým pořadím. Pošli prosím embed link.</p>
           )}

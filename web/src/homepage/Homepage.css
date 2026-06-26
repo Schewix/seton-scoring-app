@@ -1822,6 +1822,30 @@
   width: 100%;
 }
 
+.homepage-league-embed-actions {
+  margin-top: 12px;
+}
+
+.homepage-league-mobile-fallback {
+  display: none;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(4, 55, 44, 0.12);
+  background: rgba(4, 55, 44, 0.04);
+}
+
+.homepage-league-mobile-fallback p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.homepage-league-mobile-fallback .homepage-cta {
+  width: fit-content;
+}
+
 .homepage-league-embed iframe {
   width: 100%;
   min-height: 520px;
@@ -2894,6 +2918,18 @@
   .homepage-about-list--chiefs li {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .homepage-league-embed {
+    display: none;
+  }
+
+  .homepage-league-mobile-fallback {
+    display: grid;
+  }
+
+  .homepage-league-embed-actions {
+    display: none;
   }
 
   .homepage-pdf-frame iframe {
