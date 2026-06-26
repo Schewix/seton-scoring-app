@@ -141,15 +141,106 @@ function getCoverImage(raw: RawArticle): { url?: string | null; alt?: string | n
   if (url) {
     return { url, alt: null };
   }
-  const photos = Array.isArray(raw.photos) ? raw.photos : [];
+  const photos = getPhotoEntries(raw);
   if (photos.length > 0) {
-    const first = photos[0] as RawArticle;
     return {
-      url: pickString(first, ['url', 'src', 'href']),
-      alt: pickString(first, ['title', 'alt']),
+      url: photos[0].url,
+      alt: photos[0].alt,
     };
   }
   return { url: null, alt: null };
+}
+
+function getPhotoEntries(raw: RawArticle): Array<{ url: string; alt: string | null }> {
+  const containers = [raw.photos, raw.images, raw.gallery, raw.imageGallery, raw.image_gallery];
+  const entries: Array<{ url: string; alt: string | null }> = [];
+
+  for (const container of containers) {
+    if (!Array.isArray(container)) {
+      continue;
+    }
+    for (const photo of container) {
+      if (typeof photo === 'string') {
+        const url = photo.trim();
+        if (url) {
+          entries.push({ url, alt: null });
+        }
+        continue;
+      }
+      if (!photo || typeof photo !== 'object') {
+        continue;
+      }
+      const url = pickString(photo as RawArticle, [
+        'url',
+        'src',
+        'href',
+        'sourceUrl',
+        'source_url',
+        'downloadUrl',
+        'download_url',
+      ]);
+      if (!url) {
+        continue;
+      }
+      entries.push({
+        url,
+        alt: pickString(photo as RawArticle, ['title', 'alt', 'name', 'caption']),
+      });
+    }
+  }
+
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    if (seen.has(entry.url)) {
+      return false;
+    }
+    seen.add(entry.url);
+    return true;
+  });
+}
+
+function escapeHtmlAttribute(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function getImageSourcesFromHtml(html: string | null | undefined) {
+  if (!html) {
+    return new Set<string>();
+  }
+  const sources = new Set<string>();
+  const dom = new JSDOM(html);
+  dom.window.document.querySelectorAll('img').forEach((image) => {
+    const src = image.getAttribute('src')?.trim();
+    if (src) {
+      sources.add(src);
+    }
+  });
+  return sources;
+}
+
+function buildPhotoGalleryHtml(raw: RawArticle, bodyHtml: string | null, coverImageUrl: string | null | undefined) {
+  const existingSources = getImageSourcesFromHtml(bodyHtml);
+  const photos = getPhotoEntries(raw).filter((photo) => {
+    if (photo.url === coverImageUrl) {
+      return false;
+    }
+    return !existingSources.has(photo.url);
+  });
+  if (photos.length === 0) {
+    return '';
+  }
+  return photos
+    .map(
+      (photo) =>
+        `<figure class="homepage-article-photo"><img src="${escapeHtmlAttribute(photo.url)}" alt="${escapeHtmlAttribute(
+          photo.alt ?? '',
+        )}" loading="lazy" /></figure>`,
+    )
+    .join('');
 }
 
 function parseDate(raw: RawArticle): string | null {
@@ -173,7 +264,9 @@ function mapArticle(raw: RawArticle): PionyrArticle | null {
   const author = pickString(raw, ['authorName', 'author', 'author_name']);
   const dateISO = parseDate(raw) ?? new Date().toISOString();
   const cover = getCoverImage(raw);
-  const bodyHtml = pickString(raw, ['text', 'body', 'content']);
+  const bodyHtmlRaw = pickString(raw, ['text', 'body', 'content']);
+  const galleryHtml = buildPhotoGalleryHtml(raw, bodyHtmlRaw, cover.url);
+  const bodyHtml = `${galleryHtml}${bodyHtmlRaw ?? ''}`.trim();
   return {
     source: 'pionyr',
     slug,
@@ -183,7 +276,7 @@ function mapArticle(raw: RawArticle): PionyrArticle | null {
     author,
     coverImageUrl: cover.url ?? null,
     coverImageAlt: cover.alt ?? null,
-    bodyHtml: bodyHtml ?? null,
+    bodyHtml: bodyHtml || null,
   };
 }
 
@@ -612,15 +705,60 @@ function splitDateAndTitle(value: string | null): { dateISO: string | null; titl
 
 function normalizeDocumentUrls(doc: Document, base: string) {
   doc.querySelectorAll('img').forEach((img) => {
-    const src = img.getAttribute('src');
-    const resolved = absolutizeUrl(src, base);
-    if (resolved) img.setAttribute('src', resolved);
+    ['src', 'data-src', 'data-lazy-src', 'data-original', 'data-full'].forEach((attribute) => {
+      const src = img.getAttribute(attribute);
+      const resolved = absolutizeUrl(src, base);
+      if (resolved) img.setAttribute(attribute, resolved);
+    });
+    ['srcset', 'data-srcset', 'data-lazy-srcset'].forEach((attribute) => {
+      const srcset = normalizeSrcSetUrls(img.getAttribute(attribute), base);
+      if (srcset) img.setAttribute(attribute, srcset);
+    });
+  });
+  doc.querySelectorAll('source').forEach((source) => {
+    ['srcset', 'data-srcset', 'data-lazy-srcset'].forEach((attribute) => {
+      const srcset = normalizeSrcSetUrls(source.getAttribute(attribute), base);
+      if (srcset) source.setAttribute(attribute, srcset);
+    });
   });
   doc.querySelectorAll('a').forEach((link) => {
     const href = link.getAttribute('href');
     const resolved = absolutizeUrl(href, base);
     if (resolved) link.setAttribute('href', resolved);
   });
+}
+
+function normalizeSrcSetUrls(value: string | null, base: string): string | null {
+  if (!value) {
+    return null;
+  }
+  const entries = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [url, ...descriptorParts] = entry.split(/\s+/);
+      const resolved = absolutizeUrl(url, base) ?? url;
+      return [resolved, ...descriptorParts].join(' ').trim();
+    });
+  return entries.length > 0 ? entries.join(', ') : null;
+}
+
+function getImageUrlFromElement(image: HTMLImageElement): string | null {
+  for (const attribute of ['src', 'data-src', 'data-lazy-src', 'data-original', 'data-full']) {
+    const value = image.getAttribute(attribute)?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  for (const attribute of ['srcset', 'data-srcset', 'data-lazy-srcset']) {
+    const value = image.getAttribute(attribute)?.trim();
+    const firstUrl = value?.split(',')[0]?.trim().split(/\s+/)[0]?.trim();
+    if (firstUrl) {
+      return firstUrl;
+    }
+  }
+  return null;
 }
 
 async function fetchWebListItems(): Promise<WebArticleListItem[]> {
@@ -703,7 +841,7 @@ async function fetchWebDetailBySlug(slug: string): Promise<PionyrArticle | null>
 
   const imageNodes = Array.from(doc.querySelectorAll<HTMLImageElement>('.column-reference-img img'));
   const imageUrls = imageNodes
-    .map((img) => img.getAttribute('src'))
+    .map((img) => getImageUrlFromElement(img))
     .filter((src): src is string => Boolean(src));
   const imageAlts = imageNodes.map((img) => img.getAttribute('alt'));
 

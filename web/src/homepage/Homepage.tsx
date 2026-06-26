@@ -16,6 +16,7 @@ import { fetchContentArticle, fetchContentArticles, type ContentArticle } from '
 import { fetchHomepage, hasSanityConfig, type SanityHomepage } from '../data/sanity';
 import { fetchAlbumPreview, type GalleryPreview as CachedGalleryPreview } from '../utils/galleryCache';
 import { supabase } from '../supabaseClient';
+import SecretMenuGame from '../secretMenu/SecretMenuGame';
 import {
   AFTERPARTY_DRINK_BY_KEY,
   AFTERPARTY_DRINK_ITEMS,
@@ -375,7 +376,7 @@ const HOMEPAGE_CAROUSEL = (CAROUSEL_IMAGE_SOURCES.length ? CAROUSEL_IMAGE_SOURCE
 );
 
 const GALLERY_PAGE_SIZE = 24;
-const HOMEPAGE_ARTICLE_LIMIT = 6;
+const HOMEPAGE_ARTICLE_LIMIT = 4;
 const ARTICLES_PAGE_SIZE = 12;
 
 type Article = {
@@ -1055,10 +1056,10 @@ function ArticlesIndexPage({
 }) {
   return (
     <SiteShell>
-      <main className="homepage-main homepage-single" aria-labelledby="articles-heading">
+      <main className="homepage-main homepage-single articles-page" aria-labelledby="articles-heading">
         <section className="homepage-section" aria-labelledby="articles-heading">
           <div className="homepage-section-header homepage-section-header--left">
-            <h1 id="articles-heading">Články ze soutěží</h1>
+            <h1 id="articles-heading">Články a novinky</h1>
             <span className="homepage-section-accent" aria-hidden="true" />
           </div>
           {articlesLoading ? (
@@ -1070,7 +1071,7 @@ function ArticlesIndexPage({
             </>
           ) : articles.length > 0 ? (
             <>
-              <div className="homepage-article-grid">
+              <div className="homepage-article-grid homepage-article-grid--index">
                 {articles.map((article, index) => {
                   const isPriorityImage = index === 0;
                   const coverUrl = article.coverImage?.url ? getArticleThumbUrl(article.coverImage.url, 360) : '';
@@ -1101,48 +1102,18 @@ function ArticlesIndexPage({
                           )}
                         </div>
                         <div className="homepage-article-body">
-                          <div
-                            className="homepage-article-meta"
-                            style={{ display: 'flex', justifyContent: 'space-between' }}
-                          >
-                            <time
-                              dateTime={article.dateISO}
-                              style={{
-                                display: 'inline-flex',
-                                padding: '4px 10px',
-                                borderRadius: '999px',
-                                background: 'rgba(4, 55, 44, 0.08)',
-                                fontWeight: 600,
-                              }}
-                            >
+                          <div className="homepage-article-meta">
+                            <time className="homepage-article-date" dateTime={article.dateISO}>
                               {article.dateLabel}
                             </time>
                           </div>
-                          <h3
-                            style={{
-                              display: '-webkit-box',
-                              WebkitBoxOrient: 'vertical',
-                              WebkitLineClamp: 2,
-                              overflow: 'hidden',
-                            }}
-                          >
+                          <h3 className="homepage-article-title">
                             {article.title}
                           </h3>
-                          <p
-                            style={{
-                              display: '-webkit-box',
-                              WebkitBoxOrient: 'vertical',
-                              WebkitLineClamp: 3,
-                              overflow: 'hidden',
-                            }}
-                          >
+                          <p className="homepage-article-excerpt">
                             {article.excerpt}
                           </p>
-                          <a
-                            className="homepage-inline-link"
-                            href={article.href}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                          >
+                          <a className="homepage-inline-link homepage-article-read-link" href={article.href}>
                             Číst článek <span aria-hidden="true">→</span>
                           </a>
                         </div>
@@ -4258,7 +4229,7 @@ function SiteHeader({
   lead?: string;
 }) {
   const [navOpen, setNavOpen] = useState(false);
-  const [afterpartyOpen, setAfterpartyOpen] = useState(false);
+  const [secretMenuOpen, setSecretMenuOpen] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(min-width: 901px)').matches : true,
   );
@@ -4322,7 +4293,7 @@ function SiteHeader({
     titleTapTimestampsRef.current = recent;
     if (recent.length >= AFTERPARTY_TRIGGER_CLICK_COUNT) {
       titleTapTimestampsRef.current = [];
-      setAfterpartyOpen(true);
+      setSecretMenuOpen(true);
     }
   };
 
@@ -4383,7 +4354,7 @@ function SiteHeader({
           </div>
         </div>
       </nav>
-      <AfterpartyCounter open={afterpartyOpen} onClose={() => setAfterpartyOpen(false)} />
+      <SecretMenuGame open={secretMenuOpen} onClose={() => setSecretMenuOpen(false)} />
     </>
   );
 }
@@ -4602,7 +4573,7 @@ function Homepage({
 
         <section className="homepage-section" id="clanky" aria-labelledby="clanky-heading">
           <div className="homepage-section-header homepage-section-header--left">
-            <h2 id="clanky-heading">Články ze soutěží</h2>
+            <h2 id="clanky-heading">Články a novinky</h2>
             <span className="homepage-section-accent" aria-hidden="true" />
           </div>
           {articlesLoading ? (
@@ -4613,7 +4584,7 @@ function Homepage({
               <ArticleSkeletonGrid count={HOMEPAGE_ARTICLE_LIMIT} />
             </>
           ) : homepageArticles.length > 0 ? (
-            <div className="homepage-article-grid">
+            <div className="homepage-article-grid homepage-article-grid--homepage">
               {homepageArticles.map((article, index) => {
                 const isPriorityImage = index < 2;
                 const coverUrl = article.coverImage?.url
@@ -4623,7 +4594,7 @@ function Homepage({
                   ? buildArticleSrcSet(article.coverImage.url, [180, 240, 360, 480])
                   : '';
                 return (
-                  <article key={article.title} className="homepage-article-card" style={{ minHeight: '220px' }}>
+                  <article key={article.title} className="homepage-article-card homepage-article-card--homepage">
                     <div className="homepage-article-row">
                       <div className={`homepage-article-thumb${article.coverImage?.url ? '' : ' is-empty'}`}>
                         {article.coverImage?.url ? (
@@ -4646,41 +4617,18 @@ function Homepage({
                         )}
                       </div>
                       <div className="homepage-article-body">
-                        <div className="homepage-article-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <time
-                            dateTime={article.dateISO}
-                            style={{
-                              display: 'inline-flex',
-                              padding: '4px 10px',
-                              borderRadius: '999px',
-                              background: 'rgba(4, 55, 44, 0.08)',
-                              fontWeight: 600,
-                            }}
-                          >
+                        <div className="homepage-article-meta">
+                          <time className="homepage-article-date" dateTime={article.dateISO}>
                             {article.dateLabel}
                           </time>
                         </div>
-                        <h3
-                          style={{
-                            display: '-webkit-box',
-                            WebkitBoxOrient: 'vertical',
-                            WebkitLineClamp: 2,
-                            overflow: 'hidden',
-                          }}
-                        >
+                        <h3 className="homepage-article-title">
                           {article.title}
                         </h3>
-                        <p
-                          style={{
-                            display: '-webkit-box',
-                            WebkitBoxOrient: 'vertical',
-                            WebkitLineClamp: 2,
-                            overflow: 'hidden',
-                          }}
-                        >
+                        <p className="homepage-article-excerpt homepage-article-excerpt--short">
                           {article.excerpt}
                         </p>
-                        <a className="homepage-inline-link" href={article.href} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <a className="homepage-inline-link homepage-article-read-link" href={article.href}>
                           Číst článek <span aria-hidden="true">→</span>
                         </a>
                       </div>

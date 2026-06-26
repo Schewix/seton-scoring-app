@@ -29,6 +29,8 @@ const ARTICLE_IMAGE_CONCURRENCY = 1;
 const BYTES_PER_MEGABYTE = 1024 * 1024;
 const ARTICLE_IMAGE_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const IMAGE_SOURCE_ATTRIBUTES = ['src', 'data-src', 'data-lazy-src', 'data-original', 'data-full'] as const;
+const IMAGE_SRCSET_ATTRIBUTES = ['srcset', 'data-srcset', 'data-lazy-srcset'] as const;
 
 let cachedS3Client: { cacheKey: string; client: S3Client } | null = null;
 
@@ -120,6 +122,14 @@ function isCacheableRemoteImageUrl(url: string): boolean {
     return false;
   }
   return true;
+}
+
+function isLikelyImageAssetUrl(url: string): boolean {
+  return (
+    /\.(?:avif|gif|jpe?g|png|webp)(?:[?#].*)?$/i.test(url) ||
+    /\/wp-content\/uploads\//i.test(url) ||
+    /googleusercontent\.com\/.+[?&]id=/i.test(url)
+  );
 }
 
 function createImageBaseKey(config: ArticleImageR2Config, articleSlug: string, sourceUrl: string): string {
@@ -248,29 +258,115 @@ function getVariantUrl(cached: CachedArticleImage | null | undefined, preferredW
   return fallbackWidth ? cached.variants.get(fallbackWidth) ?? null : null;
 }
 
+function parseSrcSet(value: string | null | undefined): Array<{ url: string; width: number | null }> {
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [url, descriptor] = entry.split(/\s+/, 2);
+      const widthMatch = descriptor?.match(/^(\d+)w$/);
+      return {
+        url: url.trim(),
+        width: widthMatch ? Number(widthMatch[1]) : null,
+      };
+    })
+    .filter((entry) => Boolean(entry.url));
+}
+
+function getImageSourceCandidates(element: Element): Array<{ url: string; width: number | null }> {
+  const candidates: Array<{ url: string; width: number | null }> = [];
+  IMAGE_SOURCE_ATTRIBUTES.forEach((attribute) => {
+    const url = element.getAttribute(attribute)?.trim();
+    if (url) {
+      candidates.push({ url, width: null });
+    }
+  });
+  IMAGE_SRCSET_ATTRIBUTES.forEach((attribute) => {
+    candidates.push(...parseSrcSet(element.getAttribute(attribute)));
+  });
+  return candidates;
+}
+
+function getBestCachedImage(
+  candidates: Array<{ url: string; width: number | null }>,
+  cachedImages: Map<string, CachedArticleImage>,
+): { cached: CachedArticleImage; preferredWidth: number } | null {
+  const sorted = [...candidates].sort((a, b) => (b.width ?? 0) - (a.width ?? 0));
+  for (const candidate of sorted) {
+    const cached = cachedImages.get(candidate.url);
+    if (cached) {
+      return {
+        cached,
+        preferredWidth: candidate.width ?? 1200,
+      };
+    }
+  }
+  return null;
+}
+
 function getImageSourcesFromHtml(html: string): string[] {
   const dom = new JSDOM(html);
-  const images = Array.from(dom.window.document.querySelectorAll('img'));
-  return images
-    .map((image) => image.getAttribute('src')?.trim() ?? '')
-    .filter(Boolean);
+  const urls = new Set<string>();
+  Array.from(dom.window.document.querySelectorAll('img, source')).forEach((element) => {
+    getImageSourceCandidates(element).forEach((candidate) => {
+      urls.add(candidate.url);
+    });
+  });
+  Array.from(dom.window.document.querySelectorAll('a[href]')).forEach((link) => {
+    const href = link.getAttribute('href')?.trim() ?? '';
+    if (href && isLikelyImageAssetUrl(href)) {
+      urls.add(href);
+    }
+  });
+  return Array.from(urls);
 }
 
 function replaceImageSourcesInHtml(html: string, cachedImages: Map<string, CachedArticleImage>): string {
   const dom = new JSDOM(html);
-  const images = Array.from(dom.window.document.querySelectorAll('img'));
   let changed = false;
 
-  images.forEach((image) => {
-    const sourceUrl = image.getAttribute('src')?.trim() ?? '';
-    const cached = cachedImages.get(sourceUrl);
-    const replacement = getVariantUrl(cached, 1200);
+  Array.from(dom.window.document.querySelectorAll('img')).forEach((image) => {
+    const match = getBestCachedImage(getImageSourceCandidates(image), cachedImages);
+    const replacement = getVariantUrl(match?.cached, match?.preferredWidth ?? 1200);
     if (!replacement) {
       return;
     }
     image.setAttribute('src', replacement);
-    image.removeAttribute('srcset');
+    IMAGE_SOURCE_ATTRIBUTES.forEach((attribute) => {
+      if (attribute !== 'src') {
+        image.removeAttribute(attribute);
+      }
+    });
+    IMAGE_SRCSET_ATTRIBUTES.forEach((attribute) => image.removeAttribute(attribute));
     image.removeAttribute('sizes');
+    changed = true;
+  });
+
+  Array.from(dom.window.document.querySelectorAll('source')).forEach((source) => {
+    const match = getBestCachedImage(getImageSourceCandidates(source), cachedImages);
+    const replacement = getVariantUrl(match?.cached, match?.preferredWidth ?? 1200);
+    if (!replacement) {
+      return;
+    }
+    source.setAttribute('srcset', replacement);
+    source.removeAttribute('data-srcset');
+    source.removeAttribute('data-lazy-srcset');
+    source.removeAttribute('sizes');
+    changed = true;
+  });
+
+  Array.from(dom.window.document.querySelectorAll('a[href]')).forEach((link) => {
+    const href = link.getAttribute('href')?.trim() ?? '';
+    const cached = href ? cachedImages.get(href) : null;
+    const replacement = getVariantUrl(cached, 1200);
+    if (!replacement) {
+      return;
+    }
+    link.setAttribute('href', replacement);
     changed = true;
   });
 

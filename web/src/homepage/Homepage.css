@@ -933,6 +933,15 @@
   gap: clamp(16px, 3vw, 22px);
 }
 
+.homepage-article-grid--index {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(18px, 2.8vw, 28px);
+}
+
+.homepage-article-grid--homepage {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .homepage-article-card {
   padding: 18px;
   border-radius: 18px;
@@ -944,6 +953,14 @@
   gap: 12px;
 }
 
+.homepage-article-card--homepage {
+  min-height: 220px;
+}
+
+.homepage-article-grid--index .homepage-article-card {
+  padding: clamp(18px, 2.4vw, 24px);
+}
+
 .homepage-article-card--skeleton h3,
 .homepage-article-card--skeleton p {
   color: transparent;
@@ -953,6 +970,10 @@
   display: flex;
   gap: 16px;
   align-items: flex-start;
+}
+
+.homepage-article-grid--index .homepage-article-row {
+  gap: 18px;
 }
 
 .homepage-article-thumb {
@@ -970,6 +991,12 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.75rem;
+}
+
+.homepage-article-grid--index .homepage-article-thumb {
+  width: 150px;
+  min-width: 150px;
+  height: 140px;
 }
 
 .homepage-article-thumb img {
@@ -995,6 +1022,10 @@
   font-size: 1.2rem;
 }
 
+.homepage-article-grid--index .homepage-article-card h3 {
+  font-size: clamp(1.25rem, 2.1vw, 1.5rem);
+}
+
 .homepage-article-card p {
   margin: 0;
   color: var(--text-muted);
@@ -1002,8 +1033,46 @@
 }
 
 .homepage-article-meta {
+  display: flex;
+  justify-content: space-between;
   font-size: 0.85rem;
   color: rgba(4, 55, 44, 0.65);
+}
+
+.homepage-article-date {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(4, 55, 44, 0.08);
+  font-weight: 600;
+}
+
+.homepage-article-title,
+.homepage-article-excerpt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.homepage-article-title {
+  -webkit-line-clamp: 2;
+}
+
+.homepage-article-excerpt {
+  -webkit-line-clamp: 4;
+}
+
+.homepage-article-excerpt--short {
+  -webkit-line-clamp: 2;
+}
+
+.homepage-article-read-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: auto;
 }
 
 .homepage-inline-link {
@@ -1025,6 +1094,11 @@
   .homepage-article-thumb {
     width: 100%;
     height: 180px;
+  }
+
+  .homepage-article-grid--index,
+  .homepage-article-grid--homepage {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1161,6 +1235,13 @@
   text-align: center;
   max-width: min(900px, 100%);
   margin-top: 48px;
+}
+
+.homepage-single.articles-page {
+  max-width: min(1120px, 100%);
+  align-items: stretch;
+  text-align: left;
+  padding: 0 16px;
 }
 
 .homepage-single.troops-page,

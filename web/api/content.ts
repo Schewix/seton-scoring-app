@@ -811,7 +811,17 @@ async function handleAdminImport(req: any, res: any) {
     const { cachePionyrArticleImages } = await import('../api-lib/content/articleImageR2.js');
     const enriched = await Promise.all(
       list.map(async (article) => {
-        const withDetail = article.bodyHtml ? article : (await fetchPionyrArticleBySlug(article.slug)) ?? article;
+        const detail = await fetchPionyrArticleBySlug(article.slug);
+        const withDetail = detail
+          ? {
+              ...article,
+              ...detail,
+              excerpt: detail.excerpt || article.excerpt,
+              dateISO: detail.dateISO || article.dateISO,
+              coverImageUrl: detail.coverImageUrl || article.coverImageUrl,
+              coverImageAlt: detail.coverImageAlt || article.coverImageAlt,
+            }
+          : article;
         return cachePionyrArticleImages(withDetail);
       }),
     );
