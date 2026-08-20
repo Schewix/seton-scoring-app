@@ -289,10 +289,19 @@ vi.mock('../components/QRScanner', () => ({
 
 type CategoryKey = 'N' | 'M' | 'S' | 'R';
 
+type MockAuthPatrol = {
+  id: string;
+  team_name: string;
+  category: CategoryKey;
+  sex: 'H' | 'D';
+  patrol_code: string | null;
+};
+
 let mockedStationCode = 'X';
 let mockedPatrolCode: string | null = 'N-01';
 let mockedPatrolCategory: CategoryKey = 'N';
 let mockedAllowedCategories: CategoryKey[] = ['N', 'M', 'S', 'R'];
+let mockedAuthPatrols: MockAuthPatrol[] | null = null;
 let mockedStartTime: string | null = '2024-02-01T08:00:00Z';
 let mockedFinishTime: string | null = '2024-02-01T08:45:00Z';
 const mockDeviceKey = new Uint8Array(32);
@@ -300,15 +309,16 @@ const fetchMock = vi.fn();
 
 vi.mock('../auth/context', async () => {
   const { vi: vitest } = await import('vitest');
-  const mockPatrols = () => [
-    {
-      id: 'patrol-1',
-      team_name: 'Vlci',
-      category: mockedPatrolCategory,
-      sex: 'H',
-      patrol_code: mockedPatrolCode,
-    },
-  ];
+  const mockPatrols = () =>
+    mockedAuthPatrols ?? [
+      {
+        id: 'patrol-1',
+        team_name: 'Vlci',
+        category: mockedPatrolCategory,
+        sex: 'H',
+        patrol_code: mockedPatrolCode,
+      },
+    ];
 
   function buildManifest() {
     return {
@@ -614,6 +624,7 @@ describe('station workflow', () => {
     mockedPatrolCode = 'N-01';
     mockedPatrolCategory = 'N';
     mockedAllowedCategories = ['N', 'M', 'S', 'R'];
+    mockedAuthPatrols = null;
     mockedStartTime = '2024-02-01T08:00:00Z';
     mockedFinishTime = '2024-02-01T08:45:00Z';
     supabaseMock.__resetMocks();
@@ -711,6 +722,29 @@ describe('station workflow', () => {
     );
 
     expect(screen.queryAllByRole('button', { name: 'Obsluhovat' }).length).toBe(0);
+  });
+
+  it('combines H and D patrols into base categories on Výpočetka summary', async () => {
+    mockedStationCode = 'T';
+    mockedAllowedCategories = ['M'];
+    mockedAuthPatrols = [
+      { id: 'patrol-mh', team_name: 'Vlci', category: 'M', sex: 'H', patrol_code: 'MH-01' },
+      { id: 'patrol-md', team_name: 'Lišky', category: 'M', sex: 'D', patrol_code: 'MD-02' },
+    ];
+    supabaseMock.__setMock('stations', () => createCalcStationResult());
+
+    const user = userEvent.setup();
+    await renderApp();
+
+    const categoryButton = await screen.findByRole('button', { name: /^M\s+0\/2\s+Chybí 2$/ });
+    expect(screen.queryByRole('button', { name: /^MH\s/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^MD\s/ })).not.toBeInTheDocument();
+
+    await user.click(categoryButton);
+
+    expect(await screen.findByRole('heading', { name: 'M' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Vybrat hlídku M-1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Vybrat hlídku M-2' })).toBeInTheDocument();
   });
 
   it('prevents loading patrols that already passed through the station', async () => {

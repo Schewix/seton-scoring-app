@@ -129,6 +129,10 @@ const seed = {
       pointsByStation: { A: 12, B: 11, C: 11, T: 8 },
     },
   } satisfies Record<string, PatrolScenario>,
+  unscoredPatrols: [
+    { id: crypto.randomUUID(), code: 'MH-NO-SCORE-A', teamName: 'Unscored A' },
+    { id: crypto.randomUUID(), code: 'MH-NO-SCORE-B', teamName: 'Unscored B' },
+  ],
 };
 
 function asNumber(value: number | string | null | undefined): number {
@@ -167,7 +171,7 @@ beforeAll(async () => {
   const { error: stationError } = await supabaseAdmin.from('stations').insert(stationRows);
   expectNoError(stationError, 'insert stations');
 
-  const patrolRows = Object.values(seed.patrols).map((patrol) => ({
+  const patrolRows = [...Object.values(seed.patrols), ...seed.unscoredPatrols].map((patrol) => ({
     id: patrol.id,
     event_id: seed.eventId,
     team_name: patrol.teamName,
@@ -236,7 +240,7 @@ describe('results_ranked tie-break criteria 1-5', () => {
     expectNoError(error, 'select results_ranked');
 
     const byCode = new Map((data ?? []).map((row) => [row.patrol_code, row as RankedRow]));
-    expect(byCode.size).toBe(Object.keys(seed.patrols).length);
+    expect(byCode.size).toBe(Object.keys(seed.patrols).length + seed.unscoredPatrols.length);
 
     const row = (code: string) => {
       const found = byCode.get(code);
@@ -300,5 +304,15 @@ describe('results_ranked tie-break criteria 1-5', () => {
     expect(asNumber(tieA.points_1_count)).toBe(asNumber(tieB.points_1_count));
     expect(asNumber(tieA.points_0_count)).toBe(asNumber(tieB.points_0_count));
     expect(asNumber(tieA.rank_in_bracket)).toBe(asNumber(tieB.rank_in_bracket));
+
+    const scoredRanks = Object.values(seed.patrols).map((patrol) => asNumber(row(patrol.code).rank_in_bracket));
+    const lastScoredRank = Math.max(...scoredRanks);
+    const unscoredRows = seed.unscoredPatrols.map((patrol) => row(patrol.code));
+    unscoredRows.forEach((unscored) => {
+      expect(unscored.total_points).toBeNull();
+      expect(asNumber(unscored.points_no_t)).toBe(0);
+      expect(asNumber(unscored.rank_in_bracket)).toBeGreaterThan(lastScoredRank);
+    });
+    expect(asNumber(unscoredRows[0].rank_in_bracket)).toBe(asNumber(unscoredRows[1].rank_in_bracket));
   });
 });

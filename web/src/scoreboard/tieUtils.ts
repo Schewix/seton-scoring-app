@@ -6,7 +6,7 @@ export type TieRankedItem = {
 };
 
 function hasAnyPoints(item: TieRankedItem) {
-  return item.totalPoints !== null || item.pointsNoT !== null;
+  return item.totalPoints !== null;
 }
 
 function formatTieCount(tieSize: number) {

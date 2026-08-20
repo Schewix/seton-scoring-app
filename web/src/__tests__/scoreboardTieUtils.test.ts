@@ -25,6 +25,7 @@ describe('scoreboard tie helpers', () => {
       { disqualified: false, rankInBracket: 3, totalPoints: 38, pointsNoT: 30 },
       { disqualified: true, rankInBracket: 3, totalPoints: 38, pointsNoT: 30 },
       { disqualified: false, rankInBracket: 4, totalPoints: null, pointsNoT: null },
+      { disqualified: false, rankInBracket: 4, totalPoints: null, pointsNoT: 0 },
       { disqualified: false, rankInBracket: 0, totalPoints: 30, pointsNoT: 22 },
     ]);
 

@@ -1159,23 +1159,13 @@ function StationApp({
     const effectiveCategories = normalizedManifest.length ? normalizedManifest : fallbackCategories;
     return new Set<CategoryKey>(effectiveCategories);
   }, [manifest.allowedCategories, stationCode]);
-  const allowedStationCategories = useMemo(() => {
-    if (allowedCategorySet.size === 0) {
-      return getAllowedStationCategories(stationCode);
-    }
-    return getAllowedStationCategories(stationCode, { baseCategories: allowedCategorySet });
-  }, [allowedCategorySet, stationCode]);
-  const allowedStationCategorySet = useMemo(
-    () => new Set<StationCategoryKey>(allowedStationCategories),
-    [allowedStationCategories],
-  );
   const allowedBaseCategories = useMemo(
     () => BASE_CATEGORY_ORDER.filter((category) => allowedCategorySet.has(category)),
     [allowedCategorySet],
   );
   const allowedSummaryCategories = useMemo<SummaryCategoryKey[]>(
-    () => (isTargetStation ? allowedStationCategories : allowedBaseCategories),
-    [allowedBaseCategories, allowedStationCategories, isTargetStation],
+    () => allowedBaseCategories,
+    [allowedBaseCategories],
   );
   const allowedSummaryCategorySet = useMemo(
     () => new Set<SummaryCategoryKey>(allowedSummaryCategories),
@@ -2930,18 +2920,10 @@ function StationApp({
 
     const resolveSummaryCategory = (
       category: string | null | undefined,
-      sex: string | null | undefined,
     ): SummaryCategoryKey | null => {
       const normalizedCategory = category?.trim().toUpperCase() ?? '';
       if (!isCategoryKey(normalizedCategory)) {
         return null;
-      }
-      if (isTargetStation) {
-        const stationCategory = toStationCategoryKey(normalizedCategory, sex);
-        if (!stationCategory || !allowedStationCategorySet.has(stationCategory)) {
-          return null;
-        }
-        return stationCategory;
       }
       if (!allowedCategorySet.has(normalizedCategory)) {
         return null;
@@ -2953,7 +2935,7 @@ function StationApp({
       if (!isCategoryAllowed(patrolSummary.category)) {
         return;
       }
-      const summaryCategory = resolveSummaryCategory(patrolSummary.category, patrolSummary.sex);
+      const summaryCategory = resolveSummaryCategory(patrolSummary.category);
       if (!summaryCategory) {
         return;
       }
@@ -2993,7 +2975,7 @@ function StationApp({
       if (!isCategoryAllowed(manual.category)) {
         return;
       }
-      const summaryCategory = resolveSummaryCategory(manual.category, manual.sex);
+      const summaryCategory = resolveSummaryCategory(manual.category);
       if (!summaryCategory) {
         return;
       }
@@ -3050,9 +3032,7 @@ function StationApp({
   }, [
     allowedSummaryCategories,
     allowedCategorySet,
-    allowedStationCategorySet,
     auth.patrols,
-    isTargetStation,
     isCategoryAllowed,
     manualPatrols,
     stationPassageVisitedSet,
@@ -3093,22 +3073,8 @@ function StationApp({
   }, []);
 
   const formatSummaryPatrolDisplayLabel = useCallback(
-    (patrol: StationSummaryPatrol) => {
-      if (!isTargetStation) {
-        return formatSummaryPatrolLabel(patrol);
-      }
-      const explicitCode = normalisePatrolCode(patrol.code ?? '');
-      if (explicitCode) {
-        return explicitCode;
-      }
-      const category = patrol.baseCategory?.trim().toUpperCase() ?? '';
-      const sex = patrol.sex?.trim().toUpperCase() ?? '';
-      if (category && sex) {
-        return `${category}${sex}`;
-      }
-      return formatSummaryPatrolLabel(patrol);
-    },
-    [isTargetStation],
+    (patrol: StationSummaryPatrol) => formatSummaryPatrolLabel(patrol),
+    [],
   );
 
   const handleSelectSummaryPatrol = useCallback(

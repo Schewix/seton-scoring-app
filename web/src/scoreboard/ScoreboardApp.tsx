@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import zelenaLigaLogo from '../assets/znak_SPTO_transparent.png';
 import AppFooter from '../components/AppFooter';
+import { assignDisplayRanks, compareRankedResults } from './rankingUtils';
 import { buildRankTieSizeMap, formatTieBadge, formatTieExportValue } from './tieUtils';
 import './ScoreboardApp.css';
 
@@ -317,45 +318,6 @@ function normaliseRankedResult(raw: RawRankedResult): RankedResult {
     ...normaliseResult(raw),
     rankInBracket: parseNumber(raw.rank_in_bracket, 0) || 0,
   };
-}
-
-function hasAnyPoints(result: Result) {
-  return result.totalPoints !== null || result.pointsNoT !== null;
-}
-
-function compareRankedResults(a: RankedResult, b: RankedResult) {
-  const aHasPoints = hasAnyPoints(a);
-  const bHasPoints = hasAnyPoints(b);
-
-  if (aHasPoints !== bHasPoints) {
-    return aHasPoints ? -1 : 1;
-  }
-
-  const aRank = a.rankInBracket && a.rankInBracket > 0 ? a.rankInBracket : Number.POSITIVE_INFINITY;
-  const bRank = b.rankInBracket && b.rankInBracket > 0 ? b.rankInBracket : Number.POSITIVE_INFINITY;
-  if (aRank !== bRank) {
-    return aRank - bRank;
-  }
-
-  const aPoints = a.totalPoints ?? Number.NEGATIVE_INFINITY;
-  const bPoints = b.totalPoints ?? Number.NEGATIVE_INFINITY;
-  if (aPoints !== bPoints) {
-    return bPoints - aPoints;
-  }
-
-  const aPointsNoT = a.pointsNoT ?? Number.NEGATIVE_INFINITY;
-  const bPointsNoT = b.pointsNoT ?? Number.NEGATIVE_INFINITY;
-  if (aPointsNoT !== bPointsNoT) {
-    return bPointsNoT - aPointsNoT;
-  }
-
-  const aTime = a.pureSeconds ?? Number.POSITIVE_INFINITY;
-  const bTime = b.pureSeconds ?? Number.POSITIVE_INFINITY;
-  if (aTime !== bTime) {
-    return aTime - bTime;
-  }
-
-  return a.teamName.localeCompare(b.teamName, 'cs');
 }
 
 function formatSeconds(seconds: number | null) {
@@ -978,14 +940,10 @@ function ScoreboardApp() {
       .map((group) => {
         const rankedItems = [...group.items].sort(compareRankedResults);
         const tieSizeByRank = buildRankTieSizeMap(rankedItems);
-        const visibleItems = rankedItems.map((item, index) => {
-          const orderInBracket = index + 1;
-          const displayRank = item.rankInBracket > 0 ? item.rankInBracket : orderInBracket;
-          const tieSize = item.disqualified ? 0 : (tieSizeByRank.get(displayRank) ?? 0);
+        const visibleItems = assignDisplayRanks(rankedItems).map((item) => {
+          const tieSize = item.disqualified ? 0 : (tieSizeByRank.get(item.rankInBracket) ?? 0);
           return {
             ...item,
-            displayRank,
-            orderInBracket,
             tieSize,
             isTie: tieSize > 1,
           };

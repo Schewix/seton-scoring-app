@@ -115,7 +115,7 @@ select
     partition by r.event_id, r.category, r.sex
     order by
       r.disqualified asc,
-      r.total_points desc,
+      r.total_points desc nulls last,
       r.points_no_T desc,
       r.pure_seconds asc,
       r.points_12_count desc,

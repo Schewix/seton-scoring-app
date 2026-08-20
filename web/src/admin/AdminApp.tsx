@@ -4433,7 +4433,6 @@ function AdminDashboard({
           </section>
         ) : null}
 
-        {isLivePage ? <AdminQueuesSection /> : null}
         {isLivePage ? (
           <AdminLiveOverviewSection
             stationLoading={stationLoading}
@@ -5212,6 +5211,7 @@ function AdminDashboard({
         </section>
         ) : null}
 
+        {isLivePage ? <AdminQueuesSection /> : null}
         {isLivePage ? (
           <AdminLiveMapSection
             eventId={activeEventId}
