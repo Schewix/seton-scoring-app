@@ -630,7 +630,7 @@ function ScoreboardApp() {
         const { data, error } = await supabase
           .from('events_public')
           .select('id,name')
-          .order('created_at', { ascending: false });
+          .order('starts_at', { ascending: false, nullsFirst: false });
 
         if (!isMountedRef.current || cancelled) {
           return;

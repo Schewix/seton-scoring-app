@@ -79,7 +79,7 @@ export default function LoginScreen({ requirePinOnly, variant = 'seton' }: Props
         const { data, error: fetchError } = await supabase
           .from('events_public')
           .select('id,name')
-          .order('created_at', { ascending: false });
+          .order('starts_at', { ascending: false, nullsFirst: false });
 
         if (cancelled) {
           return;
