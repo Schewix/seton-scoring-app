@@ -171,6 +171,7 @@ type StationPassageRow = {
 type EventState = {
   name: string;
   scoringLocked: boolean;
+  resultsConfirmedAt: string | null;
 };
 
 type MissingDialogState = {
@@ -1284,11 +1285,14 @@ function AdminDashboard({
   const [eventState, setEventState] = useState<EventState>({
     name: manifest.event.name,
     scoringLocked: manifest.event.scoringLocked,
+    resultsConfirmedAt: null,
   });
   const [eventLoading, setEventLoading] = useState(false);
   const [eventError, setEventError] = useState<string | null>(null);
   const [lockUpdating, setLockUpdating] = useState(false);
   const [lockMessage, setLockMessage] = useState<string | null>(null);
+  const [confirmingResults, setConfirmingResults] = useState(false);
+  const [resultsConfirmationMessage, setResultsConfirmationMessage] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [disqualifyCode, setDisqualifyCode] = useState('');
   const [disqualifyTarget, setDisqualifyTarget] = useState<DisqualifyPatrol | null>(null);
@@ -1777,8 +1781,8 @@ function AdminDashboard({
         throw new Error(message);
       }
 
-      const payload = (await response.json()) as { eventName: string; scoringLocked: boolean };
-      setEventState({ name: payload.eventName, scoringLocked: payload.scoringLocked });
+      const payload = (await response.json()) as { eventName: string; scoringLocked: boolean; resultsConfirmedAt?: string | null };
+      setEventState({ name: payload.eventName, scoringLocked: payload.scoringLocked, resultsConfirmedAt: payload.resultsConfirmedAt ?? null });
     } catch (error) {
       console.error('Failed to load event state', error);
       setEventError(
@@ -2461,6 +2465,31 @@ function AdminDashboard({
     },
     [accessToken, refreshManifest],
   );
+
+  const handleConfirmResults = useCallback(async () => {
+    if (!API_BASE_URL || !accessToken) {
+      setResultsConfirmationMessage('Chybí konfigurace API nebo přístupový token.');
+      return;
+    }
+    if (!window.confirm('Potvrdit výsledky jako finální? Tato akce se zapíše k účtu hlavního rozhodčího.')) return;
+
+    setConfirmingResults(true);
+    setResultsConfirmationMessage(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/results-confirmation`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || 'Výsledky se nepodařilo potvrdit.');
+      setEventState((previous) => ({ ...previous, resultsConfirmedAt: body.resultsConfirmedAt ?? new Date().toISOString() }));
+      setResultsConfirmationMessage('Výsledky byly potvrzeny hlavním rozhodčím.');
+    } catch (error) {
+      setResultsConfirmationMessage(error instanceof Error ? error.message : 'Výsledky se nepodařilo potvrdit.');
+    } finally {
+      setConfirmingResults(false);
+    }
+  }, [accessToken]);
 
   const handleRefreshAll = useCallback(async () => {
     setRefreshing(true);
@@ -4444,7 +4473,7 @@ function AdminDashboard({
         ) : null}
 
         {isPatrolsPage ? <AdminPatrolsOverviewSection eventId={activeEventId} /> : null}
-        {isPatrolsPage ? <AdminStartsSection /> : null}
+        {isPatrolsPage ? <AdminStartsSection eventId={activeEventId} /> : null}
 
         {isStationsPage ? (
         <section className="admin-card admin-card--with-divider admin-card--section admin-section-block admin-section-block--stations">
@@ -5347,6 +5376,12 @@ function AdminDashboard({
           summary={raceDashboardSummary}
           exportingLeague={exportingLeague}
           onExportLeaguePoints={handleExportLeaguePoints}
+          scoringLocked={activeEventId === eventId && eventState.scoringLocked}
+          resultsConfirmedAt={activeEventId === eventId ? eventState.resultsConfirmedAt : null}
+          confirmingResults={confirmingResults}
+          canConfirmCurrentEvent={activeEventId === eventId}
+          onConfirmResults={() => void handleConfirmResults()}
+          confirmationMessage={resultsConfirmationMessage}
         />
         ) : null}
 

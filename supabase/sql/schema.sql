@@ -233,6 +233,9 @@ create table if not exists judges (
   updated_at timestamptz not null default now()
 );
 
+alter table events add column if not exists results_confirmed_at timestamptz;
+alter table events add column if not exists results_confirmed_by uuid references judges(id) on delete set null;
+
 do $$ begin
   if not exists (
     select 1 from information_schema.columns

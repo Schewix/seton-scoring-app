@@ -662,7 +662,183 @@ export function AdminPatrolsOverviewSection({ eventId }: PatrolsOverviewSectionP
   );
 }
 
-export function AdminStartsSection() {
+type StartPatrolRow = {
+  id: string;
+  patrol_code: string | null;
+  team_name: string | null;
+  category: string | null;
+  sex: string | null;
+  active: boolean | null;
+};
+
+type StartTimingRow = {
+  patrol_id: string;
+  start_time: string | null;
+};
+
+type StartScheduleRow = StartPatrolRow & {
+  startTime: string | null;
+};
+
+function toDateTimeLocalValue(value: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function formatStartTime(value: string | null) {
+  if (!value) return 'Nenaplánováno';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Neplatný čas';
+  return new Intl.DateTimeFormat('cs-CZ', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  }).format(date);
+}
+
+function csvCell(value: string) {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
+  })[character] ?? character);
+}
+
+export function AdminStartsSection({ eventId }: { eventId: string }) {
+  const [rows, setRows] = useState<StartScheduleRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [firstStart, setFirstStart] = useState('');
+  const [intervalMinutes, setIntervalMinutes] = useState(5);
+
+  const loadSchedule = async () => {
+    setLoading(true);
+    setError(null);
+    const [patrolsResponse, timingsResponse, eventResponse] = await Promise.all([
+      supabase.from('patrols')
+        .select('id, patrol_code, team_name, category, sex, active')
+        .eq('event_id', eventId)
+        .order('patrol_code'),
+      supabase.from('timings').select('patrol_id, start_time').eq('event_id', eventId),
+      supabase.from('events').select('starts_at').eq('id', eventId).maybeSingle(),
+    ]);
+    setLoading(false);
+
+    if (patrolsResponse.error || timingsResponse.error) {
+      console.error('Failed to load start schedule', patrolsResponse.error, timingsResponse.error);
+      setRows([]);
+      setError('Nepodařilo se načíst startovku.');
+      return;
+    }
+
+    const timingByPatrol = new Map(
+      ((timingsResponse.data ?? []) as StartTimingRow[]).map((timing) => [timing.patrol_id, timing.start_time]),
+    );
+    const nextRows = ((patrolsResponse.data ?? []) as StartPatrolRow[])
+      .filter((patrol) => patrol.active !== false)
+      .map((patrol) => ({ ...patrol, startTime: timingByPatrol.get(patrol.id) ?? null }));
+    setRows(nextRows);
+    const suggested = (eventResponse.data as { starts_at?: string | null } | null)?.starts_at
+      ?? nextRows.find((row) => row.startTime)?.startTime
+      ?? null;
+    setFirstStart(toDateTimeLocalValue(suggested));
+  };
+
+  useEffect(() => {
+    void loadSchedule();
+    // The start input should only be initialized when changing the event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId]);
+
+  const collisions = useMemo(() => {
+    const groups = new Map<string, StartScheduleRow[]>();
+    rows.forEach((row) => {
+      if (!row.startTime) return;
+      const date = new Date(row.startTime);
+      if (Number.isNaN(date.getTime())) return;
+      const key = date.toISOString();
+      groups.set(key, [...(groups.get(key) ?? []), row]);
+    });
+    return Array.from(groups.entries()).filter(([, patrols]) => patrols.length > 1);
+  }, [rows]);
+
+  const saveStarts = async (updates: Array<{ patrol_id: string; start_time: string }>, success: string) => {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    const { error: saveError } = await supabase.from('timings').upsert(
+      updates.map((update) => ({ event_id: eventId, ...update })),
+      { onConflict: 'event_id,patrol_id' },
+    );
+    setSaving(false);
+    if (saveError) {
+      console.error('Failed to save start schedule', saveError);
+      setError('Startovní časy se nepodařilo uložit.');
+      return false;
+    }
+    setMessage(success);
+    await loadSchedule();
+    return true;
+  };
+
+  const generateStarts = async () => {
+    const first = new Date(firstStart);
+    if (!firstStart || Number.isNaN(first.getTime()) || intervalMinutes < 1) {
+      setError('Zadej platný čas prvního startu a interval alespoň 1 minutu.');
+      return;
+    }
+    if (rows.length === 0) {
+      setError('Pro tento ročník nejsou žádné aktivní hlídky.');
+      return;
+    }
+    await saveStarts(rows.map((row, index) => ({
+      patrol_id: row.id,
+      start_time: new Date(first.getTime() + index * intervalMinutes * 60_000).toISOString(),
+    })), `Vygenerováno ${rows.length} startovních časů.`);
+  };
+
+  const updateOneStart = async (row: StartScheduleRow, value: string) => {
+    const date = new Date(value);
+    if (!value || Number.isNaN(date.getTime())) {
+      setError('Zadej platný startovní čas.');
+      return;
+    }
+    await saveStarts([{ patrol_id: row.id, start_time: date.toISOString() }], `Start hlídky ${row.patrol_code ?? row.team_name ?? ''} byl změněn.`);
+  };
+
+  const exportCsv = () => {
+    const lines = [
+      ['Kód', 'Název', 'Kategorie', 'Start'].map(csvCell).join(';'),
+      ...rows.map((row) => [
+        row.patrol_code ?? '', row.team_name ?? '', `${row.category ?? ''}${row.sex ?? ''}`,
+        row.startTime ? formatStartTime(row.startTime) : '',
+      ].map(csvCell).join(';')),
+    ];
+    const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'startovka.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const printSchedule = () => {
+    const popup = window.open('', '_blank', 'noopener,noreferrer');
+    if (!popup) {
+      setError('Pro tisk povol v prohlížeči vyskakovací okna.');
+      return;
+    }
+    const body = rows.map((row) => `<tr><td>${escapeHtml(row.patrol_code ?? '')}</td><td>${escapeHtml(row.team_name ?? '')}</td><td>${escapeHtml(`${row.category ?? ''}${row.sex ?? ''}`)}</td><td>${escapeHtml(formatStartTime(row.startTime))}</td></tr>`).join('');
+    popup.document.write(`<!doctype html><html lang="cs"><head><title>Startovka</title><style>body{font:14px system-ui;padding:24px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:7px;text-align:left}h1{font-size:22px}</style></head><body><h1>Startovka</h1><table><thead><tr><th>Kód</th><th>Hlídka</th><th>Kategorie</th><th>Start</th></tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>window.print()<\/script></body></html>`);
+    popup.document.close();
+  };
+
   return (
     <section
       id={toAdminSectionId('starts')}
@@ -676,13 +852,46 @@ export function AdminStartsSection() {
           </p>
         </div>
       </header>
-      <div className="admin-placeholder-grid">
-        <div className="admin-placeholder-item"><strong>Generovat starty</strong><span>TODO</span></div>
-        <div className="admin-placeholder-item"><strong>Ruční přesun hlídky</strong><span>TODO</span></div>
-        <div className="admin-placeholder-item"><strong>Kolize startů</strong><span>TODO</span></div>
-        <div className="admin-placeholder-item"><strong>Tisk/export startovky</strong><span>TODO</span></div>
+      <div className="admin-start-controls">
+        <label className="admin-field" htmlFor="admin-first-start">
+          <span>První start</span>
+          <input id="admin-first-start" type="datetime-local" value={firstStart} onChange={(event) => setFirstStart(event.target.value)} />
+        </label>
+        <label className="admin-field" htmlFor="admin-start-interval">
+          <span>Interval (minuty)</span>
+          <input id="admin-start-interval" type="number" min="1" value={intervalMinutes} onChange={(event) => setIntervalMinutes(Number(event.target.value))} />
+        </label>
+        <button type="button" className="admin-button admin-button--primary" disabled={loading || saving} onClick={() => void generateStarts()}>
+          {saving ? 'Ukládám…' : 'Vygenerovat starty'}
+        </button>
+        <button type="button" className="admin-button admin-button--secondary" disabled={loading} onClick={() => void loadSchedule()}>
+          {loading ? 'Načítám…' : 'Obnovit'}
+        </button>
+        <button type="button" className="admin-button admin-button--secondary" disabled={rows.length === 0} onClick={exportCsv}>Export CSV</button>
+        <button type="button" className="admin-button admin-button--secondary" disabled={rows.length === 0} onClick={printSchedule}>Tisk</button>
       </div>
-      {/* TODO: Napojit správu startovních časů na backend. */}
+      {error ? <p className="admin-error">{error}</p> : null}
+      {message ? <p className="admin-success">{message}</p> : null}
+      <p className={collisions.length > 0 ? 'admin-error' : 'admin-notice'}>
+        {collisions.length > 0
+          ? `${collisions.length} kolizí: více hlídek má stejný startovní čas.`
+          : 'Bez kolizí startovních časů.'}
+      </p>
+      <div className="admin-start-table-wrap">
+        <table className="admin-start-table">
+          <thead><tr><th>Kód</th><th>Hlídka</th><th>Kategorie</th><th>Start</th><th>Ruční změna</th></tr></thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className={row.startTime && collisions.some(([, patrols]) => patrols.some((patrol) => patrol.id === row.id)) ? 'admin-start-row--collision' : undefined}>
+                <td><strong>{row.patrol_code || '—'}</strong></td><td>{row.team_name || '—'}</td><td>{row.category ?? ''}{row.sex ?? ''}</td>
+                <td>{formatStartTime(row.startTime)}</td>
+                <td><input aria-label={`Start hlídky ${row.patrol_code ?? row.team_name ?? ''}`} type="datetime-local" defaultValue={toDateTimeLocalValue(row.startTime)} disabled={saving} onBlur={(event) => { if (event.target.value !== toDateTimeLocalValue(row.startTime)) void updateOneStart(row, event.target.value); }} /></td>
+              </tr>
+            ))}
+            {!loading && rows.length === 0 ? <tr><td colSpan={5}>Žádné aktivní hlídky.</td></tr> : null}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -693,6 +902,12 @@ type ResultsSectionProps = {
   summary: RaceDashboardSummary;
   exportingLeague: boolean;
   onExportLeaguePoints: () => void;
+  scoringLocked: boolean;
+  resultsConfirmedAt: string | null;
+  confirmingResults: boolean;
+  canConfirmCurrentEvent: boolean;
+  onConfirmResults: () => void;
+  confirmationMessage: string | null;
 };
 
 export function AdminResultsSection({
@@ -701,6 +916,12 @@ export function AdminResultsSection({
   summary,
   exportingLeague,
   onExportLeaguePoints,
+  scoringLocked,
+  resultsConfirmedAt,
+  confirmingResults,
+  canConfirmCurrentEvent,
+  onConfirmResults,
+  confirmationMessage,
 }: ResultsSectionProps) {
   const hasResultProblems = totalMissingAcrossStations > 0 || summary.patrolsOnCourse > 0 || summary.overdueNoFinishPatrols > 0;
   const [disqualifiedCount, setDisqualifiedCount] = useState(0);
@@ -795,8 +1016,18 @@ export function AdminResultsSection({
         </div>
       </div>
       <div className="admin-card-actions">
-        <button type="button" className="admin-button admin-button--secondary admin-button--cta" disabled>
-          Potvrdit výsledky hlavním rozhodčím (TODO)
+        <button
+          type="button"
+          className="admin-button admin-button--secondary admin-button--cta"
+          disabled={hasResultProblems || !scoringLocked || Boolean(resultsConfirmedAt) || confirmingResults || !canConfirmCurrentEvent}
+          onClick={onConfirmResults}
+          title={!scoringLocked ? 'Nejdříve ukonči závod.' : hasResultProblems ? 'Nejdříve vyřeš problémy ve výsledcích.' : undefined}
+        >
+          {confirmingResults
+            ? 'Potvrzuji…'
+            : resultsConfirmedAt
+            ? `Potvrzeno ${formatDateTimeForStatus(resultsConfirmedAt)}`
+            : 'Potvrdit výsledky hlavním rozhodčím'}
         </button>
         <button
           type="button"
@@ -807,6 +1038,7 @@ export function AdminResultsSection({
           {exportingLeague ? 'Exportuji…' : 'Výpočet bodů do Zelené ligy'}
         </button>
       </div>
+      {confirmationMessage ? <p className={resultsConfirmedAt ? 'admin-success' : 'admin-error'}>{confirmationMessage}</p> : null}
     </section>
   );
 }

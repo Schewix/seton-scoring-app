@@ -91,7 +91,7 @@ router.get('/event-state', async (req: Request, res: Response) => {
   const { eventId } = (req as AdminRequest).adminContext;
   const { data: event, error } = await supabase
     .from('events')
-    .select('id, name, scoring_locked')
+    .select('id, name, scoring_locked, results_confirmed_at, results_confirmed_by')
     .eq('id', eventId)
     .maybeSingle();
 
@@ -105,7 +105,46 @@ router.get('/event-state', async (req: Request, res: Response) => {
     eventId: event.id,
     eventName: event.name,
     scoringLocked: !!event.scoring_locked,
+    resultsConfirmedAt: event.results_confirmed_at ?? null,
+    resultsConfirmedBy: event.results_confirmed_by ?? null,
   });
+});
+
+router.post('/results-confirmation', async (req: Request, res: Response) => {
+  const { eventId, judgeId } = (req as AdminRequest).adminContext;
+  const { data: event, error: eventError } = await supabase
+    .from('events')
+    .select('scoring_locked, results_confirmed_at')
+    .eq('id', eventId)
+    .maybeSingle();
+
+  if (eventError || !event) {
+    console.error('Failed to load event for results confirmation', eventError);
+    res.status(500).json({ error: 'Failed to load event state' });
+    return;
+  }
+  if (!event.scoring_locked) {
+    res.status(409).json({ error: 'Závod musí být před potvrzením výsledků ukončen.' });
+    return;
+  }
+  if (event.results_confirmed_at) {
+    res.json({ success: true, resultsConfirmedAt: event.results_confirmed_at });
+    return;
+  }
+
+  const confirmedAt = new Date().toISOString();
+  const { error } = await supabase
+    .from('events')
+    .update({ results_confirmed_at: confirmedAt, results_confirmed_by: judgeId })
+    .eq('id', eventId)
+    .is('results_confirmed_at', null);
+
+  if (error) {
+    console.error('Failed to confirm results', error);
+    res.status(500).json({ error: 'Výsledky se nepodařilo potvrdit.' });
+    return;
+  }
+  res.json({ success: true, resultsConfirmedAt: confirmedAt });
 });
 
 const updateSchema = z.object({
@@ -189,13 +228,18 @@ router.post('/event-state', async (req: Request, res: Response) => {
 
   const { data: currentEvent, error: currentEventError } = await supabase
     .from('events')
-    .select('scoring_locked_at')
+    .select('scoring_locked_at, results_confirmed_at')
     .eq('id', eventId)
     .maybeSingle();
 
   if (currentEventError || !currentEvent) {
     console.error('Failed to load current event state', currentEventError);
     res.status(500).json({ error: 'Failed to load event state' });
+    return;
+  }
+
+  if (!locked && currentEvent.results_confirmed_at) {
+    res.status(409).json({ error: 'Zapisování nelze obnovit po potvrzení finálních výsledků.' });
     return;
   }
 
