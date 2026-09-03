@@ -677,10 +677,96 @@
   gap: 22px;
 }
 
-.schedule-calendar-grid {
+.schedule-calendar-browser {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: 14px;
+  max-width: 720px;
+}
+
+.schedule-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.schedule-calendar-controls {
+  display: grid;
+  grid-template-columns: 1fr minmax(190px, auto) 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.schedule-calendar-button,
+.schedule-month-select {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: #04372c;
+  font: inherit;
+  font-weight: 650;
+}
+
+.schedule-calendar-button {
+  padding: 9px 16px;
+  cursor: pointer;
+}
+
+.schedule-calendar-button:first-child { justify-self: start; }
+.schedule-calendar-button:last-child { justify-self: end; }
+
+.schedule-calendar-button:hover:not(:disabled),
+.schedule-calendar-button:focus-visible,
+.schedule-month-select:focus-visible {
+  border-color: #ffcc33;
+  box-shadow: 0 0 0 3px rgba(255, 204, 51, 0.22);
+}
+
+.schedule-calendar-button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.schedule-month-select-label {
+  display: block;
+}
+
+.schedule-month-select {
+  width: 100%;
+  padding: 9px 34px 9px 16px;
+  text-transform: capitalize;
+  cursor: pointer;
+}
+
+.schedule-calendar-stage .schedule-month {
+  min-height: 470px;
+}
+
+.schedule-month-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.schedule-month-dot {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(4, 55, 44, 0.22);
+  cursor: pointer;
+}
+
+.schedule-month-dot.is-active {
+  width: 26px;
+  border-radius: 999px;
+  background: #ffcc33;
 }
 
 .schedule-month {
@@ -776,8 +862,7 @@
 }
 
 @media (max-width: 800px) {
-  .schedule-list,
-  .schedule-calendar-grid {
+  .schedule-list {
     grid-template-columns: 1fr;
   }
 }
@@ -789,6 +874,14 @@
   }
 
   .schedule-month { padding: 12px; }
+  .schedule-calendar-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+  .schedule-month-select-label {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .schedule-calendar-stage .schedule-month { min-height: 0; }
   .schedule-day { min-height: 48px; padding: 3px; }
   .schedule-calendar-event { font-size: 0; min-height: 7px; padding: 0; }
 }

@@ -5409,10 +5409,16 @@ function ScheduleMonth({ year, month }: { year: number; month: number }) {
 }
 
 function SchedulePage() {
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(0);
   const months = Array.from({ length: 10 }, (_, index) => {
     const date = new Date(2026, 8 + index, 1);
-    return { year: date.getFullYear(), month: date.getMonth() };
+    return {
+      year: date.getFullYear(),
+      month: date.getMonth(),
+      label: new Intl.DateTimeFormat('cs-CZ', { month: 'long' }).format(date),
+    };
   });
+  const selectedMonth = months[selectedMonthIndex];
 
   return (
     <SiteShell
@@ -5461,8 +5467,56 @@ function SchedulePage() {
             <h2 id="schedule-calendar-heading">Kalendář školního roku</h2>
             <span className="homepage-section-accent" aria-hidden="true" />
           </div>
-          <div className="schedule-calendar-grid">
-            {months.map(({ year, month }) => <ScheduleMonth year={year} month={month} key={`${year}-${month}`} />)}
+          <div className="schedule-calendar-browser">
+            <div className="schedule-calendar-controls">
+              <button
+                type="button"
+                className="schedule-calendar-button"
+                onClick={() => setSelectedMonthIndex((index) => index - 1)}
+                disabled={selectedMonthIndex === 0}
+                aria-label="Předchozí měsíc"
+              >
+                <span aria-hidden="true">←</span> Předchozí
+              </button>
+              <label className="schedule-month-select-label">
+                <span className="schedule-visually-hidden">Vyber měsíc</span>
+                <select
+                  className="schedule-month-select"
+                  value={selectedMonthIndex}
+                  onChange={(event) => setSelectedMonthIndex(Number(event.target.value))}
+                >
+                  {months.map((month, index) => (
+                    <option value={index} key={`${month.year}-${month.month}`}>
+                      {month.label} {month.year}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="schedule-calendar-button"
+                onClick={() => setSelectedMonthIndex((index) => index + 1)}
+                disabled={selectedMonthIndex === months.length - 1}
+                aria-label="Následující měsíc"
+              >
+                Další <span aria-hidden="true">→</span>
+              </button>
+            </div>
+            <div className="schedule-calendar-stage" aria-live="polite">
+              <ScheduleMonth year={selectedMonth.year} month={selectedMonth.month} />
+            </div>
+            <div className="schedule-month-dots" aria-label="Rychlý výběr měsíce">
+              {months.map((month, index) => (
+                <button
+                  type="button"
+                  key={`${month.year}-${month.month}`}
+                  className={`schedule-month-dot${index === selectedMonthIndex ? ' is-active' : ''}`}
+                  onClick={() => setSelectedMonthIndex(index)}
+                  aria-label={`${month.label} ${month.year}`}
+                  aria-current={index === selectedMonthIndex ? 'true' : undefined}
+                />
+              ))}
+            </div>
           </div>
         </section>
       </main>
