@@ -316,6 +316,10 @@
       "destination": "/"
     },
     {
+      "source": "/plan-akci",
+      "destination": "/"
+    },
+    {
       "source": "/aplikace",
       "destination": "/"
     },
