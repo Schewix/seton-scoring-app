@@ -118,6 +118,7 @@ const COMPETITIONS: Competition[] = [
 
 const NAV_ITEMS = [
   { id: 'domu', label: 'Domů', href: '/' },
+  { id: 'plan-akci', label: 'Plán akcí', href: '/plan-akci' },
   { id: 'aktualni-poradi', label: 'Aktuální pořadí', href: '/aktualni-poradi' },
   { id: 'clanky', label: 'Články a novinky', href: '/clanky' },
   { id: 'fotogalerie', label: 'Fotogalerie', href: '/fotogalerie' },
@@ -126,6 +127,40 @@ const NAV_ITEMS = [
   { id: 'o-spto', label: 'O SPTO', href: '/o-spto' },
   { id: 'kontakty', label: 'Kontakty', href: '/kontakty' },
 ];
+
+type ScheduleEventKind = 'event' | 'assembly' | 'staff';
+
+type ScheduleEvent = {
+  name: string;
+  start: string;
+  end?: string;
+  kind: ScheduleEventKind;
+  note?: string;
+  href?: string;
+};
+
+const SCHOOL_YEAR_EVENTS: ScheduleEvent[] = [
+  { name: 'Sněm SPTO', start: '2026-09-08', kind: 'assembly' },
+  { name: 'ZaPsem', start: '2026-10-03', kind: 'event' },
+  { name: 'Štáb SPTO', start: '2026-10-13', kind: 'staff' },
+  { name: 'Štáb SPTO', start: '2026-11-10', kind: 'staff' },
+  { name: 'Štáb SPTO', start: '2026-12-08', kind: 'staff' },
+  { name: 'Sněm SPTO', start: '2027-01-12', kind: 'assembly' },
+  { name: 'Štáb SPTO', start: '2027-02-02', kind: 'staff' },
+  { name: 'Deskové hry', start: '2027-02-13', kind: 'event', href: '/souteze/deskove-hry' },
+  { name: 'Sněm SPTO', start: '2027-03-09', kind: 'assembly' },
+  { name: 'Štáb SPTO', start: '2027-04-06', kind: 'staff' },
+  { name: 'Setonův závod', start: '2027-04-24', kind: 'event', href: '/souteze/setonuv-zavod' },
+  { name: 'Štáb SPTO', start: '2027-05-04', kind: 'staff' },
+  { name: 'Sraz PTO', start: '2027-05-21', end: '2027-05-23', kind: 'event' },
+  { name: 'Sněm SPTO', start: '2027-06-15', kind: 'assembly', note: 'Grilovací sněm' },
+];
+
+const SCHEDULE_KIND_LABELS: Record<ScheduleEventKind, string> = {
+  event: 'Akce',
+  assembly: 'Sněm',
+  staff: 'Štáb',
+};
 
 type LeagueEventEntry = {
   key: string;
@@ -3492,6 +3527,9 @@ function resolveActiveNav(pathname: string) {
   if (slug === 'aktualni-poradi' || slug === 'zelena-liga') {
     return 'aktualni-poradi';
   }
+  if (slug === 'plan-akci') {
+    return 'plan-akci';
+  }
   if (slug === 'oddily') {
     return 'oddily';
   }
@@ -5305,6 +5343,133 @@ function Homepage({
   );
 }
 
+function parseScheduleDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatScheduleDate(event: ScheduleEvent) {
+  const formatter = new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric' });
+  const start = parseScheduleDate(event.start);
+  if (!event.end) return formatter.format(start);
+  const end = parseScheduleDate(event.end);
+  if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
+    return `${start.getDate()}.–${formatter.format(end)}`;
+  }
+  return `${formatter.format(start)} – ${formatter.format(end)}`;
+}
+
+function eventOccursOn(event: ScheduleEvent, date: Date) {
+  const timestamp = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  return timestamp >= parseScheduleDate(event.start).getTime()
+    && timestamp <= parseScheduleDate(event.end ?? event.start).getTime();
+}
+
+function ScheduleMonth({ year, month }: { year: number; month: number }) {
+  const firstDay = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leadingDays = (firstDay.getDay() + 6) % 7;
+  const cells = Array.from({ length: leadingDays + daysInMonth }, (_, index) => {
+    const day = index - leadingDays + 1;
+    return day > 0 ? new Date(year, month, day) : null;
+  });
+  const monthName = new Intl.DateTimeFormat('cs-CZ', { month: 'long', year: 'numeric' }).format(firstDay);
+
+  return (
+    <section className="schedule-month" aria-label={monthName}>
+      <h3>{monthName}</h3>
+      <div className="schedule-weekdays" aria-hidden="true">
+        {['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'].map((day) => <span key={day}>{day}</span>)}
+      </div>
+      <div className="schedule-days">
+        {cells.map((date, index) => {
+          if (!date) return <span className="schedule-day schedule-day--empty" key={`empty-${index}`} aria-hidden="true" />;
+          const events = SCHOOL_YEAR_EVENTS.filter((event) => eventOccursOn(event, date));
+          return (
+            <div className={`schedule-day${events.length > 0 ? ' schedule-day--active' : ''}`} key={date.toISOString()}>
+              <span className="schedule-day-number">{date.getDate()}</span>
+              {events.map((event) => {
+                const className = `schedule-calendar-event schedule-calendar-event--${event.kind}`;
+                return event.href ? (
+                  <a className={`${className} schedule-calendar-event--link`} href={event.href} key={`${event.name}-${event.start}`} title={`Otevřít: ${event.name}`}>
+                    {event.name}
+                  </a>
+                ) : (
+                  <span className={className} key={`${event.name}-${event.start}`} title={event.note ?? event.name}>
+                    {event.name}
+                  </span>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function SchedulePage() {
+  const months = Array.from({ length: 10 }, (_, index) => {
+    const date = new Date(2026, 8 + index, 1);
+    return { year: date.getFullYear(), month: date.getMonth() };
+  });
+
+  return (
+    <SiteShell
+      activeSection="plan-akci"
+      headerTitle="Plán akcí"
+      headerLead="Soutěže, společná setkání a organizační termíny SPTO na jednom místě."
+    >
+      <main className="homepage-main homepage-single schedule-page" aria-labelledby="schedule-heading">
+        <div className="schedule-intro">
+          <span className="schedule-eyebrow">Školní rok 2026/2027</span>
+          <h1 id="schedule-heading">Kalendář SPTO</h1>
+          <p className="homepage-lead">Přehled akcí Zelené ligy, sněmů a štábů od září 2026 do června 2027.</p>
+        </div>
+
+        <div className="schedule-legend" aria-label="Legenda kalendáře">
+          {(Object.keys(SCHEDULE_KIND_LABELS) as ScheduleEventKind[]).map((kind) => (
+            <span className={`schedule-legend-item schedule-legend-item--${kind}`} key={kind}>{SCHEDULE_KIND_LABELS[kind]}</span>
+          ))}
+        </div>
+
+        <section className="homepage-card schedule-overview" aria-labelledby="schedule-list-heading">
+          <div className="homepage-section-header homepage-section-header--left">
+            <h2 id="schedule-list-heading">Nejbližší termíny</h2>
+            <span className="homepage-section-accent" aria-hidden="true" />
+          </div>
+          <ol className="schedule-list">
+            {SCHOOL_YEAR_EVENTS.map((event) => (
+              <li className={`schedule-list-item schedule-list-item--${event.kind}`} key={`${event.name}-${event.start}`}>
+                <time dateTime={event.start} className="schedule-list-date">{formatScheduleDate(event)}</time>
+                <div className="schedule-list-copy">
+                  <span className="schedule-list-kind">{SCHEDULE_KIND_LABELS[event.kind]}</span>
+                  {event.href ? (
+                    <a className="schedule-event-link" href={event.href}>{event.name}</a>
+                  ) : (
+                    <strong>{event.name}</strong>
+                  )}
+                  {event.note ? <small>{event.note}</small> : null}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section className="schedule-calendar-section" aria-labelledby="schedule-calendar-heading">
+          <div className="homepage-section-header homepage-section-header--left">
+            <h2 id="schedule-calendar-heading">Kalendář školního roku</h2>
+            <span className="homepage-section-accent" aria-hidden="true" />
+          </div>
+          <div className="schedule-calendar-grid">
+            {months.map(({ year, month }) => <ScheduleMonth year={year} month={month} key={`${year}-${month}`} />)}
+          </div>
+        </section>
+      </main>
+    </SiteShell>
+  );
+}
+
 function CompetitionsPage() {
   return (
     <SiteShell>
@@ -5890,6 +6055,9 @@ export default function ZelenaligaSite() {
     const slug = segments[0];
     if (slug === 'redakce') {
       return <RedakcePage />;
+    }
+    if (slug === 'plan-akci' && segments.length === 1) {
+      return <SchedulePage />;
     }
     if (slug === 'souteze') {
       if (segments.length > 1) {

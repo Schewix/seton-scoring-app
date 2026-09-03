@@ -579,6 +579,218 @@
   align-items: stretch;
 }
 
+.schedule-page {
+  gap: clamp(28px, 5vw, 48px);
+}
+
+.schedule-intro h1 {
+  margin: 6px 0 0;
+  font-size: clamp(2rem, 5vw, 3rem);
+}
+
+.schedule-eyebrow,
+.schedule-list-kind {
+  color: #08725e;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.schedule-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.schedule-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--border);
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.schedule-legend-item::before {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #13836d;
+  content: '';
+}
+
+.schedule-legend-item--assembly::before { background: #e1a900; }
+.schedule-legend-item--staff::before { background: #3679b8; }
+
+.schedule-overview {
+  display: grid;
+  gap: 24px;
+}
+
+.schedule-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.schedule-list-item {
+  display: grid;
+  grid-template-columns: minmax(116px, 0.8fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: 14px;
+  min-height: 78px;
+  padding: 13px 15px;
+  border-left: 4px solid #13836d;
+  border-radius: 12px;
+  background: #f5fbf7;
+}
+
+.schedule-list-item--assembly { border-left-color: #e1a900; background: #fffaf0; }
+.schedule-list-item--staff { border-left-color: #3679b8; background: #f3f8fd; }
+
+.schedule-list-date {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.schedule-list-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.schedule-list-copy strong { font-size: 1.02rem; }
+.schedule-list-copy small { color: var(--text-muted); }
+
+.schedule-calendar-section {
+  display: grid;
+  gap: 22px;
+}
+
+.schedule-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.schedule-month {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 14px 28px rgba(4, 55, 44, 0.08);
+}
+
+.schedule-month h3 {
+  margin: 0 0 14px;
+  font-size: 1.18rem;
+  text-transform: capitalize;
+}
+
+.schedule-weekdays,
+.schedule-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.schedule-weekdays span {
+  padding-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.schedule-day {
+  min-width: 0;
+  min-height: 58px;
+  padding: 5px;
+  border-radius: 8px;
+  background: #f7faf7;
+}
+
+.schedule-day--active {
+  outline: 1px solid rgba(4, 55, 44, 0.16);
+  background: #fff;
+}
+
+.schedule-day-number {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.schedule-calendar-event {
+  display: block;
+  overflow: hidden;
+  padding: 3px 4px;
+  border-radius: 4px;
+  background: #dff3e8;
+  color: #075c4b;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+}
+
+.schedule-calendar-event--assembly { background: #fff0b8; color: #715500; }
+.schedule-calendar-event--staff { background: #dcecf9; color: #235b8f; }
+
+.schedule-calendar-event--link,
+.schedule-event-link {
+  text-decoration: none;
+}
+
+.schedule-calendar-event--link:hover,
+.schedule-calendar-event--link:focus-visible {
+  box-shadow: 0 0 0 2px #ffcc33;
+}
+
+.schedule-event-link {
+  width: fit-content;
+  color: #075c4b;
+  font-size: 1.02rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: rgba(7, 92, 75, 0.3);
+  text-underline-offset: 3px;
+}
+
+.schedule-event-link:hover,
+.schedule-event-link:focus-visible {
+  color: #04372c;
+  text-decoration-color: #ffcc33;
+}
+
+@media (max-width: 800px) {
+  .schedule-list,
+  .schedule-calendar-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .schedule-list-item {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .schedule-month { padding: 12px; }
+  .schedule-day { min-height: 48px; padding: 3px; }
+  .schedule-calendar-event { font-size: 0; min-height: 7px; padding: 0; }
+}
+
 .homepage-section-header {
   text-align: center;
   display: flex;
