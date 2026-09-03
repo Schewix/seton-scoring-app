@@ -5365,7 +5365,21 @@ function eventOccursOn(event: ScheduleEvent, date: Date) {
     && timestamp <= parseScheduleDate(event.end ?? event.start).getTime();
 }
 
-function ScheduleMonth({ year, month }: { year: number; month: number }) {
+function scheduleDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function ScheduleMonth({
+  year,
+  month,
+  selectedDate,
+  onSelectDate,
+}: {
+  year: number;
+  month: number;
+  selectedDate: string | null;
+  onSelectDate: (date: string) => void;
+}) {
   const firstDay = new Date(year, month, 1);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const leadingDays = (firstDay.getDay() + 6) % 7;
@@ -5385,22 +5399,30 @@ function ScheduleMonth({ year, month }: { year: number; month: number }) {
         {cells.map((date, index) => {
           if (!date) return <span className="schedule-day schedule-day--empty" key={`empty-${index}`} aria-hidden="true" />;
           const events = SCHOOL_YEAR_EVENTS.filter((event) => eventOccursOn(event, date));
-          return (
-            <div className={`schedule-day${events.length > 0 ? ' schedule-day--active' : ''}`} key={date.toISOString()}>
+          const dateKey = scheduleDateKey(date);
+          const content = (
+            <>
               <span className="schedule-day-number">{date.getDate()}</span>
-              {events.map((event) => {
-                const className = `schedule-calendar-event schedule-calendar-event--${event.kind}`;
-                return event.href ? (
-                  <a className={`${className} schedule-calendar-event--link`} href={event.href} key={`${event.name}-${event.start}`} title={`Otevřít: ${event.name}`}>
-                    {event.name}
-                  </a>
-                ) : (
-                  <span className={className} key={`${event.name}-${event.start}`} title={event.note ?? event.name}>
-                    {event.name}
-                  </span>
-                );
-              })}
-            </div>
+              {events.map((event) => (
+                <span className={`schedule-calendar-event schedule-calendar-event--${event.kind}`} key={`${event.name}-${event.start}`}>
+                  {event.name}
+                </span>
+              ))}
+            </>
+          );
+          return events.length > 0 ? (
+            <button
+              type="button"
+              className={`schedule-day schedule-day--active schedule-day--button${selectedDate === dateKey ? ' is-selected' : ''}`}
+              key={dateKey}
+              onClick={() => onSelectDate(dateKey)}
+              aria-label={`${date.getDate()}. ${monthName}: ${events.map((event) => event.name).join(', ')}`}
+              aria-pressed={selectedDate === dateKey}
+            >
+              {content}
+            </button>
+          ) : (
+            <div className="schedule-day" key={dateKey}>{content}</div>
           );
         })}
       </div>
@@ -5410,6 +5432,7 @@ function ScheduleMonth({ year, month }: { year: number; month: number }) {
 
 function SchedulePage() {
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(0);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
   const months = Array.from({ length: 10 }, (_, index) => {
     const date = new Date(2026, 8 + index, 1);
     return {
@@ -5419,6 +5442,13 @@ function SchedulePage() {
     };
   });
   const selectedMonth = months[selectedMonthIndex];
+  const selectedCalendarEvents = selectedCalendarDate
+    ? SCHOOL_YEAR_EVENTS.filter((event) => eventOccursOn(event, parseScheduleDate(selectedCalendarDate)))
+    : [];
+  const changeMonth = (nextIndex: number) => {
+    setSelectedMonthIndex(nextIndex);
+    setSelectedCalendarDate(null);
+  };
 
   return (
     <SiteShell
@@ -5472,7 +5502,7 @@ function SchedulePage() {
               <button
                 type="button"
                 className="schedule-calendar-button"
-                onClick={() => setSelectedMonthIndex((index) => index - 1)}
+                onClick={() => changeMonth(selectedMonthIndex - 1)}
                 disabled={selectedMonthIndex === 0}
                 aria-label="Předchozí měsíc"
               >
@@ -5483,7 +5513,7 @@ function SchedulePage() {
                 <select
                   className="schedule-month-select"
                   value={selectedMonthIndex}
-                  onChange={(event) => setSelectedMonthIndex(Number(event.target.value))}
+                  onChange={(event) => changeMonth(Number(event.target.value))}
                 >
                   {months.map((month, index) => (
                     <option value={index} key={`${month.year}-${month.month}`}>
@@ -5495,7 +5525,7 @@ function SchedulePage() {
               <button
                 type="button"
                 className="schedule-calendar-button"
-                onClick={() => setSelectedMonthIndex((index) => index + 1)}
+                onClick={() => changeMonth(selectedMonthIndex + 1)}
                 disabled={selectedMonthIndex === months.length - 1}
                 aria-label="Následující měsíc"
               >
@@ -5503,15 +5533,33 @@ function SchedulePage() {
               </button>
             </div>
             <div className="schedule-calendar-stage" aria-live="polite">
-              <ScheduleMonth year={selectedMonth.year} month={selectedMonth.month} />
+              <ScheduleMonth
+                year={selectedMonth.year}
+                month={selectedMonth.month}
+                selectedDate={selectedCalendarDate}
+                onSelectDate={setSelectedCalendarDate}
+              />
             </div>
+            {selectedCalendarEvents.length > 0 ? (
+              <div className="schedule-selected-events" aria-live="polite">
+                {selectedCalendarEvents.map((event) => (
+                  <article className={`schedule-selected-event schedule-selected-event--${event.kind}`} key={`${event.name}-${event.start}`}>
+                    <span className="schedule-list-kind">{SCHEDULE_KIND_LABELS[event.kind]}</span>
+                    <strong>{event.name}</strong>
+                    <time dateTime={event.start}>{formatScheduleDate(event)}</time>
+                    {event.note ? <small>{event.note}</small> : null}
+                    {event.href ? <a className="schedule-event-link" href={event.href}>Detail soutěže →</a> : null}
+                  </article>
+                ))}
+              </div>
+            ) : null}
             <div className="schedule-month-dots" aria-label="Rychlý výběr měsíce">
               {months.map((month, index) => (
                 <button
                   type="button"
                   key={`${month.year}-${month.month}`}
                   className={`schedule-month-dot${index === selectedMonthIndex ? ' is-active' : ''}`}
-                  onClick={() => setSelectedMonthIndex(index)}
+                  onClick={() => changeMonth(index)}
                   aria-label={`${month.label} ${month.year}`}
                   aria-current={index === selectedMonthIndex ? 'true' : undefined}
                 />

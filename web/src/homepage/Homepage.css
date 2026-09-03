@@ -806,6 +806,22 @@
   background: #f7faf7;
 }
 
+.schedule-day--button {
+  width: 100%;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.schedule-day--button:hover,
+.schedule-day--button:focus-visible,
+.schedule-day--button.is-selected {
+  outline: 2px solid #ffcc33;
+  outline-offset: 1px;
+}
+
 .schedule-day--active {
   outline: 1px solid rgba(4, 55, 44, 0.16);
   background: #fff;
@@ -835,14 +851,8 @@
 .schedule-calendar-event--assembly { background: #fff0b8; color: #715500; }
 .schedule-calendar-event--staff { background: #dcecf9; color: #235b8f; }
 
-.schedule-calendar-event--link,
 .schedule-event-link {
   text-decoration: none;
-}
-
-.schedule-calendar-event--link:hover,
-.schedule-calendar-event--link:focus-visible {
-  box-shadow: 0 0 0 2px #ffcc33;
 }
 
 .schedule-event-link {
@@ -860,6 +870,25 @@
   color: #04372c;
   text-decoration-color: #ffcc33;
 }
+
+.schedule-selected-events {
+  display: grid;
+  gap: 10px;
+}
+
+.schedule-selected-event {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-left: 4px solid #13836d;
+  border-radius: 12px;
+  background: #f5fbf7;
+}
+
+.schedule-selected-event--assembly { border-left-color: #e1a900; background: #fffaf0; }
+.schedule-selected-event--staff { border-left-color: #3679b8; background: #f3f8fd; }
+.schedule-selected-event time,
+.schedule-selected-event small { color: var(--text-muted); }
 
 @media (max-width: 800px) {
   .schedule-list {
