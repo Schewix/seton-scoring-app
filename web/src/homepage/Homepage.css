@@ -353,7 +353,7 @@
 
 .homepage-nav-inner {
   display: flex;
-  gap: 12px;
+  gap: 4px;
   align-items: center;
   justify-content: center;
   overflow-x: auto;
@@ -364,12 +364,13 @@
 .homepage-nav-link {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 6px;
+  padding: 8px 9px;
   border-radius: 999px;
   text-decoration: none;
   color: rgba(4, 55, 44, 0.9);
   font-weight: 600;
+  font-size: 0.9rem;
   white-space: nowrap;
   border: 1px solid transparent;
   transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
@@ -378,8 +379,8 @@
 }
 
 .homepage-nav-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
   background: rgba(4, 55, 44, 0.35);
   display: inline-block;
@@ -477,6 +478,7 @@
     justify-content: flex-start;
     width: 100%;
     text-align: left;
+    font-size: 1rem;
   }
 
   .homepage-nav-dot {
