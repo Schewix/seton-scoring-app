@@ -155,7 +155,7 @@ export default function SecretMenuGame({ open, onClose }: { open: boolean; onClo
           name: 'Anonymní host',
           email: 'Progres se ukládá jen v tomto prohlížeči.',
           station: 'Bez přihlášení',
-          event: 'Tajné menu Bezpráví',
+          event: '"Zelená" liga',
         };
 
   return (
@@ -164,7 +164,7 @@ export default function SecretMenuGame({ open, onClose }: { open: boolean; onClo
         <header className="secret-menu-header">
           <div>
             <p className="secret-menu-kicker">Secret section</p>
-            <h2 id="secret-menu-title">Tajné menu Bezpráví</h2>
+            <h2 id="secret-menu-title">&quot;Zelená&quot; liga</h2>
           </div>
           <button type="button" className="secret-menu-close" onClick={onClose}>
             Zavřít

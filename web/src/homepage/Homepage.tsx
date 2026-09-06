@@ -5467,11 +5467,7 @@ function SchedulePage() {
   };
 
   return (
-    <SiteShell
-      activeSection="plan-akci"
-      headerTitle="Plán akcí"
-      headerLead="Soutěže, společná setkání a organizační termíny SPTO na jednom místě."
-    >
+    <SiteShell>
       <main className="homepage-main homepage-single schedule-page" aria-labelledby="schedule-heading">
         <div className="schedule-intro">
           <span className="schedule-eyebrow">Školní rok 2026/2027</span>
