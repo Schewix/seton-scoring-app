@@ -697,18 +697,28 @@ const APPLICATION_LINKS = [
 
 const CONTACTS = [
   {
+    id: 'chief',
     role: 'Načelník SPTO',
     name: 'Ondřej Ševčík (Ševa)',
     phone: '+420 731 019 469',
     email: 'osevcik@severka.org',
   },
   {
-    role: 'Sekretářka SPTO',
-    name: 'Roman Valenta (Rogi)',
-    phone: '+420 720 114 501',
-    email: 'rogis@seznam.cz',
+    id: 'secretary-1',
+    role: 'Sekretář SPTO',
+    name: 'Jan Dalecký (Honza)',
+    phone: '+420 730 997 353',
+    email: 'honza@jmpionyr.cz',
   },
   {
+    id: 'secretary-2',
+    role: 'Sekretář SPTO',
+    name: 'Martin Drahoš',
+    phone: '+420 725 582 418',
+    email: 'martin@severka.cz',
+  },
+  {
+    id: 'webmaster',
     role: 'Správce webu',
     name: 'Ondřej Ševčík (Ševa)',
     phone: '+420 731 019 469',
@@ -1327,25 +1337,31 @@ function ContactsPage() {
         <div className="homepage-card">
           <div className="contacts-grid">
             {CONTACTS.map((contact) => (
-              <div key={contact.role} className="contact-card">
+              <div key={contact.id} className="contact-card">
                 <div className="contact-card-header">
                   <strong>{contact.role}</strong>
-                  <span>{contact.name}</span>
+                  <span>{contact.name || 'Informace budou doplněny'}</span>
                 </div>
-                <div className="contact-card-meta">
-                  <span>
-                    Telefon:{' '}
-                    <a href={toTelHref(contact.phone)} className="contact-card-link">
-                      {contact.phone}
-                    </a>
-                  </span>
-                  <span>
-                    E-mail:{' '}
-                    <a href={`mailto:${contact.email}`} className="contact-card-link">
-                      {contact.email}
-                    </a>
-                  </span>
-                </div>
+                {contact.phone || contact.email ? (
+                  <div className="contact-card-meta">
+                    {contact.phone ? (
+                      <span>
+                        Telefon:{' '}
+                        <a href={toTelHref(contact.phone)} className="contact-card-link">
+                          {contact.phone}
+                        </a>
+                      </span>
+                    ) : null}
+                    {contact.email ? (
+                      <span>
+                        E-mail:{' '}
+                        <a href={`mailto:${contact.email}`} className="contact-card-link">
+                          {contact.email}
+                        </a>
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
